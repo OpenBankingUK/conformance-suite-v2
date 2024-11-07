@@ -3243,7 +3243,8 @@
         "required": true,
         "schema": {
           "type": "string",
-          "maxLength": 40
+          "maxLength": 40,
+          "pattern": "^(?!\\s)(.*)(\\S)$"
         }
       },
       "x-jws-signature": {
@@ -7108,6 +7109,7 @@
                 "description": "Specifies the status of the payment information group. For a full list of values refer to `ExternalPaymentTransactionStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
                 "enum": [
+                  "RCVD",
                   "PDNG",
                   "ACTC",
                   "PATC",
@@ -9367,7 +9369,7 @@
                     "description": "Specifies the payment file type.",
                     "type": "string",
                     "x-namespaced-enum": [
-                      "UK.OBIE.PaymentInitiation.3.1",
+                      "UK.OBIE.PaymentInitiation.4.0",
                       "UK.OBIE.pain.001.001.08"
                     ]
                   },
@@ -9471,7 +9473,7 @@
                     "description": "Specifies the payment file type.",
                     "type": "string",
                     "x-namespaced-enum": [
-                      "UK.OBIE.PaymentInitiation.3.1",
+                      "UK.OBIE.PaymentInitiation.4.0",
                       "UK.OBIE.pain.001.001.08"
                     ]
                   },
@@ -9689,7 +9691,7 @@
                     "description": "Specifies the payment file type.",
                     "type": "string",
                     "x-namespaced-enum": [
-                      "UK.OBIE.PaymentInitiation.3.1",
+                      "UK.OBIE.PaymentInitiation.4.0",
                       "UK.OBIE.pain.001.001.08"
                     ]
                   },
@@ -9860,7 +9862,7 @@
                 "format": "date-time"
               },
               "Status": {
-                "description": "Specifies the status of the payment order resource.",
+                "description": "Specifies the status of the payment order resource. See `ExternalPaymentTransactionStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets) for more information.",
                 "type": "string",
                 "enum": [
                   "INFA",
@@ -9916,7 +9918,7 @@
                     "description": "Specifies the payment file type.",
                     "type": "string",
                     "x-namespaced-enum": [
-                      "UK.OBIE.PaymentInitiation.3.1",
+                      "UK.OBIE.PaymentInitiation.4.0",
                       "UK.OBIE.pain.001.001.08"
                     ]
                   },
@@ -10024,7 +10026,7 @@
                     "type": "string",
                     "enum": [
                       "AUTH",
-                      "AWAU",
+                      "AWAF",
                       "RJCT"
                     ]
                   },
@@ -11509,7 +11511,7 @@
                     "type": "string",
                     "enum": [
                       "AUTH",
-                      "AWAU",
+                      "AWAF",
                       "RJCT"
                     ]
                   },
@@ -13810,7 +13812,7 @@
                 "format": "date-time"
               },
               "Status": {
-                "description": "Specifies the status of resource in code form.",
+                "description": "Specifies the status of resource in code form. For a list of values see `ExternalPaymentTransactionStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
                 "enum": [
                   "RCVD",
