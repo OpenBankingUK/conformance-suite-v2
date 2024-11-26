@@ -3242,7 +3242,8 @@
         "description": "Every request will be processed only once per x-idempotency-key.  The\nIdempotency Key will be valid for 24 hours.\n",
         "required": true,
         "schema": {
-          "type": "string"
+          "type": "string",
+          "maxLength": 40
         }
       },
       "x-jws-signature": {
