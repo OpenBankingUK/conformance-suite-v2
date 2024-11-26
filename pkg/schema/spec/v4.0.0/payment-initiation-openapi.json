@@ -3242,8 +3242,7 @@
         "description": "Every request will be processed only once per x-idempotency-key.  The\nIdempotency Key will be valid for 24 hours.\n",
         "required": true,
         "schema": {
-          "type": "string",
-          "maxLength": 40
+          "type": "string"
         }
       },
       "x-jws-signature": {
@@ -9401,6 +9400,28 @@
                   "LocalInstrument": {
                     "$ref": "#/components/schemas/OBInternalLocalInstrument1Code"
                   },
+                  "CreditorAgent": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "description": "Financial institution servicing an account for the creditor.",
+                    "properties": {
+                      "SchemeName": {
+                        "$ref": "#/components/schemas/OBInternalFinancialInstitutionIdentification4Code"
+                      },
+                      "Identification": {
+                        "$ref": "#/components/schemas/Identification_1"
+                      },
+                      "Name": {
+                        "$ref": "#/components/schemas/Name"
+                      },
+                      "LEI": {
+                        "$ref": "#/components/schemas/LEI"
+                      },
+                      "PostalAddress": {
+                        "$ref": "#/components/schemas/OBPostalAddress7"
+                      }
+                    }
+                  },
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
@@ -9431,7 +9452,7 @@
                     }
                   },
                   "UltimateDebtor": {
-                    "$ref": "#/components/schemas/OBUltimateCreditor1"
+                    "$ref": "#/components/schemas/OBUltimateDebtor1"
                   },
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
