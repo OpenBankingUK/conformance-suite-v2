@@ -71,8 +71,8 @@ There is the ability to enhance logging by setting any of the following env vari
 
 - LOG_HTTP_TRACE=true:  Enables detailed HTTP trace logging. When set to true, the application will log all HTTP requests and responses, including headers and body content. This can be useful for debugging and monitoring HTTP interactions, but may expose sensitive information in the logs. Use with caution in production environments.
 - LOG_LEVEL=debug: sets the logging level to debug, providing detailed information about the application's operation. This is useful for diagnosing issues and understanding the application's behavior in detail.
-- LOG_FILE=/path/log.txt: sets the log output to the following file (alongside stdout) and attaches the log file to the run export zip
 - LOG_TRACER=true: enables detailed tracing of the application's execution. This setting provides in-depth information about the application's internal processes, which can be useful for debugging complex issues. Use with caution as it may generate a large volume of log data.
+- EXPORT_LOG_FILE=true: sets the log output to a file and attaches the log file to the run export zip archive
 
 ## Support
 * * *

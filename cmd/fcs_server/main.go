@@ -115,9 +115,9 @@ func initConfig() {
 		DisableTimestamp: false,
 		ForceFormatting:  true,
 	})
-	logFile := os.Getenv("LOG_FILE")
-	if logFile != "" {
-		file, err := os.OpenFile(logFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+	logFile := os.Getenv("EXPORT_LOG_FILE")
+	if logFile == "true" {
+		file, err := os.OpenFile("./log-export.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
 		if err == nil {
 			multiWriter := io.MultiWriter(os.Stdout, file)
 			logger.SetOutput(multiWriter)

@@ -20,6 +20,7 @@ const (
 	marshalIndentPrefix    = ""
 	marshalIndent          = "  "
 	reportFilename         = "report.json"
+	logFilename            = "log-export.txt"
 	discoveryFilename      = "discovery.json"
 	responseFieldsFilename = "responseFields.json"
 )
@@ -47,10 +48,11 @@ type zipExporter struct {
 // The caller should close `writer` after calling `Export`.
 //
 // For example:
-//     writer, err := os.Create("report.zip")
-//     defer writer.Close()
-//     exporter := NewZipExporter(Report{}, writer)
-//     exporter.Export()
+//
+//	writer, err := os.Create("report.zip")
+//	defer writer.Close()
+//	exporter := NewZipExporter(Report{}, writer)
+//	exporter.Export()
 func NewZipExporter(report Report, writer io.Writer) Exporter {
 	return &zipExporter{
 		report: report,
@@ -78,8 +80,16 @@ func (e *zipExporter) Export() error {
 	if err != nil {
 		return fmt.Errorf("%w: json.MarshalIndent failed: %s, discovery=%+v", ErrExportFailure, err.Error(), e.report.Discovery)
 	}
+	logBytes, err := os.ReadFile(logFilename)
+	if err != nil {
+		return fmt.Errorf("%w: failed to read log file: %s", ErrExportFailure, err.Error())
+	}
+	if err := os.Remove(logFilename); err != nil {
+		return fmt.Errorf("%w: failed to remove log file: %s", ErrExportFailure, err.Error())
+	}
 
 	toExport[reportFilename] = reportJSON
+	toExport[logFilename] = logBytes
 	toExport[discoveryFilename] = discoveryJSON
 	toExport[responseFieldsFilename] = []byte(e.report.ResponseFields)
 	toExport["report.checksum"] = createChecksum(exportSecret, reportJSON)
