@@ -80,16 +80,18 @@ func (e *zipExporter) Export() error {
 	if err != nil {
 		return fmt.Errorf("%w: json.MarshalIndent failed: %s, discovery=%+v", ErrExportFailure, err.Error(), e.report.Discovery)
 	}
-	logBytes, err := os.ReadFile(logFilename)
-	if err != nil {
-		return fmt.Errorf("%w: failed to read log file: %s", ErrExportFailure, err.Error())
-	}
-	if err := os.Remove(logFilename); err != nil {
-		return fmt.Errorf("%w: failed to remove log file: %s", ErrExportFailure, err.Error())
+	if os.Getenv("EXPORT_LOG_FILE") == "true" {
+		logBytes, err := os.ReadFile(logFilename)
+		if err != nil {
+			return fmt.Errorf("%w: failed to read log file: %s", ErrExportFailure, err.Error())
+		}
+		if err := os.WriteFile(logFilename, []byte{}, 0644); err != nil {
+			return fmt.Errorf("%w: failed to clean log file: %s", ErrExportFailure, err.Error())
+		}
+		toExport[logFilename] = logBytes
 	}
 
 	toExport[reportFilename] = reportJSON
-	toExport[logFilename] = logBytes
 	toExport[discoveryFilename] = discoveryJSON
 	toExport[responseFieldsFilename] = []byte(e.report.ResponseFields)
 	toExport["report.checksum"] = createChecksum(exportSecret, reportJSON)
