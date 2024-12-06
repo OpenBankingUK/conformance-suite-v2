@@ -3,6 +3,7 @@ package main
 import (
 	"crypto/tls"
 	"fmt"
+	"io"
 	"os"
 	"strings"
 	"time"
@@ -114,6 +115,18 @@ func initConfig() {
 		DisableTimestamp: false,
 		ForceFormatting:  true,
 	})
+	logFile := os.Getenv("EXPORT_LOG_FILE")
+	if logFile == "true" {
+		file, err := os.OpenFile("./log-export.txt", os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0666)
+		if err == nil {
+			multiWriter := io.MultiWriter(os.Stdout, file)
+			logger.SetOutput(multiWriter)
+		} else {
+			logger.Warn("Failed to log to file, using default stderr")
+		}
+	} else {
+		logger.SetOutput(os.Stdout)
+	}
 	level, err := logrus.ParseLevel(viper.GetString("log_level"))
 	if err != nil {
 		printConfigurationFlags()
