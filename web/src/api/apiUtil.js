@@ -18,6 +18,9 @@ const doRequest = async (path, setShowLoading, method) => {
         'Content-Type': 'application/json; charset=UTF-8',
       },
     });
+    if (setShowLoading) {
+      setShowLoading(false);
+    }
     return response;
   } catch (e) {
     console.log(JSON.stringify(e)); //eslint-disable-line
