@@ -56,6 +56,9 @@ export default {
         headers,
         body: obj ? JSON.stringify(obj) : null,
       });
+      if (setShowLoading) {
+        setShowLoading(false);
+      }
       return response;
     } catch (e) {
       throw e;
