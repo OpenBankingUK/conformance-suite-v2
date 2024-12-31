@@ -27,6 +27,191 @@ POST /import/review
 ```
 Endpoint for reviewing import operations.
 
+**Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["report"],
+  "additionalProperties": false,
+  "properties": {
+    "report": {
+      "type": "string",
+      "description": "The exported report ZIP archive (base64 encoded)",
+      "contentEncoding": "base64"
+    }
+  },
+  "examples": [
+    {
+      "report": "UEsDBBQACAAIAJVLCVYAAAAA..."
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["discoveryModel"],
+  "additionalProperties": false,
+  "properties": {
+    "discoveryModel": {
+      "type": "object",
+      "required": ["name", "description", "discoveryVersion", "tokenAcquisition", "discoveryItems"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the discovery model"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the model"
+        },
+        "discoveryVersion": {
+          "type": "string",
+          "description": "Version of the discovery protocol"
+        },
+        "tokenAcquisition": {
+          "type": "string",
+          "description": "Method of token acquisition"
+        },
+        "callbackProxyUrl": {
+          "type": "string"
+        },
+        "discoveryItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["apiSpecification", "openidConfigurationUri", "resourceBaseUri", "endpoints"],
+            "properties": {
+              "apiSpecification": {
+                "type": "object",
+                "required": ["name", "url", "version", "schemaVersion", "manifest"],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "manifest": {
+                    "type": "string",
+                    "pattern": "^(file://|https://).*$"
+                  }
+                }
+              },
+              "openidConfigurationUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "resourceBaseUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "resourceIds": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "endpoints": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["method", "path"],
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string",
+                      "format": "uri-reference"
+                    },
+                    "conditionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["schema", "path"],
+                        "properties": {
+                          "schema": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "property": {
+                            "type": "string",
+                            "deprecated": true
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "request": {
+                            "type": "boolean"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "customTests": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "cbpiiDebtorAccount": {
+      "type": "object",
+      "required": ["identification", "scheme_name"],
+      "properties": {
+        "identification": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "scheme_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 70
+        }
+      }
+    }
+  }
+}
+```
+
 ### Rerun Import
 ```
 POST /import/rerun
