@@ -218,6 +218,192 @@ POST /import/rerun
 ```
 Endpoint for rerunning import operations.
 
+
+**Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["report"],
+  "additionalProperties": false,
+  "properties": {
+    "report": {
+      "type": "string",
+      "description": "The exported report ZIP archive (base64 encoded)",
+      "contentEncoding": "base64"
+    }
+  },
+  "examples": [
+    {
+      "report": "UEsDBBQACAAIAJVLCVYAAAAA..."
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["discoveryModel"],
+  "additionalProperties": false,
+  "properties": {
+    "discoveryModel": {
+      "type": "object",
+      "required": ["name", "description", "discoveryVersion", "tokenAcquisition", "discoveryItems"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Name of the discovery model"
+        },
+        "description": {
+          "type": "string",
+          "description": "Description of the model"
+        },
+        "discoveryVersion": {
+          "type": "string",
+          "description": "Version of the discovery protocol"
+        },
+        "tokenAcquisition": {
+          "type": "string",
+          "description": "Method of token acquisition"
+        },
+        "callbackProxyUrl": {
+          "type": "string"
+        },
+        "discoveryItems": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["apiSpecification", "openidConfigurationUri", "resourceBaseUri", "endpoints"],
+            "properties": {
+              "apiSpecification": {
+                "type": "object",
+                "required": ["name", "url", "version", "schemaVersion", "manifest"],
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "schemaVersion": {
+                    "type": "string",
+                    "format": "uri"
+                  },
+                  "manifest": {
+                    "type": "string",
+                    "pattern": "^(file://|https://).*$"
+                  }
+                }
+              },
+              "openidConfigurationUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "resourceBaseUri": {
+                "type": "string",
+                "format": "uri"
+              },
+              "resourceIds": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "endpoints": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "object",
+                  "required": ["method", "path"],
+                  "properties": {
+                    "method": {
+                      "type": "string"
+                    },
+                    "path": {
+                      "type": "string",
+                      "format": "uri-reference"
+                    },
+                    "conditionalProperties": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "required": ["schema", "path"],
+                        "properties": {
+                          "schema": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "property": {
+                            "type": "string",
+                            "deprecated": true
+                          },
+                          "path": {
+                            "type": "string"
+                          },
+                          "required": {
+                            "type": "boolean"
+                          },
+                          "request": {
+                            "type": "boolean"
+                          },
+                          "value": {
+                            "type": "string"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "customTests": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        }
+      }
+    }
+  },
+  "definitions": {
+    "cbpiiDebtorAccount": {
+      "type": "object",
+      "required": ["identification", "scheme_name"],
+      "properties": {
+        "identification": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        },
+        "scheme_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 40
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 70
+        }
+      }
+    }
+  }
+}
+```
+
 ## Configuration Management
 ### Set Global Configuration
 ```
@@ -1310,11 +1496,103 @@ POST /redirect/fragment/ok
 ```
 Handle successful fragment redirects.
 
+**Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "code",
+    "scope",
+    "id_token",
+    "state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Authorization code"
+    },
+    "scope": {
+      "type": "string",
+      "description": "OAuth scope of the request"
+    },
+    "id_token": {
+      "type": "string",
+      "description": "OpenID Connect ID Token"
+    },
+    "state": {
+      "type": "string",
+      "description": "OAuth state parameter for request verification"
+    }
+  },
+  "examples": [
+    {
+      "code": "auth_code_123",
+      "scope": "openid profile",
+      "id_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...",
+      "state": "abc123"
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+_EMPTY BODY_
+
 ### Query OK
 ```
 POST /redirect/query/ok
 ```
 Handle successful query redirects.
+
+**Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "code",
+    "scope",
+    "id_token",
+    "state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "code": {
+      "type": "string",
+      "description": "Authorization code"
+    },
+    "scope": {
+      "type": "string",
+      "description": "OAuth scope of the request"
+    },
+    "id_token": {
+      "type": "string",
+      "description": "OpenID Connect ID Token"
+    },
+    "state": {
+      "type": "string",
+      "description": "OAuth state parameter for request verification"
+    }
+  },
+  "examples": [
+    {
+      "code": "auth_code_123",
+      "scope": "openid profile",
+      "id_token": "eyJ0eXAiOiJKV1QiLCJhbGciOiJSUzI1NiJ9...",
+      "state": "abc123"
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+_EMPTY BODY_
 
 ### Error
 ```
@@ -1322,12 +1600,134 @@ POST /redirect/error
 ```
 Handle redirect errors.
 
+*Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "error_description",
+    "error",
+    "state"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "error_description": {
+      "type": "string",
+      "description": "Human-readable description of the error"
+    },
+    "error": {
+      "type": "string",
+      "description": "OAuth 2.0 error code",
+      "enum": [
+        "invalid_request",
+        "unauthorized_client",
+        "access_denied",
+        "unsupported_response_type",
+        "invalid_scope",
+        "server_error",
+        "temporarily_unavailable"
+      ]
+    },
+    "state": {
+      "type": "string",
+      "description": "OAuth state parameter from the original request"
+    }
+  },
+  "examples": [
+    {
+      "error_description": "The authorization request was invalid",
+      "error": "invalid_request",
+      "state": "abc123"
+    },
+    {
+      "error_description": "The user denied access to the resource",
+      "error": "access_denied",
+      "state": "xyz789"
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+_EMPTY BODY_
+
 ## Export
 ### Export Data
 ```
 POST /export
 ```
 Endpoint for exporting data.
+
+**Request Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": [
+    "environment",
+    "implementer",
+    "authorised_by",
+    "job_title",
+    "products",
+    "has_agreed",
+    "add_digital_signature"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "environment": {
+      "type": "string",
+      "description": "Environment used for testing"
+    },
+    "implementer": {
+      "type": "string",
+      "description": "Implementer/Brand Name"
+    },
+    "authorised_by": {
+      "type": "string",
+      "description": "Authorised by"
+    },
+    "job_title": {
+      "type": "string",
+      "description": "Job Title"
+    },
+    "products": {
+      "type": "array",
+      "description": "Products tested, e.g., 'Business, Personal, Cards'",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "has_agreed": {
+      "type": "boolean",
+      "description": "I agree"
+    },
+    "add_digital_signature": {
+      "type": "boolean",
+      "description": "Sign this report"
+    }
+  },
+  "examples": [
+    {
+      "environment": "sandbox",
+      "implementer": "Example Bank Ltd",
+      "authorised_by": "John Smith",
+      "job_title": "Technical Lead",
+      "products": ["Business", "Personal", "Cards"],
+      "has_agreed": true,
+      "add_digital_signature": true
+    }
+  ]
+}
+```
+
+**Response Payload**
+
+_ZIP FILE_
 
 ## Utility
 ### Version Check
