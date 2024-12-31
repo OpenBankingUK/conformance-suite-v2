@@ -10,14 +10,15 @@ All endpoints are prefixed with `/api`
 GET /ping
 ```
 
+Simple health check endpoint.
+
 **Request Payload**
 
 _EMPTY BODY_
 
 **Response Payload**
-_EMPTY BODY_
 
-Simple health check endpoint.
+_EMPTY BODY_
 
 ## Import Operations
 ### Review Import
@@ -1067,6 +1068,49 @@ Initiate a new test run.
 GET /run/ws
 ```
 WebSocket endpoint for listening to test results in real-time.
+
+**Request Payload**
+
+_EMPTY BODY_
+
+**Response Payload**
+
+```
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "required": ["type", "value"],
+  "additionalProperties": false,
+  "properties": {
+    "type": {
+      "type": "string",
+      "description": "The type of WebSocket event"
+    },
+    "value": {
+      "type": "object",
+      "required": ["token_names"],
+      "additionalProperties": false,
+      "properties": {
+        "token_names": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Array of token names that have been acquired"
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "type": "acquired_all_access_tokens",
+      "value": {
+        "token_names": ["token1", "token2"]
+      }
+    }
+  ]
+}
+```
 
 ### Stop Test Run
 ```
