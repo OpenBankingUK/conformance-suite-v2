@@ -553,6 +553,10 @@
                       </b-col>
                       <b-col sm="12">
                         <label><b>Path:</b> {{ conditionalProperty.path }}</label>
+                        <small class="d-block text-muted">
+                          For array elements, include the index number in the path. 
+                          Example: Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation.Reference
+                        </small>
                       </b-col>
                       <b-col sm="12">
                         <b-form-input
