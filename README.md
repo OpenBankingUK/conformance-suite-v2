@@ -17,16 +17,16 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Release Notes
 * * *
 
-# Release v1.9.1 (23rd October 2024)
+# Release v1.9.2 (14th January 2025)
 
-The release is called **v1.9.1**, an update to add minor bugfixes and security updates, such as xss security headers, implements the FCS re-run functionality, VRPType 3.1.10/3.1.11 support, nbf jwt token field and many more.
+The release is called **v1.9.2**, an update to add minor bugfixes, security updates and functional swagger updates.
 
-[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.1.md)
+[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.2.md)
 
 
 ---
 **Download**:
-`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.1"` |
+`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.2"` |
 [DockerHub](https://hub.docker.com/r/openbanking/conformance-suite) |
 [Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 ---
@@ -36,7 +36,7 @@ The release is called **v1.9.1**, an update to add minor bugfixes and security u
 
 | Release       | Standard version  |
 | ------------- |:-----------------:|
-| v1.9.0        | v4.0.0            |
+| v1.9.2        | v4.0.0            |
 | v1.7.6        | v3.1.11           |
 | v1.7.0        | v3.1.10           |
 | v1.6.12       | v3.1.9            |
@@ -47,7 +47,7 @@ The release is called **v1.9.1**, an update to add minor bugfixes and security u
 
 Pull and run the latest (stable) tagged Docker image:
 
-    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.1"
+    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.2"
 
 or
 
