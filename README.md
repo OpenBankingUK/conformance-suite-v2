@@ -19,7 +19,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 # Release v1.9.2 (14th January 2025)
 
-The release is called **v1.9.2**, an update to add minor bugfixes, security updates and functional swagger updates.
+The release is called **v1.9.2**, an update to add minor bugfixes, security updates and v4.0.0 KIs functional swagger updates.
 
 [Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.2.md)
 
