@@ -13,7 +13,7 @@
         "OB-301-VRP-100100-instructionIdentification": "$instructionIdentification",
         "instructionIdentification": "$fn:instructionIdentificationID()",
         "endToEndIdentification": "e2e-domestic-pay",
-        "postData": "$minimalDomesticVRPConsentV3111",
+        "postData": "$minimalDomesticVRPConsent",
         "requestConsent": "true"
       },
       "headers": {
@@ -89,7 +89,7 @@
         "endToEndIdentification": "e2e-domestic-pay",
         "instructedAmountCurrency": "$instructedAmountCurrency",
         "instructedAmountValue": "$instructedAmountValue",
-        "postData": "$minimalDomesticVRP"
+        "postData": "$minimalDomesticVRPV3111"
       },
       "headers": {
         "Content-Type": "application/json"
