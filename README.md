@@ -17,7 +17,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Release Notes
 * * *
 
-# Release v1.9.2 (14th January 2025)
+# Release v1.9.2 (10th February 2025)
 
 The release is called **v1.9.2**, an update to add minor bugfixes, security updates and v4.0.0 KIs functional swagger updates.
 
