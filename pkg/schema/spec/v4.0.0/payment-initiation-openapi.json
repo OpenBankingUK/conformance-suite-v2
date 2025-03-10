@@ -17,7 +17,9 @@
   "paths": {
     "/domestic-payment-consents": {
       "post": {
-        "tags": ["Domestic Payments"],
+        "tags": [
+          "Domestic Payments"
+        ],
         "summary": "Create Domestic Payment Consents",
         "operationId": "CreateDomesticPaymentConsents",
         "parameters": [
@@ -95,14 +97,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-payment-consents/{ConsentId}": {
       "get": {
-        "tags": ["Domestic Payments"],
+        "tags": [
+          "Domestic Payments"
+        ],
         "summary": "Get Domestic Payment Consents",
         "operationId": "GetDomesticPaymentConsentsConsentId",
         "parameters": [
@@ -153,14 +159,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-payment-consents/{ConsentId}/funds-confirmation": {
       "get": {
-        "tags": ["Domestic Payments"],
+        "tags": [
+          "Domestic Payments"
+        ],
         "summary": "Get Domestic Payment Consents Funds Confirmation",
         "operationId": "GetDomesticPaymentConsentsConsentIdFundsConfirmation",
         "parameters": [
@@ -211,14 +221,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-payments": {
       "post": {
-        "tags": ["Domestic Payments"],
+        "tags": [
+          "Domestic Payments"
+        ],
         "summary": "Create Domestic Payments",
         "operationId": "CreateDomesticPayments",
         "parameters": [
@@ -299,14 +313,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-payments/{DomesticPaymentId}": {
       "get": {
-        "tags": ["Domestic Payments"],
+        "tags": [
+          "Domestic Payments"
+        ],
         "summary": "Get Domestic Payments",
         "operationId": "GetDomesticPaymentsDomesticPaymentId",
         "parameters": [
@@ -357,14 +375,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-payments/{DomesticPaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetDomesticPaymentsDomesticPaymentIdPaymentDetails",
         "parameters": [
@@ -418,14 +440,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-scheduled-payment-consents": {
       "post": {
-        "tags": ["Domestic Scheduled Payments"],
+        "tags": [
+          "Domestic Scheduled Payments"
+        ],
         "summary": "Create Domestic Scheduled Payment Consents",
         "operationId": "CreateDomesticScheduledPaymentConsents",
         "parameters": [
@@ -509,14 +535,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-scheduled-payment-consents/{ConsentId}": {
       "get": {
-        "tags": ["Domestic Scheduled Payments"],
+        "tags": [
+          "Domestic Scheduled Payments"
+        ],
         "summary": "Get Domestic Scheduled Payment Consents",
         "operationId": "GetDomesticScheduledPaymentConsentsConsentId",
         "parameters": [
@@ -570,14 +600,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-scheduled-payments": {
       "post": {
-        "tags": ["Domestic Scheduled Payments"],
+        "tags": [
+          "Domestic Scheduled Payments"
+        ],
         "summary": "Create Domestic Scheduled Payments",
         "operationId": "CreateDomesticScheduledPayments",
         "parameters": [
@@ -661,14 +695,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-scheduled-payments/{DomesticScheduledPaymentId}": {
       "get": {
-        "tags": ["Domestic Scheduled Payments"],
+        "tags": [
+          "Domestic Scheduled Payments"
+        ],
         "summary": "Get Domestic Scheduled Payments",
         "operationId": "GetDomesticScheduledPaymentsDomesticScheduledPaymentId",
         "parameters": [
@@ -722,14 +760,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-scheduled-payments/{DomesticScheduledPaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetDomesticScheduledPaymentsDomesticScheduledPaymentIdPaymentDetails",
         "parameters": [
@@ -783,14 +825,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-standing-order-consents": {
       "post": {
-        "tags": ["Domestic Standing Orders"],
+        "tags": [
+          "Domestic Standing Orders"
+        ],
         "summary": "Create Domestic Standing Order Consents",
         "operationId": "CreateDomesticStandingOrderConsents",
         "parameters": [
@@ -874,14 +920,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-standing-order-consents/{ConsentId}": {
       "get": {
-        "tags": ["Domestic Standing Orders"],
+        "tags": [
+          "Domestic Standing Orders"
+        ],
         "summary": "Get Domestic Standing Order Consents",
         "operationId": "GetDomesticStandingOrderConsentsConsentId",
         "parameters": [
@@ -935,14 +985,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-standing-orders": {
       "post": {
-        "tags": ["Domestic Standing Orders"],
+        "tags": [
+          "Domestic Standing Orders"
+        ],
         "summary": "Create Domestic Standing Orders",
         "operationId": "CreateDomesticStandingOrders",
         "parameters": [
@@ -1026,14 +1080,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-standing-orders/{DomesticStandingOrderId}": {
       "get": {
-        "tags": ["Domestic Standing Orders"],
+        "tags": [
+          "Domestic Standing Orders"
+        ],
         "summary": "Get Domestic Standing Orders",
         "operationId": "GetDomesticStandingOrdersDomesticStandingOrderId",
         "parameters": [
@@ -1087,14 +1145,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/domestic-standing-orders/{DomesticStandingOrderId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetDomesticStandingOrdersDomesticStandingOrderIdPaymentDetails",
         "parameters": [
@@ -1148,14 +1210,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payment-consents": {
       "post": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Create File Payment Consents",
         "operationId": "CreateFilePaymentConsents",
         "parameters": [
@@ -1239,14 +1305,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payment-consents/{ConsentId}": {
       "get": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Get File Payment Consents",
         "operationId": "GetFilePaymentConsentsConsentId",
         "parameters": [
@@ -1300,14 +1370,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payment-consents/{ConsentId}/file": {
       "post": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Create File Payment Consents",
         "operationId": "CreateFilePaymentConsentsConsentIdFile",
         "parameters": [
@@ -1394,12 +1468,16 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       },
       "get": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Get File Payment Consents",
         "operationId": "GetFilePaymentConsentsConsentIdFile",
         "parameters": [
@@ -1453,14 +1531,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payments": {
       "post": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Create File Payments",
         "operationId": "CreateFilePayments",
         "parameters": [
@@ -1544,14 +1626,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payments/{FilePaymentId}": {
       "get": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Get File Payments",
         "operationId": "GetFilePaymentsFilePaymentId",
         "parameters": [
@@ -1605,14 +1691,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payments/{FilePaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetFilePaymentsFilePaymentIdPaymentDetails",
         "parameters": [
@@ -1666,14 +1756,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/file-payments/{FilePaymentId}/report-file": {
       "get": {
-        "tags": ["File Payments"],
+        "tags": [
+          "File Payments"
+        ],
         "summary": "Get File Payments",
         "operationId": "GetFilePaymentsFilePaymentIdReportFile",
         "parameters": [
@@ -1727,14 +1821,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payment-consents": {
       "post": {
-        "tags": ["International Payments"],
+        "tags": [
+          "International Payments"
+        ],
         "summary": "Create International Payment Consents",
         "operationId": "CreateInternationalPaymentConsents",
         "parameters": [
@@ -1818,14 +1916,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payment-consents/{ConsentId}": {
       "get": {
-        "tags": ["International Payments"],
+        "tags": [
+          "International Payments"
+        ],
         "summary": "Get International Payment Consents",
         "operationId": "GetInternationalPaymentConsentsConsentId",
         "parameters": [
@@ -1879,14 +1981,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payment-consents/{ConsentId}/funds-confirmation": {
       "get": {
-        "tags": ["International Payments"],
+        "tags": [
+          "International Payments"
+        ],
         "summary": "Get International Payment Consents Funds Confirmation",
         "operationId": "GetInternationalPaymentConsentsConsentIdFundsConfirmation",
         "parameters": [
@@ -1940,14 +2046,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payments": {
       "post": {
-        "tags": ["International Payments"],
+        "tags": [
+          "International Payments"
+        ],
         "summary": "Create International Payments",
         "operationId": "CreateInternationalPayments",
         "parameters": [
@@ -2028,14 +2138,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payments/{InternationalPaymentId}": {
       "get": {
-        "tags": ["International Payments"],
+        "tags": [
+          "International Payments"
+        ],
         "summary": "Get International Payments",
         "operationId": "GetInternationalPaymentsInternationalPaymentId",
         "parameters": [
@@ -2089,14 +2203,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-payments/{InternationalPaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetInternationalPaymentsInternationalPaymentIdPaymentDetails",
         "parameters": [
@@ -2150,14 +2268,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payment-consents": {
       "post": {
-        "tags": ["International Scheduled Payments"],
+        "tags": [
+          "International Scheduled Payments"
+        ],
         "summary": "Create International Scheduled Payment Consents",
         "operationId": "CreateInternationalScheduledPaymentConsents",
         "parameters": [
@@ -2241,14 +2363,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payment-consents/{ConsentId}": {
       "get": {
-        "tags": ["International Scheduled Payments"],
+        "tags": [
+          "International Scheduled Payments"
+        ],
         "summary": "Get International Scheduled Payment Consents",
         "operationId": "GetInternationalScheduledPaymentConsentsConsentId",
         "parameters": [
@@ -2302,14 +2428,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payment-consents/{ConsentId}/funds-confirmation": {
       "get": {
-        "tags": ["International Scheduled Payments"],
+        "tags": [
+          "International Scheduled Payments"
+        ],
         "summary": "Get International Scheduled Payment Consents Funds Confirmation",
         "operationId": "GetInternationalScheduledPaymentConsentsConsentIdFundsConfirmation",
         "parameters": [
@@ -2363,14 +2493,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payments": {
       "post": {
-        "tags": ["International Scheduled Payments"],
+        "tags": [
+          "International Scheduled Payments"
+        ],
         "summary": "Create International Scheduled Payments",
         "operationId": "CreateInternationalScheduledPayments",
         "parameters": [
@@ -2454,14 +2588,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payments/{InternationalScheduledPaymentId}": {
       "get": {
-        "tags": ["International Scheduled Payments"],
+        "tags": [
+          "International Scheduled Payments"
+        ],
         "summary": "Get International Scheduled Payments",
         "operationId": "GetInternationalScheduledPaymentsInternationalScheduledPaymentId",
         "parameters": [
@@ -2515,14 +2653,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-scheduled-payments/{InternationalScheduledPaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetInternationalScheduledPaymentsInternationalScheduledPaymentIdPaymentDetails",
         "parameters": [
@@ -2576,14 +2718,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-standing-order-consents": {
       "post": {
-        "tags": ["International Standing Orders"],
+        "tags": [
+          "International Standing Orders"
+        ],
         "summary": "Create International Standing Order Consents",
         "operationId": "CreateInternationalStandingOrderConsents",
         "parameters": [
@@ -2667,14 +2813,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-standing-order-consents/{ConsentId}": {
       "get": {
-        "tags": ["International Standing Orders"],
+        "tags": [
+          "International Standing Orders"
+        ],
         "summary": "Get International Standing Order Consents",
         "operationId": "GetInternationalStandingOrderConsentsConsentId",
         "parameters": [
@@ -2728,14 +2878,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-standing-orders": {
       "post": {
-        "tags": ["International Standing Orders"],
+        "tags": [
+          "International Standing Orders"
+        ],
         "summary": "Create International Standing Orders",
         "operationId": "CreateInternationalStandingOrders",
         "parameters": [
@@ -2819,14 +2973,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["payments"]
+            "PSUOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-standing-orders/{InternationalStandingOrderPaymentId}": {
       "get": {
-        "tags": ["International Standing Orders"],
+        "tags": [
+          "International Standing Orders"
+        ],
         "summary": "Get International Standing Orders",
         "operationId": "GetInternationalStandingOrdersInternationalStandingOrderPaymentId",
         "parameters": [
@@ -2880,14 +3038,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
     },
     "/international-standing-orders/{InternationalStandingOrderPaymentId}/payment-details": {
       "get": {
-        "tags": ["Payment Details"],
+        "tags": [
+          "Payment Details"
+        ],
         "summary": "Get Payment Details",
         "operationId": "GetInternationalStandingOrdersInternationalStandingOrderPaymentIdPaymentDetails",
         "parameters": [
@@ -2941,7 +3103,9 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["payments"]
+            "TPPOAuth2Security": [
+              "payments"
+            ]
           }
         ]
       }
@@ -3079,7 +3243,8 @@
         "required": true,
         "schema": {
           "type": "string",
-          "maxLength": 40
+          "maxLength": 40,
+          "pattern": "^(?!\\s)(.*)(\\S)$"
         }
       },
       "x-jws-signature": {
@@ -4796,6 +4961,17 @@
       }
     },
     "schemas": {
+      "NumberOfPayments": {
+        "description": "Number of the payments that will be made in completing this frequency sequence including any executed since the sequence start date.",
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 35
+      },
+      "Frequency_1": {
+        "description": "Individual Definitions:\nNotKnown - Not Known\nEvryDay - Every day\nEvryWorkgDay - Every working day\nIntrvlDay - An interval specified in number of calendar days (02 to 31)\nIntrvlWkDay - An interval specified in weeks (01 to 09), and the day within the week (01 to 07)\nWkInMnthDay - A monthly interval, specifying the week of the month (01 to 05) and day within the week (01 to 07)\nIntrvlMnthDay - An interval specified in months (between 01 to 06, 12, 24), specifying the day within the month (-05 to -01, 01 to 31)\nQtrDay - Quarterly (either ENGLISH, SCOTTISH, or RECEIVED)\nENGLISH = Paid on the 25th March, 24th June, 29th September and 25th December.\nSCOTTISH = Paid on the 2nd February, 15th May, 1st August and 11th November.\nRECEIVED = Paid on the 20th March, 19th June, 24th September and 20th December.\nIndividual Patterns:\nNotKnown (ScheduleCode)\nEvryDay (ScheduleCode)\nEvryWorkgDay (ScheduleCode)\nIntrvlDay:NoOfDay (ScheduleCode + NoOfDay)\nIntrvlWkDay:IntervalInWeeks:DayInWeek (ScheduleCode + IntervalInWeeks + DayInWeek)\nWkInMnthDay:WeekInMonth:DayInWeek (ScheduleCode + WeekInMonth + DayInWeek)\nIntrvlMnthDay:IntervalInMonths:DayInMonth (ScheduleCode + IntervalInMonths + DayInMonth)\nQtrDay: + either (ENGLISH, SCOTTISH or RECEIVED) ScheduleCode + QuarterDay\nThe regular expression for this element combines five smaller versions for each permitted pattern. To aid legibility - the components are presented individually here:\nNotKnown\nEvryDay\nEvryWorkgDay\nIntrvlDay:((0[2-9])|([1-2][0-9])|3[0-1])\nIntrvlWkDay:0[1-9]:0[1-7]\nWkInMnthDay:0[1-5]:0[1-7]\nIntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01])\nQtrDay:(ENGLISH|SCOTTISH|RECEIVED)\nFull Regular Expression:\n^(NotKnown)$|^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlDay:((0[2-9])|([1-2][0-9])|3[0-1]))$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$",
+        "type": "string",
+        "pattern": "^(NotKnown)$|^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlDay:((0[2-9])|([1-2][0-9])|3[0-1]))$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$"
+      },
       "OBUltimateCreditor1": {
         "description": "Ultimate party to which an amount of money is due.",
         "type": "object",
@@ -4853,10 +5029,19 @@
       "OBFrequency6": {
         "description": "Regularity with which credit transfer instructions are to be created and processed",
         "type": "object",
-        "required": ["Type"],
+        "required": [
+          "Type"
+        ],
         "properties": {
           "Type": {
-            "$ref": "#/components/schemas/OBFrequency6Code"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OBFrequency6Code"
+              },
+              {
+                "$ref": "#/components/schemas/Frequency_1"
+              }
+            ]
           },
           "CountPerPeriod": {
             "description": "Number of instructions to be created and processed during the specified period .Specifies a frequency in terms of a count per period within a specified frequency type. Note: should not be used alongside `PointInTime`",
@@ -5051,7 +5236,9 @@
             "format": "uri"
           }
         },
-        "required": ["Self"]
+        "required": [
+          "Self"
+        ]
       },
       "Meta": {
         "title": "MetaData",
@@ -5085,7 +5272,10 @@
       "OBActiveOrHistoricCurrencyAndAmount": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money associated with the charge type.",
         "properties": {
           "Amount": {
@@ -5113,7 +5303,16 @@
       "OBAddressType2Code": {
         "description": "Identifies the nature of the postal address. For a full set of codes see `OBAddressType2Code` [here](https://github.com/OpenBankingUK/External_Internal_CodeSets).",
         "type": "string",
-        "enum": ["BIZZ", "DLVY", "MLTO", "PBOX", "ADDR", "HOME", "CORR", "STAT"]
+        "enum": [
+          "BIZZ",
+          "DLVY",
+          "MLTO",
+          "PBOX",
+          "ADDR",
+          "HOME",
+          "CORR",
+          "STAT"
+        ]
       },
       "OBBranchAndFinancialInstitutionIdentification6_0": {
         "type": "object",
@@ -5173,7 +5372,11 @@
             "$ref": "#/components/schemas/OBProxy1"
           }
         },
-        "required": ["SchemeName", "Identification", "Name"]
+        "required": [
+          "SchemeName",
+          "Identification",
+          "Name"
+        ]
       },
       "OBCashAccountDebtor4": {
         "type": "object",
@@ -5202,7 +5405,11 @@
       },
       "OBExternalMandateClassification1Code": {
         "type": "string",
-        "enum": ["FIXE", "USGB", "VARI"]
+        "enum": [
+          "FIXE",
+          "USGB",
+          "VARI"
+        ]
       },
       "OBError1": {
         "type": "object",
@@ -5227,7 +5434,9 @@
             "type": "string"
           }
         },
-        "required": ["ErrorCode"],
+        "required": [
+          "ErrorCode"
+        ],
         "additionalProperties": false,
         "minProperties": 1
       },
@@ -5264,7 +5473,9 @@
             "minItems": 1
           }
         },
-        "required": ["Errors"]
+        "required": [
+          "Errors"
+        ]
       },
       "OBInternalAccountIdentification4Code": {
         "description": "Name of the identification scheme, in a coded form as published in an external list. For a full list of values refer to `OBInternalAccountIdentification4Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
@@ -5283,7 +5494,14 @@
         "minLength": 1,
         "maxLength": 4,
         "description": "Specifies the type of creditor reference as published in an external creditor reference type code set. For more information see `ExternalCreditorReferenceType1Code` in *ISO_External_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
-        "enum": ["DISP", "FXDR", "PUOR", "RPIN", "RADM", "SCOR"]
+        "enum": [
+          "DISP",
+          "FXDR",
+          "PUOR",
+          "RPIN",
+          "RADM",
+          "SCOR"
+        ]
       },
       "ExternalDocumentType1Code": {
         "type": "string",
@@ -5312,7 +5530,9 @@
       "OBInternalFinancialInstitutionIdentification4Code": {
         "description": "Name of the identification scheme, in a coded form as published in an external list.",
         "type": "string",
-        "x-namespaced-enum": ["UK.OBIE.BICFI"]
+        "x-namespaced-enum": [
+          "UK.OBIE.BICFI"
+        ]
       },
       "OBInternalExtendedAccountType1Code": {
         "description": "Specifies the extended type of account.",
@@ -5356,7 +5576,9 @@
       "OBInternalPaymentChargeType1Code": {
         "description": "Charge type, in a coded form. For a full list of values refer to `OBInternalPaymentChargeType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "x-namespaced-enum": ["UK.OBIE.CHAPSOut"]
+        "x-namespaced-enum": [
+          "UK.OBIE.CHAPSOut"
+        ]
       },
       "ExternalPurpose1Code": {
         "type": "string",
@@ -5713,12 +5935,22 @@
           "MNTH",
           "QURT",
           "MIAN",
-          "WEEK"
+          "WEEK",
+          "WEEK",
+          "WODL",
+          "FOWK",
+          "TWMH",
+          "FOMH",
+          "FIMH",
+          "ALMH",
+          "NONE"
         ]
       },
       "OBMandateRelatedInformation1": {
         "type": "object",
-        "required": ["Frequency"],
+        "required": [
+          "Frequency"
+        ],
         "properties": {
           "MandateIdentification": {
             "$ref": "#/components/schemas/Identification_1"
@@ -5780,7 +6012,10 @@
       "OBProxy1": {
         "description": "Specifies an alternate assumed name for the identification of the account.",
         "type": "object",
-        "required": ["Identification", "Code"],
+        "required": [
+          "Identification",
+          "Code"
+        ],
         "properties": {
           "Identification": {
             "description": "Identification used to indicate the account identification under another specified name.",
@@ -6029,7 +6264,11 @@
           "DebitCreditReportingIndicator": {
             "type": "string",
             "description": "Identifies whether the regulatory reporting information applies to the debit side, to the credit side or to both debit and credit sides of the transaction.  For a full list of values reefer to `OBExternalRegulatoryReportingType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
-            "enum": ["CRED", "DEBT", "BOTH"]
+            "enum": [
+              "CRED",
+              "DEBT",
+              "BOTH"
+            ]
           },
           "Authority": {
             "$ref": "#/components/schemas/OBRegulatoryAuthority2"
@@ -6113,7 +6352,10 @@
             "type": "string",
             "maxLength": 40,
             "description": "Specifies a character string with a maximum length of 40 characters.\nUsage: This field indicates whether the PSU was subject to SCA performed by the TPP\nFor a full list of values refer to `OBInternalAppliedAuthenticationApproach1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
-            "enum": ["CA", "SCA"]
+            "enum": [
+              "CA",
+              "SCA"
+            ]
           },
           "ReferencePaymentOrderId": {
             "type": "string",
@@ -6187,12 +6429,18 @@
       "OBWriteDomestic2": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -6229,7 +6477,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -6243,7 +6494,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6291,7 +6545,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6348,17 +6606,25 @@
       "OBWriteDomesticConsent4": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Initiation"],
+            "required": [
+              "Initiation"
+            ],
             "properties": {
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP. For a full set of values refer to `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -6389,7 +6655,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -6403,7 +6672,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6451,7 +6723,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6501,13 +6777,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested. For a full set of values refer to `OBInternalAuthorisation1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -6529,7 +6810,10 @@
       "OBWriteDomesticConsentResponse5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -6556,7 +6840,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form. For a full list of values refer to `OBInternalConsentStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["AWAU", "RJCT", "AUTH", "COND"]
+                "enum": [
+                  "AWAU",
+                  "RJCT",
+                  "AUTH",
+                  "COND"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -6572,7 +6861,10 @@
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP. For a full list of values refer to `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -6595,7 +6887,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -6638,7 +6934,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -6652,7 +6951,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6700,7 +7002,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -6750,13 +7056,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested. For a full list of values refer to `OBInternalAuthorisation1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -6787,7 +7098,9 @@
       "OBWriteDomesticResponse5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -6861,13 +7174,19 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "description": "Unambiguous identification of the refund account to which a refund will be made as a result of the transaction.",
                 "properties": {
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -6895,7 +7214,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -6938,7 +7261,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -6952,7 +7278,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7000,7 +7329,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7050,13 +7383,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form. For a full list of values refer to `OBInternalStatus2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["AUTH", "AWAU", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -7094,12 +7433,18 @@
       "OBWriteDomesticScheduled2": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -7141,7 +7486,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -7155,7 +7503,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7181,7 +7532,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7238,22 +7593,33 @@
       "OBWriteDomesticScheduledConsent4": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Permission", "Initiation"],
+            "required": [
+              "Permission",
+              "Initiation"
+            ],
             "properties": {
               "Permission": {
                 "description": "Specifies the Open Banking service request types. For a full list of values see `OBInternalPermissions2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP. For a full list of values see `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -7289,7 +7655,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -7303,7 +7672,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7329,7 +7701,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7379,13 +7755,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested. For a full list of values refer to `OBInternalAuthorisation1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -7407,7 +7788,10 @@
       "OBWriteDomesticScheduledConsentResponse5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -7435,7 +7819,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form. For a full list of values see `OBInternalConsentStatus1Code` in *ISO_External_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["AUTH", "AWAU", "COND", "RJCT"]
+                "enum": [
+                  "AUTH",
+                  "AWAU",
+                  "COND",
+                  "RJCT"
+                ]
               },
               "StatusUpdateDateTime": {
                 "description": "Date and time at which the consent resource status was updated. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -7451,12 +7840,17 @@
               "Permission": {
                 "description": "Specifies the Open Banking service request types. For a full list of values see `OBInternalPermissions2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP. For a full list of values see `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -7479,7 +7873,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -7527,7 +7925,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -7541,7 +7942,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7567,7 +7971,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7617,13 +8025,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested. For a full list of values refer to `OBInternalAuthorisation1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -7654,7 +8067,9 @@
       "OBWriteDomesticScheduledResponse5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -7728,13 +8143,19 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "description": "Unambiguous identification of the refund account to which a refund will be made as a result of the transaction.",
                 "properties": {
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -7762,7 +8183,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -7810,7 +8235,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -7824,7 +8252,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7850,7 +8281,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -7900,13 +8335,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAU", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -7944,12 +8385,18 @@
       "OBWriteDomesticStandingOrder3": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -7970,10 +8417,16 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "FirstPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the first Standing Order",
                     "properties": {
                       "Amount": {
@@ -7987,7 +8440,10 @@
                   "RecurringPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the recurring Standing Order",
                     "properties": {
                       "Amount": {
@@ -8001,7 +8457,10 @@
                   "FinalPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the final Standing Order",
                     "properties": {
                       "Amount": {
@@ -8015,7 +8474,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -8041,7 +8503,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Identification assigned by an institution to identify an account. This identification is known by the account owner.",
                     "properties": {
                       "SchemeName": {
@@ -8095,22 +8561,33 @@
       "OBWriteDomesticStandingOrderConsent5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Permission", "Initiation"],
+            "required": [
+              "Permission",
+              "Initiation"
+            ],
             "properties": {
               "Permission": {
                 "description": "Specifies the Open Banking service request types. For a full list of values see `OBInternalPermissions2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP. For a full list of values see `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -8125,10 +8602,16 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "FirstPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the first Standing Order",
                     "properties": {
                       "Amount": {
@@ -8142,7 +8625,10 @@
                   "RecurringPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the recurring Standing Order",
                     "properties": {
                       "Amount": {
@@ -8156,7 +8642,10 @@
                   "FinalPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the final Standing Order",
                     "properties": {
                       "Amount": {
@@ -8170,7 +8659,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -8196,7 +8688,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Identification assigned by an institution to identify an account. This identification is known by the account owner.",
                     "properties": {
                       "SchemeName": {
@@ -8243,13 +8739,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested. For a full list of values refer to `OBInternalAuthorisation1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -8271,7 +8772,10 @@
       "OBWriteDomesticStandingOrderConsentResponse6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -8299,7 +8803,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form. For a full list of values see `OBInternalConsentStatus1Code` in *ISO_External_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["AUTH", "AWAU", "COND", "RJCT"]
+                "enum": [
+                  "AUTH",
+                  "AWAU",
+                  "COND",
+                  "RJCT"
+                ]
               },
               "StatusUpdateDateTime": {
                 "description": "Date and time at which the resource status was updated. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -8315,12 +8824,17 @@
               "Permission": {
                 "description": "Specifies the Open Banking service request types. For a full list of values see `OBInternalPermissions2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP.  For a full list of values see `OBInternalReadRefundAccount1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -8333,7 +8847,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -8360,10 +8878,16 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "FirstPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the first Standing Order",
                     "properties": {
                       "Amount": {
@@ -8377,7 +8901,10 @@
                   "RecurringPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the recurring Standing Order",
                     "properties": {
                       "Amount": {
@@ -8391,7 +8918,10 @@
                   "FinalPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the final Standing Order",
                     "properties": {
                       "Amount": {
@@ -8405,7 +8935,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -8431,7 +8964,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Identification assigned by an institution to identify an account. This identification is known by the account owner.",
                     "properties": {
                       "SchemeName": {
@@ -8478,13 +9015,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -8515,7 +9057,9 @@
       "OBWriteDomesticStandingOrderResponse6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -8574,13 +9118,19 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "description": "Unambiguous identification of the refund account to which a refund will be made as a result of the transaction.",
                 "properties": {
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -8608,7 +9158,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -8635,10 +9189,16 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "FirstPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the first Standing Order",
                     "properties": {
                       "Amount": {
@@ -8652,7 +9212,10 @@
                   "RecurringPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the recurring Standing Order",
                     "properties": {
                       "Amount": {
@@ -8666,7 +9229,10 @@
                   "FinalPaymentAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "The amount of the final Standing Order",
                     "properties": {
                       "Amount": {
@@ -8680,7 +9246,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -8706,7 +9275,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Identification assigned by an institution to identify an account. This identification is known by the account owner.",
                     "properties": {
                       "SchemeName": {
@@ -8753,13 +9326,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAU", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -8797,12 +9376,17 @@
       "OBWriteFile2": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -8813,7 +9397,10 @@
               "Initiation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["FileType", "FileHash"],
+                "required": [
+                  "FileType",
+                  "FileHash"
+                ],
                 "description": "The Initiation payload is sent by the initiating party to the ASPSP. It is used to request movement of funds using a payment file.",
                 "properties": {
                   "FileType": {
@@ -8878,7 +9465,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -8919,17 +9509,24 @@
       "OBWriteFileConsent3": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Initiation"],
+            "required": [
+              "Initiation"
+            ],
             "properties": {
               "Initiation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["FileType", "FileHash"],
+                "required": [
+                  "FileType",
+                  "FileHash"
+                ],
                 "description": "The Initiation payload is sent by the initiating party to the ASPSP. It is used to request movement of funds using a payment file.",
                 "properties": {
                   "FileType": {
@@ -8994,7 +9591,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9031,13 +9631,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -9056,7 +9661,9 @@
       "OBWriteFileConsentResponse4": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9083,7 +9690,13 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form.",
                 "type": "string",
-                "enum": ["AWAU", "AWUP", "RJCT", "AUTH", "COND"]
+                "enum": [
+                  "AWAU",
+                  "AWUP",
+                  "RJCT",
+                  "AUTH",
+                  "COND"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -9107,7 +9720,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -9124,7 +9741,10 @@
               "Initiation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["FileType", "FileHash"],
+                "required": [
+                  "FileType",
+                  "FileHash"
+                ],
                 "description": "The Initiation payload is sent by the initiating party to the ASPSP. It is used to request movement of funds using a payment file.",
                 "properties": {
                   "FileType": {
@@ -9189,7 +9809,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9226,13 +9849,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -9260,7 +9888,9 @@
       "OBWriteFileResponse3": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9294,7 +9924,11 @@
               "Status": {
                 "description": "Specifies the status of the payment order resource. See `ExternalPaymentTransactionStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets) for more information.",
                 "type": "string",
-                "enum": ["INFA", "INCO", "PDNG"]
+                "enum": [
+                  "INFA",
+                  "INCO",
+                  "PDNG"
+                ]
               },
               "StatusUpdateDateTime": {
                 "description": "Date and time at which the resource status was updated. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -9313,7 +9947,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -9330,7 +9968,10 @@
               "Initiation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["FileType", "FileHash"],
+                "required": [
+                  "FileType",
+                  "FileHash"
+                ],
                 "description": "The Initiation payload is sent by the initiating party to the ASPSP. It is used to request movement of funds using a payment file.",
                 "properties": {
                   "FileType": {
@@ -9373,7 +10014,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9432,13 +10076,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAF", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -9476,7 +10126,9 @@
       "OBWriteFundsConfirmationResponse1": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9485,7 +10137,10 @@
               "FundsAvailableResult": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["FundsAvailableDateTime", "FundsAvailable"],
+                "required": [
+                  "FundsAvailableDateTime",
+                  "FundsAvailable"
+                ],
                 "description": "Result of a funds availability check.",
                 "properties": {
                   "FundsAvailableDateTime": {
@@ -9515,12 +10170,18 @@
       "OBWriteInternational3": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -9558,7 +10219,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -9582,7 +10246,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -9596,7 +10263,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -9611,7 +10281,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -9624,7 +10298,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9691,7 +10368,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9745,17 +10426,25 @@
       "OBWriteInternationalConsent5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Initiation"],
+            "required": [
+              "Initiation"
+            ],
             "properties": {
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -9787,7 +10476,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -9811,7 +10503,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -9825,7 +10520,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -9840,7 +10538,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -9853,7 +10555,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9920,7 +10625,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -9967,13 +10676,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -9995,7 +10709,10 @@
       "OBWriteInternationalConsentResponse6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -10022,7 +10739,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form.",
                 "type": "string",
-                "enum": ["AWAU", "RJCT", "AUTH", "COND"]
+                "enum": [
+                  "AWAU",
+                  "RJCT",
+                  "AUTH",
+                  "COND"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -10038,7 +10760,10 @@
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -10061,7 +10786,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -10078,7 +10807,11 @@
               "ExchangeRateInformation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["UnitCurrency", "ExchangeRate", "RateType"],
+                "required": [
+                  "UnitCurrency",
+                  "ExchangeRate",
+                  "RateType"
+                ],
                 "description": "Further detailed information on the exchange rate that has been used in the payment transaction.",
                 "properties": {
                   "UnitCurrency": {
@@ -10093,7 +10826,11 @@
                   "RateType": {
                     "description": "Specifies the type used to complete the currency exchange.",
                     "type": "string",
-                    "enum": ["Actual", "Agreed", "Indicative"]
+                    "enum": [
+                      "Actual",
+                      "Agreed",
+                      "Indicative"
+                    ]
                   },
                   "ContractIdentification": {
                     "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -10138,7 +10875,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -10162,7 +10902,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -10176,7 +10919,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -10191,7 +10937,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -10204,7 +10954,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -10271,7 +11024,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -10318,13 +11075,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -10355,7 +11117,9 @@
       "OBWriteInternationalResponse5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -10428,7 +11192,9 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "properties": {
                   "Creditor": {
                     "type": "object",
@@ -10471,7 +11237,11 @@
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -10502,7 +11272,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -10519,7 +11293,11 @@
               "ExchangeRateInformation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["UnitCurrency", "ExchangeRate", "RateType"],
+                "required": [
+                  "UnitCurrency",
+                  "ExchangeRate",
+                  "RateType"
+                ],
                 "description": "Further detailed information on the exchange rate that has been used in the payment transaction.",
                 "properties": {
                   "UnitCurrency": {
@@ -10534,7 +11312,11 @@
                   "RateType": {
                     "description": "Specifies the type used to complete the currency exchange.",
                     "type": "string",
-                    "enum": ["Actual", "Agreed", "Indicative"]
+                    "enum": [
+                      "Actual",
+                      "Agreed",
+                      "Indicative"
+                    ]
                   },
                   "ContractIdentification": {
                     "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -10579,7 +11361,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -10603,7 +11388,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -10617,7 +11405,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -10632,7 +11423,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -10645,7 +11440,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -10712,7 +11510,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -10759,13 +11561,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAF", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -10803,12 +11611,18 @@
       "OBWriteInternationalScheduled3": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -10846,7 +11660,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -10875,7 +11692,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -10889,7 +11709,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -10904,7 +11727,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -10917,7 +11744,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -10984,7 +11814,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -11038,22 +11872,33 @@
       "OBWriteInternationalScheduledConsent5": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Permission", "Initiation"],
+            "required": [
+              "Permission",
+              "Initiation"
+            ],
             "properties": {
               "Permission": {
                 "description": "Specifies the Open Banking service request types.",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -11085,7 +11930,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -11114,7 +11962,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -11128,7 +11979,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -11143,7 +11997,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -11156,7 +12014,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -11223,7 +12084,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -11270,13 +12135,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -11298,7 +12168,10 @@
       "OBWriteInternationalScheduledConsentResponse6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -11326,7 +12199,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form.",
                 "type": "string",
-                "enum": ["AWAU", "RJCT", "AUTH", "COND"]
+                "enum": [
+                  "AWAU",
+                  "RJCT",
+                  "AUTH",
+                  "COND"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -11342,12 +12220,17 @@
               "Permission": {
                 "description": "Specifies the Open Banking service request types.",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -11370,7 +12253,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -11387,7 +12274,11 @@
               "ExchangeRateInformation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["UnitCurrency", "ExchangeRate", "RateType"],
+                "required": [
+                  "UnitCurrency",
+                  "ExchangeRate",
+                  "RateType"
+                ],
                 "description": "Further detailed information on the exchange rate that has been used in the payment transaction.",
                 "properties": {
                   "UnitCurrency": {
@@ -11402,7 +12293,11 @@
                   "RateType": {
                     "description": "Specifies the type used to complete the currency exchange.",
                     "type": "string",
-                    "enum": ["Actual", "Agreed", "Indicative"]
+                    "enum": [
+                      "Actual",
+                      "Agreed",
+                      "Indicative"
+                    ]
                   },
                   "ContractIdentification": {
                     "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -11447,7 +12342,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -11476,7 +12374,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -11490,7 +12391,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -11505,7 +12409,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -11518,7 +12426,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -11585,7 +12496,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -11632,13 +12547,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -11669,7 +12589,9 @@
       "OBWriteInternationalScheduledResponse6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -11742,7 +12664,9 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "properties": {
                   "Creditor": {
                     "type": "object",
@@ -11785,7 +12709,11 @@
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -11813,7 +12741,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -11830,7 +12762,11 @@
               "ExchangeRateInformation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["UnitCurrency", "ExchangeRate", "RateType"],
+                "required": [
+                  "UnitCurrency",
+                  "ExchangeRate",
+                  "RateType"
+                ],
                 "description": "Further detailed information on the exchange rate that has been used in the payment transaction.",
                 "properties": {
                   "UnitCurrency": {
@@ -11845,7 +12781,11 @@
                   "RateType": {
                     "description": "Specifies the type used to complete the currency exchange.",
                     "type": "string",
-                    "enum": ["Actual", "Agreed", "Indicative"]
+                    "enum": [
+                      "Actual",
+                      "Agreed",
+                      "Indicative"
+                    ]
                   },
                   "ContractIdentification": {
                     "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -11890,7 +12830,10 @@
                   "InstructionPriority": {
                     "description": "Indicator of the urgency or order of importance that the instructing party would like the instructed party to apply to the processing of the instruction.",
                     "type": "string",
-                    "enum": ["Normal", "Urgent"]
+                    "enum": [
+                      "Normal",
+                      "Urgent"
+                    ]
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -11919,7 +12862,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -11933,7 +12879,10 @@
                   "ExchangeRateInformation": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["UnitCurrency", "RateType"],
+                    "required": [
+                      "UnitCurrency",
+                      "RateType"
+                    ],
                     "description": "Provides details on the currency exchange rate and contract.",
                     "properties": {
                       "UnitCurrency": {
@@ -11948,7 +12897,11 @@
                       "RateType": {
                         "description": "Specifies the type used to complete the currency exchange.",
                         "type": "string",
-                        "enum": ["Actual", "Agreed", "Indicative"]
+                        "enum": [
+                          "Actual",
+                          "Agreed",
+                          "Indicative"
+                        ]
                       },
                       "ContractIdentification": {
                         "description": "Unique and unambiguous reference to the foreign exchange contract agreed between the initiating party/creditor and the debtor agent.",
@@ -11961,7 +12914,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Unambiguous identification of the account of the debtor to which a debit entry will be made as a result of the transaction.",
                     "properties": {
                       "SchemeName": {
@@ -12028,7 +12984,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Unambiguous identification of the account of the creditor to which a credit entry will be posted as a result of the payment transaction.",
                     "properties": {
                       "SchemeName": {
@@ -12075,13 +13035,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAU", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -12119,12 +13085,18 @@
       "OBWriteInternationalStandingOrder4": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["ConsentId", "Initiation"],
+            "required": [
+              "ConsentId",
+              "Initiation"
+            ],
             "properties": {
               "ConsentId": {
                 "description": "OB: Unique identification as assigned by the ASPSP to uniquely identify the consent resource.",
@@ -12145,6 +13117,9 @@
                 "properties": {
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
+                  },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -12168,7 +13143,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -12182,7 +13160,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -12252,7 +13233,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify the beneficiary account.",
                     "properties": {
                       "SchemeName": {
@@ -12306,22 +13291,33 @@
       "OBWriteInternationalStandingOrderConsent6": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["Permission", "Initiation"],
+            "required": [
+              "Permission",
+              "Initiation"
+            ],
             "properties": {
               "Permission": {
                 "description": "Specifies the Open Banking service request types.",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "Initiation": {
                 "type": "object",
@@ -12336,6 +13332,9 @@
                 "properties": {
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
+                  },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
                   },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
@@ -12359,7 +13358,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -12373,7 +13375,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -12443,7 +13448,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify the beneficiary account.",
                     "properties": {
                       "SchemeName": {
@@ -12490,13 +13499,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -12518,7 +13532,10 @@
       "OBWriteInternationalStandingOrderConsentResponse7": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -12546,7 +13563,12 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form.",
                 "type": "string",
-                "enum": ["AWAU", "RJCT", "AUTH", "COND"]
+                "enum": [
+                  "AWAU",
+                  "RJCT",
+                  "AUTH",
+                  "COND"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -12562,12 +13584,17 @@
               "Permission": {
                 "description": "Specifies the Open Banking service request types.",
                 "type": "string",
-                "enum": ["Create"]
+                "enum": [
+                  "Create"
+                ]
               },
               "ReadRefundAccount": {
                 "description": "Specifies to share the refund account details with PISP",
                 "type": "string",
-                "enum": ["No", "Yes"]
+                "enum": [
+                  "No",
+                  "Yes"
+                ]
               },
               "CutOffDateTime": {
                 "description": "Specified cut-off date and time for the payment consent. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -12580,7 +13607,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -12608,6 +13639,9 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
                     "type": "string",
@@ -12630,7 +13664,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -12644,7 +13681,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -12714,7 +13754,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify the beneficiary account.",
                     "properties": {
                       "SchemeName": {
@@ -12761,13 +13805,18 @@
               "Authorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["AuthorisationType"],
+                "required": [
+                  "AuthorisationType"
+                ],
                 "description": "The authorisation type request from the TPP.",
                 "properties": {
                   "AuthorisationType": {
                     "description": "Type of authorisation flow requested.",
                     "type": "string",
-                    "enum": ["Any", "Single"]
+                    "enum": [
+                      "Any",
+                      "Single"
+                    ]
                   },
                   "CompletionDateTime": {
                     "description": "Date and time at which the requested authorisation flow must be completed. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
@@ -12798,7 +13847,9 @@
       "OBWriteInternationalStandingOrderResponse7": {
         "type": "object",
         "additionalProperties": false,
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -12857,7 +13908,9 @@
               "Refund": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Account"],
+                "required": [
+                  "Account"
+                ],
                 "properties": {
                   "Creditor": {
                     "type": "object",
@@ -12900,7 +13953,11 @@
                   "Account": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify an account.",
                     "properties": {
                       "SchemeName": {
@@ -12928,7 +13985,11 @@
                   "type": "object",
                   "additionalProperties": false,
                   "description": "Set of elements used to provide details of a charge for the payment initiation.",
-                  "required": ["ChargeBearer", "Type", "Amount"],
+                  "required": [
+                    "ChargeBearer",
+                    "Type",
+                    "Amount"
+                  ],
                   "properties": {
                     "ChargeBearer": {
                       "$ref": "#/components/schemas/OBInternalChargeBearerType1Code"
@@ -12956,6 +14017,9 @@
                   "RemittanceInformation": {
                     "$ref": "#/components/schemas/OBRemittanceInformation2"
                   },
+                  "NumberOfPayments": {
+                    "$ref": "#/components/schemas/NumberOfPayments"
+                  },
                   "ExtendedPurpose": {
                     "description": "Specifies the purpose of an international payment, when there is no corresponding 4 character code available in the ISO20022 list of Purpose Codes.",
                     "type": "string",
@@ -12978,7 +14042,10 @@
                   "InstructedAmount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["Amount", "Currency"],
+                    "required": [
+                      "Amount",
+                      "Currency"
+                    ],
                     "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
                     "properties": {
                       "Amount": {
@@ -12992,7 +14059,10 @@
                   "DebtorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification"],
+                    "required": [
+                      "SchemeName",
+                      "Identification"
+                    ],
                     "description": "Provides the details to identify the debtor account.",
                     "properties": {
                       "SchemeName": {
@@ -13062,7 +14132,11 @@
                   "CreditorAccount": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["SchemeName", "Identification", "Name"],
+                    "required": [
+                      "SchemeName",
+                      "Identification",
+                      "Name"
+                    ],
                     "description": "Provides the details to identify the beneficiary account.",
                     "properties": {
                       "SchemeName": {
@@ -13109,13 +14183,19 @@
               "MultiAuthorisation": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["Status"],
+                "required": [
+                  "Status"
+                ],
                 "description": "The multiple authorisation flow response from the ASPSP.",
                 "properties": {
                   "Status": {
                     "description": "Specifies the status of the authorisation flow in code form.",
                     "type": "string",
-                    "enum": ["AUTH", "AWAU", "RJCT"]
+                    "enum": [
+                      "AUTH",
+                      "AWAF",
+                      "RJCT"
+                    ]
                   },
                   "NumberRequired": {
                     "description": "Number of authorisations required for payment order (total required at the start of the multi authorisation journey).",
@@ -13152,7 +14232,9 @@
       },
       "OBWritePaymentDetailsResponse1": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -13176,7 +14258,11 @@
       },
       "OBWritePaymentDetails1": {
         "type": "object",
-        "required": ["PaymentTransactionId", "Status", "StatusUpdateDateTime"],
+        "required": [
+          "PaymentTransactionId",
+          "Status",
+          "StatusUpdateDateTime"
+        ],
         "properties": {
           "PaymentTransactionId": {
             "type": "string",
@@ -13210,7 +14296,9 @@
           "StatusDetail": {
             "type": "object",
             "description": "Payment status details as per underlying Payment Rail.",
-            "required": ["Status"],
+            "required": [
+              "Status"
+            ],
             "properties": {
               "LocalInstrument": {
                 "$ref": "#/components/schemas/OBInternalLocalInstrument1Code"
