@@ -19,7 +19,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 # Release v1.9.3-beta-1 (10th March 2025)
 
-Beta release with support for v4 UPdate 4 swagger definitions.
+Beta release with support for v4 Update 4 swagger definitions.
 
 # Release v1.9.2 (10th February 2025)
 
