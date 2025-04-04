@@ -224,7 +224,8 @@ export default {
       const qrCodeUrl = new URL(this.getQrCodeGeneratorUrl());
       qrCodeUrl.searchParams.set('size', '400');
       qrCodeUrl.searchParams.set('url', shortUrl.toString());
-      this.qrCodeUrl = qrCodeUrl.toString();
+      //this.qrCodeUrl = qrCodeUrl.toString();
+      this.qrCodeUrl = "https://placehold.co/400x400/png"
 
       createPoller(
         async () => this.getCallbackPayload(nonce),
