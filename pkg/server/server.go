@@ -61,7 +61,7 @@ func NewServer(journey Journey, logger *logrus.Entry, version version.Checker) *
 	}))
 
 	server.Use(middleware.SecureWithConfig(middleware.SecureConfig{
-		ContentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' ws: wss:;`,
+		ContentSecurityPolicy: `default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' blob:; worker-src blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://fcs-consent-callback.openbanking.rocks; font-src 'self' data:; connect-src 'self' ws: wss: https://fcs-consent-callback.openbanking.rocks;`,
 	}))
 
 	server.Use(middleware.SecureWithConfig(middleware.SecureConfig{
