@@ -196,7 +196,7 @@ as follows:
 ]
 ```
 
-v4 PIS example for passing in a refernce for a single immediate payment
+v4 PIS example for passing in a reference for a single immediate payment
 
 ```json
 {
