@@ -3,7 +3,7 @@
 FCS allows testing applications that allows mobile interactions only and cannot redirect to localhost without tunneling
 software.
 
-To allow this OBIE provides a proxy that allows storing consent callback parameters.
+To allow this OBL provides a proxy that allows storing consent callback parameters. This field is added to the Discovery model and the redirect_url in the config must also be set to use the remote callback handler
 
 ## Configuration
 
@@ -22,7 +22,7 @@ Key elements of the discovery file are:
     "tokenAcquisition": "mobile",
     
     //Required for mobile app support
-    "consentCallbackUrl": "https://fcs-callback-proxy.openbanking.rocks",
+    "callbackProxyUrl": "https://fcs-consent-callback.openbanking.rocks",
     "discoveryItems": [
       {
         //...
@@ -32,4 +32,11 @@ Key elements of the discovery file are:
 }
 
 ```
+
+Redirect URL in the configuration parameters:
+
+```json5
+{
+"redirect_url": "https://fcs-consent-callback.openbanking.rocks/callback-handler"
+}
 
