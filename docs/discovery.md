@@ -196,6 +196,22 @@ as follows:
 ]
 ```
 
+v4 PIS example for passing in a refernce for a single immediate payment
+
+```json
+{
+      "method": "POST",
+      "path": "/domestic-payment-consents",
+      "conditionalProperties": [
+       {
+        "schema": "OBWriteDomesticConsent4Param",
+        "Name": "Reference",
+        "Path": "Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation"
+       }
+      ]
+     },
+```
+
 ## Resource IDs
 
 We've introduced a "resourceId" section to the discovery model which allows a tester to provide resource ids to be used when swagger/openapi calls are made.
