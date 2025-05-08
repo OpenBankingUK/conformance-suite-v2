@@ -12,7 +12,7 @@ The Functional Conformance Suite generates a set of tests that can be used to ve
 
 Currently, the suite supports the following standards:
 
-* [Open Banking UK](https://www.openbanking.org.uk/customers/what-is-open-banking/)- Read/Write Data API Specifications v3.0/3.1 (alpha)
+* [Open Banking UK](https://www.openbanking.org.uk/customers/what-is-open-banking/)- Read/Write Data API Specifications v3 and v4
 
 ## Discovery Templates
 
