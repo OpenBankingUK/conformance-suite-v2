@@ -314,7 +314,7 @@
           "url": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/vrp-profile.html",
           "version": "v4.0.0",
           "schemaVersion": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.0/dist/openapi/vrp-openapi.json",
-          "manifest": "file://manifests/ob_4.0_variable_recurring_payments_fca.json"
+          "manifest": "file://manifests/ob_4.0_variable_recurring_payments.json"
         },
         "openidConfigurationUri": "",
         "resourceBaseUri": "",
