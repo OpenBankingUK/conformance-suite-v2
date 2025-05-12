@@ -1,5 +1,9 @@
 # Release history
 
+# Release v1.9.3 (May 2025)
+
+This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/read-write-api-specs/releases/tag/v4.0-Update-4) and addresses various minor issues.
+
 # Release v1.7.6 (4th March 2024)
 
 The release is called **v1.7.6**, an update to add proxy support, package and environment upgrades, add changes to manifests.
