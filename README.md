@@ -17,20 +17,17 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Release Notes
 * * *
 
-# Release v1.9.3 (May 2025)
+# Release v1.9.3 (30th May 2025)
 
 This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/read-write-api-specs/releases/tag/v4.0-Update-4) and addresses various minor issues.
 
-# Release v1.9.2 (10th February 2025)
 
-The release is called **v1.9.2**, an update to add minor bugfixes, security updates and v4.0.0 KIs functional swagger updates.
-
-[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.2.md)
+[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.3.md)
 
 
 ---
 **Download**:
-`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.2"` |
+`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.3"` |
 [DockerHub](https://hub.docker.com/r/openbanking/conformance-suite) |
 [Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 ---
@@ -55,7 +52,7 @@ Pull and run the latest (stable) tagged Docker image:
 
 or
 
-    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.2"
+    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.3"
 
 [See Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 
