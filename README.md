@@ -17,16 +17,17 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Release Notes
 * * *
 
-# Release v1.9.2 (10th February 2025)
+# Release v1.9.3 (30th May 2025)
 
-The release is called **v1.9.2**, an update to add minor bugfixes, security updates and v4.0.0 KIs functional swagger updates.
+This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/read-write-api-specs/releases/tag/v4.0-Update-4) and addresses various minor issues.
 
-[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.2.md)
+
+[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.3.md)
 
 
 ---
 **Download**:
-`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.2"` |
+`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.3"` |
 [DockerHub](https://hub.docker.com/r/openbanking/conformance-suite) |
 [Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 ---
@@ -36,7 +37,7 @@ The release is called **v1.9.2**, an update to add minor bugfixes, security upda
 
 | Release       | Standard version  |
 | ------------- |:-----------------:|
-| v1.9.2        | v4.0.0            |
+| v1.9.3        | v4.0.0            |
 | v1.7.6        | v3.1.11           |
 | v1.7.0        | v3.1.10           |
 | v1.6.12       | v3.1.9            |
@@ -47,11 +48,11 @@ The release is called **v1.9.2**, an update to add minor bugfixes, security upda
 
 Pull and run the latest (stable) tagged Docker image:
 
-    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.2"
+    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.3"
 
 or
 
-    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.2"
+    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.3"
 
 [See Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 

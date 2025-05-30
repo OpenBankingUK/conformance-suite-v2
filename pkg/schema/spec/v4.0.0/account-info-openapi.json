@@ -17,7 +17,9 @@
   "paths": {
     "/account-access-consents": {
       "post": {
-        "tags": ["Account Access"],
+        "tags": [
+          "Account Access"
+        ],
         "summary": "Create Account Access Consents",
         "operationId": "CreateAccountAccessConsents",
         "parameters": [
@@ -89,14 +91,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["accounts"]
+            "TPPOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/account-access-consents/{ConsentId}": {
       "get": {
-        "tags": ["Account Access"],
+        "tags": [
+          "Account Access"
+        ],
         "summary": "Get Account Access Consents",
         "operationId": "GetAccountAccessConsentsConsentId",
         "parameters": [
@@ -147,12 +153,16 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["accounts"]
+            "TPPOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       },
       "delete": {
-        "tags": ["Account Access"],
+        "tags": [
+          "Account Access"
+        ],
         "summary": "Delete Account Access Consents",
         "operationId": "DeleteAccountAccessConsentsConsentId",
         "parameters": [
@@ -203,14 +213,18 @@
         },
         "security": [
           {
-            "TPPOAuth2Security": ["accounts"]
+            "TPPOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts": {
       "get": {
-        "tags": ["Accounts"],
+        "tags": [
+          "Accounts"
+        ],
         "summary": "Get Accounts",
         "operationId": "GetAccounts",
         "parameters": [
@@ -258,14 +272,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}": {
       "get": {
-        "tags": ["Accounts"],
+        "tags": [
+          "Accounts"
+        ],
         "summary": "Get Accounts",
         "operationId": "GetAccountsAccountId",
         "parameters": [
@@ -316,14 +334,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/balances": {
       "get": {
-        "tags": ["Balances"],
+        "tags": [
+          "Balances"
+        ],
         "summary": "Get Balances",
         "operationId": "GetAccountsAccountIdBalances",
         "parameters": [
@@ -374,14 +396,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/beneficiaries": {
       "get": {
-        "tags": ["Beneficiaries"],
+        "tags": [
+          "Beneficiaries"
+        ],
         "summary": "Get Beneficiaries",
         "operationId": "GetAccountsAccountIdBeneficiaries",
         "parameters": [
@@ -435,14 +461,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/direct-debits": {
       "get": {
-        "tags": ["Direct Debits"],
+        "tags": [
+          "Direct Debits"
+        ],
         "summary": "Get Direct Debits",
         "operationId": "GetAccountsAccountIdDirectDebits",
         "parameters": [
@@ -496,14 +526,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/offers": {
       "get": {
-        "tags": ["Offers"],
+        "tags": [
+          "Offers"
+        ],
         "summary": "Get Offers",
         "operationId": "GetAccountsAccountIdOffers",
         "parameters": [
@@ -557,14 +591,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/parties": {
       "get": {
-        "tags": ["Parties"],
+        "tags": [
+          "Parties"
+        ],
         "summary": "Get Parties",
         "operationId": "GetAccountsAccountIdParties",
         "parameters": [
@@ -618,14 +656,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/party": {
       "get": {
-        "tags": ["Parties"],
+        "tags": [
+          "Parties"
+        ],
         "summary": "Get Parties",
         "operationId": "GetAccountsAccountIdParty",
         "parameters": [
@@ -679,14 +721,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/product": {
       "get": {
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "Get Products",
         "operationId": "GetAccountsAccountIdProduct",
         "parameters": [
@@ -740,14 +786,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/scheduled-payments": {
       "get": {
-        "tags": ["Scheduled Payments"],
+        "tags": [
+          "Scheduled Payments"
+        ],
         "summary": "Get Scheduled Payments",
         "operationId": "GetAccountsAccountIdScheduledPayments",
         "parameters": [
@@ -801,14 +851,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/standing-orders": {
       "get": {
-        "tags": ["Standing Orders"],
+        "tags": [
+          "Standing Orders"
+        ],
         "summary": "Get Standing Orders",
         "operationId": "GetAccountsAccountIdStandingOrders",
         "parameters": [
@@ -862,14 +916,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/statements": {
       "get": {
-        "tags": ["Statements"],
+        "tags": [
+          "Statements"
+        ],
         "summary": "Get Statements",
         "operationId": "GetAccountsAccountIdStatements",
         "parameters": [
@@ -929,14 +987,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/statements/{StatementId}": {
       "get": {
-        "tags": ["Statements"],
+        "tags": [
+          "Statements"
+        ],
         "summary": "Get Statements",
         "operationId": "GetAccountsAccountIdStatementsStatementId",
         "parameters": [
@@ -993,14 +1055,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/statements/{StatementId}/file": {
       "get": {
-        "tags": ["Statements"],
+        "tags": [
+          "Statements"
+        ],
         "summary": "Get Statements",
         "operationId": "GetAccountsAccountIdStatementsStatementIdFile",
         "parameters": [
@@ -1057,14 +1123,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/statements/{StatementId}/transactions": {
       "get": {
-        "tags": ["Transactions"],
+        "tags": [
+          "Transactions"
+        ],
         "summary": "Get Transactions",
         "operationId": "GetAccountsAccountIdStatementsStatementIdTransactions",
         "parameters": [
@@ -1121,14 +1191,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/accounts/{AccountId}/transactions": {
       "get": {
-        "tags": ["Transactions"],
+        "tags": [
+          "Transactions"
+        ],
         "summary": "Get Transactions",
         "operationId": "GetAccountsAccountIdTransactions",
         "parameters": [
@@ -1185,14 +1259,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/balances": {
       "get": {
-        "tags": ["Balances"],
+        "tags": [
+          "Balances"
+        ],
         "summary": "Get Balances",
         "operationId": "GetBalances",
         "parameters": [
@@ -1243,14 +1321,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/beneficiaries": {
       "get": {
-        "tags": ["Beneficiaries"],
+        "tags": [
+          "Beneficiaries"
+        ],
         "summary": "Get Beneficiaries",
         "operationId": "GetBeneficiaries",
         "parameters": [
@@ -1301,14 +1383,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/direct-debits": {
       "get": {
-        "tags": ["Direct Debits"],
+        "tags": [
+          "Direct Debits"
+        ],
         "summary": "Get Direct Debits",
         "operationId": "GetDirectDebits",
         "parameters": [
@@ -1359,14 +1445,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/offers": {
       "get": {
-        "tags": ["Offers"],
+        "tags": [
+          "Offers"
+        ],
         "summary": "Get Offers",
         "operationId": "GetOffers",
         "parameters": [
@@ -1417,14 +1507,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/party": {
       "get": {
-        "tags": ["Parties"],
+        "tags": [
+          "Parties"
+        ],
         "summary": "Get Parties",
         "operationId": "GetParty",
         "parameters": [
@@ -1475,14 +1569,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/products": {
       "get": {
-        "tags": ["Products"],
+        "tags": [
+          "Products"
+        ],
         "summary": "Get Products",
         "operationId": "GetProducts",
         "parameters": [
@@ -1533,14 +1631,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/scheduled-payments": {
       "get": {
-        "tags": ["Scheduled Payments"],
+        "tags": [
+          "Scheduled Payments"
+        ],
         "summary": "Get Scheduled Payments",
         "operationId": "GetScheduledPayments",
         "parameters": [
@@ -1591,14 +1693,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/standing-orders": {
       "get": {
-        "tags": ["Standing Orders"],
+        "tags": [
+          "Standing Orders"
+        ],
         "summary": "Get Standing Orders",
         "operationId": "GetStandingOrders",
         "parameters": [
@@ -1649,14 +1755,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/statements": {
       "get": {
-        "tags": ["Statements"],
+        "tags": [
+          "Statements"
+        ],
         "summary": "Get Statements",
         "operationId": "GetStatements",
         "parameters": [
@@ -1713,14 +1823,18 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
     },
     "/transactions": {
       "get": {
-        "tags": ["Transactions"],
+        "tags": [
+          "Transactions"
+        ],
         "summary": "Get Transactions",
         "operationId": "GetTransactions",
         "parameters": [
@@ -1777,7 +1891,9 @@
         },
         "security": [
           {
-            "PSUOAuth2Security": ["accounts"]
+            "PSUOAuth2Security": [
+              "accounts"
+            ]
           }
         ]
       }
@@ -2942,7 +3058,14 @@
         "minLength": 1,
         "maxLength": 4,
         "description": "Specifies the type of creditor reference as published in an external creditor reference type code set. For more information see `ExternalCreditorReferenceType1Code` in *ISO_External_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
-        "enum": ["DISP", "FXDR", "PUOR", "RPIN", "RADM", "SCOR"]
+        "enum": [
+          "DISP",
+          "FXDR",
+          "PUOR",
+          "RPIN",
+          "RADM",
+          "SCOR"
+        ]
       },
       "ExternalDocumentType1Code": {
         "type": "string",
@@ -3137,10 +3260,19 @@
       "OBFrequency6": {
         "description": "Regularity with which credit transfer instructions are to be created and processed",
         "type": "object",
-        "required": ["Type"],
+        "required": [
+          "Type"
+        ],
         "properties": {
           "Type": {
-            "$ref": "#/components/schemas/OBFrequency6Code"
+            "oneOf": [
+              {
+                "$ref": "#/components/schemas/OBFrequency6Code"
+              },
+              {
+                "$ref": "#/components/schemas/Frequency_1"
+              }
+            ]
           },
           "CountPerPeriod": {
             "description": "Number of instructions to be created and processed during the specified period. Specifies a frequency in terms of a count per period within a specified frequency type. Note: should not be used alongside `PointInTime`",
@@ -3172,13 +3304,23 @@
           "MNTH",
           "QURT",
           "MIAN",
-          "WEEK"
+          "WEEK",
+          "WODL",
+          "FOWK",
+          "TWMH",
+          "FOMH",
+          "FIMH",
+          "ALMH",
+          "NONE"
         ]
       },
       "OBProxy1": {
         "description": "Specifies an alternate assumed name for the identification of the account.",
         "type": "object",
-        "required": ["Identification", "Code"],
+        "required": [
+          "Identification",
+          "Code"
+        ],
         "properties": {
           "Identification": {
             "description": "Identification used to indicate the account identification under another specified name.",
@@ -3481,7 +3623,9 @@
           }
         },
         "additionalProperties": false,
-        "required": ["Self"]
+        "required": [
+          "Self"
+        ]
       },
       "MandateIdentification": {
         "description": "Direct Debit reference. For AUDDIS service users provide Core Reference. For non AUDDIS service users provide Core reference if possible or last used reference.",
@@ -3574,7 +3718,9 @@
       "OBAccount6": {
         "type": "object",
         "description": "Unambiguous identification of the account to which credit and debit entries are made. The following fields are optional only for accounts that are switched:\n\n  * Data.Currency  \n  * Data.AccountCategory  \n  * Data.AccountTypeCode\n\nFor all other accounts, the fields must be populated by the ASPSP.",
-        "required": ["AccountId"],
+        "required": [
+          "AccountId"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -3614,7 +3760,10 @@
             "items": {
               "type": "object",
               "description": "Provides the details to identify an account.",
-              "required": ["SchemeName", "Identification"],
+              "required": [
+                "SchemeName",
+                "Identification"
+              ],
               "properties": {
                 "SchemeName": {
                   "$ref": "#/components/schemas/OBInternalAccountIdentification4Code"
@@ -3646,7 +3795,9 @@
       "OBAccount6Basic": {
         "type": "object",
         "description": "Unambiguous identification of the account to which credit and debit entries are made.",
-        "required": ["AccountId"],
+        "required": [
+          "AccountId"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -3687,7 +3838,10 @@
       "OBAccount6Detail": {
         "type": "object",
         "description": "Unambiguous identification of the account to which credit and debit entries are made.",
-        "required": ["AccountId", "Account"],
+        "required": [
+          "AccountId",
+          "Account"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -3727,7 +3881,10 @@
             "items": {
               "type": "object",
               "description": "Provides the details to identify an account.",
-              "required": ["SchemeName", "Identification"],
+              "required": [
+                "SchemeName",
+                "Identification"
+              ],
               "properties": {
                 "SchemeName": {
                   "$ref": "#/components/schemas/OBInternalAccountIdentification4Code"
@@ -3760,7 +3917,13 @@
         "description": "Specifies the status of account resource in code form. <br />\nFor a full list of enumeration values refer to `OBInternalAccountStatus1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "Enabled",
-        "enum": ["Deleted", "Disabled", "Enabled", "Pending", "ProForma"]
+        "enum": [
+          "Deleted",
+          "Disabled",
+          "Enabled",
+          "Pending",
+          "ProForma"
+        ]
       },
       "OBActiveCurrencyAndAmount_SimpleType": {
         "description": "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217.",
@@ -3770,7 +3933,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_0": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "The amount of the most recent direct debit collection.",
         "properties": {
           "Amount": {
@@ -3783,7 +3949,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_1": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.\nUsage: This amount has to be transported unchanged through the transaction chain.",
         "properties": {
           "Amount": {
@@ -3796,7 +3965,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_10": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Transaction charges to be paid by the charge bearer.",
         "properties": {
           "Amount": {
@@ -3809,7 +3981,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_11": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "The amount of the last (most recent) Standing Order instruction.",
         "properties": {
           "Amount": {
@@ -3822,7 +3997,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_2": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "The amount of the first Standing Order",
         "properties": {
           "Amount": {
@@ -3835,7 +4013,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_3": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "The amount of the next Standing Order.",
         "properties": {
           "Amount": {
@@ -3848,7 +4029,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_4": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "The amount of the final Standing Order",
         "properties": {
           "Amount": {
@@ -3861,7 +4045,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_5": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money associated with the statement benefit type.",
         "properties": {
           "Amount": {
@@ -3874,7 +4061,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_6": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money associated with the statement fee type.",
         "properties": {
           "Amount": {
@@ -3887,7 +4077,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_7": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money associated with the statement interest amount type.",
         "properties": {
           "Amount": {
@@ -3900,7 +4093,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_8": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money associated with the amount type.",
         "properties": {
           "Amount": {
@@ -3916,7 +4112,10 @@
       },
       "OBActiveOrHistoricCurrencyAndAmount_9": {
         "type": "object",
-        "required": ["Amount", "Currency"],
+        "required": [
+          "Amount",
+          "Currency"
+        ],
         "description": "Amount of money in the cash transaction entry.",
         "properties": {
           "Amount": {
@@ -3945,7 +4144,16 @@
         "description": "Identifies the nature of the postal address. <br /> For a full set of codes see `OBAddressType2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets).",
         "type": "string",
         "example": "BIZZ",
-        "enum": ["BIZZ", "DLVY", "MLTO", "PBOX", "ADDR", "HOME", "CORR", "STAT"]
+        "enum": [
+          "BIZZ",
+          "DLVY",
+          "MLTO",
+          "PBOX",
+          "ADDR",
+          "HOME",
+          "CORR",
+          "STAT"
+        ]
       },
       "OBBCAData1": {
         "type": "object",
@@ -3984,7 +4192,14 @@
                 "description": "The unit of period (days, weeks, months etc.) of the promotional length",
                 "title": "FeeFreeLengthPeriod",
                 "type": "string",
-                "enum": ["Day", "Half Year", "Month", "Quarter", "Week", "Year"]
+                "enum": [
+                  "Day",
+                  "Half Year",
+                  "Month",
+                  "Quarter",
+                  "Week",
+                  "Year"
+                ]
               },
               "Notes": {
                 "description": "Optional additional notes to supplement the Core product details",
@@ -4017,19 +4232,29 @@
                       "description": "The methodology of how credit interest is paid/applied. It can be:-\n\n1. Banded\nInterest rates are banded. i.e. Increasing rate on whole balance as balance increases.\n\n2. Tiered\nInterest rates are tiered. i.e. increasing rate for each tier as balance increases, but interest paid on tier fixed for that tier and not on whole balance.\n\n3. Whole\nThe same interest rate is applied irrespective of the BCA balance",
                       "title": "TierBandMethod",
                       "type": "string",
-                      "enum": ["Banded", "Tiered", "Whole"]
+                      "enum": [
+                        "Banded",
+                        "Tiered",
+                        "Whole"
+                      ]
                     },
                     "CalculationMethod": {
                       "description": "Methods of calculating interest",
                       "title": "CalculationMethod",
                       "type": "string",
-                      "enum": ["Compound", "SimpleInterest"]
+                      "enum": [
+                        "Compound",
+                        "SimpleInterest"
+                      ]
                     },
                     "Destination": {
                       "description": "Describes whether accrued interest is payable only to the BCA or to another bank account",
                       "title": "Destination",
                       "type": "string",
-                      "enum": ["PayAway", "SelfCredit"]
+                      "enum": [
+                        "PayAway",
+                        "SelfCredit"
+                      ]
                     },
                     "Notes": {
                       "description": "Optional additional notes to supplement the Tier Band Set details",
@@ -4103,13 +4328,20 @@
                             "description": "Amount on which Interest applied.",
                             "title": "DepositInterestAppliedCoverage",
                             "type": "string",
-                            "enum": ["Banded", "Tiered", "Whole"]
+                            "enum": [
+                              "Banded",
+                              "Tiered",
+                              "Whole"
+                            ]
                           },
                           "FixedVariableInterestRateType": {
                             "description": "Type of interest rate, Fixed or Variable",
                             "title": "FixedVariableInterestRateType",
                             "type": "string",
-                            "enum": ["Fixed", "Variable"]
+                            "enum": [
+                              "Fixed",
+                              "Variable"
+                            ]
                           },
                           "AER": {
                             "description": "The annual equivalent rate (AER) is interest that is calculated under the assumption that any interest paid is combined with the original balance and the next interest payment will be based on the slightly higher account balance. Overall, this means that interest can be compounded several times in a year depending on the number of times that interest payments are made. \nRead more: Annual Equivalent Rate (AER) http://www.investopedia.com/terms/a/aer.asp#ixzz4gfR7IO1A",
@@ -4121,7 +4353,10 @@
                             "description": "Interest rate types, other than AER, which financial institutions may use to describe the annual interest rate payable to the BCA.",
                             "title": "BankInterestRateType",
                             "type": "string",
-                            "enum": ["Gross", "Other"]
+                            "enum": [
+                              "Gross",
+                              "Other"
+                            ]
                           },
                           "BankInterestRate": {
                             "description": "Bank Interest for the BCA product",
@@ -4169,7 +4404,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           },
                           "OtherApplicationFrequency": {
                             "description": "Other application frequencies that are not available in the standard code list",
@@ -4200,7 +4438,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           },
                           "OtherCalculationFrequency": {
                             "description": "Other calculation frequency which is not available in the standard code set.",
@@ -4231,7 +4472,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           }
                         },
                         "required": [
@@ -4244,13 +4488,19 @@
                       "minItems": 1
                     }
                   },
-                  "required": ["TierBandMethod", "Destination", "TierBand"]
+                  "required": [
+                    "TierBandMethod",
+                    "Destination",
+                    "TierBand"
+                  ]
                 },
                 "minItems": 1
               }
             },
             "additionalProperties": false,
-            "required": ["TierBandSet"]
+            "required": [
+              "TierBandSet"
+            ]
           },
           "Overdraft": {
             "description": "Borrowing details",
@@ -4280,13 +4530,20 @@
                       "description": "The methodology of how overdraft is charged. It can be:\n'Whole'  Where the same charge/rate is applied to the entirety of the overdraft balance (where charges are applicable). \n'Tiered' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount tiers defined by the lending financial organisation\n'Banded' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount bands defined by a government organisation.",
                       "title": "TierBandMethod",
                       "type": "string",
-                      "enum": ["Banded", "Tiered", "Whole"]
+                      "enum": [
+                        "Banded",
+                        "Tiered",
+                        "Whole"
+                      ]
                     },
                     "OverdraftType": {
                       "description": "An overdraft can either be 'committed' which means that the facility cannot be withdrawn without reasonable notification before it's agreed end date, or 'on demand' which means that the financial institution can demand repayment at any point in time.",
                       "title": "OverdraftType",
                       "type": "string",
-                      "enum": ["Committed", "OnDemand"]
+                      "enum": [
+                        "Committed",
+                        "OnDemand"
+                      ]
                     },
                     "Identification": {
                       "description": "Unique and unambiguous identification of a  Tier Band for a overdraft product.",
@@ -4385,7 +4642,11 @@
                             "description": "Refers to which interest rate is applied when interests are tiered. For example, if an overdraft balance is £2k and the interest tiers are:- 0-£500 0.1%, 500-1000 0.2%, 1000-10000 0.5%, then the applicable interest rate could either be 0.5% of the entire balance (since the account balance sits in the top interest tier) or (0.1%*500)+(0.2%*500)+(0.5%*1000). In the 1st situation, we say the interest is applied to the ‘Whole’ of the account balance,  and in the 2nd that it is ‘Tiered’.",
                             "title": "OverdraftInterestChargingCoverage",
                             "type": "string",
-                            "enum": ["Banded", "Tiered", "Whole"]
+                            "enum": [
+                              "Banded",
+                              "Tiered",
+                              "Whole"
+                            ]
                           },
                           "BankGuaranteedIndicator": {
                             "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it’s part of a government scheme, or whether the rate may vary dependent on the applicant’s circumstances.",
@@ -4447,7 +4708,10 @@
                                         "description": "Min Max type",
                                         "title": "MinMaxType",
                                         "type": "string",
-                                        "enum": ["Minimum", "Maximum"]
+                                        "enum": [
+                                          "Minimum",
+                                          "Maximum"
+                                        ]
                                       },
                                       "FeeCapOccurrence": {
                                         "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it’s part of a government scheme, or whether the rate may vary dependent on the applicant’s circumstances.",
@@ -4516,11 +4780,17 @@
                                               "maxLength": 350
                                             }
                                           },
-                                          "required": ["Name", "Description"]
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ]
                                         }
                                       }
                                     },
-                                    "required": ["FeeType", "MinMaxType"]
+                                    "required": [
+                                      "FeeType",
+                                      "MinMaxType"
+                                    ]
                                   }
                                 },
                                 "OverdraftFeeChargeDetail": {
@@ -4582,7 +4852,10 @@
                                         "description": "Rate type for overdraft fee/charge (where it is charged in terms of a rate rather than an amount)",
                                         "title": "FeeRateType",
                                         "type": "string",
-                                        "enum": ["Gross", "Other"]
+                                        "enum": [
+                                          "Gross",
+                                          "Other"
+                                        ]
                                       },
                                       "ApplicationFrequency": {
                                         "description": "Frequency at which the overdraft charge is applied to the account",
@@ -4685,7 +4958,10 @@
                                               "description": "Min Max type",
                                               "title": "MinMaxType",
                                               "type": "string",
-                                              "enum": ["Minimum", "Maximum"]
+                                              "enum": [
+                                                "Minimum",
+                                                "Maximum"
+                                              ]
                                             },
                                             "FeeCapOccurrence": {
                                               "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it’s part of a government scheme, or whether the rate may vary dependent on the applicant’s circumstances.",
@@ -4761,7 +5037,10 @@
                                               }
                                             }
                                           },
-                                          "required": ["FeeType", "MinMaxType"]
+                                          "required": [
+                                            "FeeType",
+                                            "MinMaxType"
+                                          ]
                                         }
                                       },
                                       "OtherFeeType": {
@@ -4793,7 +5072,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherFeeRateType": {
                                         "description": "Other fee rate type code which is not available in the standard code set",
@@ -4824,7 +5106,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherApplicationFrequency": {
                                         "description": "Other application frequencies that are not available in the standard code list",
@@ -4855,7 +5140,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherCalculationFrequency": {
                                         "description": "Other calculation frequency which is not available in the standard code set.",
@@ -4886,7 +5174,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -4897,11 +5188,15 @@
                                   "minItems": 1
                                 }
                               },
-                              "required": ["OverdraftFeeChargeDetail"]
+                              "required": [
+                                "OverdraftFeeChargeDetail"
+                              ]
                             }
                           }
                         },
-                        "required": ["TierValueMin"]
+                        "required": [
+                          "TierValueMin"
+                        ]
                       },
                       "minItems": 1
                     },
@@ -4949,7 +5244,10 @@
                                   "description": "Min Max type",
                                   "title": "MinMaxType",
                                   "type": "string",
-                                  "enum": ["Minimum", "Maximum"]
+                                  "enum": [
+                                    "Minimum",
+                                    "Maximum"
+                                  ]
                                 },
                                 "FeeCapOccurrence": {
                                   "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it’s part of a government scheme, or whether the rate may vary dependent on the applicant’s circumstances.",
@@ -5018,11 +5316,17 @@
                                         "maxLength": 350
                                       }
                                     },
-                                    "required": ["Name", "Description"]
+                                    "required": [
+                                      "Name",
+                                      "Description"
+                                    ]
                                   }
                                 }
                               },
-                              "required": ["FeeType", "MinMaxType"]
+                              "required": [
+                                "FeeType",
+                                "MinMaxType"
+                              ]
                             }
                           },
                           "OverdraftFeeChargeDetail": {
@@ -5084,7 +5388,10 @@
                                   "description": "Rate type for overdraft fee/charge (where it is charged in terms of a rate rather than an amount)",
                                   "title": "FeeRateType",
                                   "type": "string",
-                                  "enum": ["Gross", "Other"]
+                                  "enum": [
+                                    "Gross",
+                                    "Other"
+                                  ]
                                 },
                                 "ApplicationFrequency": {
                                   "description": "Frequency at which the overdraft charge is applied to the account",
@@ -5187,7 +5494,10 @@
                                         "description": "Min Max type",
                                         "title": "MinMaxType",
                                         "type": "string",
-                                        "enum": ["Minimum", "Maximum"]
+                                        "enum": [
+                                          "Minimum",
+                                          "Maximum"
+                                        ]
                                       },
                                       "FeeCapOccurrence": {
                                         "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it’s part of a government scheme, or whether the rate may vary dependent on the applicant’s circumstances.",
@@ -5256,11 +5566,17 @@
                                               "maxLength": 350
                                             }
                                           },
-                                          "required": ["Name", "Description"]
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ]
                                         }
                                       }
                                     },
-                                    "required": ["FeeType", "MinMaxType"]
+                                    "required": [
+                                      "FeeType",
+                                      "MinMaxType"
+                                    ]
                                   }
                                 },
                                 "OtherFeeType": {
@@ -5292,7 +5608,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherFeeRateType": {
                                   "description": "Other fee rate type code which is not available in the standard code set",
@@ -5323,7 +5642,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherApplicationFrequency": {
                                   "description": "Other application frequencies that are not available in the standard code list",
@@ -5354,7 +5676,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherCalculationFrequency": {
                                   "description": "Other calculation frequency which is not available in the standard code set.",
@@ -5385,25 +5710,38 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 }
                               },
-                              "required": ["FeeType", "ApplicationFrequency"]
+                              "required": [
+                                "FeeType",
+                                "ApplicationFrequency"
+                              ]
                             },
                             "minItems": 1
                           }
                         },
-                        "required": ["OverdraftFeeChargeDetail"]
+                        "required": [
+                          "OverdraftFeeChargeDetail"
+                        ]
                       }
                     }
                   },
-                  "required": ["TierBandMethod", "OverdraftTierBand"]
+                  "required": [
+                    "TierBandMethod",
+                    "OverdraftTierBand"
+                  ]
                 },
                 "minItems": 1
               }
             },
             "additionalProperties": false,
-            "required": ["OverdraftTierBandSet"]
+            "required": [
+              "OverdraftTierBandSet"
+            ]
           },
           "OtherFeesCharges": {
             "description": "Contains details of fees and charges which are not associated with either Overdraft or features/benefits",
@@ -5417,7 +5755,11 @@
                   "description": "TariffType which defines the fee and charges.",
                   "title": "TariffType",
                   "type": "string",
-                  "enum": ["Electronic", "Mixed", "Other"]
+                  "enum": [
+                    "Electronic",
+                    "Mixed",
+                    "Other"
+                  ]
                 },
                 "TariffName": {
                   "description": "Name of the tariff",
@@ -5455,7 +5797,10 @@
                     }
                   },
                   "additionalProperties": false,
-                  "required": ["Name", "Description"]
+                  "required": [
+                    "Name",
+                    "Description"
+                  ]
                 },
                 "FeeChargeDetail": {
                   "description": "Other fees/charges details",
@@ -5469,7 +5814,10 @@
                         "description": "Categorisation of fees and charges into standard categories.",
                         "title": "FeeCategory",
                         "type": "string",
-                        "enum": ["Other", "Servicing"]
+                        "enum": [
+                          "Other",
+                          "Servicing"
+                        ]
                       },
                       "FeeType": {
                         "description": "Fee/Charge Type",
@@ -5507,7 +5855,10 @@
                         "description": "Rate type for Fee/Charge (where it is charged in terms of a rate rather than an amount)",
                         "title": "FeeRateType",
                         "type": "string",
-                        "enum": ["Gross", "Other"]
+                        "enum": [
+                          "Gross",
+                          "Other"
+                        ]
                       },
                       "ApplicationFrequency": {
                         "description": "How frequently the fee/charge is applied to the account",
@@ -5606,7 +5957,10 @@
                               "description": "Min Max type",
                               "title": "MinMaxType",
                               "type": "string",
-                              "enum": ["Minimum", "Maximum"]
+                              "enum": [
+                                "Minimum",
+                                "Maximum"
+                              ]
                             },
                             "FeeCapOccurrence": {
                               "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -5675,11 +6029,17 @@
                                     "maxLength": 350
                                   }
                                 },
-                                "required": ["Name", "Description"]
+                                "required": [
+                                  "Name",
+                                  "Description"
+                                ]
                               }
                             }
                           },
-                          "required": ["FeeType", "MinMaxType"]
+                          "required": [
+                            "FeeType",
+                            "MinMaxType"
+                          ]
                         }
                       },
                       "OtherFeeCategoryType": {
@@ -5710,7 +6070,10 @@
                           }
                         },
                         "additionalProperties": false,
-                        "required": ["Name", "Description"]
+                        "required": [
+                          "Name",
+                          "Description"
+                        ]
                       },
                       "OtherFeeType": {
                         "description": "Other Fee/charge type which is not available in the standard code set",
@@ -5729,7 +6092,10 @@
                             "description": "Categorisation of fees and charges into standard categories.",
                             "title": "FeeCategory",
                             "type": "string",
-                            "enum": ["Other", "Servicing"]
+                            "enum": [
+                              "Other",
+                              "Servicing"
+                            ]
                           },
                           "Name": {
                             "description": "Long name associated with the code",
@@ -5747,7 +6113,11 @@
                           }
                         },
                         "additionalProperties": false,
-                        "required": ["FeeCategory", "Name", "Description"]
+                        "required": [
+                          "FeeCategory",
+                          "Name",
+                          "Description"
+                        ]
                       },
                       "OtherFeeRateType": {
                         "description": "Other fee rate type which is not available in the standard code set",
@@ -5778,7 +6148,10 @@
                           }
                         },
                         "additionalProperties": false,
-                        "required": ["Name", "Description"]
+                        "required": [
+                          "Name",
+                          "Description"
+                        ]
                       },
                       "OtherApplicationFrequency": {
                         "description": "Other application frequencies not covered in the standard code list",
@@ -5809,7 +6182,10 @@
                           }
                         },
                         "additionalProperties": false,
-                        "required": ["Name", "Description"]
+                        "required": [
+                          "Name",
+                          "Description"
+                        ]
                       },
                       "OtherCalculationFrequency": {
                         "description": "Other calculation frequency which is not available in standard code set.",
@@ -5840,7 +6216,10 @@
                           }
                         },
                         "additionalProperties": false,
-                        "required": ["Name", "Description"]
+                        "required": [
+                          "Name",
+                          "Description"
+                        ]
                       },
                       "FeeApplicableRange": {
                         "description": "Range or amounts or rates for which the fee/charge applies",
@@ -5915,7 +6294,10 @@
                         "description": "Min Max type",
                         "title": "MinMaxType",
                         "type": "string",
-                        "enum": ["Minimum", "Maximum"]
+                        "enum": [
+                          "Minimum",
+                          "Maximum"
+                        ]
                       },
                       "FeeCapOccurrence": {
                         "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -5984,15 +6366,23 @@
                               "maxLength": 350
                             }
                           },
-                          "required": ["Name", "Description"]
+                          "required": [
+                            "Name",
+                            "Description"
+                          ]
                         }
                       }
                     },
-                    "required": ["FeeType", "MinMaxType"]
+                    "required": [
+                      "FeeType",
+                      "MinMaxType"
+                    ]
                   }
                 }
               },
-              "required": ["FeeChargeDetail"]
+              "required": [
+                "FeeChargeDetail"
+              ]
             }
           }
         },
@@ -6017,7 +6407,10 @@
       },
       "OBBankTransactionCodeStructure1": {
         "type": "object",
-        "required": ["Code", "SubCode"],
+        "required": [
+          "Code",
+          "SubCode"
+        ],
         "description": "Set of elements used to fully identify the type of underlying transaction resulting in an entry.",
         "properties": {
           "Code": {
@@ -6104,11 +6497,16 @@
           }
         },
         "additionalProperties": false,
-        "required": ["CreditorAccount"]
+        "required": [
+          "CreditorAccount"
+        ]
       },
       "OBBranchAndFinancialInstitutionIdentification5_0": {
         "type": "object",
-        "required": ["SchemeName", "Identification"],
+        "required": [
+          "SchemeName",
+          "Identification"
+        ],
         "description": "Party that manages the account on behalf of the account owner, that is manages the registration and booking of entries on the account, calculates balances on the account and provides information about the account.",
         "properties": {
           "SchemeName": {
@@ -6124,7 +6522,10 @@
       },
       "OBBranchAndFinancialInstitutionIdentification5_1": {
         "type": "object",
-        "required": ["SchemeName", "Identification"],
+        "required": [
+          "SchemeName",
+          "Identification"
+        ],
         "description": "Party that manages the account on behalf of the account owner, that is manages the registration and booking of entries on the account, calculates balances on the account and provides information about the account.\nThis is the servicer of the beneficiary account.",
         "properties": {
           "SchemeName": {
@@ -6209,7 +6610,10 @@
       },
       "OBCashAccount5_0": {
         "type": "object",
-        "required": ["SchemeName", "Identification"],
+        "required": [
+          "SchemeName",
+          "Identification"
+        ],
         "description": "Provides the details to identify the beneficiary account.",
         "properties": {
           "SchemeName": {
@@ -6231,7 +6635,10 @@
       },
       "OBCashAccount5_1": {
         "type": "object",
-        "required": ["SchemeName", "Identification"],
+        "required": [
+          "SchemeName",
+          "Identification"
+        ],
         "description": "Provides the details to identify the beneficiary account.",
         "properties": {
           "SchemeName": {
@@ -6350,33 +6757,55 @@
         "description": "Type of mandate instruction. For a full list of values see `OBExternalClassification1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "FIXE",
-        "enum": ["FIXE", "USGB", "VARI"]
+        "enum": [
+          "FIXE",
+          "USGB",
+          "VARI"
+        ]
       },
       "OBCommunicationMethod": {
         "description": "For a full list of enumeration values see `OBExternalCommunicationMethod2Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_internal_CodeSets) ",
         "type": "string",
-        "enum": ["EMAL", "FAXI", "FILE", "ONLI", "POST"]
+        "enum": [
+          "EMAL",
+          "FAXI",
+          "FILE",
+          "ONLI",
+          "POST"
+        ]
       },
       "OBCreditDebitCode_0": {
         "description": "Indicates whether the amount is a credit or a debit. For a full list of values see `OBInternalCreditDebitCode` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)<br />\nUsage: A zero amount is considered to be a credit amount.",
         "type": "string",
         "example": "Credit",
-        "enum": ["Credit", "Debit"]
+        "enum": [
+          "Credit",
+          "Debit"
+        ]
       },
       "OBCreditDebitCode_1": {
         "description": "Indicates whether the transaction is a credit or a debit entry. <br />\n<br />\nFor a full list of enumeration values refer to `OBInternalCreditDebitCode` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "enum": ["Credit", "Debit"]
+        "enum": [
+          "Credit",
+          "Debit"
+        ]
       },
       "OBCreditDebitCode_2": {
         "description": "Indicates whether the balance is a credit or a debit balance. \nUsage: A zero balance is considered to be a credit balance.\n<br />\nFor a full list of enumeration values refer to `OBInternalCreditDebitCode` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "Credit",
-        "enum": ["Credit", "Debit"]
+        "enum": [
+          "Credit",
+          "Debit"
+        ]
       },
       "OBCurrencyExchange5": {
         "type": "object",
-        "required": ["SourceCurrency", "ExchangeRate"],
+        "required": [
+          "SourceCurrency",
+          "ExchangeRate"
+        ],
         "description": "Set of elements used to provide details on the currency exchange.",
         "properties": {
           "SourceCurrency": {
@@ -6411,7 +6840,10 @@
           },
           "InstructedAmount": {
             "type": "object",
-            "required": ["Amount", "Currency"],
+            "required": [
+              "Amount",
+              "Currency"
+            ],
             "description": "Amount of money to be moved between the debtor and creditor, before deduction of charges, expressed in the currency as ordered by the initiating party.",
             "properties": {
               "Amount": {
@@ -6427,12 +6859,21 @@
       "ExternalEntryStatus1Code": {
         "description": "Status of a transaction entry on the books of the account servicer. <br />\nFor a full list of enumeration values refer to `ExternalEntryStatus1Code` in *ISO_External_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "enum": ["BOOK", "FUTR", "INFO", "PDNG"]
+        "enum": [
+          "BOOK",
+          "FUTR",
+          "INFO",
+          "PDNG",
+          "RJCT"
+        ]
       },
       "OBInternalTransactionMutability1Code": {
         "description": "Specifies the Mutability of the Transaction record. <br />\nFor a full list of enumeration values refer to `OBInternalTransactionMutability1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "enum": ["Mutable", "Immutable"]
+        "enum": [
+          "Mutable",
+          "Immutable"
+        ]
       },
       "OBError1": {
         "type": "object",
@@ -6457,7 +6898,9 @@
             "type": "string"
           }
         },
-        "required": ["ErrorCode"],
+        "required": [
+          "ErrorCode"
+        ],
         "additionalProperties": false,
         "minProperties": 1
       },
@@ -6493,7 +6936,9 @@
             "minItems": 1
           }
         },
-        "required": ["Errors"],
+        "required": [
+          "Errors"
+        ],
         "additionalProperties": false
       },
       "OBInternalAccountIdentification4Code": {
@@ -6562,23 +7007,34 @@
       "OBInternalAccountType1Code": {
         "description": "Specifies the type of account (personal or business). <br /> For a full list of enumeration values refer to 'OBInternalAccountType1Code' in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "enum": ["Business", "Personal"]
+        "enum": [
+          "Business",
+          "Personal"
+        ]
       },
       "OBExternalBalanceSubType1Code": {
         "description": "Amount sub type, in a coded form. Default if not specified is BCUR of the account.",
         "type": "string",
-        "enum": ["BCUR", "LCUR"]
+        "enum": [
+          "BCUR",
+          "LCUR"
+        ]
       },
       "OBInternalFinancialInstitutionIdentification4Code": {
         "description": "Name of the identification scheme, in a coded form as published in an external list.<br/> For a full list of enumeration values refer to `OBInternalFinancialInstitutionIdentification4Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "UK.OBIE.BICFI",
-        "x-namespaced-enum": ["UK.OBIE.BICFI"]
+        "x-namespaced-enum": [
+          "UK.OBIE.BICFI"
+        ]
       },
       "OBInternalSwitchStatusCode": {
         "description": "Specifies the switch status for the account, in a coded form. <br /> For a full list of enumeration values refer to `OBInternalSwitchStatusCode` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "x-namespaced-enum": ["UK.CASS.NotSwitched", "UK.CASS.SwitchCompleted"]
+        "x-namespaced-enum": [
+          "UK.CASS.NotSwitched",
+          "UK.CASS.SwitchCompleted"
+        ]
       },
       "OBInternalLegalStructureType1Code": {
         "description": "Legal standing of the party. For a full list refer to `OBInternalLegalStructureType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
@@ -6603,7 +7059,11 @@
         "description": "Party type, in a coded form. For a full list see `OBInternalPartyType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "Joint",
-        "enum": ["Delegate", "Joint", "Sole"]
+        "enum": [
+          "Delegate",
+          "Joint",
+          "Sole"
+        ]
       },
       "OBExternalPurpose1Code": {
         "type": "string",
@@ -6945,12 +7405,20 @@
         "description": "Specifies the scheduled payment date type requested. For a full list of enumeration values refer to `OBInternalScheduleType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "Arrival",
-        "enum": ["Arrival", "Execution"]
+        "enum": [
+          "Arrival",
+          "Execution"
+        ]
       },
       "ExternalMandateStatus1Code": {
         "description": "Specifies the status of the standing order in code form. For a full list of enumeration values refer to 'ExternalMandateStatus1Code' in *ISO_External_Codeset* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
-        "enum": ["ACTV", "CANC", "EXPI", "SUSP"],
+        "enum": [
+          "ACTV",
+          "CANC",
+          "EXPI",
+          "SUSP"
+        ],
         "example": "ACTV"
       },
       "OBInternalStatementAmountType1Code": {
@@ -7027,7 +7495,10 @@
         "description": "Description that may be available for the statement fee rate type. For a full list of values see `OBInternalStatementFeeRateType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "type": "string",
         "example": "UK.OBIE.AER",
-        "x-namespaced-enum": ["UK.OBIE.AER", "UK.OBIE.EAR"]
+        "x-namespaced-enum": [
+          "UK.OBIE.AER",
+          "UK.OBIE.EAR"
+        ]
       },
       "OBInternalStatementFeeType1Code": {
         "description": "Fee type, in a coded form. For a full list of values see `OBInternalStatementFeeType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
@@ -7151,12 +7622,27 @@
       "OBFrequencyPeriodType": {
         "description": "Individual Definitions:\n ADHO - Adhoc \n YEAR - Annual\nDAIL - Daily\nINDA - Intra Day\nMNTH - Monthly\nQURT - Quarterly\nWEEK - Weekly ",
         "type": "string",
-        "enum": ["ADHO", "YEAR", "DAIL", "INDA", "MNTH", "QURT", "MIAN", "WEEK"]
+        "enum": [
+          "ADHO",
+          "YEAR",
+          "DAIL",
+          "INDA",
+          "MNTH",
+          "QURT",
+          "MIAN",
+          "WEEK"
+        ]
       },
       "OBFileFormat": {
         "description": "For a full list of enumeration values refer to `ExternalDocumentFormat1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_internal_CodeSets)",
         "type": "string",
-        "enum": ["DPDF", "DXML", "SDSH", "WORD", "XSLT"]
+        "enum": [
+          "DPDF",
+          "DXML",
+          "SDSH",
+          "WORD",
+          "XSLT"
+        ]
       },
       "OBExternalStatusReason1Code": {
         "description": "Low level textual error code, for all enum values see `ExternalReason1Code` [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
@@ -7168,7 +7654,9 @@
       "OBMandateRelatedInformation1": {
         "type": "object",
         "description": "Provides further details of the mandate signed between the creditor and the debtor.",
-        "required": ["Frequency"],
+        "required": [
+          "Frequency"
+        ],
         "properties": {
           "MandateIdentification": {
             "description": "Unique identification, as assigned by the creditor, to unambiguously identify the mandate.",
@@ -7301,19 +7789,28 @@
                       "description": "The methodology of how credit interest is charged. It can be:-\n\n1. Banded\nInterest rates are banded. i.e. Increasing rate on whole balance as balance increases.\n\n2. Tiered\nInterest rates are tiered. i.e. increasing rate for each tier as balance increases, but interest paid on tier fixed for that tier and not on whole balance.\n\n3. Whole\nThe same interest rate is applied irrespective of the PCA balance",
                       "title": "TierBandMethod",
                       "type": "string",
-                      "enum": ["Tiered", "Whole"]
+                      "enum": [
+                        "Tiered",
+                        "Whole"
+                      ]
                     },
                     "CalculationMethod": {
                       "description": "Methods of calculating interest",
                       "title": "CalculationMethod",
                       "type": "string",
-                      "enum": ["Compound", "SimpleInterest"]
+                      "enum": [
+                        "Compound",
+                        "SimpleInterest"
+                      ]
                     },
                     "Destination": {
                       "description": "Describes whether accrued interest is payable only to the PCA or to another bank account",
                       "title": "Destination",
                       "type": "string",
-                      "enum": ["PayAway", "SelfCredit"]
+                      "enum": [
+                        "PayAway",
+                        "SelfCredit"
+                      ]
                     },
                     "Notes": {
                       "description": "Optional additional notes to supplement the Tier Band Set details",
@@ -7389,13 +7886,19 @@
                             "description": "Amount on which Interest applied.",
                             "title": "DepositInterestAppliedCoverage",
                             "type": "string",
-                            "enum": ["Tiered", "Whole"]
+                            "enum": [
+                              "Tiered",
+                              "Whole"
+                            ]
                           },
                           "FixedVariableInterestRateType": {
                             "description": "Type of interest rate, Fixed or Variable",
                             "title": "FixedVariableInterestRateType",
                             "type": "string",
-                            "enum": ["Fixed", "Variable"]
+                            "enum": [
+                              "Fixed",
+                              "Variable"
+                            ]
                           },
                           "AER": {
                             "description": "The annual equivalent rate (AER) is interest that is calculated under the assumption that any interest paid is combined with the original balance and the next interest payment will be based on the slightly higher account balance. Overall, this means that interest can be compounded several times in a year depending on the number of times that interest payments are made. \nRead more: Annual Equivalent Rate (AER) http://www.investopedia.com/terms/a/aer.asp#ixzz4gfR7IO1A",
@@ -7407,7 +7910,12 @@
                             "description": "Interest rate types, other than AER, which financial institutions may use to describe the annual interest rate payable to the PCA.",
                             "title": "BankInterestRateType",
                             "type": "string",
-                            "enum": ["LinkedBaseRate", "Gross", "Net", "Other"]
+                            "enum": [
+                              "LinkedBaseRate",
+                              "Gross",
+                              "Net",
+                              "Other"
+                            ]
                           },
                           "BankInterestRate": {
                             "description": "Bank Interest for the PCA product",
@@ -7455,7 +7963,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           },
                           "OtherApplicationFrequency": {
                             "description": "Other application frequencies that are not available in the standard code list",
@@ -7486,7 +7997,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           },
                           "OtherCalculationFrequency": {
                             "description": "Other calculation frequency which is not available in the standard code set.",
@@ -7517,7 +8031,10 @@
                               }
                             },
                             "additionalProperties": false,
-                            "required": ["Name", "Description"]
+                            "required": [
+                              "Name",
+                              "Description"
+                            ]
                           }
                         },
                         "required": [
@@ -7530,13 +8047,18 @@
                       "minItems": 1
                     }
                   },
-                  "required": ["TierBandMethod", "TierBand"]
+                  "required": [
+                    "TierBandMethod",
+                    "TierBand"
+                  ]
                 },
                 "minItems": 1
               }
             },
             "additionalProperties": false,
-            "required": ["TierBandSet"]
+            "required": [
+              "TierBandSet"
+            ]
           },
           "Overdraft": {
             "description": "Details about Overdraft rates, fees & charges",
@@ -7566,13 +8088,21 @@
                       "description": "The methodology of how overdraft is charged. It can be:\n'Whole'  Where the same charge/rate is applied to the entirety of the overdraft balance (where charges are applicable). \n'Tiered' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount tiers defined by the lending financial organisation\n'Banded' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount bands defined by a government organisation.",
                       "title": "TierBandMethod",
                       "type": "string",
-                      "enum": ["Tiered", "Whole", "Banded"]
+                      "enum": [
+                        "Tiered",
+                        "Whole",
+                        "Banded"
+                      ]
                     },
                     "OverdraftType": {
                       "description": "An overdraft can either be 'committed' which means that the facility cannot be withdrawn without reasonable notification before it's agreed end date, or 'on demand' which means that the financial institution can demand repayment at any point in time.",
                       "title": "OverdraftType",
                       "type": "string",
-                      "enum": ["Committed", "OnDemand", "Other"]
+                      "enum": [
+                        "Committed",
+                        "OnDemand",
+                        "Other"
+                      ]
                     },
                     "Identification": {
                       "description": "Unique and unambiguous identification of a  Tier Band for a overdraft product.",
@@ -7634,7 +8164,10 @@
                             "description": "Interest charged on whole amount or tiered/banded",
                             "title": "OverdraftInterestChargingCoverage",
                             "type": "string",
-                            "enum": ["Tiered", "Whole"]
+                            "enum": [
+                              "Tiered",
+                              "Whole"
+                            ]
                           },
                           "BankGuaranteedIndicator": {
                             "description": "Indicates that a bank provides the overdraft limit up to TierValueMIn to all customers automatically",
@@ -7713,7 +8246,10 @@
                                         "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                                         "title": "MinMaxType",
                                         "type": "string",
-                                        "enum": ["Minimum", "Maximum"]
+                                        "enum": [
+                                          "Minimum",
+                                          "Maximum"
+                                        ]
                                       },
                                       "FeeCapOccurrence": {
                                         "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -7783,11 +8319,17 @@
                                               "maxLength": 350
                                             }
                                           },
-                                          "required": ["Name", "Description"]
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ]
                                         }
                                       }
                                     },
-                                    "required": ["FeeType", "MinMaxType"]
+                                    "required": [
+                                      "FeeType",
+                                      "MinMaxType"
+                                    ]
                                   }
                                 },
                                 "OverdraftFeeChargeDetail": {
@@ -7945,7 +8487,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherFeeRateType": {
                                         "description": "Other fee rate type code which is not available in the standard code set",
@@ -7976,7 +8521,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherApplicationFrequency": {
                                         "description": "Other application frequencies that are not available in the standard code list",
@@ -8007,7 +8555,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OtherCalculationFrequency": {
                                         "description": "Other calculation frequency which is not available in the standard code set.",
@@ -8038,7 +8589,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       },
                                       "OverdraftFeeChargeCap": {
                                         "description": "Details about any caps (maximum charges) that apply to a particular fee/charge",
@@ -8078,7 +8632,10 @@
                                             "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                                             "title": "MinMaxType",
                                             "type": "string",
-                                            "enum": ["Minimum", "Maximum"]
+                                            "enum": [
+                                              "Minimum",
+                                              "Maximum"
+                                            ]
                                           },
                                           "FeeCapOccurrence": {
                                             "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -8156,7 +8713,10 @@
                                           }
                                         },
                                         "additionalProperties": false,
-                                        "required": ["FeeType", "MinMaxType"]
+                                        "required": [
+                                          "FeeType",
+                                          "MinMaxType"
+                                        ]
                                       }
                                     },
                                     "required": [
@@ -8167,11 +8727,15 @@
                                   "minItems": 1
                                 }
                               },
-                              "required": ["OverdraftFeeChargeDetail"]
+                              "required": [
+                                "OverdraftFeeChargeDetail"
+                              ]
                             }
                           }
                         },
-                        "required": ["TierValueMin"]
+                        "required": [
+                          "TierValueMin"
+                        ]
                       },
                       "minItems": 1
                     },
@@ -8224,7 +8788,10 @@
                                   "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                                   "title": "MinMaxType",
                                   "type": "string",
-                                  "enum": ["Minimum", "Maximum"]
+                                  "enum": [
+                                    "Minimum",
+                                    "Maximum"
+                                  ]
                                 },
                                 "FeeCapOccurrence": {
                                   "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -8294,11 +8861,17 @@
                                         "maxLength": 350
                                       }
                                     },
-                                    "required": ["Name", "Description"]
+                                    "required": [
+                                      "Name",
+                                      "Description"
+                                    ]
                                   }
                                 }
                               },
-                              "required": ["FeeType", "MinMaxType"]
+                              "required": [
+                                "FeeType",
+                                "MinMaxType"
+                              ]
                             }
                           },
                           "OverdraftFeeChargeDetail": {
@@ -8456,7 +9029,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherFeeRateType": {
                                   "description": "Other fee rate type code which is not available in the standard code set",
@@ -8487,7 +9063,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherApplicationFrequency": {
                                   "description": "Other application frequencies that are not available in the standard code list",
@@ -8518,7 +9097,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OtherCalculationFrequency": {
                                   "description": "Other calculation frequency which is not available in the standard code set.",
@@ -8549,7 +9131,10 @@
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["Name", "Description"]
+                                  "required": [
+                                    "Name",
+                                    "Description"
+                                  ]
                                 },
                                 "OverdraftFeeChargeCap": {
                                   "description": "Details about any caps (maximum charges) that apply to a particular fee/charge",
@@ -8589,7 +9174,10 @@
                                       "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                                       "title": "MinMaxType",
                                       "type": "string",
-                                      "enum": ["Minimum", "Maximum"]
+                                      "enum": [
+                                        "Minimum",
+                                        "Maximum"
+                                      ]
                                     },
                                     "FeeCapOccurrence": {
                                       "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -8659,30 +9247,46 @@
                                             "maxLength": 350
                                           }
                                         },
-                                        "required": ["Name", "Description"]
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ]
                                       }
                                     }
                                   },
                                   "additionalProperties": false,
-                                  "required": ["FeeType", "MinMaxType"]
+                                  "required": [
+                                    "FeeType",
+                                    "MinMaxType"
+                                  ]
                                 }
                               },
-                              "required": ["FeeType", "ApplicationFrequency"]
+                              "required": [
+                                "FeeType",
+                                "ApplicationFrequency"
+                              ]
                             },
                             "minItems": 1
                           }
                         },
-                        "required": ["OverdraftFeeChargeDetail"]
+                        "required": [
+                          "OverdraftFeeChargeDetail"
+                        ]
                       }
                     }
                   },
-                  "required": ["TierBandMethod", "OverdraftTierBand"]
+                  "required": [
+                    "TierBandMethod",
+                    "OverdraftTierBand"
+                  ]
                 },
                 "minItems": 1
               }
             },
             "additionalProperties": false,
-            "required": ["OverdraftTierBandSet"]
+            "required": [
+              "OverdraftTierBandSet"
+            ]
           },
           "OtherFeesCharges": {
             "description": "Contains details of fees and charges which are not associated with either borrowing or features/benefits",
@@ -8701,7 +9305,10 @@
                       "description": "Categorisation of fees and charges into standard categories.",
                       "title": "FeeCategory",
                       "type": "string",
-                      "enum": ["Other", "Servicing"]
+                      "enum": [
+                        "Other",
+                        "Servicing"
+                      ]
                     },
                     "FeeType": {
                       "description": "Fee/Charge Type",
@@ -8730,7 +9337,12 @@
                       "description": "Rate type for Fee/Charge (where it is charged in terms of a rate rather than an amount)",
                       "title": "FeeRateType",
                       "type": "string",
-                      "enum": ["LinkedBaseRate", "Gross", "Net", "Other"]
+                      "enum": [
+                        "LinkedBaseRate",
+                        "Gross",
+                        "Net",
+                        "Other"
+                      ]
                     },
                     "ApplicationFrequency": {
                       "description": "How frequently the fee/charge is applied to the account",
@@ -8825,7 +9437,10 @@
                         }
                       },
                       "additionalProperties": false,
-                      "required": ["Name", "Description"]
+                      "required": [
+                        "Name",
+                        "Description"
+                      ]
                     },
                     "OtherFeeType": {
                       "description": "Other Fee/charge type which is not available in the standard code set",
@@ -8844,7 +9459,10 @@
                           "description": "Categorisation of fees and charges into standard categories.",
                           "title": "FeeCategory",
                           "type": "string",
-                          "enum": ["Other", "Servicing"]
+                          "enum": [
+                            "Other",
+                            "Servicing"
+                          ]
                         },
                         "Name": {
                           "description": "Long name associated with the code",
@@ -8862,7 +9480,11 @@
                         }
                       },
                       "additionalProperties": false,
-                      "required": ["FeeCategory", "Name", "Description"]
+                      "required": [
+                        "FeeCategory",
+                        "Name",
+                        "Description"
+                      ]
                     },
                     "OtherFeeRateType": {
                       "description": "Other fee rate type which is not available in the standard code set",
@@ -8893,7 +9515,10 @@
                         }
                       },
                       "additionalProperties": false,
-                      "required": ["Name", "Description"]
+                      "required": [
+                        "Name",
+                        "Description"
+                      ]
                     },
                     "OtherApplicationFrequency": {
                       "description": "Other application frequencies not covered in the standard code list",
@@ -8924,7 +9549,10 @@
                         }
                       },
                       "additionalProperties": false,
-                      "required": ["Name", "Description"]
+                      "required": [
+                        "Name",
+                        "Description"
+                      ]
                     },
                     "OtherCalculationFrequency": {
                       "description": "Other calculation frequency which is not available in standard code set.",
@@ -8955,7 +9583,10 @@
                         }
                       },
                       "additionalProperties": false,
-                      "required": ["Name", "Description"]
+                      "required": [
+                        "Name",
+                        "Description"
+                      ]
                     },
                     "FeeChargeCap": {
                       "description": "Details about any caps (maximum charges) that apply to a particular fee/charge",
@@ -8985,7 +9616,10 @@
                             "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                             "title": "MinMaxType",
                             "type": "string",
-                            "enum": ["Minimum", "Maximum"]
+                            "enum": [
+                              "Minimum",
+                              "Maximum"
+                            ]
                           },
                           "FeeCapOccurrence": {
                             "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -9055,11 +9689,17 @@
                                   "maxLength": 350
                                 }
                               },
-                              "required": ["Name", "Description"]
+                              "required": [
+                                "Name",
+                                "Description"
+                              ]
                             }
                           }
                         },
-                        "required": ["FeeType", "MinMaxType"]
+                        "required": [
+                          "FeeType",
+                          "MinMaxType"
+                        ]
                       }
                     },
                     "FeeApplicableRange": {
@@ -9095,7 +9735,11 @@
                       "additionalProperties": false
                     }
                   },
-                  "required": ["FeeCategory", "FeeType", "ApplicationFrequency"]
+                  "required": [
+                    "FeeCategory",
+                    "FeeType",
+                    "ApplicationFrequency"
+                  ]
                 },
                 "minItems": 1
               },
@@ -9127,7 +9771,10 @@
                       "description": "Indicates that this is the minimum/ maximum fee/charge that can be applied by the financial institution",
                       "title": "MinMaxType",
                       "type": "string",
-                      "enum": ["Minimum", "Maximum"]
+                      "enum": [
+                        "Minimum",
+                        "Maximum"
+                      ]
                     },
                     "FeeCapOccurrence": {
                       "description": "fee/charges are captured dependent on the number of occurrences rather than capped at a particular amount",
@@ -9197,23 +9844,33 @@
                             "maxLength": 350
                           }
                         },
-                        "required": ["Name", "Description"]
+                        "required": [
+                          "Name",
+                          "Description"
+                        ]
                       }
                     }
                   },
-                  "required": ["FeeType", "MinMaxType"]
+                  "required": [
+                    "FeeType",
+                    "MinMaxType"
+                  ]
                 }
               }
             },
             "additionalProperties": false,
-            "required": ["FeeChargeDetail"]
+            "required": [
+              "FeeChargeDetail"
+            ]
           }
         },
         "additionalProperties": false
       },
       "OBParty2": {
         "type": "object",
-        "required": ["PartyId"],
+        "required": [
+          "PartyId"
+        ],
         "properties": {
           "PartyId": {
             "$ref": "#/components/schemas/PartyId"
@@ -9270,7 +9927,10 @@
         "properties": {
           "Account": {
             "type": "object",
-            "required": ["Related", "Id"],
+            "required": [
+              "Related",
+              "Id"
+            ],
             "description": "Relationship to the Account resource.",
             "properties": {
               "Related": {
@@ -9383,7 +10043,9 @@
       },
       "OBReadAccount6": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9407,11 +10069,15 @@
       },
       "OBReadBalance1": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
-            "required": ["Balance"],
+            "required": [
+              "Balance"
+            ],
             "properties": {
               "Balance": {
                 "type": "array",
@@ -9442,7 +10108,10 @@
                     },
                     "Amount": {
                       "type": "object",
-                      "required": ["Amount", "Currency"],
+                      "required": [
+                        "Amount",
+                        "Currency"
+                      ],
                       "description": "Amount of money of the cash balance.",
                       "properties": {
                         "Amount": {
@@ -9454,7 +10123,10 @@
                         "SubType": {
                           "description": "Balance sub type, in a coded form. Default if not specified is BCUR of the account",
                           "type": "string",
-                          "enum": ["BCUR", "LCUR"],
+                          "enum": [
+                            "BCUR",
+                            "LCUR"
+                          ],
                           "default": "BCUR"
                         }
                       }
@@ -9464,7 +10136,9 @@
                       "items": {
                         "type": "object",
                         "description": "Set of elements used to provide details on the credit line.",
-                        "required": ["Included"],
+                        "required": [
+                          "Included"
+                        ],
                         "properties": {
                           "Included": {
                             "description": "Indicates whether or not the credit line is included in the balance of the account.\nUsage: If not present, credit line is not included in the balance amount of the account.",
@@ -9483,7 +10157,10 @@
                           },
                           "Amount": {
                             "type": "object",
-                            "required": ["Amount", "Currency"],
+                            "required": [
+                              "Amount",
+                              "Currency"
+                            ],
                             "description": "Amount of money of the credit line.",
                             "properties": {
                               "Amount": {
@@ -9499,7 +10176,10 @@
                     },
                     "LocalAmount": {
                       "type": "object",
-                      "required": ["Amount", "Currency"],
+                      "required": [
+                        "Amount",
+                        "Currency"
+                      ],
                       "description": "Optional component providing the equivalent of Amount in local currency. Default is Local Currency (LCUR) if not specified",
                       "properties": {
                         "Amount": {
@@ -9511,7 +10191,10 @@
                         "SubType": {
                           "description": "Balance sub type, in a coded form. Default if not specified is LCUR of the account",
                           "type": "string",
-                          "enum": ["BCUR", "LCUR"],
+                          "enum": [
+                            "BCUR",
+                            "LCUR"
+                          ],
                           "default": "LCUR"
                         }
                       }
@@ -9522,7 +10205,10 @@
               },
               "TotalValue": {
                 "type": "object",
-                "required": ["Amount", "Currency"],
+                "required": [
+                  "Amount",
+                  "Currency"
+                ],
                 "description": "Combined sum of all Amounts in the accounts base currency",
                 "properties": {
                   "Amount": {
@@ -9546,7 +10232,9 @@
       },
       "OBReadBeneficiary5": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9569,11 +10257,16 @@
       },
       "OBReadConsent1": {
         "type": "object",
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
-            "required": ["Permissions"],
+            "required": [
+              "Permissions"
+            ],
             "properties": {
               "Permissions": {
                 "type": "array",
@@ -9630,7 +10323,10 @@
       },
       "OBReadConsentResponse1": {
         "type": "object",
-        "required": ["Data", "Risk"],
+        "required": [
+          "Data",
+          "Risk"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9654,7 +10350,13 @@
               "Status": {
                 "description": "Specifies the status of consent resource in code form.",
                 "type": "string",
-                "enum": ["AWAU", "RJCT", "AUTH", "EXPD", "CANC"]
+                "enum": [
+                  "AWAU",
+                  "RJCT",
+                  "AUTH",
+                  "EXPD",
+                  "CANC"
+                ]
               },
               "StatusReason": {
                 "type": "array",
@@ -9752,7 +10454,9 @@
       },
       "OBReadDirectDebit2": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9762,7 +10466,10 @@
                 "items": {
                   "type": "object",
                   "description": "Account to or from which a cash entry is made.",
-                  "required": ["AccountId", "Name"],
+                  "required": [
+                    "AccountId",
+                    "Name"
+                  ],
                   "properties": {
                     "AccountId": {
                       "$ref": "#/components/schemas/AccountId"
@@ -9801,7 +10508,9 @@
       },
       "OBReadOffer1": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9810,7 +10519,9 @@
                 "type": "array",
                 "items": {
                   "type": "object",
-                  "required": ["AccountId"],
+                  "required": [
+                    "AccountId"
+                  ],
                   "properties": {
                     "AccountId": {
                       "$ref": "#/components/schemas/AccountId"
@@ -9880,7 +10591,10 @@
                     },
                     "Amount": {
                       "type": "object",
-                      "required": ["Amount", "Currency"],
+                      "required": [
+                        "Amount",
+                        "Currency"
+                      ],
                       "description": "Amount of money associated with the offer type.",
                       "properties": {
                         "Amount": {
@@ -9893,7 +10607,10 @@
                     },
                     "Fee": {
                       "type": "object",
-                      "required": ["Amount", "Currency"],
+                      "required": [
+                        "Amount",
+                        "Currency"
+                      ],
                       "description": "Fee associated with the offer type.",
                       "properties": {
                         "Amount": {
@@ -9920,7 +10637,9 @@
       },
       "OBReadParty2": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9941,7 +10660,9 @@
       },
       "OBReadParty3": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -9965,7 +10686,9 @@
       },
       "OBReadProduct2": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "description": "Product details of Other Product which is not available in the standard list",
         "properties": {
           "Data": {
@@ -9977,7 +10700,10 @@
                 "items": {
                   "type": "object",
                   "description": "Product details associated with the Account",
-                  "required": ["AccountId", "ProductType"],
+                  "required": [
+                    "AccountId",
+                    "ProductType"
+                  ],
                   "properties": {
                     "ProductName": {
                       "description": "The name of the Product used for marketing purposes from a customer perspective. I.e. what the customer would recognise.",
@@ -10024,7 +10750,10 @@
                     },
                     "OtherProductType": {
                       "type": "object",
-                      "required": ["Name", "Description"],
+                      "required": [
+                        "Name",
+                        "Description"
+                      ],
                       "description": "This field provides extension to the ProductType enumeration. If ProductType - \"Other\" is chosen, this field must be populated with name, and description for ASPSP specific product type.",
                       "properties": {
                         "Name": {
@@ -10118,7 +10847,9 @@
                         },
                         "CreditInterest": {
                           "type": "object",
-                          "required": ["TierBandSet"],
+                          "required": [
+                            "TierBandSet"
+                          ],
                           "description": "Details about the interest that may be payable to the Account holders",
                           "properties": {
                             "TierBandSet": {
@@ -10135,7 +10866,11 @@
                                   "TierBandMethod": {
                                     "description": "The methodology of how credit interest is paid/applied. It can be:-\n1. Banded\nInterest rates are banded. i.e. Increasing rate on whole balance as balance increases.\n2. Tiered\nInterest rates are tiered. i.e. increasing rate for each tier as balance increases, but interest paid on tier fixed for that tier and not on whole balance.\n3. Whole\nThe same interest rate is applied irrespective of the product holder's account balance",
                                     "type": "string",
-                                    "enum": ["INBA", "INTI", "INWH"]
+                                    "enum": [
+                                      "INBA",
+                                      "INTI",
+                                      "INWH"
+                                    ]
                                   },
                                   "CalculationMethod": {
                                     "$ref": "#/components/schemas/OB_InterestCalculationMethod1Code"
@@ -10143,7 +10878,11 @@
                                   "Destination": {
                                     "description": "Describes whether accrued interest is payable only to the BCA or to another bank account",
                                     "type": "string",
-                                    "enum": ["INOT", "INPA", "INSC"]
+                                    "enum": [
+                                      "INOT",
+                                      "INPA",
+                                      "INSC"
+                                    ]
                                   },
                                   "Notes": {
                                     "type": "array",
@@ -10221,7 +10960,11 @@
                                         "DepositInterestAppliedCoverage": {
                                           "description": "Amount on which Interest applied.",
                                           "type": "string",
-                                          "enum": ["INBA", "INTI", "INWH"]
+                                          "enum": [
+                                            "INBA",
+                                            "INTI",
+                                            "INWH"
+                                          ]
                                         },
                                         "FixedVariableInterestRateType": {
                                           "$ref": "#/components/schemas/OB_InterestFixedVariableType1Code"
@@ -10259,7 +11002,10 @@
                                         },
                                         "OtherBankInterestType": {
                                           "type": "object",
-                                          "required": ["Name", "Description"],
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ],
                                           "description": "Other interest rate types which are not available in the standard code list",
                                           "properties": {
                                             "Code": {
@@ -10291,7 +11037,9 @@
                         },
                         "Overdraft": {
                           "type": "object",
-                          "required": ["OverdraftTierBandSet"],
+                          "required": [
+                            "OverdraftTierBandSet"
+                          ],
                           "description": "Borrowing details",
                           "properties": {
                             "Notes": {
@@ -10316,12 +11064,20 @@
                                   "TierBandMethod": {
                                     "description": "The methodology of how overdraft is charged. It can be:\n'Whole'  Where the same charge/rate is applied to the entirety of the overdraft balance (where charges are applicable). \n'Tiered' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount tiers defined by the lending financial organisation\n'Banded' Where different charges/rates are applied dependent on overdraft maximum and minimum balance amount bands defined by a government organisation.",
                                     "type": "string",
-                                    "enum": ["INBA", "INTI", "INWH"]
+                                    "enum": [
+                                      "INBA",
+                                      "INTI",
+                                      "INWH"
+                                    ]
                                   },
                                   "OverdraftType": {
                                     "description": "An overdraft can either be 'committed' which means that the facility cannot be withdrawn without reasonable notification before it's agreed end date, or 'on demand' which means that the financial institution can demand repayment at any point in time.",
                                     "type": "string",
-                                    "enum": ["OVCO", "OVOD", "OVOT"]
+                                    "enum": [
+                                      "OVCO",
+                                      "OVOD",
+                                      "OVOT"
+                                    ]
                                   },
                                   "Identification": {
                                     "description": "Unique and unambiguous identification of a  Tier Band for a overdraft product.",
@@ -10352,7 +11108,9 @@
                                     "items": {
                                       "type": "object",
                                       "description": "Provides overdraft details for a specific tier or band",
-                                      "required": ["TierValueMin"],
+                                      "required": [
+                                        "TierValueMin"
+                                      ],
                                       "properties": {
                                         "Identification": {
                                           "description": "Unique and unambiguous identification of a  Tier Band for a overdraft.",
@@ -10399,7 +11157,11 @@
                                         "OverdraftInterestChargingCoverage": {
                                           "description": "Refers to which interest rate is applied when interests are tiered. For example, if an overdraft balance is  2k and the interest tiers are:- 0- 500 0.1%, 500-1000 0.2%, 1000-10000 0.5%, then the applicable interest rate could either be 0.5% of the entire balance (since the account balance sits in the top interest tier) or (0.1%*500)+(0.2%*500)+(0.5%*1000). In the 1st situation, we say the interest is applied to the  Whole  of the account balance,  and in the 2nd that it is  Tiered .",
                                           "type": "string",
-                                          "enum": ["INBA", "INTI", "INWH"]
+                                          "enum": [
+                                            "INBA",
+                                            "INTI",
+                                            "INWH"
+                                          ]
                                         },
                                         "BankGuaranteedIndicator": {
                                           "description": "Indicates whether the advertised overdraft rate is guaranteed to be offered to a borrower by the bank e.g. if it s part of a government scheme, or whether the rate may vary dependent on the applicant s circumstances.",
@@ -10655,7 +11417,9 @@
                                     "items": {
                                       "type": "object",
                                       "description": "Overdraft fees and charges details",
-                                      "required": ["OverdraftFeeChargeDetail"],
+                                      "required": [
+                                        "OverdraftFeeChargeDetail"
+                                      ],
                                       "properties": {
                                         "OverdraftFeeChargeCap": {
                                           "type": "array",
@@ -10888,7 +11652,9 @@
                         },
                         "LoanInterest": {
                           "type": "object",
-                          "required": ["LoanInterestTierBandSet"],
+                          "required": [
+                            "LoanInterestTierBandSet"
+                          ],
                           "description": "Details about the interest that may be payable to the SME Loan holders",
                           "properties": {
                             "Notes": {
@@ -10914,7 +11680,11 @@
                                   "TierBandMethod": {
                                     "description": "The methodology of how credit interest is charged. It can be:-\n1. Banded\nInterest rates are banded. i.e. Increasing rate on whole balance as balance increases.\n2. Tiered\nInterest rates are tiered. i.e. increasing rate for each tier as balance increases, but interest paid on tier fixed for that tier and not on whole balance.\n3. Whole\nThe same interest rate is applied irrespective of the SME Loan balance",
                                     "type": "string",
-                                    "enum": ["INBA", "INTI", "INWH"]
+                                    "enum": [
+                                      "INBA",
+                                      "INTI",
+                                      "INWH"
+                                    ]
                                   },
                                   "Identification": {
                                     "description": "Loan interest tierbandset identification. Used by  loan providers for internal use purpose.",
@@ -11036,7 +11806,10 @@
                                         },
                                         "OtherLoanProviderInterestRateType": {
                                           "type": "object",
-                                          "required": ["Name", "Description"],
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ],
                                           "description": "Other loan interest rate types which are not available in the standard code list",
                                           "properties": {
                                             "Code": {
@@ -11412,7 +12185,10 @@
                             },
                             "OtherRepaymentType": {
                               "type": "object",
-                              "required": ["Name", "Description"],
+                              "required": [
+                                "Name",
+                                "Description"
+                              ],
                               "description": "Other repayment type which is not in the standard code list",
                               "properties": {
                                 "Code": {
@@ -11428,7 +12204,10 @@
                             },
                             "OtherRepaymentFrequency": {
                               "type": "object",
-                              "required": ["Name", "Description"],
+                              "required": [
+                                "Name",
+                                "Description"
+                              ],
                               "description": "Other repayment frequency which is not in the standard code list",
                               "properties": {
                                 "Code": {
@@ -11444,7 +12223,10 @@
                             },
                             "OtherAmountType": {
                               "type": "object",
-                              "required": ["Name", "Description"],
+                              "required": [
+                                "Name",
+                                "Description"
+                              ],
                               "description": "Other amount type which is not in the standard code list",
                               "properties": {
                                 "Code": {
@@ -11460,7 +12242,9 @@
                             },
                             "RepaymentFeeCharges": {
                               "type": "object",
-                              "required": ["RepaymentFeeChargeDetail"],
+                              "required": [
+                                "RepaymentFeeChargeDetail"
+                              ],
                               "description": "Applicable fee/charges for repayment such as prepayment, full early repayment or non repayment.",
                               "properties": {
                                 "RepaymentFeeChargeDetail": {
@@ -11526,7 +12310,10 @@
                                   "items": {
                                     "type": "object",
                                     "description": "RepaymentFeeChargeCap sets daily, weekly, monthly, yearly limits on the fees that are charged",
-                                    "required": ["FeeType", "MinMaxType"],
+                                    "required": [
+                                      "FeeType",
+                                      "MinMaxType"
+                                    ],
                                     "properties": {
                                       "FeeType": {
                                         "type": "array",
@@ -11573,7 +12360,10 @@
                                         "items": {
                                           "type": "object",
                                           "description": "Other fee type code which is not available in the standard code set",
-                                          "required": ["Name", "Description"],
+                                          "required": [
+                                            "Name",
+                                            "Description"
+                                          ],
                                           "properties": {
                                             "Code": {
                                               "$ref": "#/components/schemas/OB_CodeMnemonic"
@@ -11634,12 +12424,18 @@
                           "items": {
                             "type": "object",
                             "description": "Contains details of fees and charges which are not associated with either Overdraft or features/benefits",
-                            "required": ["FeeChargeDetail"],
+                            "required": [
+                              "FeeChargeDetail"
+                            ],
                             "properties": {
                               "TariffType": {
                                 "description": "TariffType which defines the fee and charges.",
                                 "type": "string",
-                                "enum": ["TTEL", "TTMX", "TTOT"]
+                                "enum": [
+                                  "TTEL",
+                                  "TTMX",
+                                  "TTOT"
+                                ]
                               },
                               "TariffName": {
                                 "description": "Name of the tariff",
@@ -11649,7 +12445,10 @@
                               },
                               "OtherTariffType": {
                                 "type": "object",
-                                "required": ["Name", "Description"],
+                                "required": [
+                                  "Name",
+                                  "Description"
+                                ],
                                 "description": "Other tariff type which is not in the standard list.",
                                 "properties": {
                                   "Code": {
@@ -11713,7 +12512,10 @@
                                       "items": {
                                         "type": "object",
                                         "description": "Details about any caps (maximum charges) that apply to a particular or group of fee/charge",
-                                        "required": ["FeeType", "MinMaxType"],
+                                        "required": [
+                                          "FeeType",
+                                          "MinMaxType"
+                                        ],
                                         "properties": {
                                           "FeeType": {
                                             "type": "array",
@@ -11830,7 +12632,10 @@
                                 "items": {
                                   "type": "object",
                                   "description": "Details about any caps (maximum charges) that apply to a particular or group of fee/charge",
-                                  "required": ["FeeType", "MinMaxType"],
+                                  "required": [
+                                    "FeeType",
+                                    "MinMaxType"
+                                  ],
                                   "properties": {
                                     "FeeType": {
                                       "type": "array",
@@ -11877,7 +12682,10 @@
                                       "items": {
                                         "type": "object",
                                         "description": "Other fee type code which is not available in the standard code set",
-                                        "required": ["Name", "Description"],
+                                        "required": [
+                                          "Name",
+                                          "Description"
+                                        ],
                                         "properties": {
                                           "Code": {
                                             "$ref": "#/components/schemas/OB_CodeMnemonic"
@@ -11924,7 +12732,9 @@
       },
       "OBReadScheduledPayment3": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -11948,7 +12758,9 @@
       },
       "OBReadStandingOrder6": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "type": "object",
@@ -11972,7 +12784,9 @@
       },
       "OBReadStatement2": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "$ref": "#/components/schemas/OBReadDataStatement2"
@@ -11988,7 +12802,9 @@
       },
       "OBReadTransaction6": {
         "type": "object",
-        "required": ["Data"],
+        "required": [
+          "Data"
+        ],
         "properties": {
           "Data": {
             "$ref": "#/components/schemas/OBReadDataTransaction6"
@@ -12116,7 +12932,9 @@
       },
       "OBStandingOrder6": {
         "type": "object",
-        "required": ["AccountId"],
+        "required": [
+          "AccountId"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -12129,6 +12947,9 @@
           },
           "LastPaymentDateTime": {
             "$ref": "#/components/schemas/LastPaymentDateTime"
+          },
+          "NumberOfPayments": {
+            "$ref": "#/components/schemas/NumberOfPayments"
           },
           "StandingOrderStatusCode": {
             "$ref": "#/components/schemas/ExternalMandateStatus1Code"
@@ -12165,7 +12986,9 @@
       },
       "OBStandingOrder6Basic": {
         "type": "object",
-        "required": ["AccountId"],
+        "required": [
+          "AccountId"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -12178,6 +13001,9 @@
           },
           "LastPaymentDateTime": {
             "$ref": "#/components/schemas/LastPaymentDateTime"
+          },
+          "NumberOfPayments": {
+            "$ref": "#/components/schemas/NumberOfPayments"
           },
           "StandingOrderStatusCode": {
             "$ref": "#/components/schemas/ExternalMandateStatus1Code"
@@ -12208,7 +13034,10 @@
       },
       "OBStandingOrder6Detail": {
         "type": "object",
-        "required": ["AccountId", "CreditorAccount"],
+        "required": [
+          "AccountId",
+          "CreditorAccount"
+        ],
         "properties": {
           "AccountId": {
             "$ref": "#/components/schemas/AccountId"
@@ -12221,6 +13050,9 @@
           },
           "LastPaymentDateTime": {
             "$ref": "#/components/schemas/LastPaymentDateTime"
+          },
+          "NumberOfPayments": {
+            "$ref": "#/components/schemas/NumberOfPayments"
           },
           "StandingOrderStatusCode": {
             "$ref": "#/components/schemas/ExternalMandateStatus1Code"
@@ -12302,7 +13134,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a benefit or reward amount for the statement resource.",
-              "required": ["Type", "Amount"],
+              "required": [
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Type": {
                   "$ref": "#/components/schemas/OBInternalStatementBenefitType1Code"
@@ -12318,7 +13153,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a fee for the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_1"
@@ -12349,7 +13188,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic interest amount related to the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_2"
@@ -12380,7 +13223,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic amount for the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "CreditDebitIndicator": {
                   "$ref": "#/components/schemas/OBCreditDebitCode_0"
@@ -12390,7 +13237,10 @@
                 },
                 "Amount": {
                   "type": "object",
-                  "required": ["Amount", "Currency"],
+                  "required": [
+                    "Amount",
+                    "Currency"
+                  ],
                   "description": "Amount of money of the cash balance.",
                   "properties": {
                     "Amount": {
@@ -12402,14 +13252,20 @@
                     "SubType": {
                       "description": "The amount in the domestic or base accounting currency. Default is Base Currency (BCUR) if not specified",
                       "type": "string",
-                      "enum": ["BCUR", "LCUR"],
+                      "enum": [
+                        "BCUR",
+                        "LCUR"
+                      ],
                       "default": "BCUR"
                     }
                   }
                 },
                 "LocalAmount": {
                   "type": "object",
-                  "required": ["Amount", "Currency"],
+                  "required": [
+                    "Amount",
+                    "Currency"
+                  ],
                   "description": "Optional component providing the equivalent of Amount in local currency.",
                   "properties": {
                     "Amount": {
@@ -12421,7 +13277,10 @@
                     "SubType": {
                       "description": "The amount in the local market currency for which the asset is held. Default is Local Currency (LCUR) if not specified",
                       "type": "string",
-                      "enum": ["BCUR", "LCUR"],
+                      "enum": [
+                        "BCUR",
+                        "LCUR"
+                      ],
                       "default": "LCUR"
                     }
                   }
@@ -12434,7 +13293,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic date time for the statement resource.",
-              "required": ["DateTime", "Type"],
+              "required": [
+                "DateTime",
+                "Type"
+              ],
               "properties": {
                 "DateTime": {
                   "$ref": "#/components/schemas/DateTime"
@@ -12450,7 +13312,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic rate related to the statement resource.",
-              "required": ["Rate", "Type"],
+              "required": [
+                "Rate",
+                "Type"
+              ],
               "properties": {
                 "Rate": {
                   "$ref": "#/components/schemas/Rate"
@@ -12466,7 +13331,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic number value related to the statement resource.",
-              "required": ["Value", "Type"],
+              "required": [
+                "Value",
+                "Type"
+              ],
               "properties": {
                 "Value": {
                   "$ref": "#/components/schemas/Value"
@@ -12480,7 +13348,10 @@
           "TotalValue": {
             "type": "object",
             "description": "Combined sum of all Amounts in the accounts base currency",
-            "required": ["Amount", "Currency"],
+            "required": [
+              "Amount",
+              "Currency"
+            ],
             "properties": {
               "Amount": {
                 "$ref": "#/components/schemas/OBActiveCurrencyAndAmount_SimpleType"
@@ -12539,7 +13410,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a benefit or reward amount for the statement resource.",
-              "required": ["Type", "Amount"],
+              "required": [
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Type": {
                   "$ref": "#/components/schemas/OBInternalStatementBenefitType1Code"
@@ -12555,7 +13429,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a fee for the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_1"
@@ -12586,7 +13464,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic interest amount related to the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_2"
@@ -12617,7 +13499,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic date time for the statement resource.",
-              "required": ["DateTime", "Type"],
+              "required": [
+                "DateTime",
+                "Type"
+              ],
               "properties": {
                 "DateTime": {
                   "$ref": "#/components/schemas/DateTime"
@@ -12633,7 +13518,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic rate related to the statement resource.",
-              "required": ["Rate", "Type"],
+              "required": [
+                "Rate",
+                "Type"
+              ],
               "properties": {
                 "Rate": {
                   "$ref": "#/components/schemas/Rate"
@@ -12649,7 +13537,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic number value related to the statement resource.",
-              "required": ["Value", "Type"],
+              "required": [
+                "Value",
+                "Type"
+              ],
               "properties": {
                 "Value": {
                   "$ref": "#/components/schemas/Value"
@@ -12663,7 +13554,10 @@
           "TotalValue": {
             "type": "object",
             "description": "Combined sum of all Amounts in the accounts base currency",
-            "required": ["Amount", "Currency"],
+            "required": [
+              "Amount",
+              "Currency"
+            ],
             "properties": {
               "Amount": {
                 "$ref": "#/components/schemas/OBActiveCurrencyAndAmount_SimpleType"
@@ -12722,7 +13616,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a benefit or reward amount for the statement resource.",
-              "required": ["Type", "Amount"],
+              "required": [
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Type": {
                   "$ref": "#/components/schemas/OBInternalStatementBenefitType1Code"
@@ -12738,7 +13635,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a fee for the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_1"
@@ -12769,7 +13670,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic interest amount related to the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "Description": {
                   "$ref": "#/components/schemas/Description_2"
@@ -12800,7 +13705,11 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic amount for the statement resource.",
-              "required": ["CreditDebitIndicator", "Type", "Amount"],
+              "required": [
+                "CreditDebitIndicator",
+                "Type",
+                "Amount"
+              ],
               "properties": {
                 "CreditDebitIndicator": {
                   "$ref": "#/components/schemas/OBCreditDebitCode_0"
@@ -12813,7 +13722,10 @@
                 },
                 "LocalAmount": {
                   "type": "object",
-                  "required": ["Amount", "Currency"],
+                  "required": [
+                    "Amount",
+                    "Currency"
+                  ],
                   "description": "Optional component providing the equivalent of Amount in local currency.",
                   "properties": {
                     "Amount": {
@@ -12825,7 +13737,10 @@
                     "SubType": {
                       "description": "The amount in the local market currency for which the asset is held. Default is Local Currency (LCUR) if not specified",
                       "type": "string",
-                      "enum": ["BCUR", "LCUR"],
+                      "enum": [
+                        "BCUR",
+                        "LCUR"
+                      ],
                       "default": "LCUR"
                     }
                   }
@@ -12838,7 +13753,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic date time for the statement resource.",
-              "required": ["DateTime", "Type"],
+              "required": [
+                "DateTime",
+                "Type"
+              ],
               "properties": {
                 "DateTime": {
                   "$ref": "#/components/schemas/DateTime"
@@ -12854,7 +13772,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic rate related to the statement resource.",
-              "required": ["Rate", "Type"],
+              "required": [
+                "Rate",
+                "Type"
+              ],
               "properties": {
                 "Rate": {
                   "$ref": "#/components/schemas/Rate"
@@ -12870,7 +13791,10 @@
             "items": {
               "type": "object",
               "description": "Set of elements used to provide details of a generic number value related to the statement resource.",
-              "required": ["Value", "Type"],
+              "required": [
+                "Value",
+                "Type"
+              ],
               "properties": {
                 "Value": {
                   "$ref": "#/components/schemas/Value"
@@ -12884,7 +13808,10 @@
           "TotalValue": {
             "type": "object",
             "description": "Combined sum of all Amounts in the accounts base currency",
-            "required": ["Amount", "Currency"],
+            "required": [
+              "Amount",
+              "Currency"
+            ],
             "properties": {
               "Amount": {
                 "$ref": "#/components/schemas/OBActiveCurrencyAndAmount_SimpleType"
@@ -13225,7 +14152,9 @@
       },
       "OBTransactionCardInstrument1": {
         "type": "object",
-        "required": ["CardSchemeName"],
+        "required": [
+          "CardSchemeName"
+        ],
         "description": "Set of elements to describe the card instrument used in the transaction. <br />\nFor a full list of enumeration values refer to `OBInternalCardSchemeType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
         "properties": {
           "CardSchemeName": {
@@ -13242,7 +14171,12 @@
           "AuthorisationType": {
             "description": "The card authorisation type. <br />\nFor a full list of enumeration values refer to `OBInternalCardAuthorisationType1Code` in *OB_Internal_CodeSet* [here](https://github.com/OpenBankingUK/External_Internal_CodeSets)",
             "type": "string",
-            "enum": ["ConsumerDevice", "Contactless", "None", "PIN"]
+            "enum": [
+              "ConsumerDevice",
+              "Contactless",
+              "None",
+              "PIN"
+            ]
           },
           "Name": {
             "description": "Name of the cardholder using the card instrument.",
@@ -13261,7 +14195,11 @@
       },
       "OBTransactionCashBalance": {
         "type": "object",
-        "required": ["CreditDebitIndicator", "Type", "Amount"],
+        "required": [
+          "CreditDebitIndicator",
+          "Type",
+          "Amount"
+        ],
         "description": "Set of elements used to define the balance as a numerical representation of the net increases and decreases in an account after a transaction entry is applied to the account.",
         "properties": {
           "CreditDebitIndicator": {
@@ -13272,7 +14210,10 @@
           },
           "Amount": {
             "type": "object",
-            "required": ["Amount", "Currency"],
+            "required": [
+              "Amount",
+              "Currency"
+            ],
             "description": "Amount of money of the cash balance after a transaction entry is applied to the account..",
             "properties": {
               "Amount": {
@@ -13325,7 +14266,11 @@
       "OB_FeeCategory1Code": {
         "description": "Categorisation of fees and charges into standard categories.",
         "type": "string",
-        "enum": ["FCOT", "FCRE", "FCSV"]
+        "enum": [
+          "FCOT",
+          "FCRE",
+          "FCSV"
+        ]
       },
       "OB_FeeFrequency1Code_0": {
         "description": "Frequency at which the overdraft charge is applied to the account",
@@ -13480,31 +14425,58 @@
       "OB_InterestCalculationMethod1Code": {
         "description": "Methods of calculating interest",
         "type": "string",
-        "enum": ["ITCO", "ITOT", "ITSI"]
+        "enum": [
+          "ITCO",
+          "ITOT",
+          "ITSI"
+        ]
       },
       "OB_InterestFixedVariableType1Code": {
         "description": "Type of interest rate, Fixed or Variable",
         "type": "string",
-        "enum": ["INFI", "INVA"]
+        "enum": [
+          "INFI",
+          "INVA"
+        ]
       },
       "OB_InterestRateType1Code_0": {
         "description": "Rate type for overdraft fee/charge (where it is charged in terms of a rate rather than an amount)",
         "type": "string",
-        "enum": ["INBB", "INFR", "INGR", "INLR", "INNE", "INOT"]
+        "enum": [
+          "INBB",
+          "INFR",
+          "INGR",
+          "INLR",
+          "INNE",
+          "INOT"
+        ]
       },
       "OB_InterestRateType1Code_1": {
         "description": "Rate type for Fee/Charge (where it is charged in terms of a rate rather than an amount)",
         "type": "string",
-        "enum": ["INBB", "INFR", "INGR", "INLR", "INNE", "INOT"]
+        "enum": [
+          "INBB",
+          "INFR",
+          "INGR",
+          "INLR",
+          "INNE",
+          "INOT"
+        ]
       },
       "OB_MinMaxType1Code": {
         "description": "Min Max type",
         "type": "string",
-        "enum": ["FMMN", "FMMX"]
+        "enum": [
+          "FMMN",
+          "FMMX"
+        ]
       },
       "OB_OtherCodeType1_0": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "properties": {
           "Code": {
             "$ref": "#/components/schemas/OB_CodeMnemonic"
@@ -13520,7 +14492,10 @@
       },
       "OB_OtherCodeType1_1": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other application frequencies that are not available in the standard code list",
         "properties": {
           "Code": {
@@ -13537,7 +14512,10 @@
       },
       "OB_OtherCodeType1_2": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other calculation frequency which is not available in the standard code set.",
         "properties": {
           "Code": {
@@ -13554,7 +14532,10 @@
       },
       "OB_OtherCodeType1_3": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other Fee type which is not available in the standard code set",
         "properties": {
           "Code": {
@@ -13571,7 +14552,10 @@
       },
       "OB_OtherCodeType1_4": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other fee rate type code which is not available in the standard code set",
         "properties": {
           "Code": {
@@ -13588,7 +14572,10 @@
       },
       "OB_OtherCodeType1_5": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other fee rate type which is not in the standard rate type list",
         "properties": {
           "Code": {
@@ -13605,7 +14592,10 @@
       },
       "OB_OtherCodeType1_6": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other application frequencies not covered in the standard code list",
         "properties": {
           "Code": {
@@ -13622,7 +14612,10 @@
       },
       "OB_OtherCodeType1_7": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other calculation frequency which is not available in standard code set.",
         "properties": {
           "Code": {
@@ -13639,7 +14632,10 @@
       },
       "OB_OtherCodeType1_8": {
         "type": "object",
-        "required": ["Name", "Description"],
+        "required": [
+          "Name",
+          "Description"
+        ],
         "description": "Other fee rate type which is not available in the standard code set",
         "properties": {
           "Code": {
@@ -13656,7 +14652,11 @@
       },
       "OB_OtherFeeChargeDetailType": {
         "type": "object",
-        "required": ["FeeCategory", "Name", "Description"],
+        "required": [
+          "FeeCategory",
+          "Name",
+          "Description"
+        ],
         "description": "Other Fee/charge type which is not available in the standard code set",
         "properties": {
           "Code": {
@@ -13695,7 +14695,15 @@
       "OB_Period1Code": {
         "description": "Period e.g. day, week, month etc. for which the fee/charge is capped",
         "type": "string",
-        "enum": ["PACT", "PDAY", "PHYR", "PMTH", "PQTR", "PWEK", "PYER"]
+        "enum": [
+          "PACT",
+          "PDAY",
+          "PHYR",
+          "PMTH",
+          "PQTR",
+          "PWEK",
+          "PYER"
+        ]
       },
       "OB_Rate1_0": {
         "description": "Rate charged for overdraft fee/charge (where it is charged in terms of a rate rather than an amount)",
@@ -13759,7 +14767,9 @@
       },
       "ProprietaryBankTransactionCodeStructure1": {
         "type": "object",
-        "required": ["Code"],
+        "required": [
+          "Code"
+        ],
         "description": "Set of elements to fully identify a proprietary bank transaction code.",
         "properties": {
           "Code": {
@@ -13801,7 +14811,9 @@
       "OBExtendedProprietaryBankTransactionCode": {
         "type": "object",
         "description": "Additional proprietary bank transaction codes used by the ASPSP for the underlying transaction",
-        "required": ["Code"],
+        "required": [
+          "Code"
+        ],
         "properties": {
           "Code": {
             "type": "string",
@@ -13827,7 +14839,10 @@
         "description": "Specifies the Beneficiary Type.",
         "type": "string",
         "example": "Ordinary",
-        "enum": ["Trusted", "Ordinary"]
+        "enum": [
+          "Trusted",
+          "Ordinary"
+        ]
       },
       "ScheduledPaymentDateTime": {
         "description": "The date on which the scheduled payment will be made. All dates in the JSON payloads are represented in ISO 8601 date-time format. \nAll date-time fields in responses must include the timezone. An example is below:\n2017-04-05T10:43:07+00:00",
