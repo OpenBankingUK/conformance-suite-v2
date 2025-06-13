@@ -413,8 +413,7 @@
           "content": {
             "application/json-patch+json": {
               "schema": {
-                "type": "string",
-                "format": "Array of patch operations"
+                "type": "string"
               }
             }
           },
