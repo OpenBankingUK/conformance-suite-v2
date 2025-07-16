@@ -1965,7 +1965,7 @@
       },
       {
         "description": "Test for BankTransactionCode or ProductBankTransactionCode",
-        "id": "OB-4000-ACC-101200",
+        "id": "OB-400-ACC-101200",
         "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/account-and-transaction-api-profile.html",
         "detail": "Check that that either BankTransactionCode or ProductBankTransactionCode is returned when using the ReadTransactionsBasic permission.",
         "parameters": {
