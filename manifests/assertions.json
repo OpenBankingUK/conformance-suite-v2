@@ -291,7 +291,7 @@
         }]
       }
     },
-    "OB4ACCAssertBankTransactionCode": {
+    "OBACCAssertBankTransactionCode": {
       "expect": {
         "matches": [{
           "JSON": "Data.Transaction.#.BankTransactionCode",
@@ -299,7 +299,7 @@
         }]
       }
     },
-    "OB4ACCAssertProprietaryBankTransactionCode": {
+    "OBACCAssertProprietaryBankTransactionCode": {
       "expect": {
         "matches": [{
           "JSON": "Data.Transaction.#.ProprietaryBankTransactionCode",
