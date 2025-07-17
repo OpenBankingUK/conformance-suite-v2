@@ -41,7 +41,8 @@ module.exports = {
         xfwd: true,
       },
     },
-    open: 'Google Chrome',
+    // open: 'Google Chrome',
+    open: false  // disabling due to opening on the wrong page.
   },
 
   // https://cli.vuejs.org/config/#runtimecompiler
