@@ -483,6 +483,10 @@ func checkBodyJSONValue(m *Match, tc *TestCase) (bool, error) {
 }
 
 func checkBodyJSONPresent(m *Match, tc *TestCase) (bool, error) {
+	if !gjson.Valid(tc.Body) {
+		return false, errors.New("body JSON Match Failed - body is not valid JSON")
+	}
+
 	result := gjson.Get(tc.Body, m.JSON)
 	success := result.Exists()
 	if !success {
