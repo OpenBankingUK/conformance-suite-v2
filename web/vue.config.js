@@ -57,13 +57,11 @@ module.exports = {
     // * https://github.com/vuejs/vue-cli/issues/3215
 
     config.module.rule('fonts').use('url-loader').tap((opts) => {
-      const options = Object.assign(opts, { limit: 0 });
-      return options;
+      return Object.assign(opts, { limit: 0 });
     });
 
     config.module.rule('images').use('url-loader').tap((opts) => {
-      const options = Object.assign(opts, { limit: 0 });
-      return options;
+      return Object.assign(opts, { limit: 0 });
     });
 
     // Copy `ReDoc` (https://github.com/Rebilly/ReDoc) to `/static/redoc/bundles/redoc.standalone.js`
