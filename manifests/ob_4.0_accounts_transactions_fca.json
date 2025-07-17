@@ -1980,12 +1980,9 @@
         "uri": "/transactions",
         "uriImplementation": "mandatory",
         "resource": "Transaction",
-        "asserts": [
-          "OB3GLOAssertOn200"
-        ],
         "asserts_one_of": [
-          "OB4ACCAssertBankTransactionCode",
-          "OB4ACCAssertProprietaryBankTransactionCode"
+          "OBACCAssertBankTransactionCode",
+          "OBACCAssertProprietaryBankTransactionCode"
         ],
         "method": "get",
         "schemaCheck": true
