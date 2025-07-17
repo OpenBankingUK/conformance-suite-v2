@@ -387,15 +387,15 @@ func checkHeaderValue(m *Match, tc *TestCase) (bool, error) {
 // For example with the following location header
 // "Location:https://x.y.z/auth?code=12345&redir=https://redir"
 // using the following match:
-//{
-//	"name": "xchange_code",
-//	"description": "Get the xchange code from the location redirect",
-//	"header": "Location",
-//	"regex": "code=(.*)&?.*"
-//  }
+//
+//	{
+//		"name": "xchange_code",
+//		"description": "Get the xchange code from the location redirect",
+//		"header": "Location",
+//		"regex": "code=(.*)&?.*"
+//	 }
 //
 // Will extract the value of code "12345" and make it available in the match m.Result field
-//
 func checkHeaderRegexContext(m *Match, tc *TestCase) (bool, error) {
 	var success bool
 	var actualHeader string
