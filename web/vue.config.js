@@ -42,7 +42,7 @@ module.exports = {
       },
     },
     // open: 'Google Chrome',
-    open: false,  // disabling due to opening on the wrong page.
+    open: false, // disabling due to opening on the wrong page.
   },
 
   // https://cli.vuejs.org/config/#runtimecompiler
@@ -56,11 +56,9 @@ module.exports = {
     // * https://cli.vuejs.org/guide/webpack.html#replacing-loaders-of-a-rule
     // * https://github.com/vuejs/vue-cli/issues/3215
 
-    config.module.rule('fonts').use('url-loader').tap((opts) =>
-        Object.assign(opts, { limit: 0 }));
+    config.module.rule('fonts').use('url-loader').tap(opts => Object.assign(opts, { limit: 0 }));
 
-    config.module.rule('images').use('url-loader').tap((opts) =>
-        Object.assign(opts, { limit: 0 }));
+    config.module.rule('images').use('url-loader').tap(opts => Object.assign(opts, { limit: 0 }));
 
     // Copy `ReDoc` (https://github.com/Rebilly/ReDoc) to `/static/redoc/bundles/redoc.standalone.js`
     // so that `pkg/server/swagger_handlers.go` can use it as the `RedocURL`.
