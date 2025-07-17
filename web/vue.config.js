@@ -42,7 +42,7 @@ module.exports = {
       },
     },
     // open: 'Google Chrome',
-    open: false  // disabling due to opening on the wrong page.
+    open: false,  // disabling due to opening on the wrong page.
   },
 
   // https://cli.vuejs.org/config/#runtimecompiler
