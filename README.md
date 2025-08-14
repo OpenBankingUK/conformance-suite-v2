@@ -17,17 +17,19 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 ## Release Notes
 * * *
 
-# Release v1.9.3 (30th May 2025)
+# Release v1.9.4 2025-08-14
 
-This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/read-write-api-specs/releases/tag/v4.0-Update-4) and addresses various minor issues.
+* `v1.9.4`: Final release version update.
+* `v1.9.4-beta3`: Updated `DateTimes` in specific tests to 2025.
+* `v1.9.4-beta2`: Removed `x-fapi-financial-id` header test from v4 AIS manifest tests.
+* `v1.9.4-beta1`: Fixed a typo in AIS `OB_CodeMnemonic` regex pattern.
 
-
-[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/v1.9.3.md)
+[Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases.md)
 
 
 ---
 **Download**:
-`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.3"` |
+`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.4"` |
 [DockerHub](https://hub.docker.com/r/openbanking/conformance-suite) |
 [Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 ---
@@ -35,12 +37,13 @@ This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/r
 
 ## Version table
 
-| Release       | Standard version  |
-| ------------- |:-----------------:|
-| v1.9.3        | v4.0.0            |
-| v1.7.6        | v3.1.11           |
-| v1.7.0        | v3.1.10           |
-| v1.6.12       | v3.1.9            |
+| Release | Standard version |
+|---------|:----------------:|
+| v1.9.4  |      v4.0.0      |
+| v1.9.3  |      v4.0.0      |
+| v1.7.6  |     v3.1.11      |
+| v1.7.0  |     v3.1.10      |
+| v1.6.12 |      v3.1.9      |
 
 
 ## Quickstart
@@ -48,11 +51,11 @@ This release contains [v4.0 Swagger Update 4](https://github.com/OpenBankingUK/r
 
 Pull and run the latest (stable) tagged Docker image:
 
-    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.3"
+    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.4"
 
 or
 
-    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.3"
+    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.4"
 
 [See Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 
