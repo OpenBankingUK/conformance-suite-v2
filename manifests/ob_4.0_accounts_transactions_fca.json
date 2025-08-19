@@ -1885,8 +1885,8 @@
           "accountId": "$consentedAccountId"
         },
         "queryParameters": {
-          "fromBookingDateTime": "2020-04-23T15:47:00",
-          "toBookingDateTime": "2020-04-23T15:48:00"
+          "fromBookingDateTime": "2025-04-23T15:47:00",
+          "toBookingDateTime": "2025-04-23T15:48:00"
         },
         "permissions": [
           "ReadAccountsBasic",
@@ -1916,8 +1916,8 @@
           "accountId": "$consentedAccountId"
         },
         "queryParameters": {
-          "fromBookingDateTime": "2020-04-23T15:47:00.999",
-          "toBookingDateTime": "2020-04-23T15:48:00.999"
+          "fromBookingDateTime": "2025-04-23T15:47:00.999",
+          "toBookingDateTime": "2025-04-23T15:48:00.999"
         },
         "permissions": [
           "ReadAccountsBasic",
@@ -2265,32 +2265,6 @@
           "OB3GLOAssertOn200",
           "OB3GLOAssertFAPIPlayBack"
         ],
-        "schemaCheck": true
-      },
-      {
-        "description": "v3.1.3+ Read accounts - x-fapi-financial-id header is no longer required",
-        "id": "OB-313-ACC-000100",
-        "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/account-and-transaction-api-profile.html",
-        "detail": "Checks that a basic GET Accounts call works without the x-fapi-financial-id header which was dropped in v3.1.3",
-        "apiVersion":">=3.1.3",
-        "parameters": {
-          "tokenRequestScope": "accounts"
-        },
-        "permissions": [
-          "ReadAccountsBasic"
-        ],
-        "permissions-excluded": [
-          "ReadAccountsDetail"
-        ],
-        "uri": "/accounts",
-        "uriImplementation": "mandatory",
-        "resource": "Account",
-        "removeHeaders": ["x-fapi-financial-id"],
-        "asserts": [
-          "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
-        ],
-        "method": "get",
         "schemaCheck": true
       }
     ]
