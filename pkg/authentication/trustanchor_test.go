@@ -85,6 +85,8 @@ func TestIsHSBCTrustAnchor(t *testing.T) {
 
 }
 
+// TestGetJwksErrors
+// performs unit tests for the getJwks function to verify the returned JWKS and errors.
 func TestGetJwksErrors(t *testing.T) {
 	tests := []struct {
 		name             string
@@ -126,6 +128,8 @@ func TestGetJwksErrors(t *testing.T) {
 	}
 }
 
+// TestGetJwksContentTypeLogs
+// performs unit tests for the getJwksContentType function to verify the content type returned from the JWKS url.
 func TestGetJwksContentTypeLogs(t *testing.T) {
 	tests := []struct {
 		name        string
@@ -185,6 +189,8 @@ func TestGetJwksContentTypeLogs(t *testing.T) {
 	}
 }
 
+// TestGetJwksStatusCode
+// performs unit tests for the getJwksStatusCode function to verify the status code returned from the JWKS url.
 func TestGetJwksStatusCode(t *testing.T) {
 	tests := []struct {
 		name         string
@@ -216,4 +222,32 @@ func TestGetJwksStatusCode(t *testing.T) {
 			}
 		})
 	}
+}
+
+// TestInArray
+// performs unit tests for the inArray function to verify string existence in an array with case insensitivity.
+func TestInArray(t *testing.T) {
+	arr := []string{"application/jwk+json", "application/json"}
+
+	tests := []struct {
+		name     string
+		target   string
+		expected bool
+	}{
+		{"exact match jwk+json", "application/jwk+json", true},
+		{"mixed case jwk+json", "Application/JWK+JSON", true},
+		{"upper case json", "APPLICATION/JSON", true},
+		{"not present", "text/plain", false},
+		{"empty target", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inArray(tt.target, arr)
+			if got != tt.expected {
+				t.Errorf("inArray(%q, %v) = %v, want %v", tt.target, arr, got, tt.expected)
+			}
+		})
+	}
+
 }
