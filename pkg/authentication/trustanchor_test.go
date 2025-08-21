@@ -92,7 +92,7 @@ func TestGetJwksErrors(t *testing.T) {
 		wantNonEmptyJWKS bool
 		wantErr          string
 	}{
-		{"valid", "https://keystore.openbanking.org.uk/0015800000jf9GgAAI/2QGUgXr5LAFcTUGkNP657c.jwks", true, ""},
+		{"valid", "https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks", true, ""},
 		{"not decodable", "https://www.google.com", false, "GetJwks: decoding error"},
 		{"bad url", "www", false, "GetJwkss error retrieving url:"},
 	}
