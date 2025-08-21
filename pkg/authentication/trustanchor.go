@@ -100,7 +100,7 @@ func getJwks(url string) (JWKS, error) {
 
 	// must be called after error check as resp could be nil on error
 	if resp.StatusCode != http.StatusOK {
-		return JWKS{}, fmt.Errorf("GetJwks: bad status code %d from JWKS url %s", resp.StatusCode, url)
+		return JWKS{}, fmt.Errorf("GetJwks: bad status code (%d) from JWKS url (%s)", resp.StatusCode, url)
 	}
 
 	recommendedJwksContentType := "application/jwk-set+json"

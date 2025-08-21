@@ -184,3 +184,36 @@ func TestGetJwksContentTypeLogs(t *testing.T) {
 		})
 	}
 }
+
+func TestGetJwksStatusCode(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		exptectedErr string
+	}{
+		{
+			"200",
+			"https://keystore.openbanking.org.uk/0015800000jf9GgAAI/2QGUgXr5LAFcTUGkNP657c.jwks",
+			"",
+		},
+		{
+			"404",
+			"https://www.google.com/404",
+			"GetJwks: bad status code (404) from JWKS url (https://www.google.com/404)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getJwks(tt.url)
+
+			if tt.exptectedErr == "" && err != nil {
+				t.Errorf("GetJwks(%s) unexpected error: %s", tt.url, err)
+			}
+
+			if tt.exptectedErr != "" && !strings.Contains(err.Error(), tt.exptectedErr) {
+				t.Errorf("GetJwks(%s) error = %v, wantErr %s", tt.url, err, tt.exptectedErr)
+			}
+		})
+	}
+}
