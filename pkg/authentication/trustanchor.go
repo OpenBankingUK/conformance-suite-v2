@@ -146,10 +146,10 @@ func parseCertificateChain(chain []string) ([]*x509.Certificate, error) {
 }
 
 // inArray
-// check if a string is in an array of strings
+// check if a string is in an array of strings (case insensitive)
 func inArray(target string, arr []string) bool {
 	for _, v := range arr {
-		if v == target {
+		if strings.EqualFold(v, target) {
 			return true
 		}
 	}
