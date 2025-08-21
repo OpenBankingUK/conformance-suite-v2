@@ -144,7 +144,7 @@ func TestGetJwksContentTypeLogs(t *testing.T) {
 		//},
 		{
 			"application/jwk+json",
-			"https://keystore.openbanking.org.uk/0015800000jf9GgAAI/2QGUgXr5LAFcTUGkNP657c.jwks",
+			"https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks",
 			"Acceptable JWKS content type found: application/jwk+json",
 		},
 		// Cannot find a suitable test url that returns the application/json content type
@@ -199,7 +199,7 @@ func TestGetJwksStatusCode(t *testing.T) {
 	}{
 		{
 			"200",
-			"https://keystore.openbanking.org.uk/0015800000jf9GgAAI/2QGUgXr5LAFcTUGkNP657c.jwks",
+			"https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks",
 			"",
 		},
 		{
