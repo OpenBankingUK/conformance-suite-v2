@@ -141,7 +141,7 @@ func TestGetJwksContentTypeLogs(t *testing.T) {
 		{
 			"application/jwk+json",
 			"https://keystore.openbanking.org.uk/0015800000jf9GgAAI/2QGUgXr5LAFcTUGkNP657c.jwks",
-			"Acceptable JWKS content type: application/jwk+json",
+			"Acceptable JWKS content type found: application/jwk+json",
 		},
 		// Cannot find a suitable test url that returns the application/json content type
 		//{
@@ -152,12 +152,12 @@ func TestGetJwksContentTypeLogs(t *testing.T) {
 		{
 			"text/plain",
 			"https://ob.hsbc.co.uk/jwks/public.jwks",
-			"Unexpected JWKS content type: text/plain",
+			"Unexpected JWKS content type found: text/plain",
 		},
 		{
 			"text/html",
 			"https://www.google.com",
-			"Unexpected JWKS content type: text/html",
+			"Unexpected JWKS content type found: text/html",
 		},
 	}
 

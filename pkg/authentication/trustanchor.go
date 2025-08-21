@@ -111,12 +111,13 @@ func getJwks(url string) (JWKS, error) {
 	contentType := resp.Header.Get("Content-Type")
 	if !strings.Contains(contentType, recommendedJwksContentType) {
 		if !inArray(contentType, acceptableJwksContentTypes) {
-			logrus.Warnf("Unexpected JWKS content type: %s", contentType)
+			logrus.Warnf("Unexpected JWKS content type found: %s", contentType)
 		} else {
-			logrus.Infof("Acceptable JWKS content type: %s", contentType)
+			logrus.Infof("Acceptable JWKS content type found: %s", contentType)
 		}
 		logrus.Infof("The recommended JWKS content type is '%s' based on https://datatracker.ietf.org/doc/html/rfc7517#section-8.5.1", recommendedJwksContentType)
 	}
+	// no need to log content-type if correct
 
 	jwksbytes := json.NewDecoder(resp.Body)
 	var jwks JWKS
