@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/sirupsen/logrus"
 )
@@ -96,6 +97,27 @@ func getJwks(url string) (JWKS, error) {
 		return JWKS{}, fmt.Errorf("GetJwkss error retrieving url: %s, %v", url, err)
 	}
 	defer resp.Body.Close()
+
+	// must be called after error check as resp could be nil on error
+	if resp.StatusCode != http.StatusOK {
+		return JWKS{}, fmt.Errorf("GetJwks: bad status code %d from JWKS url %s", resp.StatusCode, url)
+	}
+
+	recommendedJwksContentType := "application/jwk-set+json"
+	acceptableJwksContentTypes := []string{
+		"application/jwk+json",
+		"application/json",
+	}
+	contentType := resp.Header.Get("Content-Type")
+	if !strings.Contains(contentType, recommendedJwksContentType) {
+		if !inArray(contentType, acceptableJwksContentTypes) {
+			logrus.Warnf("Unexpected JWKS content type: %s", contentType)
+		} else {
+			logrus.Infof("Acceptable JWKS content type: %s", contentType)
+		}
+		logrus.Infof("The recommended JWKS content type is '%s' based on https://datatracker.ietf.org/doc/html/rfc7517#section-8.5.1", recommendedJwksContentType)
+	}
+
 	jwksbytes := json.NewDecoder(resp.Body)
 	var jwks JWKS
 	if err := jwksbytes.Decode(&jwks); err != nil {
@@ -120,4 +142,15 @@ func parseCertificateChain(chain []string) ([]*x509.Certificate, error) {
 		}
 	}
 	return certchain, nil
+}
+
+// inArray
+// check if a string is in an array of strings
+func inArray(target string, arr []string) bool {
+	for _, v := range arr {
+		if v == target {
+			return true
+		}
+	}
+	return false
 }
