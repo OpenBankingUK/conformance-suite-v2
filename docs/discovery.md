@@ -76,7 +76,7 @@ The following values are valid `psu`, `headless`, `store`
 This process involves directing the PSU to the ASPSP's authorisation pages, requiring manual effort from the PSU.
 * `headless` - Similar to `psu`, except the PSU is not required to intervene and perform any actions. This mode of operation enables developers to integrate
 the operation of this suite into their build tooling e.g. continuous integration/deployment (CI/CD), thus removing the manual element from `psu`.
-* `store` - As a final step to to the `psu` and `headless` methods, an access token is generated and used to access the protected endpoints.
+* `store` - As a final step to the `psu` and `headless` methods, an access token is generated and used to access the protected endpoints.
 The access tokens for use in this method would typically be generated in a developer/application management portal hosted by the ASPS.
 
 ### Discovery item
