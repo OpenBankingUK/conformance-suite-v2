@@ -53,7 +53,7 @@ endpoints        | 1..n       | discoveryModel.discoveryItems.*.endpoints | List
 method           | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.method | HTTP method, e.g. "GET" or "POST"
 path             | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.path | Endpoint path, e.g. "/account-access-consents"
 conditionalProperties | 0..n  | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties | List of optional schema properties that an ASPSP attests it provides.
-schema           | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.schema | Schema definition name from the Swagger/OpenAPI specification, e.g. "OBTransaction3Detail"
+schema           | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.schema | Schema definition name from the Swagger/OpenAPI specification, e.g. "OBTransaction3Detail". Note: this is the top-level schema definition generally referenced in the endpoint reference, not just the direct parent schema of the property to add.
 property         | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.property | Property name from schema, e.g. "Balance"
 path             | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.path | Path to property expressed in [JSON dot notation](https://github.com/tidwall/gjson#path-syntax) format, e.g. Data.Transaction.*.Balance
 
