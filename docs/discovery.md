@@ -54,8 +54,10 @@ equivalence.
 | path                   |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.path                             | Endpoint path, e.g. "/account-access-consents"                                                                                                                                                                                                      |
 | conditionalProperties  |    0..n    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties            | List of optional schema properties that an ASPSP attests it provides.                                                                                                                                                                               |
 | schema                 |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.schema   | Schema definition name from the Swagger/OpenAPI specification, e.g. "OBTransaction3Detail". Note: this is the top-level schema definition generally referenced in the endpoint reference, not just the direct parent schema of the property to add. |
-| property               |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.property | Property name from schema, e.g. "Balance"                                                                                                                                                                                                           |
+| name                   |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.name     | General name for the conditional property (can be anything). Ideally something descriptive.                                                                                                                                                         |
 | path                   |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.path     | Path to property expressed in [JSON dot notation](https://github.com/tidwall/gjson#path-syntax) format, e.g. Data.Transaction.*.Balance                                                                                                             |
+| required               |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.required | Boolean value representing if the field is required of not. Recommended: set to `true`                                                                                                                                                              |
+| value                  |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.value    | The value of the property for which you want to include                                                                                                                                                                                             |
 
 ### Discovery version
 
@@ -157,6 +159,24 @@ When an ASPSP provides a `0..1`, `0..*` occurrence property via its online chann
 it must attest that it provides those properties in its API implementation. An ASPSP must add
 such properties to a `conditionalProperties` list in the relevant endpoint definition.
 
+v4 PIS example for passing in a reference for a single immediate payment
+
+```json
+{
+  "method": "POST",
+  "path": "/domestic-scheduled-payment-consents",
+  "conditionalProperties": [
+    {
+      "schema": "OBWriteDomesticConsent4",
+      "name": "Creditor Reference Information",
+      "path": "Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation.Reference",
+      "required": true,
+      "value": "Invoice-12345"
+    }
+  ]
+}
+```
+
 Non-normative example:
 
 For online channel equivalence an ASPSP provides account
@@ -165,51 +185,32 @@ The ASPSP attests to that in an endpoint definition, via a `conditionalPropertie
 as follows:
 
 ```json
-"endpoints": [
+{ "endpoints": [
   {
     "method": "GET",
     "path": "/accounts/{AccountId}/transactions",
     "conditionalProperties": [
       {
         "schema": "OBTransaction3Detail",
-        "property": "Balance",
         "path": "Data.Transaction.*.Balance"
       },
       {
         "schema": "OBTransaction3Detail",
-        "property": "MerchantDetails",
         "path": "Data.Transaction.*.MerchantDetails"
       },
       {
         "schema": "OBTransaction3Basic",
-        "property": "TransactionReference",
         "path": "Data.Transaction.*.TransactionReference"
       },
       {
         "schema": "OBTransaction3Detail",
-        "property": "TransactionReference",
         "path": "Data.Transaction.*.TransactionReference"
       }
     ]
   },
   ...
 ]
-```
-
-v4 PIS example for passing in a reference for a single immediate payment
-
-```json
-{
-      "method": "POST",
-      "path": "/domestic-payment-consents",
-      "conditionalProperties": [
-       {
-        "schema": "OBWriteDomesticConsent4Param",
-        "Name": "Reference",
-        "Path": "Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation"
-       }
-      ]
-     },
+}
 ```
 
 ## Resource IDs
