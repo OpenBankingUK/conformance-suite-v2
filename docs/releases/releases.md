@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+## Fixed
+
+- Updated discovery.json conditionalProperties documentation to match functionality (#234) 
+
 # [1.9.5-beta2] - 21st August 2025
 
 ## Added
