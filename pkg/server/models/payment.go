@@ -13,11 +13,12 @@ import (
 // https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.0/dist/account-info-swagger.json
 //
 // Example value:
-// {
-//     "SchemeName": "UK.OBIE.SortCodeAccountNumber",
-//     "Identification": "20202010981789",
-//     "Name": "Dr Foo"
-// }
+//
+//	{
+//	    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+//	    "Identification": "20202010981789",
+//	    "Name": "Dr Foo"
+//	}
 type Payment struct {
 	// Name of the identification scheme, in a coded form as published in an external list
 	SchemeName string `json:"scheme_name" form:"scheme_name"`
@@ -46,11 +47,11 @@ func (p Payment) Validate() error {
 //
 // `Value` is of the format specified below:
 //
-//     "OBActiveCurrencyAndAmount_SimpleType": {
-//         "description": "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217.",
-//         "type": "string",
-//         "pattern": "^\\d{1,13}\\.\\d{1,5}$"
-//     },
+//	"OBActiveCurrencyAndAmount_SimpleType": {
+//	    "description": "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217.",
+//	    "type": "string",
+//	    "pattern": "^\\d{1,13}\\.\\d{1,5}$"
+//	},
 //
 // See: https://github.com/OpenBankingUK/read-write-api-specs/blob/master/dist/account-info-swagger.json#L2964.
 type InstructedAmount struct {
