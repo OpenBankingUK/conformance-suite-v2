@@ -32,30 +32,32 @@ equivalence.
 
 ### Data dictionary
 
-Name             | Occurrence | Path | Description
------------------|:----------:|------|----------------
-discoveryModel   | 1..1       | discoveryModel |
-name             | 1..1       | discoveryModel.name | Name of the model, e.g. "ob-v3.0-ozone".
-description      | 1..1       | discoveryModel.description | Description of the model, e.g. "An Open Banking UK discovery template for v3.0 of Accounts and Payments with pre-populated model Bank (Ozone) data."
-discoveryVersion | 1..1       | discoveryModel.discoveryVersion | Version of the discovery model format, e.g. "v0.4.0"
-tokenAcquisition | 1..1       | discoveryModel.tokenAcquisition | Define how access tokens will be acquired, e.g. "headless", "psu", "store", "mobile"
-callbackProxyUrl | 0..1       | discoveryModel.callbackProxyUrl | Define Proxy URL to handle callbacks in a mobile flow. Mandatory when `tokenAcquisition` is `mobile`
-discoveryItems   | 1..n       | discoveryModel.discoveryItems.* | List of items. Each item contains information related to a particular specification version.
-apiSpecification | 1..1       | discoveryModel.discoveryItems.*.apiSpecification | Details of API specification
-name             | 1..1       | discoveryModel.discoveryItems.*.apiSpecification.name | The `info.title` field from the Swagger/OpenAPI specification file
-url              | 1..1       | discoveryModel.discoveryItems.*.apiSpecification.url | URI identifier of the specification, i.e. link to specification document
-version          | 1..1       | discoveryModel.discoveryItems.*.apiSpecification.version | API version number that appears in API paths, e.g. "v3.0"
-schemaVersion    | 1..1       | discoveryModel.discoveryItems.*.apiSpecification.schemaVersion | URI identifier of the Swagger/OpenAPI specification file patch version
-manifest         | 1..1       | discoveryModel.discoveryItems.*.apiSpecification.manifest | Path to manifest file for custom tests. Can be `http://` or `https://` or `file://`.
-openidConfigurationUri | 1..1 | discoveryModel.discoveryItems.*.openidConfigurationUri | URI of the openid configuration well-known endpoint
-resourceBaseUri  | 1..1       | discoveryModel.discoveryItems.*.resourceBaseUri | Base of resource URI, i.e. the part before "/open-banking/v3.0".
-endpoints        | 1..n       | discoveryModel.discoveryItems.*.endpoints | List of endpoint and methods that have been implemented.
-method           | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.method | HTTP method, e.g. "GET" or "POST"
-path             | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.path | Endpoint path, e.g. "/account-access-consents"
-conditionalProperties | 0..n  | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties | List of optional schema properties that an ASPSP attests it provides.
-schema           | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.schema | Schema definition name from the Swagger/OpenAPI specification, e.g. "OBTransaction3Detail"
-property         | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.property | Property name from schema, e.g. "Balance"
-path             | 1..1       | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.path | Path to property expressed in [JSON dot notation](https://github.com/tidwall/gjson#path-syntax) format, e.g. Data.Transaction.*.Balance
+| Name                   | Occurrence | Path                                                                           | Description                                                                                                                                                                                                                                         |
+|------------------------|:----------:|--------------------------------------------------------------------------------|-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| discoveryModel         |    1..1    | discoveryModel                                                                 |                                                                                                                                                                                                                                                     |
+| name                   |    1..1    | discoveryModel.name                                                            | Name of the model, e.g. "ob-v3.0-ozone".                                                                                                                                                                                                            |
+| description            |    1..1    | discoveryModel.description                                                     | Description of the model, e.g. "An Open Banking UK discovery template for v3.0 of Accounts and Payments with pre-populated model Bank (Ozone) data."                                                                                                |
+| discoveryVersion       |    1..1    | discoveryModel.discoveryVersion                                                | Version of the discovery model format, e.g. "v0.4.0"                                                                                                                                                                                                |
+| tokenAcquisition       |    1..1    | discoveryModel.tokenAcquisition                                                | Define how access tokens will be acquired, e.g. "headless", "psu", "store", "mobile"                                                                                                                                                                |
+| callbackProxyUrl       |    0..1    | discoveryModel.callbackProxyUrl                                                | Define Proxy URL to handle callbacks in a mobile flow. Mandatory when `tokenAcquisition` is `mobile`                                                                                                                                                |
+| discoveryItems         |    1..n    | discoveryModel.discoveryItems.*                                                | List of items. Each item contains information related to a particular specification version.                                                                                                                                                        |
+| apiSpecification       |    1..1    | discoveryModel.discoveryItems.*.apiSpecification                               | Details of API specification                                                                                                                                                                                                                        |
+| name                   |    1..1    | discoveryModel.discoveryItems.*.apiSpecification.name                          | The `info.title` field from the Swagger/OpenAPI specification file                                                                                                                                                                                  |
+| url                    |    1..1    | discoveryModel.discoveryItems.*.apiSpecification.url                           | URI identifier of the specification, i.e. link to specification document                                                                                                                                                                            |
+| version                |    1..1    | discoveryModel.discoveryItems.*.apiSpecification.version                       | API version number that appears in API paths, e.g. "v3.0"                                                                                                                                                                                           |
+| schemaVersion          |    1..1    | discoveryModel.discoveryItems.*.apiSpecification.schemaVersion                 | URI identifier of the Swagger/OpenAPI specification file patch version                                                                                                                                                                              |
+| manifest               |    1..1    | discoveryModel.discoveryItems.*.apiSpecification.manifest                      | Path to manifest file for custom tests. Can be `http://` or `https://` or `file://`.                                                                                                                                                                |
+| openidConfigurationUri |    1..1    | discoveryModel.discoveryItems.*.openidConfigurationUri                         | URI of the openid configuration well-known endpoint                                                                                                                                                                                                 |
+| resourceBaseUri        |    1..1    | discoveryModel.discoveryItems.*.resourceBaseUri                                | Base of resource URI, i.e. the part before "/open-banking/v3.0".                                                                                                                                                                                    |
+| endpoints              |    1..n    | discoveryModel.discoveryItems.*.endpoints                                      | List of endpoint and methods that have been implemented.                                                                                                                                                                                            |
+| method                 |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.method                           | HTTP method, e.g. "GET" or "POST"                                                                                                                                                                                                                   |
+| path                   |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.path                             | Endpoint path, e.g. "/account-access-consents"                                                                                                                                                                                                      |
+| conditionalProperties  |    0..n    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties            | List of optional schema properties that an ASPSP attests it provides.                                                                                                                                                                               |
+| schema                 |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.schema   | Schema definition name from the Swagger/OpenAPI specification, e.g. "OBTransaction3Detail". Note: this is the top-level schema definition generally referenced in the endpoint reference, not just the direct parent schema of the property to add. |
+| name                   |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.name     | General name for the conditional property (can be anything). Ideally, something descriptive.                                                                                                                                                         |
+| path                   |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.path     | Path to property expressed in [JSON dot notation](https://github.com/tidwall/gjson#path-syntax) format, e.g. Data.Transaction.0.Balance                                                                                                             |
+| required               |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.required | Boolean value representing if the field is required or not. Recommended: set to `true`                                                                                                                                                              |
+| value                  |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.value    | The value of the property for which you want to include                                                                                                                                                                                             |
 
 ### Discovery version
 
@@ -74,7 +76,7 @@ The following values are valid `psu`, `headless`, `store`
 This process involves directing the PSU to the ASPSP's authorisation pages, requiring manual effort from the PSU.
 * `headless` - Similar to `psu`, except the PSU is not required to intervene and perform any actions. This mode of operation enables developers to integrate
 the operation of this suite into their build tooling e.g. continuous integration/deployment (CI/CD), thus removing the manual element from `psu`.
-* `store` - As a final step to to the `psu` and `headless` methods, an access token is generated and used to access the protected endpoints.
+* `store` - As a final step to the `psu` and `headless` methods, an access token is generated and used to access the protected endpoints.
 The access tokens for use in this method would typically be generated in a developer/application management portal hosted by the ASPS.
 
 ### Discovery item
@@ -157,6 +159,24 @@ When an ASPSP provides a `0..1`, `0..*` occurrence property via its online chann
 it must attest that it provides those properties in its API implementation. An ASPSP must add
 such properties to a `conditionalProperties` list in the relevant endpoint definition.
 
+v4 PIS example for passing in a reference for a single immediate payment
+
+```json
+{
+  "method": "POST",
+  "path": "/domestic-scheduled-payment-consents",
+  "conditionalProperties": [
+    {
+      "schema": "OBWriteDomesticConsent4",
+      "name": "Creditor Reference Information",
+      "path": "Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation.Reference",
+      "required": true,
+      "value": "Invoice-12345"
+    }
+  ]
+}
+```
+
 Non-normative example:
 
 For online channel equivalence an ASPSP provides account
@@ -165,51 +185,32 @@ The ASPSP attests to that in an endpoint definition, via a `conditionalPropertie
 as follows:
 
 ```json
-"endpoints": [
+{ "endpoints": [
   {
     "method": "GET",
     "path": "/accounts/{AccountId}/transactions",
     "conditionalProperties": [
       {
         "schema": "OBTransaction3Detail",
-        "property": "Balance",
         "path": "Data.Transaction.*.Balance"
       },
       {
         "schema": "OBTransaction3Detail",
-        "property": "MerchantDetails",
         "path": "Data.Transaction.*.MerchantDetails"
       },
       {
         "schema": "OBTransaction3Basic",
-        "property": "TransactionReference",
         "path": "Data.Transaction.*.TransactionReference"
       },
       {
         "schema": "OBTransaction3Detail",
-        "property": "TransactionReference",
         "path": "Data.Transaction.*.TransactionReference"
       }
     ]
   },
   ...
 ]
-```
-
-v4 PIS example for passing in a reference for a single immediate payment
-
-```json
-{
-      "method": "POST",
-      "path": "/domestic-payment-consents",
-      "conditionalProperties": [
-       {
-        "schema": "OBWriteDomesticConsent4Param",
-        "Name": "Reference",
-        "Path": "Data.Initiation.RemittanceInformation.Structured.0.CreditorReferenceInformation"
-       }
-      ]
-     },
+}
 ```
 
 ## Resource IDs
