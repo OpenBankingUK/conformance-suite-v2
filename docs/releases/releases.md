@@ -2,9 +2,12 @@
 
 ## [Unreleased]
 
+## [1.9.5-beta3] - 1st October 2025
+
 ## Fixed
 
-- Updated discovery.json conditionalProperties documentation to match functionality (#234) 
+- Updated discovery.json conditionalProperties documentation to match functionality (#234)
+- Added WODL (working day) enum to payment frequency regex (#235)
 
 # [1.9.5-beta2] - 21st August 2025
 
@@ -391,7 +394,8 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 
 [More Releases](docs/releases)
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta2...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta3...HEAD
+[1.9.5-beta3]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta2...v1.9.5-beta3
 [1.9.5-beta2]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta1...v1.9.5-beta2
 [1.9.5-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4...v1.9.5-beta1
 [1.9.4]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta3...v1.9.4
