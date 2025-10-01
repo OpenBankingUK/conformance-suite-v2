@@ -21,7 +21,6 @@
 
 ## Added
 
-- Includes [v4.0 Swagger Update 5 DRAFT](https://github.com/OpenBankingUK/read-write-api-specs/tree/v4.0-Update-5-DRAFT)
 - Add validation check for AIS Transaction to return either `BankTransactionCode` or `ProprietaryBankTransactionCode` (or both).
 
 ## [1.9.4] - 2025-08-14
