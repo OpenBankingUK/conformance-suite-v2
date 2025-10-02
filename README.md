@@ -15,14 +15,8 @@ The supporting documentation assumes a technical understanding of the Open Banki
 To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Release Notes
-* * *
 
-# Release v1.9.4 2025-08-14
-
-* `v1.9.4`: Final release version update.
-* `v1.9.4-beta3`: Updated `DateTimes` in specific tests to 2025.
-* `v1.9.4-beta2`: Removed `x-fapi-financial-id` header test from v4 AIS manifest tests.
-* `v1.9.4-beta1`: Fixed a typo in AIS `OB_CodeMnemonic` regex pattern.
+### v1.9.5 - 2025-10-02
 
 [Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases.md)
 
@@ -39,6 +33,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 | Release | Standard version |
 |---------|:----------------:|
+| v1.9.5  |      v4.0.0      |
 | v1.9.4  |      v4.0.0      |
 | v1.9.3  |      v4.0.0      |
 | v1.7.6  |     v3.1.11      |
