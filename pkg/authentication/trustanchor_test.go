@@ -1,7 +1,11 @@
 package authentication
 
 import (
+	"bytes"
+	"strings"
 	"testing"
+
+	"github.com/sirupsen/logrus"
 )
 
 var hsbcResponseSignature = "eyJodHRwOlwvXC9vcGVuYmFua2luZy5vcmcudWtcL2lhdCI6MTYwMTkyMjI5OSwiaHR0cDpcL1wvb3BlbmJhbmtpbmcub3JnLnVrXC90YW4iOiJzMy1ldS13ZXN0LTEuYW1hem9uYXdzLmNvbSIsImNyaXQiOlsiaHR0cDpcL1wvb3BlbmJhbmtpbmcub3JnLnVrXC9pYXQiLCJodHRwOlwvXC9vcGVuYmFua2luZy5vcmcudWtcL3RhbiIsImh0dHA6XC9cL29wZW5iYW5raW5nLm9yZy51a1wvaXNzIl0sImtpZCI6ImV4dGVybmFsXzIiLCJ0eXAiOiJKT1NFIiwiaHR0cDpcL1wvb3BlbmJhbmtpbmcub3JnLnVrXC9pc3MiOiJQb3N0YWxDb2RlPUIxIDFIUSwyLjUuNC45Nz1QU0RHQi1GQ0EtNzY1MTEyLENOPUhTQkMsU1RSRUVUPUJpcm1pbmdoYW0sTD1CaXJtaW5naGFtLE9VPTEgQ2VudGVuYXJ5IFNxdWFyZSxPPUhTQkMgVUssQz1VSyIsImFsZyI6IlBTMjU2In0..g3jvSLnCLo2x8E7LEsjLKjv6BVwctNBc3voHk6EhJ6v2gIuL5CYSIh4F0cJLGNEkz7jXNkXTilcSCeAYSaCkdumk6CosK-tdNj_AQXe0Ma1gQURJi5wfeNA_7uLAnSXW4nFzSe1wGjH4vUEf8nd72K5R-XGr3EOB41aYj37ON521c496IVQCDzsJ2aiS7KG4l-6-_IOIVto1utIaZfTJis2t1PDNHusFEOKq9tFCwVGz_cSEyhlBSl-blc6wik6Nket59UP3itUop1xNdaUecCA3-_CaqjWynvoA6ZH26h0tXtxczgk9BqKxweSn3VO7PEPRWD6_-GnBb6wSCev6VA"
@@ -77,6 +81,173 @@ func TestIsHSBCTrustAnchor(t *testing.T) {
 		if actual != tt.expected {
 			t.Errorf("isHSBCTrustAnchor(%s): expected %t, actual %t", tt.tan, tt.expected, actual)
 		}
+	}
+
+}
+
+// TestGetJwksErrors
+// performs unit tests for the getJwks function to verify the returned JWKS and errors.
+func TestGetJwksErrors(t *testing.T) {
+	tests := []struct {
+		name             string
+		url              string
+		wantNonEmptyJWKS bool
+		wantErr          string
+	}{
+		{"valid", "https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks", true, ""},
+		{"not decodable", "https://www.google.com", false, "GetJwks: decoding error"},
+		{"bad url", "www", false, "GetJwkss error retrieving url:"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			jwks, err := getJwks(tt.url)
+
+			if tt.wantNonEmptyJWKS == true && jwks.Keys == nil {
+				t.Errorf("GetJwks(%s) returned empty JWKS", tt.url)
+				t.Errorf("Error logs: %s", err.Error())
+				return
+			}
+
+			if tt.wantNonEmptyJWKS == false && jwks.Keys != nil {
+				t.Errorf("GetJwks(%s) returned non-empty JWKS", tt.url)
+				t.Errorf("Error logs: %s", err.Error())
+				return
+			}
+
+			if tt.wantErr == "" && err != nil {
+				t.Errorf("GetJwks(%s) unexpected error: %s", tt.url, err)
+				return
+			}
+
+			if tt.wantErr != "" && !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("GetJwks(%s) error = %v, wantErr %s", tt.url, err, tt.wantErr)
+				return
+			}
+		})
+	}
+}
+
+// TestGetJwksContentTypeLogs
+// performs unit tests for the getJwksContentType function to verify the content type returned from the JWKS url.
+func TestGetJwksContentTypeLogs(t *testing.T) {
+	tests := []struct {
+		name        string
+		url         string
+		expectedLog string
+	}{
+		// Cannot find a suitable test url that returns the application/jwk-set+json content type
+		//{
+		//	"application/jwk-set+json",
+		//	"",
+		//	"",
+		//},
+		{
+			"application/jwk+json",
+			"https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks",
+			"Acceptable JWKS content type found: application/jwk+json",
+		},
+		// Cannot find a suitable test url that returns the application/json content type
+		//{
+		//	"application/json",
+		//	"",
+		//	"Acceptable JWKS content type found: application/json",
+		//},
+		{
+			"text/plain",
+			"https://ob.hsbc.co.uk/jwks/public.jwks",
+			"Unexpected JWKS content type found: text/plain",
+		},
+		{
+			"text/html",
+			"https://www.google.com",
+			"Unexpected JWKS content type found: text/html",
+		},
+	}
+
+	var logBuffer bytes.Buffer
+	prevOut := logrus.StandardLogger().Out
+	prevLevel := logrus.GetLevel()
+	logrus.SetOutput(&logBuffer)
+	logrus.SetLevel(logrus.TraceLevel) // capture info and warn (and more)
+	t.Cleanup(func() {
+		logrus.SetOutput(prevOut)
+		logrus.SetLevel(prevLevel)
+	})
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			logBuffer.Reset()
+
+			_, _ = getJwks(tt.url)
+
+			got := logBuffer.String()
+			if !strings.Contains(got, tt.expectedLog) {
+				t.Fatalf("expected %q in logs, got:\n%s", tt.expectedLog, got)
+			}
+		})
+	}
+}
+
+// TestGetJwksStatusCode
+// performs unit tests for the getJwksStatusCode function to verify the status code returned from the JWKS url.
+func TestGetJwksStatusCode(t *testing.T) {
+	tests := []struct {
+		name         string
+		url          string
+		exptectedErr string
+	}{
+		{
+			"200",
+			"https://keystore.openbankingtest.org.uk/0015800001041RbAAI/0015800001041RbAAI.jwks",
+			"",
+		},
+		{
+			"404",
+			"https://www.google.com/404",
+			"GetJwks: bad status code (404) from JWKS url (https://www.google.com/404)",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := getJwks(tt.url)
+
+			if tt.exptectedErr == "" && err != nil {
+				t.Errorf("GetJwks(%s) unexpected error: %s", tt.url, err)
+			}
+
+			if tt.exptectedErr != "" && !strings.Contains(err.Error(), tt.exptectedErr) {
+				t.Errorf("GetJwks(%s) error = %v, wantErr %s", tt.url, err, tt.exptectedErr)
+			}
+		})
+	}
+}
+
+// TestInArray
+// performs unit tests for the inArray function to verify string existence in an array with case insensitivity.
+func TestInArray(t *testing.T) {
+	arr := []string{"application/jwk+json", "application/json"}
+
+	tests := []struct {
+		name     string
+		target   string
+		expected bool
+	}{
+		{"exact match jwk+json", "application/jwk+json", true},
+		{"mixed case jwk+json", "Application/JWK+JSON", true},
+		{"upper case json", "APPLICATION/JSON", true},
+		{"not present", "text/plain", false},
+		{"empty target", "", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := inArray(tt.target, arr)
+			if got != tt.expected {
+				t.Errorf("inArray(%q, %v) = %v, want %v", tt.target, arr, got, tt.expected)
+			}
+		})
 	}
 
 }

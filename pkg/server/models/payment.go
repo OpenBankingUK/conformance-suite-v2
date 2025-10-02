@@ -13,11 +13,12 @@ import (
 // https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.0/dist/account-info-swagger.json
 //
 // Example value:
-// {
-//     "SchemeName": "UK.OBIE.SortCodeAccountNumber",
-//     "Identification": "20202010981789",
-//     "Name": "Dr Foo"
-// }
+//
+//	{
+//	    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+//	    "Identification": "20202010981789",
+//	    "Name": "Dr Foo"
+//	}
 type Payment struct {
 	// Name of the identification scheme, in a coded form as published in an external list
 	SchemeName string `json:"scheme_name" form:"scheme_name"`
@@ -46,11 +47,11 @@ func (p Payment) Validate() error {
 //
 // `Value` is of the format specified below:
 //
-//     "OBActiveCurrencyAndAmount_SimpleType": {
-//         "description": "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217.",
-//         "type": "string",
-//         "pattern": "^\\d{1,13}\\.\\d{1,5}$"
-//     },
+//	"OBActiveCurrencyAndAmount_SimpleType": {
+//	    "description": "A number of monetary units specified in an active currency where the unit of currency is explicit and compliant with ISO 4217.",
+//	    "type": "string",
+//	    "pattern": "^\\d{1,13}\\.\\d{1,5}$"
+//	},
 //
 // See: https://github.com/OpenBankingUK/read-write-api-specs/blob/master/dist/account-info-swagger.json#L2964.
 type InstructedAmount struct {
@@ -79,12 +80,12 @@ func (a InstructedAmount) Validate() error {
 }
 
 const (
-	regexPaymentFrequencyErr = `must be in a valid format (^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$|^(ADHO)$|^(YEAR)$|^(DAIL)$|^(FRTN)$|^(INDA)$|^(MNTH)$|^(QURT)$|^(MIAN)$|^(WEEK)$)`
+	regexPaymentFrequencyErr = `must be in a valid format (^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$|^(ADHO)$|^(YEAR)$|^(DAIL)$|^(FRTN)$|^(INDA)$|^(MNTH)$|^(QURT)$|^(MIAN)$|^(WEEK)$|^(WODL)$|^(FOWK)$|^(TWMH)$|^(FOMH)$|^(FIMH)$|^(ALMH)$|^(NONE)$)`
 )
 
 var (
 	// nolint:gochecknoglobals
-	regexPaymentFrequency = regexp.MustCompile(`^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$|^(ADHO)$|^(YEAR)$|^(DAIL)$|^(FRTN)$|^(INDA)$|^(MNTH)$|^(QURT)$|^(MIAN)$|^(WEEK)$`)
+	regexPaymentFrequency = regexp.MustCompile(`^(EvryDay)$|^(EvryWorkgDay)$|^(IntrvlWkDay:0[1-9]:0[1-7])$|^(WkInMnthDay:0[1-5]:0[1-7])$|^(IntrvlMnthDay:(0[1-6]|12|24):(-0[1-5]|0[1-9]|[12][0-9]|3[01]))$|^(QtrDay:(ENGLISH|SCOTTISH|RECEIVED))$|^(ADHO)$|^(YEAR)$|^(DAIL)$|^(FRTN)$|^(INDA)$|^(MNTH)$|^(QURT)$|^(MIAN)$|^(WEEK)$|^(WODL)$|^(FOWK)$|^(TWMH)$|^(FOMH)$|^(FIMH)$|^(ALMH)$|^(NONE)$`)
 )
 
 type PaymentFrequency string

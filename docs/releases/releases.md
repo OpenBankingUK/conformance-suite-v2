@@ -2,6 +2,32 @@
 
 ## [Unreleased]
 
+# [1.9.5] - 2nd October 2025
+
+## Changed
+- Update version to v1.9.5 final release
+
+# [1.9.5-beta3] - 1st October 2025
+
+## Fixed
+
+- Updated discovery.json conditionalProperties documentation to match functionality (#234)
+- Added WODL (working day) enum to payment frequency regex (#235)
+
+# [1.9.5-beta2] - 21st August 2025
+
+## Added
+
+- Added status code response error handling for get JWKS (#230)
+- Added content-type logging and advice for get JWKS (#230)
+- Added unit tests for get JWKS errors, content-type logging, status code, and helper functions. (#230)
+
+# [1.9.5-beta1] - 10th June 2025
+
+## Added
+
+- Add validation check for AIS Transaction to return either `BankTransactionCode` or `ProprietaryBankTransactionCode` (or both).
+
 ## [1.9.4] - 2025-08-14
 
 ### Changed
@@ -372,7 +398,10 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 
 [More Releases](docs/releases)
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4...HEAD
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta3...HEAD
+[1.9.5-beta3]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta2...v1.9.5-beta3
+[1.9.5-beta2]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta1...v1.9.5-beta2
+[1.9.5-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4...v1.9.5-beta1
 [1.9.4]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta3...v1.9.4
 [1.9.4-beta3]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta2...v1.9.4-beta3
 [1.9.4-beta2]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta1...v1.9.4-beta2
