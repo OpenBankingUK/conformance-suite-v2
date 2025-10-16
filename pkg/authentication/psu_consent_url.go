@@ -3,6 +3,7 @@ package authentication
 import (
 	"fmt"
 	"net/url"
+	"strings"
 
 	"github.com/golang-jwt/jwt/v5"
 )
@@ -36,7 +37,10 @@ func PSUURLGenerate(claims PSUConsentClaims) (*url.URL, error) {
 	consentUrlQuery.Set("scope", claims.Scope)
 	consentUrlQuery.Set("request", token)
 	consentUrlQuery.Set("state", claims.State)
-	consentUrl.RawQuery = consentUrlQuery.Encode()
+
+	// Replace + with %20 for space encoding (OpenID requirement)
+	encodedQuery := strings.ReplaceAll(consentUrlQuery.Encode(), "+", "%20")
+	consentUrl.RawQuery = encodedQuery
 
 	return consentUrl, nil
 }
