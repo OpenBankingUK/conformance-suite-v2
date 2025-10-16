@@ -6,7 +6,6 @@
 
 - Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
 
-
 # [1.9.5] - 2nd October 2025
 
 ## Changed
