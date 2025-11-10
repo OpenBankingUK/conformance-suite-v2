@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+## [1.9.6-beta2] - 10/11/2025
+
+## Added
+
+- Add enhanced logging for test case authorization and execution
+
+## [1.9.6-beta1] - 16/10/2025
+
 ## Fixed
 
 - Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
