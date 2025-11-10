@@ -210,10 +210,19 @@ func (r *TestCaseRunner) executeComponentTests(comp *model.Component, ruleCtx *m
 		}
 
 		if testcase.ID == "#compPsuConsent01" {
+			logrus.WithFields(logrus.Fields{
+				"testcase_id":   testcase.ID,
+				"testcase_name": testcase.Name,
+				"auth_method":   authMethod,
+			}).Debug("Processing compPsuConsent01 testcase with authentication method")
+
 			switch authMethod {
 			case authentication.ClientSecretBasic:
+				logrus.Debug("Setting Basic authentication header")
 				testcase.Input.SetHeader("authorization", "Basic $basic_authentication")
+
 			case authentication.TlsClientAuth:
+				logrus.Debug("Processing TLS client authentication")
 				clientid, err := ruleCtx.GetString("client_id")
 				if err != nil {
 					ctxLogger.WithFields(logrus.Fields{
@@ -222,9 +231,11 @@ func (r *TestCaseRunner) executeComponentTests(comp *model.Component, ruleCtx *m
 					}).Error("cannot locate client_id to populate form field")
 					continue
 				}
-
+				logrus.WithField("client_id_found", true).Debug("Setting client_id form field for TLS auth")
 				testcase.Input.SetFormField("client_id", clientid)
+
 			case authentication.PrivateKeyJwt:
+				logrus.Debug("Processing Private Key JWT authentication")
 				clientID, err := ruleCtx.GetString("client_id")
 				if err != nil {
 					ctxLogger.WithFields(logrus.Fields{
@@ -243,6 +254,7 @@ func (r *TestCaseRunner) executeComponentTests(comp *model.Component, ruleCtx *m
 				}
 
 				if testcase.Input.Claims == nil {
+					logrus.Debug("Claims map is nil, initializing new map")
 					testcase.Input.Claims = map[string]string{}
 				}
 
@@ -253,9 +265,14 @@ func (r *TestCaseRunner) executeComponentTests(comp *model.Component, ruleCtx *m
 				// REQUIRED. Subject. This MUST contain the client_id of the OAuth Client.
 				// aud
 				// REQUIRED. Audience. The aud (audience) Claim. Value that identifies the Authorization Server as an intended audience. The Authorization Server MUST verify that it is an intended audience for the token. The Audience SHOULD be the URL of the Authorization Server's Token Endpoint.
+				logrus.WithFields(logrus.Fields{
+					"client_id":      clientID,
+					"token_endpoint": tokenEndpoint,
+				}).Debug("Setting JWT claims for Private Key JWT authentication")
 				testcase.Input.Claims["iss"] = clientID
 				testcase.Input.Claims["sub"] = clientID
 				testcase.Input.Claims["aud"] = tokenEndpoint
+
 				clientAssertion, err := testcase.Input.GenerateRequestToken(ruleCtx)
 				if err != nil {
 					ctxLogger.WithFields(logrus.Fields{
@@ -264,15 +281,18 @@ func (r *TestCaseRunner) executeComponentTests(comp *model.Component, ruleCtx *m
 					}).Error("failed on testcase.Input.GenerateRequestToken")
 					continue
 				}
-
+				logrus.Debug("Successfully generated client assertion, setting form fields")
 				testcase.Input.SetFormField(authentication.ClientAssertionType, authentication.ClientAssertionTypeValue)
 				testcase.Input.SetFormField(authentication.ClientAssertion, clientAssertion)
+
 			default:
 				ctxLogger.WithFields(logrus.Fields{
 					"authMethod": authMethod,
 				}).Error("Unsupported token_endpoint_auth_method")
 				continue
 			}
+
+			logrus.Debug("Successfully completed compPsuConsent01 testcase processing")
 		}
 
 		testResult := r.executeTest(testcase, ruleCtx, logger)
