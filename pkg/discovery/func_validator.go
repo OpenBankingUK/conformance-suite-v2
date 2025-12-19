@@ -158,7 +158,7 @@ func hasValidAPISpecifications(_ model.ConditionalityChecker, discoveryConfig *M
 		if err != nil {
 			failure := ValidationFailure{
 				Key:   fmt.Sprintf("DiscoveryModel.DiscoveryItems[%d].APISpecification.SchemaVersion", discoveryItemIndex),
-				Error: fmt.Sprintf("'SchemaVersion' pete not supported by suite '%s'", schemaVersion),
+				Error: fmt.Sprintf("'SchemaVersion' not supported by suite '%s'", schemaVersion),
 			}
 			failures = append(failures, failure)
 			continue
