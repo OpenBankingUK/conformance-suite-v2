@@ -151,10 +151,7 @@ func hasValidAPISpecifications(_ model.ConditionalityChecker, discoveryConfig *M
 	var failures []ValidationFailure
 	for discoveryItemIndex, discoveryItem := range discoveryConfig.DiscoveryModel.DiscoveryItems {
 		schemaVersion := discoveryItem.APISpecification.SchemaVersion
-		fmt.Println(schemaVersion)
 		specification, err := model.SpecificationFromSchemaVersion(schemaVersion)
-		fmt.Println(specification)
-		fmt.Println(err)
 		if err != nil {
 			failure := ValidationFailure{
 				Key:   fmt.Sprintf("DiscoveryModel.DiscoveryItems[%d].APISpecification.SchemaVersion", discoveryItemIndex),
