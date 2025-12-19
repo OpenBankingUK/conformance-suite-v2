@@ -291,7 +291,7 @@ func TestValidate(t *testing.T) {
 			failures: []ValidationFailure{
 				{
 					Key:   "DiscoveryModel.DiscoveryItems[0].APISpecification.SchemaVersion",
-					Error: "'SchemaVersion' not supported by suite 'http://example.com/bad-schema'",
+					Error: "'SchemaVersion' pete 2 not supported by suite 'http://example.com/bad-schema'",
 				},
 			}})
 	})
