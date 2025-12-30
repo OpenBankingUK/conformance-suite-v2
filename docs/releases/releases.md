@@ -4,40 +4,40 @@
 
 ## [1.9.6-beta2] - 10/11/2025
 
-## Added
+### Added
 
 - Add enhanced logging for test case authorization and execution
 
 ## [1.9.6-beta1] - 16/10/2025
 
-## Fixed
+### Fixed
 
 - Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
 
 # [1.9.5] - 2nd October 2025
 
-## Changed
+### Changed
 
 - Update version to v1.9.5 final release
 
-# [1.9.5-beta3] - 1st October 2025
+## [1.9.5-beta3] - 1st October 2025
 
-## Fixed
+### Fixed
 
 - Updated discovery.json conditionalProperties documentation to match functionality (#234)
 - Added WODL (working day) enum to payment frequency regex (#235)
 
 # [1.9.5-beta2] - 21st August 2025
 
-## Added
+### Added
 
 - Added status code response error handling for get JWKS (#230)
 - Added content-type logging and advice for get JWKS (#230)
 - Added unit tests for get JWKS errors, content-type logging, status code, and helper functions. (#230)
 
-# [1.9.5-beta1] - 10th June 2025
+## [1.9.5-beta1] - 10th June 2025
 
-## Added
+### Added
 
 - Add validation check for AIS Transaction to return either `BankTransactionCode` or `ProprietaryBankTransactionCode` (or both).
 
