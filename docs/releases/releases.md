@@ -2,13 +2,13 @@
 
 ## [Unreleased]
 
-## [1.9.6-beta5]
+## [1.9.6-beta5] - 30/12/2025
 
 ### Fixed
 
 - Merged changes from beta 1 & 2 with beta 3 & 4
 
-## [1.9.6-beta4]
+## [1.9.6-beta4] - 19/12/2025
 
 ### Added
 
