@@ -27,13 +27,13 @@ const (
 	minor = "9"
 	patch = "6"
 
-	//FullVersion -  Checker is the full string version of Conformance Suite.
+	//FullVersion - Checker is the full string version of Conformance Suite.
 	FullVersion = major + "." + minor + "." + patch
 
 	// Prerelease - is pre-release marker for the version. If this is "" (empty string)
 	// then it means that it is a final release. Otherwise, this is a pre-release
 	// such as "alpha", "beta", "rc1", etc.
-	Prerelease          = "beta2"
+	Prerelease          = "beta5"
 	GitHubAPIRepository = "https://api.github.com/repos/OpenBankingUK/conformance-suite/tags"
 )
 
