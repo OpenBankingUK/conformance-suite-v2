@@ -500,15 +500,21 @@ func addPermToGathererItem(tp TestCasePermission, tg RequiredTokens) RequiredTok
 			}
 		}
 	}
-	for _, tgPermx := range tg.Permsx {
-		for _, tpPermx := range tp.Permsx {
+
+	logrus.Debugf("Checking permissions-excluded to add...")
+	for _, tpPermx := range tp.Permsx {
+		for _, tgPermx := range tg.Permsx {
+			logrus.Debugf("Comparing tgPermx %s with tpPermx %s\n", tgPermx, tpPermx)
 			if tpPermx == tgPermx {
+				logrus.Debugf("tpPermx equals tgPermx, skipping")
 				continue
 			} else if tpPermx != "" {
+				logrus.Debugf("Adding tpPermx %s to permsxToAdd\n", tpPermx)
 				permsxToAdd = append(permsxToAdd, tpPermx)
 			}
 		}
 	}
+
 	tg.Perms = append(tg.Perms, permsToAdd...)
 	tg.Perms = uniqueSlice(tg.Perms)
 	tg.Permsx = append(tg.Permsx, permsxToAdd...)
