@@ -2,6 +2,24 @@
 
 ## [Unreleased]
 
+## [1.9.6-beta5]
+
+### Fixed
+
+- Merged changes from beta 1 & 2 with beta 3 & 4
+
+## [1.9.6-beta4]
+
+### Added
+
+- Initial support for cVRP
+
+## [1.9.6-beta3]
+
+### Fixed
+
+- Addresses issue with permissions builder function
+
 ## [1.9.6-beta2] - 10/11/2025
 
 ### Added
