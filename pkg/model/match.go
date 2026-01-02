@@ -695,6 +695,7 @@ func (m *Match) Clone() Match {
 		Header:          m.Header,
 		HeaderPresent:   m.HeaderPresent,
 		JSON:            m.JSON,
+		JSONNotPresent:  m.JSONNotPresent,
 		MatchType:       m.MatchType,
 		Numeric:         m.Numeric,
 		Regex:           m.Regex,
