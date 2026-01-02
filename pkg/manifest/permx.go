@@ -487,10 +487,26 @@ func (te *TokenStore) createOrUpdate(tcp TestCasePermission) {
 	return
 }
 
+// addPermToGathererItem merges the permissions and exclusions from a TestCasePermission (tp)
+// into an existing RequiredTokens (tg) item. It ensures that permissions and exclusions are
+// not duplicated and handles the logic for combining them appropriately.
+//
+// Parameters:
+//
+//	tp - the TestCasePermission to add
+//	tg - the existing RequiredTokens item to update
+//
+// Returns:
+//
+//	The updated RequiredTokens with merged permissions and exclusions.
 func addPermToGathererItem(tp TestCasePermission, tg RequiredTokens) RequiredTokens {
+	// Add the test case ID to the RequiredTokens IDs list
 	tg.IDs = append(tg.IDs, tp.ID)
+
 	permsToAdd := []string{}
 	permsxToAdd := []string{}
+
+	// Add new permissions from tp that are not already in tg.Perms
 	for _, tgPerm := range tg.Perms {
 		for _, tpPerm := range tp.Perms {
 			if tpPerm == tgPerm {
@@ -502,6 +518,7 @@ func addPermToGathererItem(tp TestCasePermission, tg RequiredTokens) RequiredTok
 	}
 
 	logrus.Debugf("Checking permissions-excluded to add...")
+	// Add new exclusions from tp.Permsx that are not already in tg.Permsx
 	for _, tpPermx := range tp.Permsx {
 		for _, tgPermx := range tg.Permsx {
 			logrus.Debugf("Comparing tgPermx %s with tpPermx %s\n", tgPermx, tpPermx)
@@ -515,6 +532,7 @@ func addPermToGathererItem(tp TestCasePermission, tg RequiredTokens) RequiredTok
 		}
 	}
 
+	// Merge and deduplicate permissions and exclusions
 	tg.Perms = append(tg.Perms, permsToAdd...)
 	tg.Perms = uniqueSlice(tg.Perms)
 	tg.Permsx = append(tg.Permsx, permsxToAdd...)
