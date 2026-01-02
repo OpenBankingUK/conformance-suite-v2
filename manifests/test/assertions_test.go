@@ -294,15 +294,16 @@ func TestAssertions(t *testing.T) {
 
 		mockResp := createHTTPResponse(test.response.code, test.response.body, test.response.headers)
 		result, errors := manifestTC.Validate(mockResp, emptyContext)
+		errorMessages := &strings.Builder{}
 		if result != true {
-			errorMessages := &strings.Builder{}
 			for _, e := range errors {
 				errorMessages.WriteString(fmt.Sprintf("\t- %s\n", e))
 			}
 			assert.True(t, errorsContain(errors, test.ExpectValidationErrorContains),
 				"%s: validation errors should contain an error with text: '%s'\nERRORS:\n%v", test.name, test.ExpectValidationErrorContains, errorMessages)
 		}
-		assert.Equal(t, test.ExpectValidationPass, result, "%s result - expected: %v actual: %v", test.name, test.ExpectValidationPass, result)
+
+		assert.Equal(t, test.ExpectValidationPass, result, "%s result - expected: %v actual: %v\nCaught error(s):\n%s", test.name, test.ExpectValidationPass, result, errorMessages)
 	}
 }
 
