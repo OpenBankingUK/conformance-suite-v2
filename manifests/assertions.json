@@ -339,7 +339,7 @@
         ]
       }
     },
-    "AssertAllTransactionDetailsNotPresent": {
+    "AssertAllV4TransactionDetailsNotPresent": {
       "expect": {
         "matches": [
           {
