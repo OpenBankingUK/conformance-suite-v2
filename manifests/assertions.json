@@ -307,7 +307,7 @@
         }]
       }
     },
-    "AssertAllAccountDetailsNotPresent": {
+    "AssertAllV4AccountDetailsNotPresent": {
       "expect": {
         "matches": [
           {

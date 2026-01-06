@@ -41,7 +41,7 @@
         "asserts": [
           "OB3GLOAssertOn200",
           "OB3GLOFAPIHeader",
-          "AssertAllAccountDetailsNotPresent"
+          "AssertAllV4AccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -88,7 +88,7 @@
         "asserts": [
           "OB3GLOAssertOn200",
           "OB3GLOFAPIHeader",
-          "AssertAllAccountDetailsNotPresent"
+          "AssertAllV4AccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
