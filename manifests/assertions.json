@@ -306,6 +306,66 @@
           "detail": "Expected ProprietaryBankTransactionCode to be present in the transaction data."
         }]
       }
+    },
+    "AssertAllAccountDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(StatementFrequencyAndFormat)",
+            "description": "Expect StatementFrequencyAndFormat to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Servicer)",
+            "description": "Expect Servicer to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Account)",
+            "description": "Expect Account to be not present in the account data."
+          }
+        ]
+      }
+    },
+    "AssertAllTransactionDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(TransactionInformation)",
+            "description": "Expect TransactionInformation to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(Balance)",
+            "description": "Expect Balance to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(MerchantDetails)",
+            "description": "Expect MerchantDetails to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAgent)",
+            "description": "Expect CreditorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAccount)",
+            "description": "Expect CreditorAccount to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(UltimateCreditor)",
+            "description": "Expect UltimateCreditor to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAgent)",
+            "description": "Expect DebtorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAccount)",
+            "description": "Expect DebtorAccount to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(UltimateDebtor)",
+            "description": "Expect UltimateDebtor to be not present in the transaction data."
+          }
+        ]
+      }
     }
   }
 }

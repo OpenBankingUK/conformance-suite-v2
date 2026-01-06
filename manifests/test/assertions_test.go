@@ -21,6 +21,7 @@ import (
 
 var (
 	accountSpecPath               = flag.String("acc_spec", "../../pkg/schema/spec/v3.1.6/account-info-swagger-flattened.json", "Path to the accounts specification swagger file.")
+	accountSpecPathV4             = flag.String("acc_specV4", "../../pkg/schema/spec/v4.0.0/account-info-openapi.json", "Path to the v4 accounts specification swagger file.")
 	paymentSpecPath               = flag.String("pay_spec", "../../pkg/schema/spec/v3.1.6/payment-initiation-swagger-flattened.json", "Path to the payments specification swagger file.")
 	cbpiiSpecPath                 = flag.String("cbpii_spec", "../../pkg/schema/spec/v3.1.6/confirmation-funds-flattened.json", "Path to the funds confirmations specification swagger file.")
 	assertionsPath                = flag.String("assertions", "../assertions.json", "Path to the JSON file containing the assertion rules.")
@@ -93,18 +94,18 @@ func TestAssertions(t *testing.T) {
 		ExpectValidationErrorContains string       // the validation step should produce an error which contains this string
 	}{
 		// ADD tests, for example:
-		// {
-		// 	name:       "OB-xxx-yyy-zzzzzz pass if ASPSP returns correct error",
-		// 	manifestID: "OB-xxx-yyy-zzzzzz",
-		// 	response: mockResponse{
-		// 		400,
-		// 		map[string]string{},
-		// 		`{"Errors":[{"ErrorCode":"UK.OBIE.??????????????"}]}`,
-		// 	},
-		// 	schemaSpec:                    *paymentSpecPath,
-		// 	ExpectValidationPass:          true,
-		// 	ExpectValidationErrorContains: "????????????????",
-		// },
+		//{
+		//	name:       "OB-xxx-yyy-zzzzzz pass if ASPSP returns correct error",
+		//	manifestID: "OB-xxx-yyy-zzzzzz",
+		//	response: mockResponse{
+		//		400,
+		//		map[string]string{},
+		//		`{"Errors":[{"ErrorCode":"UK.OBIE.??????????????"}]}`,
+		//	},
+		//	schemaSpec:                    *paymentSpecPath,
+		//	ExpectValidationPass:          true,
+		//	ExpectValidationErrorContains: "????????????????",
+		//},
 		{
 			name:       "OB-301-DOP-100110 pass if ASPSP returns missing claim error with code 400",
 			manifestID: "OB-301-DOP-100110",
@@ -282,6 +283,266 @@ func TestAssertions(t *testing.T) {
 			},
 			schemaSpec:           *accountSpecPath,
 			ExpectValidationPass: true,
+		},
+		// Account.StatementFrequencyAndFormat Tests 100000
+		{
+			name:       "OB-400-ACC-100000 should fail when StatementFrequencyAndFormat is present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"StatementFrequencyAndFormat":[{"Frequency": "YEAR"}]}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100000 should pass when StatementFrequencyAndFormat is not present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Account.Servicer Tests 100000
+		{
+			name:       "OB-400-ACC-100000 should fail when Servicer is present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Servicer":{"SchemeName":"UK.OBIE.BICFI","Identification":"8020441910203345","Name":"ServicerName"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100000 should pass when Servicer is not present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Account.Account Tests 100000
+		{
+			name:       "OB-400-ACC-100000 should fail when Account.Account is present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Account":[{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200110203345","Name":"Mr Kevin","SecondaryIdentification":"00021","LEI":"9193001QZMP2PQT4AK86"}]}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100000 should pass when Account.Account is not present",
+			manifestID: "OB-400-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Account.StatementFrequencyAndFormat Tests 100300
+		{
+			name:       "OB-400-ACC-100300 should fail when StatementFrequencyAndFormat is present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"StatementFrequencyAndFormat":[{"Frequency": "YEAR"}]}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100300 should pass when StatementFrequencyAndFormat is not present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Account.Servicer Tests 100300
+		{
+			name:       "OB-400-ACC-100300 should fail when Servicer is present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Servicer":{"SchemeName":"UK.OBIE.BICFI","Identification":"8020441910203345","Name":"ServicerName"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100300 should pass when Servicer is not present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Account.Account Tests 100300
+		{
+			name:       "OB-400-ACC-100300 should fail when Account.Account is present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Account":[{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200110203345","Name":"Mr Kevin","SecondaryIdentification":"00021","LEI":"9193001QZMP2PQT4AK86"}]}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-ACC-100300 should pass when Account.Account is not present",
+			manifestID: "OB-400-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		// Transaction Details Tests OB-400-TRA-105200
+		{
+			name:       "OB-400-TRA-105200 should pass when no Transaction Details are present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Transaction":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when TransactionInformation is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"TransactionInformation": "Cash from Aubrey"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when Balance is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"Balance":{"Amount":{"Amount":"230.00","Currency":"GBP"},"CreditDebitIndicator":"Credit","Type":"ITBD"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when MerchantDetails is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"MerchantDetails":{"MerchantName":"Merchant's Name","MerchantCategoryCode":"5874"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when CreditorAgent is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"CreditorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345678","Name":"Mrs Juniper","SecondaryIdentification":"80200112374165","Proxy":{"Identification":"2360549017905188","Code":"TELE"}}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when CreditorAgent is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"CreditorAgent":{"LEI":"IZ9Q00LZEVUKWCQY6X15","SchemeName":"UK.OBIE.BICFI","Identification":"80200112344562","Name":"The Credit Agent"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when CreditorAccount is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"CreditorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345678","Name":"Mrs Juniper","SecondaryIdentification":"80200112374165","Proxy":{"Identification":"2360549017905188","Code":"TELE"}}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when UltimateCreditor is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"UltimateCreditor":{"SchemeName":"UK.OBIE.BICFI","Identification":"2360549017905161589","Name":"Ultimate Creditor","LEI":"60450004FECVJV7YN339"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when DebtorAgent is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"DebtorAgent":{"LEI":"IZ9Q00LZEVUKWCQY8i14","SchemeName":"UK.OBIE.BICFI","Identification":"8020011234487","Name":"The Debtor Agent"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when DebtorAccount is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"DebtorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345784","Name":"Mr Juniper","SecondaryIdentification":"80200112378745"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-400-TRA-105200 should fail when UltimateDebtor is present",
+			manifestID: "OB-400-TRA-105200",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Transaction":[{"UltimateDebtor":{"SchemeName":"UK.OBIE.BICFI","Identification":"2360549017905161589","Name":"Ultimate Debtor","LEI":"8200007YHFDMEODY1965"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
 		},
 	}
 

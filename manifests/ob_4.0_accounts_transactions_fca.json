@@ -40,7 +40,8 @@
         "resource": "Account",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllAccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -86,7 +87,8 @@
         "resource": "Account",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllAccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -1959,7 +1961,8 @@
         "resource": "Transaction",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllTransactionDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
