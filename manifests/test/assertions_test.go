@@ -439,7 +439,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"TransactionInformation": "Cash from Aubrey"}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -450,7 +450,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"Balance":{"Amount":{"Amount":"230.00","Currency":"GBP"},"CreditDebitIndicator":"Credit","Type":"ITBD"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -461,7 +461,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"MerchantDetails":{"MerchantName":"Merchant's Name","MerchantCategoryCode":"5874"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -472,7 +472,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"CreditorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345678","Name":"Mrs Juniper","SecondaryIdentification":"80200112374165","Proxy":{"Identification":"2360549017905188","Code":"TELE"}}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -483,7 +483,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"CreditorAgent":{"LEI":"IZ9Q00LZEVUKWCQY6X15","SchemeName":"UK.OBIE.BICFI","Identification":"80200112344562","Name":"The Credit Agent"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -494,7 +494,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"CreditorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345678","Name":"Mrs Juniper","SecondaryIdentification":"80200112374165","Proxy":{"Identification":"2360549017905188","Code":"TELE"}}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -505,7 +505,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"UltimateCreditor":{"SchemeName":"UK.OBIE.BICFI","Identification":"2360549017905161589","Name":"Ultimate Creditor","LEI":"60450004FECVJV7YN339"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -516,7 +516,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"DebtorAgent":{"LEI":"IZ9Q00LZEVUKWCQY8i14","SchemeName":"UK.OBIE.BICFI","Identification":"8020011234487","Name":"The Debtor Agent"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -527,7 +527,7 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"DebtorAccount":{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200112345784","Name":"Mr Juniper","SecondaryIdentification":"80200112378745"}}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
@@ -538,8 +538,76 @@ func TestAssertions(t *testing.T) {
 			manifestID: "OB-400-TRA-105200",
 			response: mockResponse{
 				200,
-				map[string]string{},
+				map[string]string{"x-fapi-interaction-id": ""},
 				`{"Data":{"Transaction":[{"UltimateDebtor":{"SchemeName":"UK.OBIE.BICFI","Identification":"2360549017905161589","Name":"Ultimate Debtor","LEI":"8200007YHFDMEODY1965"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		// v3 AccountDetails Tests 100000
+		{
+			name:       "OB-301-ACC-100000 should pass when no AccountDetails are present",
+			manifestID: "OB-301-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		{
+			name:       "OB-301-ACC-100000 should fail when Servicer is present",
+			manifestID: "OB-301-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"Servicer":{"SchemeName":"UK.OBIE.BICFI","Identification":"8020441910203345","Name":"ServicerName"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-301-ACC-100000 should fail when Account is present",
+			manifestID: "OB-301-ACC-100000",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"Account":[{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200110203345","Name":"Mr Kevin","SecondaryIdentification":"00021","LEI":"9193001QZMP2PQT4AK86"}]}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		// v3 AccountDetails Tests 100300
+		{
+			name:       "OB-301-ACC-100300 should pass when no AccountDetails are present",
+			manifestID: "OB-301-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{"x-fapi-interaction-id": ""},
+				`{"Data":{"Account":[{"AccountId": "22289"}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: true,
+		},
+		{
+			name:       "OB-301-ACC-100300 should fail when Servicer is present",
+			manifestID: "OB-301-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Servicer":{"SchemeName":"UK.OBIE.BICFI","Identification":"8020441910203345","Name":"ServicerName"}}]}}`,
+			},
+			schemaSpec:           *accountSpecPath,
+			ExpectValidationPass: false,
+		},
+		{
+			name:       "OB-301-ACC-100300 should fail when Account is present",
+			manifestID: "OB-301-ACC-100300",
+			response: mockResponse{
+				200,
+				map[string]string{},
+				`{"Data":{"Account":[{"Account":[{"SchemeName":"UK.OBIE.SortCodeAccountNumber","Identification":"80200110203345","Name":"Mr Kevin","SecondaryIdentification":"00021","LEI":"9193001QZMP2PQT4AK86"}]}]}}`,
 			},
 			schemaSpec:           *accountSpecPath,
 			ExpectValidationPass: false,
