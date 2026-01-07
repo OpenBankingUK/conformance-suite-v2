@@ -1962,7 +1962,7 @@
         "asserts": [
           "OB3GLOAssertOn200",
           "OB3GLOFAPIHeader",
-          "AssertAllTransactionDetailsNotPresent"
+          "AssertAllV4TransactionDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
