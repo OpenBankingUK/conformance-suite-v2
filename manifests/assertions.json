@@ -414,6 +414,20 @@
           }
         ]
       }
+    },
+    "AssertAllBeneficiaryDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAgent)",
+            "description": "Expect StatementFrequencyAndFormat to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAccount)",
+            "description": "Expect Servicer to be not present in the account data."
+          }
+        ]
+      }
     }
   }
 }
