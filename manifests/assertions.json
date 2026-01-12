@@ -420,11 +420,11 @@
         "matches": [
           {
             "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAgent)",
-            "description": "Expect StatementFrequencyAndFormat to be not present in the account data."
+            "description": "Expect StatementFrequencyAndFormat to be not present in the Beneficiary data."
           },
           {
             "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAccount)",
-            "description": "Expect Servicer to be not present in the account data."
+            "description": "Expect Servicer to be not present in the Beneficiary data."
           }
         ]
       }
