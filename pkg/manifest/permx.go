@@ -520,14 +520,20 @@ func addPermToGathererItem(tp TestCasePermission, tg RequiredTokens) RequiredTok
 	logrus.Debugf("Checking permissions-excluded to add...")
 	// Add new exclusions from tp.Permsx that are not already in tg.Permsx
 	for _, tpPermx := range tp.Permsx {
-		for _, tgPermx := range tg.Permsx {
-			logrus.Debugf("Comparing tgPermx %s with tpPermx %s\n", tgPermx, tpPermx)
-			if tpPermx == tgPermx {
-				logrus.Debugf("tpPermx equals tgPermx, skipping")
-				continue
-			} else if tpPermx != "" {
-				logrus.Debugf("Adding tpPermx %s to permsxToAdd\n", tpPermx)
-				permsxToAdd = append(permsxToAdd, tpPermx)
+		if len(tg.Permsx) == 0 {
+			logrus.Debugf("No tg.Permsx, adding tpPermx %s to permsxToAdd\n", tpPermx)
+			permsxToAdd = append(permsxToAdd, tpPermx)
+			continue
+		} else {
+			for _, tgPermx := range tg.Permsx {
+				logrus.Debugf("Comparing tgPermx %s with tpPermx %s\n", tgPermx, tpPermx)
+				if tpPermx == tgPermx {
+					logrus.Debugf("tpPermx equals tgPermx, skipping")
+					continue
+				} else if tpPermx != "" {
+					logrus.Debugf("Adding tpPermx %s to permsxToAdd\n", tpPermx)
+					permsxToAdd = append(permsxToAdd, tpPermx)
+				}
 			}
 		}
 	}
