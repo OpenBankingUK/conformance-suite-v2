@@ -1,7 +1,5 @@
 # Release history
 
-## [Unreleased]
-
 ## [1.9.6] - 29/01/2026
 
 ### Added
