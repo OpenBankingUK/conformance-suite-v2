@@ -1,5 +1,6 @@
 {
-    "scripts": [{
+    "scripts": [
+      {
         "description": "Fails 404 on an invalid endpoint.",
         "id": "OB-400-ACC-001000",
         "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/account-and-transaction-api-profile.html",
@@ -39,7 +40,8 @@
         "resource": "Account",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllV4AccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -85,7 +87,8 @@
         "resource": "Account",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllV4AccountDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -480,12 +483,16 @@
           "ReadAccountsBasic",
           "ReadBeneficiariesBasic"
         ],
+        "permissions-excluded": [
+          "ReadBeneficiariesDetail"
+        ],
         "uri": "/accounts/$accountId/beneficiaries",
         "uriImplementation": "conditional",
         "resource": "Beneficiary",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllBeneficiaryDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -502,12 +509,16 @@
           "ReadAccountsBasic",
           "ReadBeneficiariesBasic"
         ],
+        "permissions-excluded": [
+          "ReadBeneficiariesDetail"
+        ],
         "uri": "/beneficiaries",
         "uriImplementation": "optional",
         "resource": "Beneficiary",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllBeneficiaryDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -1843,7 +1854,8 @@
         "resource": "Transaction",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllV4TransactionDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true
@@ -1958,7 +1970,8 @@
         "resource": "Transaction",
         "asserts": [
           "OB3GLOAssertOn200",
-          "OB3GLOFAPIHeader"
+          "OB3GLOFAPIHeader",
+          "AssertAllV4TransactionDetailsNotPresent"
         ],
         "method": "get",
         "schemaCheck": true

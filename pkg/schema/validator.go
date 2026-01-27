@@ -2,12 +2,12 @@ package schema
 
 import (
 	"fmt"
-	"github.com/blang/semver/v4"
 	"io"
 	"io/ioutil"
 	"net/http"
 	"os"
 
+	"github.com/blang/semver/v4"
 	"github.com/go-openapi/loads"
 	"github.com/go-openapi/spec"
 	"github.com/pkg/errors"
