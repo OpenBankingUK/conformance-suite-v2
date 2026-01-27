@@ -16,7 +16,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Release Notes
 
-### v1.9.5 - 2025-10-02
+### v1.9.6 - 2026-01-26
 
 [Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases.md)
 
@@ -31,14 +31,15 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Version table
 
-| Release |    Standard version     |
-|---------|:-----------------------:|
-| v1.9.5  | v4.0.0 Swagger Update 4 |
-| v1.9.4  |         v4.0.0          |
-| v1.9.3  |         v4.0.0          |
-| v1.7.6  |         v3.1.11         |
-| v1.7.0  |         v3.1.10         |
-| v1.6.12 |         v3.1.9          |
+| Release |     Standard version      |
+|---------|:-------------------------:|
+| v1.9.6  | v4.0.0 - Swagger Update 5 |
+| v1.9.5  | v4.0.0 - Swagger Update 4 |
+| v1.9.4  |          v4.0.0           |
+| v1.9.3  |          v4.0.0           |
+| v1.7.6  |          v3.1.11          |
+| v1.7.0  |          v3.1.10          |
+| v1.6.12 |          v3.1.9           |
 
 
 ## Quickstart
@@ -46,11 +47,11 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 Pull and run the latest (stable) tagged Docker image:
 
-    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.5"
+    > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.6"
 
 or
 
-    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.5"
+    > docker run --rm -it -p 8443:8443 "openbanking/conformance-suite:v1.9.6"
 
 [See Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 
