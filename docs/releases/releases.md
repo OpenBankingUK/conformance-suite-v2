@@ -10,6 +10,10 @@
 - Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
 - added support for Commercial VRP (cVRP)
 
+### Fixed
+
+- Fixed issue with token permission exclusions not always working as expected.
+
 ## [1.9.6-beta5] - 30/12/2025
 
 ### Fixed
