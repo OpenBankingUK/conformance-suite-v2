@@ -23,7 +23,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 **Download**:
-`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.5"` |
+`docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.6"` |
 [DockerHub](https://hub.docker.com/r/openbanking/conformance-suite) |
 [Setup Guide](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/setup-guide.md)
 ---
@@ -31,15 +31,16 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Version table
 
-| Release |     Standard version      |
-|---------|:-------------------------:|
-| v1.9.6  | v4.0.0 - Swagger Update 5 |
-| v1.9.5  | v4.0.0 - Swagger Update 4 |
-| v1.9.4  |          v4.0.0           |
-| v1.9.3  |          v4.0.0           |
-| v1.7.6  |          v3.1.11          |
-| v1.7.0  |          v3.1.10          |
-| v1.6.12 |          v3.1.9           |
+| Release | Standard version                                                                       |
+|---------|----------------------------------------------------------------------------------------|
+| v1.9.6  | <ul><li>v4.0.0 - Swagger Update 5</li><li>cVRP (based on OBL 4.0.0 Swagger Update 4)</li></ul> |
+| v1.9.5  | v4.0.0 - Swagger Update 4                                                              |
+| v1.9.2  | v4.0.0 - Swagger Update 3                                                                      |
+| v1.9.0  | v4.0.0 - Swagger Update 2                                                                      |
+| v1.8.0  | v4.0.0                                                                                 |
+| v1.7.6  | v3.1.11                                                                                |
+| v1.7.0  | v3.1.10                                                                                |
+| v1.6.12 | v3.1.9                                                                                 |
 
 
 ## Quickstart
@@ -64,6 +65,24 @@ In order to run a container you'll need docker installed.
 * [Windows](https://docs.docker.com/windows/started)
 * [OS X](https://docs.docker.com/mac/started/)
 * [Linux](https://docs.docker.com/linux/started/)
+
+## Commercial VRP (cVRP) support
+
+cVRP implementations can be tested by using the following `apiSpecification` values in the discovery file:
+
+```json
+"apiSpecification": {
+          "name": "Commercial Variable Recurring Payments API Specification",
+          "url": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/vrp-profile.html",
+          "version": "v4.0.0",
+          "schemaVersion": "https://raw.githubusercontent.com/OpenBankingUK/Commercial-VRP-API-Spec/refs/heads/main/OpenAPI/cvrp-openapi.json",
+          "manifest": "file://manifests/cVRP_4.0_variable_recurring_payments.json"
+        },
+```
+
+A full sample file named `cVRP-v4.0-generic-discovery.json` has been included in the `/pkg/discovery/templates` directory.  Please note, the sample file reqires the following fields to be updated before use:
+- `openidConfigurationUri`
+- `resourceBaseUri` 
 
 ## Advanced Logging
 
