@@ -13,8 +13,8 @@
           "schemaVersion": "https://raw.githubusercontent.com/OpenBankingUK/Commercial-VRP-API-Spec/refs/heads/main/OpenAPI/cvrp-openapi.json",
           "manifest": "file://manifests/cVRP_4.0_variable_recurring_payments.json"
         },
-        "openidConfigurationUri": "https://YOUR URL HERE/.well-known/openid-configuration",
-        "resourceBaseUri": "https://YOUR URL HERE/open-banking/v4.0/pisp",
+        "openidConfigurationUri": "",
+        "resourceBaseUri": "",
         "endpoints": [
           {
             "method": "POST",
