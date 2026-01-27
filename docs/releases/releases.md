@@ -8,6 +8,7 @@
 
 - Added support for testing JSON objects not present
 - Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
+- added support for Commercial VRP (cVRP)
 
 ## [1.9.6-beta5] - 30/12/2025
 
