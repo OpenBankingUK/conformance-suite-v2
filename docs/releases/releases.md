@@ -8,10 +8,12 @@
 - Added support for testing JSON objects not present
 - Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
 - added support for Commercial VRP (cVRP)
+- Add enhanced logging for test case authorization and execution
 
 ### Fixed
 
 - Fixed issue with token permission exclusions not always working as expected.
+- Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
 
 ## [1.9.6-beta5] - 30/12/2025
 
