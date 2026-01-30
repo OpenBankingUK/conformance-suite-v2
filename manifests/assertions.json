@@ -113,7 +113,7 @@
     "OB3GLOAssertFinalPaymentAmount": {
       "expect": {
         "matches": [{
-          "JSON": "Data.Initiation.FirstPaymentAmount",
+          "JSON": "Data.Initiation.FinalPaymentAmount",
           "detail": "Expected FinalPaymentAmount to be present."
         }]
       }
