@@ -568,6 +568,33 @@
         "validateSignature": true
       },
       {
+        "description": "Test if both FinalPaymentDateTime and CountPerPeriod returned, should fail with 400 error",
+        "id": "OB-400-DOP-101503",
+        "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+        "detail": "Test if both FinalPaymentDateTime and CountPerPeriod returned, should fail with 400 error",
+        "parameters": {
+          "tokenRequestScope": "payments",
+          "instructedAmountValue": "$instructedAmountValue",
+          "instructedAmountCurrency": "$instructedAmountCurrency",
+          "frequency": "$payment_frequency",
+          "frequencyCountPerPeriod": "$payment_frequency_count_per_period",
+          "frequencyPointInTime": "$payment_frequency_point_in_time",
+          "firstPaymentDateTime": "$firstPaymentDateTime",
+          "postData": "$failingMinimalDomesticStandingOrderConsentV4",
+          "requestConsent": "false"
+        },
+        "body": "$postData",
+        "uri": "/domestic-standing-order-consents",
+        "uriImplementation": "conditional",
+        "resource": "DomesticStandingOrder",
+        "asserts": [
+          "OB3GLOAssertOn400"
+        ],
+        "method": "post",
+        "schemaCheck": true,
+        "validateSignature": true
+      },
+      {
         "description": "International Payment consent succeeds with minimal data set with additional schema checks.",
         "id": "OB-400-DOP-101600",
         "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",

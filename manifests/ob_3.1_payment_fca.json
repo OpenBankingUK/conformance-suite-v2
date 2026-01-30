@@ -585,6 +585,31 @@
       "validateSignature": true
     },
     {
+      "description": "Test if both FinalPaymentDateTime and NumberOfPayments returned, should fail with 400 error",
+      "id": "OB-301-DOP-1015003",
+      "refURI": "https://openbanking.atlassian.net/wiki/spaces/DZ/pages/1000670131/Domestic+Standing+Orders+v3.1.1#DomesticStandingOrdersv3.1.1-POST/domestic-standing-order-consents",
+      "detail": "Test if both FinalPaymentDateTime and NumberOfPayments returned, should fail with 400 error",
+      "parameters": {
+        "tokenRequestScope": "payments",
+        "instructedAmountValue": "$instructedAmountValue",
+        "instructedAmountCurrency": "$instructedAmountCurrency",
+        "frequency": "$payment_frequency",
+        "firstPaymentDateTime": "$firstPaymentDateTime",
+        "postData": "$failingMinimalDomesticStandingOrderConsentV3",
+        "requestConsent": "false"
+      },
+      "body": "$postData",
+      "uri": "/domestic-standing-order-consents",
+      "uriImplementation": "conditional",
+      "resource": "DomesticStandingOrder",
+      "asserts": [
+        "OB3GLOAssertOn400"
+      ],
+      "method": "post",
+      "schemaCheck": true,
+      "validateSignature": true
+    },
+    {
       "description": "International Payment consent succeeds with minimal data set with additional schema checks.",
       "id": "OB-301-DOP-101600",
       "refURI": "https://openbanking.atlassian.net/wiki/spaces/DZ/pages/1000015587/International+Payments+v3.1.1#InternationalPaymentsv3.1.1-POST/international-payment-consents",
