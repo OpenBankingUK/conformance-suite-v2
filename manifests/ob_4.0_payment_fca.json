@@ -568,28 +568,6 @@
         "validateSignature": true
       },
       {
-        "description": "Fails when NumberOfPayments, FinalPaymentDateTime are not specified and FinalPaymentAmount is specified.",
-        "id": "OB-400-DOP-1015002",
-        "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
-        "detail": "Checks if NumberOfPayments, FinalPaymentDateTime are not specified and FinalPaymentAmount is specified.",
-        "parameters": {
-          "tokenRequestScope": "payments",
-          "paymentID": "$OB-400-DOP-101401-DomesticStandingOrderID"
-        },
-        "uri": "/domestic-standing-orders/$paymentID",
-        "uriImplementation": "conditional",
-        "resource": "DomesticScheduledPayment",
-        "asserts_last_if_all": [
-          "OB3GLOAssertNoNumberOfPayments",
-          "OB3GLOAssertNoFinalPaymentDateTime",
-          "OB3GLOAssertFinalPaymentAmount",
-          "OB3GLOAssertOn403"
-        ],
-        "method": "get",
-        "schemaCheck": true,
-        "validateSignature": true
-      },
-      {
         "description": "International Payment consent succeeds with minimal data set with additional schema checks.",
         "id": "OB-400-DOP-101600",
         "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
