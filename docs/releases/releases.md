@@ -1,6 +1,6 @@
 # Release history
 
-## [1.9.6] - 29/01/2026
+## [1.9.6] - 30/01/2026
 
 ### Added
 
@@ -14,6 +14,10 @@
 
 - Fixed issue with token permission exclusions not always working as expected.
 - Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
+
+### Removed
+
+- Removed `/domestic-standing-orders` not-open-ended response verification tests `OB-301-DOP-1015002` and `OB-400-DOP-1015002` as not accurate to specification definitions.
 
 ## [1.9.6-beta5] - 30/12/2025
 
