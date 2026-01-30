@@ -102,6 +102,22 @@
         }]
       }
     },
+    "OB4GLOAssertFinalPaymentDateTime": {
+      "expect": {
+        "matches": [{
+          "JSON": "Data.Initiation.MandateRelatedInformation.FinalPaymentDateTime",
+          "detail": "Expected v4 FinalPaymentDateTime to be present."
+        }]
+      }
+    },
+    "OB4GLOAssertCountPerPeriod": {
+      "expect": {
+        "matches": [{
+          "JSON": "Data.Initiation.MandateRelatedInformation.Frequency.CountPerPeriod",
+          "detail": "Expected v4 CountPerPeriod to be present."
+        }]
+      }
+    },
     "OB3GLOAssertNoFinalPaymentDateTime": {
       "expect": {
         "matches": [{
