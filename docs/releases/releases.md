@@ -9,6 +9,9 @@
 - Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
 - added support for Commercial VRP (cVRP)
 - Add enhanced logging for test case authorization and execution
+- Added tests `OB-301-DOP-1015003` and `OB-400-DOP-1015003` which validate the following:
+- OB-301-DOP-1015003 (v3): validates that `NumberOfPayments` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
+- OB-400-DOP-101500 (v4): validates that `CountPerPeriod` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
 
 ### Fixed
 
@@ -17,7 +20,7 @@
 
 ### Removed
 
-- Removed `/domestic-standing-orders` not-open-ended response verification tests `OB-301-DOP-1015002` and `OB-400-DOP-1015002` as not accurate to specification definitions.
+- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-1015003` respectively.
 
 ## [1.9.6-beta5] - 30/12/2025
 
