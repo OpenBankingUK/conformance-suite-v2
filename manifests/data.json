@@ -470,6 +470,29 @@
         "Risk": {}
       }
     },
+    "failingMinimalDomesticStandingOrderConsentV3": {
+      "body": {
+        "Data": {
+          "Permission": "Create",
+          "Initiation": {
+            "Frequency": "$frequency",
+            "FirstPaymentDateTime": "$firstPaymentDateTime",
+            "FirstPaymentAmount": {
+              "Amount": "$instructedAmountValue",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "NumberOfPayments": "string",
+            "FinalPaymentDateTime": "2027-01-30T14:34:33.083Z",
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            }
+          }
+        },
+        "Risk": {}
+      }
+    },
     "minimalDomesticStandingOrderConsentV4": {
       "body": {
         "Data": {
@@ -479,6 +502,33 @@
               "FirstPaymentDateTime": "$firstPaymentDateTime",
               "Frequency": {
                 "Type": "$frequency"
+              }
+            },
+            "FirstPaymentAmount": {
+              "Amount": "$instructedAmountValue",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            }
+          }
+        },
+        "Risk": {}
+      }
+    },
+    "failingMinimalDomesticStandingOrderConsentV4": {
+      "body": {
+        "Data": {
+          "Permission": "Create",
+          "Initiation": {
+            "MandateRelatedInformation": {
+              "FirstPaymentDateTime": "$firstPaymentDateTime",
+              "FinalPaymentDateTime": "2027-01-30T14:35:45.908Z",
+              "Frequency": {
+                "Type": "$frequency",
+                "CountPerPeriod": 1
               }
             },
             "FirstPaymentAmount": {
