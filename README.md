@@ -16,7 +16,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Release Notes
 
-### v1.9.6 - 2026-01-29
+### v1.9.6 - 2026-01-30
 
 [Full Release Notes](https://github.com/OpenBankingUK/conformance-suite/blob/develop/docs/releases/releases.md)
 
