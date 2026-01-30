@@ -568,10 +568,10 @@
         "validateSignature": true
       },
       {
-        "description": "Test if both FinalPaymentDateTime and CountPerPeriod returned, should fail with 400 error",
+        "description": "Tests that domestic standing order consent is rejected with HTTP 400 when both FinalPaymentDateTime and CountPerPeriod are present.",
         "id": "OB-400-DOP-101503",
         "refURI": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
-        "detail": "Test if both FinalPaymentDateTime and CountPerPeriod returned, should fail with 400 error",
+        "detail": "Sends a consent payload containing both FinalPaymentDateTime and CountPerPeriod . This should be rejected with a HTPP 400 and appropriate error code in the response body, aligned to the error schema. Only the HTTP status code is validated.",
         "parameters": {
           "tokenRequestScope": "payments",
           "instructedAmountValue": "$instructedAmountValue",
