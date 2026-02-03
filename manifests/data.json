@@ -12,6 +12,18 @@
         }
       }
     },
+    "minimalDomesticCVRPConfirmation": {
+      "body": {
+        "Data": {
+          "ConsentId": "$consentId",
+          "Reference": "$creditorIdentification",
+          "InstructedAmount": {
+            "Amount": "$instructedAmountValue",
+            "Currency": "$instructedAmountCurrency"
+          }
+        }
+      }
+    },
     "minimalDomesticVRPConsent": {
       "body": {
         "Data": {
@@ -87,6 +99,45 @@
           "ControlParameters": {
             "PSUAuthenticationMethods": [ "UK.OBIE.SCANotRequired" ],
             "VRPType": ["UK.OBIE.VRPType.Sweeping"],
+            "ValidFromDateTime": "$transactionFromDate",
+            "ValidToDateTime": "$transactionToDate",
+            "MaximumIndividualAmount": {
+              "Amount": "10.00",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "PeriodicLimits": [{
+              "Amount": "10.00",
+              "Currency": "GBP",
+              "PeriodAlignment": "Consent",
+              "PeriodType": "Week"
+            }]            
+          },
+          "Initiation": {           
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            },
+            "RemittanceInformation": {
+              "Structured": [{
+                "CreditorReferenceInformation": {
+                  "Reference": "$creditorIdentification"
+                }
+              }],
+              "Unstructured": ["Test Unstructured Data"]
+            }
+          }
+        },
+        "Risk": {
+        }
+      }
+    },
+    "minimalDomesticCVRPConsentV4": {
+      "body": {
+        "Data": {
+          "ControlParameters": {
+            "PSUAuthenticationMethods": [ "UK.OBIE.SCANotRequired" ],
+            "VRPType": ["UK.OBIE.VRPType.CVRP1"],
             "ValidFromDateTime": "$transactionFromDate",
             "ValidToDateTime": "$transactionToDate",
             "MaximumIndividualAmount": {
@@ -244,6 +295,53 @@
         }
       }
     },
+    "minimalDomesticCVRPV4": {
+      "body": {
+        "Data": {
+          "ConsentId": "$consentId",
+          "PSUAuthenticationMethod": "UK.OBIE.SCANotRequired",
+          "Initiation": {           
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            },
+            "RemittanceInformation": {
+              "Structured": [{
+                "CreditorReferenceInformation": {
+                  "Reference": "$creditorIdentification"
+                }
+              }],
+              "Unstructured": ["Test Unstructured Data"]
+            }
+          },
+          "Instruction": {
+            "InstructionIdentification": "$instructionIdentification",
+            "EndToEndIdentification": "$endToEndIdentification",
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            },
+            "InstructedAmount": {
+              "Amount": "$instructedAmountValue",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "RemittanceInformation": {
+              "Structured": [{
+                "CreditorReferenceInformation": {
+                  "Reference": "$creditorIdentification"
+                }
+              }],
+              "Unstructured": ["Test Unstructured Data"]
+            }
+          },
+          "VRPType": "UK.OBIE.VRPType.CVRP1"
+        },
+        "Risk": {
+        }
+      }
+    },
     "minimalDomesticPaymentConsent": {
       "body": {
         "Data": {
@@ -372,6 +470,29 @@
         "Risk": {}
       }
     },
+    "failingMinimalDomesticStandingOrderConsentV3": {
+      "body": {
+        "Data": {
+          "Permission": "Create",
+          "Initiation": {
+            "Frequency": "$frequency",
+            "FirstPaymentDateTime": "$firstPaymentDateTime",
+            "FirstPaymentAmount": {
+              "Amount": "$instructedAmountValue",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "NumberOfPayments": "string",
+            "FinalPaymentDateTime": "2027-01-30T14:34:33.083Z",
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            }
+          }
+        },
+        "Risk": {}
+      }
+    },
     "minimalDomesticStandingOrderConsentV4": {
       "body": {
         "Data": {
@@ -381,6 +502,33 @@
               "FirstPaymentDateTime": "$firstPaymentDateTime",
               "Frequency": {
                 "Type": "$frequency"
+              }
+            },
+            "FirstPaymentAmount": {
+              "Amount": "$instructedAmountValue",
+              "Currency": "$instructedAmountCurrency"
+            },
+            "CreditorAccount": {
+              "SchemeName": "$creditorScheme",
+              "Identification": "$creditorIdentification",
+              "Name": "$creditorName"
+            }
+          }
+        },
+        "Risk": {}
+      }
+    },
+    "failingMinimalDomesticStandingOrderConsentV4": {
+      "body": {
+        "Data": {
+          "Permission": "Create",
+          "Initiation": {
+            "MandateRelatedInformation": {
+              "FirstPaymentDateTime": "$firstPaymentDateTime",
+              "FinalPaymentDateTime": "2027-01-30T14:35:45.908Z",
+              "Frequency": {
+                "Type": "$frequency",
+                "CountPerPeriod": 1
               }
             },
             "FirstPaymentAmount": {

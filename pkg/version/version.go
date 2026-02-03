@@ -25,9 +25,9 @@ const (
 	//v1.9.5 - this comment allows searching
 	major = "1"
 	minor = "9"
-	patch = "5"
+	patch = "6"
 
-	//FullVersion -  Checker is the full string version of Conformance Suite.
+	//FullVersion - Checker is the full string version of Conformance Suite.
 	FullVersion = major + "." + minor + "." + patch
 
 	// Prerelease - is pre-release marker for the version. If this is "" (empty string)

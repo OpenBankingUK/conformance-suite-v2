@@ -189,7 +189,9 @@ func consentURL(authEndpoint string, claims map[string]string, token string) str
 	queryString.Set("state", claims["state"])
 	queryString.Set("redirect_uri", claims["redirect_url"])
 
-	consentURL := fmt.Sprintf("%s?%s", authEndpoint, queryString.Encode())
+	// Replace + with %20 for space encoding (OpenID requirement)
+	encodedQuery := strings.ReplaceAll(queryString.Encode(), "+", "%20")
+	consentURL := fmt.Sprintf("%s?%s", authEndpoint, encodedQuery)
 
 	logrus.WithFields(logrus.Fields{
 		"claims":       claims,

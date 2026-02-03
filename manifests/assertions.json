@@ -102,6 +102,22 @@
         }]
       }
     },
+    "OB4GLOAssertFinalPaymentDateTime": {
+      "expect": {
+        "matches": [{
+          "JSON": "Data.Initiation.MandateRelatedInformation.FinalPaymentDateTime",
+          "detail": "Expected v4 FinalPaymentDateTime to be present."
+        }]
+      }
+    },
+    "OB4GLOAssertCountPerPeriod": {
+      "expect": {
+        "matches": [{
+          "JSON": "Data.Initiation.MandateRelatedInformation.Frequency.CountPerPeriod",
+          "detail": "Expected v4 CountPerPeriod to be present."
+        }]
+      }
+    },
     "OB3GLOAssertNoFinalPaymentDateTime": {
       "expect": {
         "matches": [{
@@ -113,7 +129,7 @@
     "OB3GLOAssertFinalPaymentAmount": {
       "expect": {
         "matches": [{
-          "JSON": "Data.Initiation.FirstPaymentAmount",
+          "JSON": "Data.Initiation.FinalPaymentAmount",
           "detail": "Expected FinalPaymentAmount to be present."
         }]
       }
@@ -305,6 +321,128 @@
           "JSON": "Data.Transaction.#(ProprietaryBankTransactionCode)",
           "detail": "Expected ProprietaryBankTransactionCode to be present in the transaction data."
         }]
+      }
+    },
+    "AssertAllV4AccountDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(StatementFrequencyAndFormat)",
+            "description": "Expect StatementFrequencyAndFormat to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Servicer)",
+            "description": "Expect Servicer to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Account)",
+            "description": "Expect Account to be not present in the account data."
+          }
+        ]
+      }
+    },
+    "AssertAllV3AccountDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Servicer)",
+            "description": "Expect Servicer to be not present in the account data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Account.#(Account)",
+            "description": "Expect Account to be not present in the account data."
+          }
+        ]
+      }
+    },
+    "AssertAllV4TransactionDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(TransactionInformation)",
+            "description": "Expect TransactionInformation to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(Balance)",
+            "description": "Expect Balance to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(MerchantDetails)",
+            "description": "Expect MerchantDetails to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAgent)",
+            "description": "Expect CreditorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAccount)",
+            "description": "Expect CreditorAccount to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(UltimateCreditor)",
+            "description": "Expect UltimateCreditor to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAgent)",
+            "description": "Expect DebtorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAccount)",
+            "description": "Expect DebtorAccount to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(UltimateDebtor)",
+            "description": "Expect UltimateDebtor to be not present in the transaction data."
+          }
+        ]
+      }
+    },
+    "AssertAllV3TransactionDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(TransactionInformation)",
+            "description": "Expect TransactionInformation to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(Balance)",
+            "description": "Expect Balance to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(MerchantDetails)",
+            "description": "Expect MerchantDetails to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAgent)",
+            "description": "Expect CreditorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(CreditorAccount)",
+            "description": "Expect CreditorAccount to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAgent)",
+            "description": "Expect DebtorAgent to be not present in the transaction data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Transaction.#(DebtorAccount)",
+            "description": "Expect DebtorAccount to be not present in the transaction data."
+          }
+        ]
+      }
+    },
+    "AssertAllBeneficiaryDetailsNotPresent": {
+      "expect": {
+        "matches": [
+          {
+            "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAgent)",
+            "description": "Expect StatementFrequencyAndFormat to be not present in the Beneficiary data."
+          },
+          {
+            "JSON-NOT-PRESENT": "Data.Beneficiary.#(CreditorAccount)",
+            "description": "Expect Servicer to be not present in the Beneficiary data."
+          }
+        ]
       }
     }
   }

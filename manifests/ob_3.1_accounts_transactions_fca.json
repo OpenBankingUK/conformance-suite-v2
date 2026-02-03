@@ -39,7 +39,8 @@
       "resource": "Account",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllV3AccountDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true
@@ -85,7 +86,8 @@
       "resource": "Account",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllV3AccountDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true
@@ -490,12 +492,16 @@
         "ReadAccountsBasic",
         "ReadBeneficiariesBasic"
       ],
+      "permissions-excluded": [
+        "ReadBeneficiariesDetail"
+      ],
       "uri": "/accounts/$accountId/beneficiaries",
       "uriImplementation": "conditional",
       "resource": "Beneficiary",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllBeneficiaryDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true
@@ -512,12 +518,16 @@
         "ReadAccountsBasic",
         "ReadBeneficiariesBasic"
       ],
+      "permissions-excluded": [
+        "ReadBeneficiariesDetail"
+      ],
       "uri": "/beneficiaries",
       "uriImplementation": "optional",
       "resource": "Beneficiary",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllBeneficiaryDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true
@@ -1867,7 +1877,8 @@
       "resource": "Transaction",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllV3TransactionDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true
@@ -1982,7 +1993,8 @@
       "resource": "Transaction",
       "asserts": [
         "OB3GLOAssertOn200",
-        "OB3GLOFAPIHeader"
+        "OB3GLOFAPIHeader",
+        "AssertAllV3TransactionDetailsNotPresent"
       ],
       "method": "get",
       "schemaCheck": true

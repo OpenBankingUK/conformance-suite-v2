@@ -146,6 +146,9 @@ func getSpecFilePathPattern(specName string) string {
 	case "Variable Recurring Payments API Specification":
 		filename = "spec/%s/variable-recurring-payments-openapi.json"
 
+	case "Commercial Variable Recurring Payments API Specification":
+		filename = "spec/%s/cvrp-openapi.json"
+
 	default:
 		filename = ""
 	}

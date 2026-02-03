@@ -6,8 +6,8 @@
     }
   ],
   "info": {
-    "title": "OBL VRP Profile",
-    "description": "VRP OpenAPI Specification",
+    "title": "Commercial VRP (cVRP) Profile",
+    "description": "Commercial VRP (cVRP) OpenAPI Specification",
     "version": "4.0.0",
     "termsOfService": "https://www.openbanking.org.uk/terms",
     "contact": {
@@ -413,44 +413,11 @@
           "content": {
             "application/json-patch+json": {
               "schema": {
-                "type": "array",
-                "items": {
-                  "type": "object",
-                  "required": [
-                    "op",
-                    "path"
-                  ],
-                  "properties": {
-                    "op": {
-                      "type": "string",
-                      "description": "The operation to perform",
-                      "enum": [
-                        "add",
-                        "remove",
-                        "replace",
-                        "move",
-                        "copy",
-                        "test"
-                      ]
-                    },
-                    "path": {
-                      "type": "string",
-                      "description": "The path to the element to operate on as per [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901)"
-                    },
-                    "from": {
-                      "type": "string",
-                      "description": "The path to move or copy from as per [RFC 6901](https://datatracker.ietf.org/doc/html/rfc6901)"
-                    },
-                    "value": {
-                      "description": "The value to add, replace, or test against. This may be a single string or an array of strings"
-                    }
-                  },
-                  "additionalProperties": false
-                }
+                "type": "string"
               }
             }
           },
-          "description": "Array of Patch Operations as defined in [RFC 6902](https://datatracker.ietf.org/doc/html/rfc6902)",
+          "description": "Array of Patch Operations",
           "required": true
         },
         "security": [
@@ -1330,10 +1297,8 @@
       "LEI": {
         "description": "Legal entity identification as an alternate identification for a party. Legal Entity Identifier is a code allocated to a party as described in ISO 17442 \"Financial Services - Legal Entity Identifier (LEI)\".",
         "type": "string",
-        "example": "IZ9Q00LZEVUKWCQY6X15",
         "minLength": 1,
-        "maxLength": 20,
-        "pattern": "^[A-Z0-9]{18,18}[0-9]{2,2}$"
+        "maxLength": 20
       },
       "Name_1": {
         "description": "Name by which an agent is known and which is usually used to identify that agent.",
@@ -1923,7 +1888,6 @@
                 "enum": [
                   "RCVD",
                   "RJCT",
-                  "CANC",
                   "PDNG",
                   "ACTC",
                   "ACCP",
@@ -2036,7 +2000,6 @@
                       "enum": [
                         "RCVD",
                         "RJCT",
-                        "CANC",
                         "PDNG",
                         "ACTC",
                         "ACCP",
@@ -3278,7 +3241,10 @@
         "type": "string",
         "x-namespaced-enum": [
           "UK.OBIE.VRPType.Sweeping",
-          "UK.OBIE.VRPType.Other"
+          "UK.OBIE.VRPType.Other",
+          "UK.OBIE.VRPType.CVRP1",
+          "UK.OBIE.VRPType.CVRP2",
+          "UK.OBIE.VRPType.CVRP3"
         ]
       },
       "OBVRPAuthenticationMethods": {

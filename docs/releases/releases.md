@@ -1,30 +1,81 @@
 # Release history
 
-## [Unreleased]
+## [1.9.6] - 02/02/2026
+
+### Added
+
+- v4.0 Swagger Update 5
+- Added support for testing JSON objects not present
+- Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
+- added support for Commercial VRP (cVRP)
+- Add enhanced logging for test case authorization and execution
+- Added tests `OB-301-DOP-1015003` and `OB-400-DOP-1015003` which validate the following:
+  - OB-301-DOP-1015003 (v3): validates that `NumberOfPayments` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
+  - OB-400-DOP-101500 (v4): validates that `CountPerPeriod` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
+
+### Fixed
+
+- Fixed issue with token permission exclusions not always working as expected.
+- Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
+
+### Removed
+
+- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-1015003` respectively.
+
+## [1.9.6-beta5] - 30/12/2025
+
+### Fixed
+
+- Merged changes from beta 1 & 2 with beta 3 & 4
+
+## [1.9.6-beta4] - 19/12/2025
+
+### Added
+
+- Initial support for cVRP
+
+## [1.9.6-beta3]
+
+### Fixed
+
+- Addresses issue with permissions builder function
+
+## [1.9.6-beta2] - 10/11/2025
+
+### Added
+
+- Add enhanced logging for test case authorization and execution
+
+## [1.9.6-beta1] - 16/10/2025
+
+### Fixed
+
+- Corrected FAPI Authorization URL encoding whitespaces from `+` to `%20`.
 
 # [1.9.5] - 2nd October 2025
 
-## Changed
+### Changed
+
 - Update version to v1.9.5 final release
 
-# [1.9.5-beta3] - 1st October 2025
+## [1.9.5-beta3] - 1st October 2025
 
-## Fixed
+### Fixed
 
 - Updated discovery.json conditionalProperties documentation to match functionality (#234)
 - Added WODL (working day) enum to payment frequency regex (#235)
 
 # [1.9.5-beta2] - 21st August 2025
 
-## Added
+### Added
 
 - Added status code response error handling for get JWKS (#230)
 - Added content-type logging and advice for get JWKS (#230)
 - Added unit tests for get JWKS errors, content-type logging, status code, and helper functions. (#230)
 
-# [1.9.5-beta1] - 10th June 2025
+## [1.9.5-beta1] - 10th June 2025
 
-## Added
+### Added
 
 - Add validation check for AIS Transaction to return either `BankTransactionCode` or `ProprietaryBankTransactionCode` (or both).
 
@@ -398,14 +449,21 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 
 [More Releases](docs/releases)
 
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta3...HEAD
+[1.9.6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...release/1.9.6
+[1.9.6-beta6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta5...v1.9.6
+[1.9.6-beta5]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta4...v1.9.6-beta5
+[1.9.6-beta4]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta3...v1.9.6-beta4
+[1.9.6-beta3]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...v1.9.6-beta3
+[1.9.6-beta2]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta1...v1.9.6-beta2
+[1.9.6-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...v1.9.6-beta1
+[1.9.5]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta3...v1.9.5
 [1.9.5-beta3]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta2...v1.9.5-beta3
 [1.9.5-beta2]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5-beta1...v1.9.5-beta2
 [1.9.5-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4...v1.9.5-beta1
-[1.9.4]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta3...v1.9.4
-[1.9.4-beta3]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta2...v1.9.4-beta3
-[1.9.4-beta2]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.4-beta1...v1.9.4-beta2
-[1.9.4-beta1]: https://github.com/OpenBankingUK/conformance-suite/releases/tag/v1.9.3...v1.9.4-beta1
+[1.9.4]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4-beta3...v1.9.4
+[1.9.4-beta3]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4-beta2...v1.9.4-beta3
+[1.9.4-beta2]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.4-beta1...v1.9.4-beta2
+[1.9.4-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.3...v1.9.4-beta1
 
 ---
 
