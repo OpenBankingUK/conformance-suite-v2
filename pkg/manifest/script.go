@@ -204,11 +204,16 @@ func addConditionalPropertiesToRequest(tc *model.TestCase, conditional []discove
 						log.Error(err)
 						return err
 					}
-					if isRequestProperty && len(prop.Value) > 0 {
+					if isRequestProperty && !isEmptyValue(prop.Value) {
 						var err error
 						if propertyType == "[array]" {
-							stringArray := convertInputStringToArray(prop.Value)
-							tc.Input.RequestBody, err = sjson.Set(tc.Input.RequestBody, prop.Path, stringArray)
+							// Handle array values - if Value is a string, split it; otherwise use it as-is
+							if strValue, ok := prop.Value.(string); ok {
+								stringArray := convertInputStringToArray(strValue)
+								tc.Input.RequestBody, err = sjson.Set(tc.Input.RequestBody, prop.Path, stringArray)
+							} else {
+								tc.Input.RequestBody, err = sjson.Set(tc.Input.RequestBody, prop.Path, prop.Value)
+							}
 						} else if propertyType == "[object]" && prop.Schema == "OBSupplementaryData1" { // handle freeform supplementary data into request payload
 							path := prop.Path + "." + prop.Name
 							tc.Input.RequestBody, err = sjson.Set(tc.Input.RequestBody, path, prop.Value)
@@ -226,6 +231,21 @@ func addConditionalPropertiesToRequest(tc *model.TestCase, conditional []discove
 	}
 
 	return nil
+}
+
+// isEmptyValue checks if an interface{} value is nil, empty string, or zero-length collection
+func isEmptyValue(val interface{}) bool {
+	if val == nil {
+		return true
+	}
+	switch v := val.(type) {
+	case string:
+		return len(v) == 0
+	case []interface{}:
+		return len(v) == 0
+	default:
+		return false
+	}
 }
 
 func convertInputStringToArray(value string) []string {
