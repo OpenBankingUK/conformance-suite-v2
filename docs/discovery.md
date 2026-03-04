@@ -57,7 +57,7 @@ equivalence.
 | name                   |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.name     | General name for the conditional property (can be anything). Ideally, something descriptive.                                                                                                                                                         |
 | path                   |    1..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.path     | Path to property expressed in [JSON dot notation](https://github.com/tidwall/gjson#path-syntax) format, e.g. Data.Transaction.0.Balance                                                                                                             |
 | required               |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.required | Boolean value representing if the field is required or not. Recommended: set to `true`                                                                                                                                                              |
-| value                  |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.value    | The value of the property for which you want to include                                                                                                                                                                                             |
+| value                  |    0..1    | discoveryModel.discoveryItems.\*.endpoints.\*.conditionalProperties.*.value    | The value of the property for which you want to include. Can be a string, number, boolean, or array.                                                                                                                                                |
 
 ### Discovery version
 
@@ -176,6 +176,26 @@ v4 PIS example for passing in a reference for a single immediate payment
   ]
 }
 ```
+
+Example for passing a boolean value for BeneficiaryPrepopulatedIndicator:
+
+```json
+{
+  "method": "POST",
+  "path": "/domestic-vrp-consents",
+  "conditionalProperties": [
+    {
+      "schema": "OBWriteDomesticConsent4",
+      "name": "Beneficiary Prepopulated Indicator",
+      "path": "Risk.BeneficiaryPrepopulatedIndicator",
+      "required": true,
+      "value": true
+    }
+  ]
+}
+```
+
+**Note:** The `value` field accepts strings, numbers, booleans, and arrays. Use the appropriate JSON type for your use case.
 
 Non-normative example:
 

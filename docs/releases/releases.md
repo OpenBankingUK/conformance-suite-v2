@@ -1,5 +1,11 @@
 # Release history
 
+## [1.9.7 Beta 1] - 16/02/2026
+
+### Added
+
+- Conditional Properties now support numbers, strings, arrays and bools.
+
 ## [1.9.6] - 02/02/2026
 
 ### Added

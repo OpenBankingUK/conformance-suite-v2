@@ -56,13 +56,13 @@ type ModelEndpoint struct {
 
 // ConditionalProperty - Conditional schema property that has been implemented
 type ConditionalProperty struct {
-	Schema             string `json:"schema,omitempty" validate:"required"`
-	Name               string `json:"name,omitempty" validate:"-"`     // transitional - will be required in a future version
-	PropertyDeprecated string `json:"property,omitempty" validate:"-"` // property to be deprecated in favour of 'name'
-	Path               string `json:"path,omitempty" validate:"required"`
-	Required           bool   `json:"required,omitempty" validate:"-"`
-	Request            bool   `json:"request,omitempty" validate:"-"` // indicates a request property that can be entered by the use
-	Value              string `json:"value,omitempty" validate:"-"`
+	Schema             string      `json:"schema,omitempty" validate:"required"`
+	Name               string      `json:"name,omitempty" validate:"-"`     // transitional - will be required in a future version
+	PropertyDeprecated string      `json:"property,omitempty" validate:"-"` // property to be deprecated in favour of 'name'
+	Path               string      `json:"path,omitempty" validate:"required"`
+	Required           bool        `json:"required,omitempty" validate:"-"`
+	Request            bool        `json:"request,omitempty" validate:"-"` // indicates a request property that can be entered by the use
+	Value              interface{} `json:"value,omitempty" validate:"-"`   // accepts string, number, bool, or array
 }
 
 type ConditionalAPIProperties struct {
