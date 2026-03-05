@@ -1,5 +1,17 @@
 # Release history
 
+## [1.9.7] - 05/03/2026
+
+## Changed
+
+- Official release, incorporating the Conditional Properties change from 1.9.7 Beta 1
+
+## [1.9.7 Beta 1] - 16/02/2026
+
+### Added
+
+- Conditional Properties now support numbers, strings, arrays and bools.
+
 ## [1.9.6] - 02/02/2026
 
 ### Added
@@ -448,8 +460,9 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 ---
 
 [More Releases](docs/releases)
-
-[1.9.6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...release/1.9.6
+[1.9.7]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.7-beta1...v1.9.7
+[1.9.7-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6...v1.9.7-beta1
+[1.9.6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...v1.9.6
 [1.9.6-beta6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta5...v1.9.6
 [1.9.6-beta5]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta4...v1.9.6-beta5
 [1.9.6-beta4]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6-beta3...v1.9.6-beta4
