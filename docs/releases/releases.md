@@ -4,7 +4,7 @@
 
 ## Changed
 
-- Updated version number to 1.9.7
+- Official release, incorporating the Conditional Properties change from 1.9.7 Beta 1
 
 ## [1.9.7 Beta 1] - 16/02/2026
 
