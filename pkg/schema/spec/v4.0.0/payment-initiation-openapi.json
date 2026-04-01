@@ -3243,7 +3243,8 @@
         "required": true,
         "schema": {
           "type": "string",
-          "maxLength": 40
+          "maxLength": 40,
+          "pattern": "^(?!\\s)(.*)(\\S)$"
         }
       },
       "x-jws-signature": {
