@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/getkin/kin-openapi/openapi3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -311,4 +312,26 @@ func TestVrpIsRequestPropertyOas3(t *testing.T) {
 	exists, _, err := val.IsRequestProperty("POST", "/domestic-vrp-consents", "Data.ControlParameters.PeriodicLimits.0")
 	assert.Nil(t, err)
 	assert.True(t, exists)
+}
+
+// TestFindItemInOas3SchemaNilItems verifies that findItemInOas3Schema returns
+// false, "" without panicking when sc.Items is nil and the path looks like an
+// array index. This guards against a nil dereference on sc.Items.Value.Type.
+func TestFindItemInOas3SchemaNilItems(t *testing.T) {
+	sc := &openapi3.Schema{} // Items is nil
+	found, propType := findItemInOas3Schema(sc, "0", "")
+	assert.False(t, found)
+	assert.Empty(t, propType)
+}
+
+// TestFindItemInOas3SchemaNilItemsValue verifies that findItemInOas3Schema
+// returns false, "" without panicking when sc.Items is set but sc.Items.Value
+// is nil (e.g., an unresolved $ref).
+func TestFindItemInOas3SchemaNilItemsValue(t *testing.T) {
+	sc := &openapi3.Schema{
+		Items: &openapi3.SchemaRef{}, // Value is nil
+	}
+	found, propType := findItemInOas3Schema(sc, "0", "")
+	assert.False(t, found)
+	assert.Empty(t, propType)
 }

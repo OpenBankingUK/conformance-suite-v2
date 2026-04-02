@@ -17,6 +17,18 @@ func TestRegexp2CompilerPCREPattern(t *testing.T) {
 	require.NoError(t, err)
 }
 
+// TestRegexp2CompilerSetsMatchTimeout verifies that the compiled regexp has a
+// finite MatchTimeout set, protecting against ReDoS via catastrophic backtracking.
+// This is a security property, so white-box inspection of the internal field is
+// acceptable.
+func TestRegexp2CompilerSetsMatchTimeout(t *testing.T) {
+	m, err := regexp2Compiler(`^(?!\s)(.*)(\\S)$`)
+	require.NoError(t, err)
+	matcher, ok := m.(*regexp2Matcher)
+	require.True(t, ok, "expected *regexp2Matcher")
+	assert.Equal(t, matchTimeout, matcher.re.MatchTimeout, "MatchTimeout must be finite to prevent ReDoS")
+}
+
 // TestRegexp2CompilerRE2Pattern verifies that a standard RE2-compatible pattern
 // still compiles correctly under regexp2, confirming there is no regression for
 // existing v3.x spec patterns.
@@ -33,19 +45,21 @@ func TestRegexp2CompilerMalformedPattern(t *testing.T) {
 	assert.Error(t, err)
 }
 
-// TestRegexp2MatcherPCREPatternMatches verifies that a value satisfying a PCRE
-// pattern is correctly matched.
+// TestRegexp2MatcherPCREPatternMatches verifies that a value satisfying the
+// exact OB v4.0.0 x-idempotency-key pattern is correctly matched.
+// Pattern: ^(?!\s)(.*)(\S)$  — two capture groups, not the folded form .*\S.
 func TestRegexp2MatcherPCREPatternMatches(t *testing.T) {
-	m, err := regexp2Compiler(`^(?!\s)(.*\S)$`)
+	m, err := regexp2Compiler(`^(?!\s)(.*)(\S)$`)
 	require.NoError(t, err)
 	// "abc" does not start with whitespace and does not end with whitespace — should match.
 	assert.True(t, m.MatchString("abc"))
 }
 
-// TestRegexp2MatcherPCREPatternRejects verifies that a value violating a PCRE
-// pattern is correctly rejected.
+// TestRegexp2MatcherPCREPatternRejects verifies that a value violating the
+// exact OB v4.0.0 x-idempotency-key pattern is correctly rejected.
+// Pattern: ^(?!\s)(.*)(\S)$  — two capture groups, not the folded form .*\S.
 func TestRegexp2MatcherPCREPatternRejects(t *testing.T) {
-	m, err := regexp2Compiler(`^(?!\s)(.*\S)$`)
+	m, err := regexp2Compiler(`^(?!\s)(.*)(\S)$`)
 	require.NoError(t, err)
 	// " abc" starts with whitespace — should not match.
 	assert.False(t, m.MatchString(" abc"))
@@ -82,13 +96,18 @@ func TestV4CommercialVRPSpecLoads(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// TestV4IdempotencyKeyRuntimeValidation verifies that the x-idempotency-key
-// PCRE pattern is enforced at runtime during response validation against the
-// v4.0.0 Account and Transaction spec.
+// TestV4RuntimeValidationWithPCRESpec verifies that calling Validate against
+// a v4.0.0 spec (which contains PCRE patterns in parameter definitions) does
+// not produce errors during response validation.
 //
-// The OB v4.0.0 pattern is:  ^(?!\s)(.*)(\\S)$
-// It rejects values that start with whitespace.
-func TestV4IdempotencyKeyRuntimeValidation(t *testing.T) {
+// This test makes a narrower, honest claim: PCRE patterns present in the spec
+// do not cause the runtime validation path to fail. The x-idempotency-key
+// pattern is a request header parameter on POST endpoints; the FCS runtime
+// validator validates responses only (ExcludeRequestBody: true), so the
+// pattern is never applied to a value at runtime. The Options.RegexCompiler
+// wiring in validateResponse is forward-looking — correct and necessary for
+// any future PCRE patterns placed on response body fields.
+func TestV4RuntimeValidationWithPCRESpec(t *testing.T) {
 	validator, err := NewRawOpenAPI3Validator("Account and Transaction API Specification", "v4.0.0")
 	require.NoError(t, err)
 
@@ -98,9 +117,7 @@ func TestV4IdempotencyKeyRuntimeValidation(t *testing.T) {
 		"Links": {"Self": "https://example.com/open-banking/v4.0/aisp/accounts"},
 		"Meta": {"TotalPages": 1}
 	}`
-
-	// A valid idempotency key (no leading/trailing whitespace) must pass.
-	validResp := HTTPResponse{
+	r := HTTPResponse{
 		Method:     "GET",
 		Path:       "/open-banking/v4.0/aisp/accounts",
 		StatusCode: http.StatusOK,
@@ -108,9 +125,8 @@ func TestV4IdempotencyKeyRuntimeValidation(t *testing.T) {
 		Header: http.Header{
 			"Content-Type":          []string{"application/json; charset=utf-8"},
 			"X-Fapi-Interaction-Id": []string{"test-interaction-id"},
-			"X-Idempotency-Key":     []string{"valid-key-no-whitespace"},
 		},
 	}
-	_, err = validator.Validate(validResp)
-	assert.NoError(t, err, "valid idempotency key should pass validation")
+	_, err = validator.Validate(r)
+	assert.NoError(t, err)
 }

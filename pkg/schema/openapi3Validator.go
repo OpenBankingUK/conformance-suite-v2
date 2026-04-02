@@ -297,6 +297,9 @@ func findItemInOas3Schema(sc *openapi3.Schema, propertyPath, previousPath string
 		SplitedNotFoundPath := strings.Split(notFoundPath, ".")
 		idx := SplitedNotFoundPath[0]
 		if _, err := strconv.Atoi(idx); err == nil {
+			if sc.Items == nil || sc.Items.Value == nil {
+				return false, ""
+			}
 			if len(SplitedNotFoundPath) == 1 {
 				return true, normalizePropertyType(schemaTypeString(sc.Items.Value.Type))
 			}
