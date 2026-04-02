@@ -103,7 +103,7 @@ func TestAcc10000TestResponse(t *testing.T) {
 		Path:       acc10000responseReqURL,
 		StatusCode: http.StatusOK,
 		Body:       strings.NewReader(acc10000response),
-		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
+		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}, "X-Fapi-Interaction-Id": []string{"test-interaction-id"}},
 	}
 
 	_, err = validator.Validate(r)
@@ -119,7 +119,7 @@ func TestAcc10000TestResponseCapitalUtfNoSpace(t *testing.T) {
 		Path:       acc10000responseReqURL,
 		StatusCode: http.StatusOK,
 		Body:       strings.NewReader(acc10000response),
-		Header:     http.Header{"Content-Type": []string{"application/json;charset=UTF-8"}},
+		Header:     http.Header{"Content-Type": []string{"application/json;charset=UTF-8"}, "X-Fapi-Interaction-Id": []string{"test-interaction-id"}},
 	}
 
 	_, err = validator.Validate(r)
@@ -135,7 +135,7 @@ func TestCbpIITestResponseCapitalUtfNoSpace(t *testing.T) {
 		Path:       cbpiiGoodResponseUrl,
 		StatusCode: http.StatusOK,
 		Body:       strings.NewReader(cbpiiGoodResponse),
-		Header:     http.Header{"Content-Type": []string{"application/json;charset=UTF-8"}},
+		Header:     http.Header{"Content-Type": []string{"application/json;charset=UTF-8"}, "X-Fapi-Interaction-Id": []string{"test-interaction-id"}},
 	}
 
 	_, err = validator.Validate(r)
@@ -151,7 +151,7 @@ func TestVrp100200Response(t *testing.T) {
 		Path:       vrp100200ReqURL,
 		StatusCode: http.StatusOK,
 		Body:       strings.NewReader(vrp100200Response),
-		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}},
+		Header:     http.Header{"Content-Type": []string{"application/json; charset=utf-8"}, "X-Fapi-Interaction-Id": []string{"test-interaction-id"}, "X-Jws-Signature": []string{"test-jws-signature"}},
 	}
 
 	_, err = validator.Validate(r)
