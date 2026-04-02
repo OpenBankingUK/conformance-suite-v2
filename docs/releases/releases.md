@@ -1,5 +1,11 @@
 # Release history
 
+## [Unreleased]
+
+### Changed
+
+- OpenAPI schema `pattern` fields are now compiled and evaluated using `regexp2` (PCRE) at both spec load time and runtime request/response validation. RE2-compatible patterns are unaffected (RE2 is a strict subset of PCRE).
+
 ## [1.9.7] - 05/03/2026
 
 ## Changed
