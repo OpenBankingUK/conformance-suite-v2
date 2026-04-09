@@ -1,5 +1,11 @@
 # Release history
 
+## [unreleased]
+
+## Fixed
+
+- Fixed incorrect test case ID references in v1.9.6 release notes from `OB-400-DOP-1015003` to `OB-400-DOP-101503`
+
 ## [1.9.7] - 05/03/2026
 
 ## Changed
