@@ -6,6 +6,10 @@
 
 - OpenAPI schema `pattern` fields are now compiled and evaluated using `regexp2` (PCRE) at both spec load time and runtime request/response validation. RE2-compatible patterns are unaffected (RE2 is a strict subset of PCRE).
 
+## Fixed
+
+- Fixed incorrect test case ID references in v1.9.6 release notes from `OB-400-DOP-1015003` to `OB-400-DOP-101503`
+
 ## [1.9.7] - 05/03/2026
 
 ## Changed
@@ -27,7 +31,7 @@
 - Added extra assertion checks for `ReadAccountsDetail`, `ReadBeneficiariesDetail`, and `ReadTransactionsDetail` tests for v3 and v4
 - added support for Commercial VRP (cVRP)
 - Add enhanced logging for test case authorization and execution
-- Added tests `OB-301-DOP-1015003` and `OB-400-DOP-1015003` which validate the following:
+- Added tests `OB-301-DOP-1015003` and `OB-400-DOP-101503` which validate the following:
   - OB-301-DOP-1015003 (v3): validates that `NumberOfPayments` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
   - OB-400-DOP-101500 (v4): validates that `CountPerPeriod` and `FinalPaymentDateTime` are correctly rejected when included in a consent payload at the same time.
 
@@ -38,7 +42,7 @@
 
 ### Removed
 
-- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-1015003` respectively.
+- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-101503` respectively.
 
 ## [1.9.6-beta5] - 30/12/2025
 
