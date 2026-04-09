@@ -32,7 +32,7 @@
 
 ### Removed
 
-- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-1015003` respectively.
+- Removed `OB-301-DOP-1015002` (v3) and `OB-400-DOP-1015002` (v4) tests as these are replaced by test ID `OB-301-DOP-1015003` and `OB-400-DOP-101503` respectively.
 
 ## [1.9.6-beta5] - 30/12/2025
 
