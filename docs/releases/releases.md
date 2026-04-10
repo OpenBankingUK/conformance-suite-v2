@@ -8,6 +8,7 @@
 
 ## Fixed
 
+- Fixed `OB-400-DOP-101503` (v4.0) and `OB-301-DOP-1015003` (v3.1) sending `Content-Type: text/plain` instead of `application/json` when posting the negative standing order consent payload, causing ASPSPs to respond with HTTP 415 instead of the expected HTTP 400.
 - Fixed incorrect test case ID references in v1.9.6 release notes from `OB-400-DOP-1015003` to `OB-400-DOP-101503`
 
 ## [1.9.7] - 05/03/2026
