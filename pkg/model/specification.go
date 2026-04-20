@@ -413,7 +413,7 @@ var (
 		{
 			Identifier:    "payment-initiation-v4.0.1",
 			Name:          "Payment Initiation API",
-			URL:           mustParseURL("https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html"),
+			URL:           mustParseURL("https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/payment-initiation-api-profile.html"),
 			Version:       "v4.0.1",
 			SchemaVersion: mustParseURL("https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/payment-initiation-openapi.json"),
 		},
