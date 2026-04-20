@@ -130,3 +130,27 @@ func TestV4RuntimeValidationWithPCRESpec(t *testing.T) {
 	_, err = validator.Validate(r)
 	assert.NoError(t, err)
 }
+
+// --- v4.0.1 spec loading integration tests ---
+// Each test verifies that the v4.0.1 spec file loads without error,
+// preventing filename and validation regressions.
+
+func TestV4_0_1_AccountsSpecLoads(t *testing.T) {
+	_, err := NewRawOpenAPI3Validator("Account and Transaction API Specification", "v4.0.1")
+	require.NoError(t, err)
+}
+
+func TestV4_0_1_PaymentInitiationSpecLoads(t *testing.T) {
+	_, err := NewRawOpenAPI3Validator("Payment Initiation API", "v4.0.1")
+	require.NoError(t, err)
+}
+
+func TestV4_0_1_ConfirmationOfFundsSpecLoads(t *testing.T) {
+	_, err := NewRawOpenAPI3Validator("Confirmation of Funds API Specification", "v4.0.1")
+	require.NoError(t, err)
+}
+
+func TestV4_0_1_VariableRecurringPaymentsSpecLoads(t *testing.T) {
+	_, err := NewRawOpenAPI3Validator("Variable Recurring Payments API Specification", "v4.0.1")
+	require.NoError(t, err)
+}
