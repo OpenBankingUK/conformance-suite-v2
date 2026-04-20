@@ -8,12 +8,7 @@
 
 ### Added
 
-- Added v4.0.1 OpenAPI schema files:
-  - `account-info-openapi.json`
-  - `confirmation-funds-openapi.json`
-  - `payment-initiation-openapi.json`
-  - `vrp-openapi.json`
-  (Located in `pkg/schema/spec/v4.0.1/`)
+- Added support for Open Banking UK v4.0.1 OpenAPI schema files
 
 ## Fixed
 
