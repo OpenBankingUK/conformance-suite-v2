@@ -6,6 +6,10 @@
 
 - OpenAPI schema `pattern` fields are now compiled and evaluated using `regexp2` (PCRE) at both spec load time and runtime request/response validation. RE2-compatible patterns are unaffected (RE2 is a strict subset of PCRE).
 
+### Added
+
+- Added support for Open Banking UK v4.0.1 OpenAPI schema files
+
 ## Fixed
 
 - Fixed `OB-400-DOP-101503` (v4.0) and `OB-301-DOP-1015003` (v3.1) sending `Content-Type: text/plain` instead of `application/json` when posting the negative standing order consent payload, causing ASPSPs to respond with HTTP 415 instead of the expected HTTP 400.
