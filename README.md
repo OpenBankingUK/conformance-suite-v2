@@ -44,7 +44,7 @@ To provide feedback, please see the [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Quickstart
 
-Pull and run the latest (stable) tagged Docker image:
+Pull and run the latest beta/pre-release tagged Docker image:
 
     > docker run --rm -it -p 127.0.0.1:8443:8443 "openbanking/conformance-suite:v1.9.8-beta1"
 
