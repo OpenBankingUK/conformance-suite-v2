@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [1.9.8-beta1] - 21/04/2026
+
 ### Changed
 
 - OpenAPI schema `pattern` fields are now compiled and evaluated using `regexp2` (PCRE) at both spec load time and runtime request/response validation. RE2-compatible patterns are unaffected (RE2 is a strict subset of PCRE).
@@ -475,6 +477,8 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 ---
 
 [More Releases](docs/releases)
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.8-beta1...HEAD
+[1.9.8-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.7...v1.9.8-beta1
 [1.9.7]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.7-beta1...v1.9.7
 [1.9.7-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6...v1.9.7-beta1
 [1.9.6]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.5...v1.9.6
