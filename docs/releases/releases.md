@@ -477,7 +477,7 @@ v3.1 of the OBIE Accounts and Transactions specifications and Payments.
 ---
 
 [More Releases](docs/releases)
-[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.8-beta1...head
+[Unreleased]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.8-beta1...HEAD
 [1.9.8-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.7...v1.9.8-beta1
 [1.9.7]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.7-beta1...v1.9.7
 [1.9.7-beta1]: https://github.com/OpenBankingUK/conformance-suite/compare/v1.9.6...v1.9.7-beta1
