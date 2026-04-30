@@ -1,0 +1,126 @@
+name: End-to-End Tests
+
+on:
+  # Automatic trigger: PRs into develop or main, and pushes to release branches
+  pull_request:
+    branches:
+      - develop
+      - main
+  push:
+    branches:
+      - "release/**"
+
+  # Manual trigger: run against any model bank with a custom config
+  workflow_dispatch:
+    inputs:
+      model_bank_url:
+        description: "Model bank base URL (e.g. https://model-bank.example.com)"
+        required: true
+        type: string
+      config_file:
+        description: "Path to test config file (relative to repo root)"
+        required: false
+        default: "config/e2e-default.yaml"
+        type: string
+      test_filter:
+        description: "Optional pytest -k expression to filter tests"
+        required: false
+        default: ""
+        type: string
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    name: End-to-End Conformance Tests
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Install dependencies (including dev/test extras)
+        run: uv sync --frozen --all-extras
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build Docker image for E2E tests
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: false
+          load: true
+          tags: ob-conformance-tool:e2e-${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Run E2E test suite
+        env:
+          # Use workflow_dispatch input if manually triggered, otherwise fall back
+          # to the repository-level variable set in GitHub settings.
+          OB_MODEL_BANK_URL: ${{ inputs.model_bank_url || vars.E2E_MODEL_BANK_URL }}
+          OB_CONFIG_FILE: ${{ inputs.config_file || 'config/e2e-default.yaml' }}
+          OB_TEST_IMAGE: ob-conformance-tool:e2e-${{ github.sha }}
+        run: |
+          FILTER_ARGS=""
+          if [[ -n "${{ inputs.test_filter }}" ]]; then
+            FILTER_ARGS="-k ${{ inputs.test_filter }}"
+          fi
+
+          uv run pytest tests/e2e/ \
+            -m e2e \
+            --json-report \
+            --json-report-file=e2e-results.json \
+            -v \
+            $FILTER_ARGS
+
+      - name: Summarise E2E results
+        if: always()
+        run: |
+          python - <<'EOF'
+          import json
+          import sys
+          from pathlib import Path
+
+          report_path = Path("e2e-results.json")
+          if not report_path.exists():
+              print("No E2E results file found — tests may not have run.")
+              sys.exit(1)
+
+          report = json.loads(report_path.read_text())
+          summary = report.get("summary", {})
+          passed = summary.get("passed", 0)
+          failed = summary.get("failed", 0)
+          total = summary.get("total", 0)
+          skipped = summary.get("skipped", 0)
+
+          print(f"E2E Results: {passed} passed / {failed} failed / {skipped} skipped / {total} total")
+
+          if failed > 0:
+              print("\nFailed tests:")
+              for test in report.get("tests", []):
+                  if test.get("outcome") == "failed":
+                      print(f"  ✗ {test['nodeid']}")
+                      if "call" in test and "longrepr" in test["call"]:
+                          print(f"    {test['call']['longrepr'][:300]}")
+              sys.exit(1)
+          EOF
+
+      - name: Upload E2E results as artefact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: e2e-results-${{ github.run_id }}
+          path: e2e-results.json
+          retention-days: 30
