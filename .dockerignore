@@ -1,0 +1,36 @@
+# ─── Version control noise ────────────────────────────────────────────────────
+.git/
+.gitignore
+
+# ─── Python artefacts ─────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+dist/
+.venv/
+
+# ─── Testing & quality tools ─────────────────────────────────────────────────
+tests/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+test-results.json
+e2e-results.json
+htmlcov/
+
+# ─── IDE & OS ─────────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.DS_Store
+
+# ─── Environment & secrets ────────────────────────────────────────────────────
+*.env*
+.env
+
+# ─── CI/CD & docs ────────────────────────────────────────────────────────────
+.github/
+docs/
+README.md
+CHANGELOG.md
