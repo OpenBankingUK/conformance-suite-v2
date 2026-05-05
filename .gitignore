@@ -5,3 +5,15 @@
 
 *.env*
 
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+coverage.xml
+test-results.json
+e2e-results.json
+htmlcov/
+dist/
+*.egg-info/
