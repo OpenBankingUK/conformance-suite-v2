@@ -1,5 +1,5 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-FROM python:3.14-slim-bookworm AS builder
+FROM python:3.14.4-slim-bookworm AS builder
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /usr/local/bin/uv
@@ -19,7 +19,7 @@ COPY . .
 RUN uv sync --frozen --no-dev
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM python:3.14-slim-bookworm AS runtime
+FROM python:3.14.4-slim-bookworm AS runtime
 
 WORKDIR /app
 
