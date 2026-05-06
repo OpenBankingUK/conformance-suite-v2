@@ -24,7 +24,10 @@ SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",") if os.environ.get("DJANGO_ALLOWED_HOSTS") else []
+# Split comma-separated hosts, strip whitespace, and drop empty strings so that
+# values like "localhost, 127.0.0.1," don't introduce blank or whitespace-padded
+# entries that would cause unexpected host validation failures.
+ALLOWED_HOSTS = [host for host in (h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")) if host]
 
 
 # Application definition
