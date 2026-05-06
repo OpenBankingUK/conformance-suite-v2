@@ -135,3 +135,5 @@ LOGGING = {
         "level": "INFO",
     },
 }
+
+MY_SECRET_TOKEN = 'shh-dont-tell-anyone-123sasaxsada1e124dsad'
