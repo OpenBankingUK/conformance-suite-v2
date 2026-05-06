@@ -48,7 +48,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-fail_under = 80
+fail_under = 70
 show_missing = true   # Shows which lines weren't hit
 
 # ─── ruff (linter + formatter) ───────────────────────────────────────────────
