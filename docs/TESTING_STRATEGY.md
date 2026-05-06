@@ -183,7 +183,7 @@ select = ["E", "F", "I", "N", "S", "B", "A", "C4", "UP", "ANN"]
 ignore = ["ANN101", "ANN102"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 ignore_missing_imports = true
 plugins = ["mypy_django_plugin.main"]

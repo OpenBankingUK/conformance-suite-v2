@@ -8,7 +8,7 @@ This repository contains the **Open Banking UK Conformance Test Tool** — a sta
 
 ### Technology Stack
 
-- **Language**: Python 3.12
+- **Language**: Python 3.14
 - **Web framework**: Django (with HTMX for frontend interactions)
 - **Package manager**: `uv` (lockfile-based, reproducible installs)
 - **Container**: Docker (non-root, minimal base image)
@@ -115,7 +115,7 @@ This project is used by financial services participants. Security flaws can have
 
 ### 7. Docker & Container Standards
 
-- Base image must be pinned to a specific version tag (e.g. `python:3.12-slim-bookworm`, not `python:latest`).
+- Base image must be pinned to a specific version tag (e.g. `python:3.14.4-slim-bookworm`, not `python:latest`).
 - Multi-stage builds are preferred to keep the final image minimal.
 - The application process must run as a non-root user.
 - `COPY` instructions should be ordered to maximise layer cache efficiency (copy dependency files first, then source code).
