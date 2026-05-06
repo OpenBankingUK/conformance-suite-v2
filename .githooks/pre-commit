@@ -1,0 +1,33 @@
+#!/usr/bin/env bash
+# ─────────────────────────────────────────────────────────────────────────────
+# .githooks/pre-commit — Blocks commits containing secrets.
+#
+# Install with: git config core.hooksPath .githooks
+# ─────────────────────────────────────────────────────────────────────────────
+set -euo pipefail
+
+# Only scan staged files (not the entire repo)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACM)
+
+if [[ -z "$STAGED_FILES" ]]; then
+    exit 0
+fi
+
+echo "🔍 Scanning staged files for secrets..."
+
+# Scan only the staged content for new secrets against the baseline
+if uv run detect-secrets-hook --baseline .secrets.baseline $STAGED_FILES; then
+    echo "✓ No secrets detected"
+else
+    echo ""
+    echo "✗ Potential secret detected in staged files!"
+    echo ""
+    echo "  If this is a false positive, update the baseline:"
+    echo "    uv run detect-secrets scan --exclude-files '\\.env$' --exclude-files 'uv\\.lock$' > .secrets.baseline"
+    echo "    uv run detect-secrets audit .secrets.baseline"
+    echo ""
+    echo "  To bypass (use with caution):"
+    echo "    git commit --no-verify"
+    echo ""
+    exit 1
+fi
