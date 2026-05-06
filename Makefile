@@ -5,7 +5,7 @@ export DJANGO_SECRET_KEY ?= local-check-dummy-key
 check: secrets lint test ## Run all checks (mirrors CI)
 
 secrets: ## Scan for leaked secrets
-	uv run detect-secrets scan --exclude-files '\.env$$' --exclude-files 'uv\.lock$$' --baseline .secrets.baseline
+	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
 
 lint: ## Ruff + mypy
 	uv run ruff check .
