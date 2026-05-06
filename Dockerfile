@@ -33,6 +33,9 @@ COPY --from=builder /app /app
 # Ensure the venv is on PATH
 ENV PATH="/app/.venv/bin:$PATH"
 
+# Set ownership so the non-root user can write to the DB and any runtime files
+RUN chown -R appuser:appuser /app
+
 # Switch to non-root user
 USER appuser
 
