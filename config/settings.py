@@ -17,17 +17,24 @@ from pathlib import Path
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-# Quick-start development settings - unsuitable for production
+# Environment-specific settings
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
+
+
+def _get_allowed_hosts() -> list[str]:
+    """Parse DJANGO_ALLOWED_HOSTS into a clean list, stripping whitespace and empty entries."""
+    raw = os.environ.get("DJANGO_ALLOWED_HOSTS", "")
+    return [host.strip() for host in raw.split(",") if host.strip()]
+
 
 SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
-# Split comma-separated hosts, strip whitespace, and drop empty strings so that
-# values like "localhost, 127.0.0.1," don't introduce blank or whitespace-padded
-# entries that would cause unexpected host validation failures.
-ALLOWED_HOSTS = [host for host in (h.strip() for h in os.environ.get("DJANGO_ALLOWED_HOSTS", "").split(",")) if host]
+ALLOWED_HOSTS = _get_allowed_hosts()
+
+if not DEBUG and not ALLOWED_HOSTS:
+    raise ValueError("DJANGO_ALLOWED_HOSTS must be set when DEBUG is disabled")
 
 
 # Application definition

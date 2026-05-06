@@ -1,6 +1,7 @@
 .PHONY: check lint test secrets dev serve docker
 
 export DJANGO_SECRET_KEY ?= local-check-dummy-key
+export DJANGO_ALLOWED_HOSTS ?= localhost,127.0.0.1
 
 check: secrets lint test ## Run all checks (mirrors CI)
 
