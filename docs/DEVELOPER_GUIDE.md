@@ -23,6 +23,22 @@ uv sync --frozen
 git config core.hooksPath .githooks
 ```
 
+## Running the Application
+
+```bash
+make dev         # Django dev server (auto-reload, debug error pages)
+make serve       # Uvicorn locally (mirrors production, no reload)
+make docker      # Build and run the Docker container
+```
+
+| Command | Server | Auto-reload | Use case |
+|---------|--------|-------------|----------|
+| `make dev` | Django `runserver` | Yes | Day-to-day development |
+| `make serve` | Uvicorn | No | Test production behaviour locally |
+| `make docker` | Uvicorn (container) | No | Full production-like environment |
+
+All targets serve on `http://localhost:8000`.
+
 ## Local Checks
 
 Run `make check` before pushing. This mirrors the CI pipeline and runs:
@@ -110,7 +126,7 @@ The GitHub Actions CI workflow (`.github/workflows/ci.yml`) runs the same checks
 |-----|--------------|
 | **Lint & Type Check** | `ruff check`, `ruff format --check`, `mypy` |
 | **Unit & Integration Tests** | `pytest` with coverage reporting |
-| **Docker Build** | Builds the container image (no push) |
+| **Docker Build & Smoke Test** | Builds the container image and verifies it starts and passes a health check |
 
 CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a security concern (it's never used in production).
 
