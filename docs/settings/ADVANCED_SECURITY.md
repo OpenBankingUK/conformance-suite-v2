@@ -120,13 +120,13 @@ Everyone else must submit a bypass request for review.
 
 ---
 
-### CodeQL analysis — Not configured
+### CodeQL analysis — Active
 
 | Setting | Value |
 |---------|-------|
-| CodeQL analysis | Not configured |
+| CodeQL analysis | Active (via default setup) |
 
-**Rationale**: No Python source code has been committed to the repository yet. CodeQL default setup will be enabled once the initial application code lands, at which point it will automatically detect supported languages and configure analysis.
+**Rationale**: CodeQL default setup is enabled and has automatically detected Python. Analysis runs on pushes to the default branch and on pull requests targeting it.
 
 ---
 
@@ -142,7 +142,7 @@ Third-party code scanning tools can be added via GitHub Actions workflows. No ad
 |---------|-------|
 | Copilot Autofix | On |
 
-**Rationale**: Automatically suggests fixes for CodeQL alerts using AI. Reduces mean time to resolution for code scanning findings. Requires CodeQL to be active to produce suggestions — will become effective once CodeQL default setup is enabled.
+**Rationale**: Automatically suggests fixes for CodeQL alerts using AI. Reduces mean time to resolution for code scanning findings. Now effective with CodeQL default setup active.
 
 ---
 

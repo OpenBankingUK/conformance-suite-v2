@@ -2,7 +2,7 @@
 
 > **Repository**: `OpenBankingUK/conformance-suite-v2`
 > **Page**: Settings → Code quality
-> **Last reviewed**: 30 April 2026
+> **Last reviewed**: 6 May 2026
 
 ---
 
@@ -21,9 +21,9 @@
 | Setting | Value |
 |---------|-------|
 | Default setup | **Enabled** |
-| Setup state | Not yet active (no source code committed) |
+| Setup state | Active |
 
-**Rationale**: Default setup automatically detects supported languages and configures CodeQL-based analysis without requiring a custom workflow file. Once the initial Python application code lands, the feature will activate without further manual configuration.
+**Rationale**: Default setup automatically detects supported languages and configures CodeQL-based analysis without requiring a custom workflow file. Python has been detected and analysis is active.
 
 ---
 
@@ -31,9 +31,9 @@
 
 | Setting | Value |
 |---------|-------|
-| Detected languages | None |
+| Detected languages | Python |
 
-**Rationale**: No source code has been committed to the repository yet. Python will be automatically detected once the initial codebase is pushed. No manual language selection is required with default setup.
+**Rationale**: Python is automatically detected from the committed source code. No manual language selection is required with default setup.
 
 ---
 
@@ -42,9 +42,9 @@
 | Setting | Value |
 |---------|-------|
 | Default branch | `main` |
-| Next scheduled run | None (pending first code commit) |
+| Next scheduled run | Scheduled (automatic) |
 
-**Rationale**: Analysis will be scheduled automatically once default setup detects committed source code. Runs on every push to the default branch and on pull requests targeting it.
+**Rationale**: Analysis runs automatically on every push to the default branch and on pull requests targeting it.
 
 ---
 
@@ -73,9 +73,7 @@
 
 ## Post-setup checklist
 
-Once initial Python source code is committed, verify the following without manual intervention:
-
-- [ ] Python appears in the detected languages list
-- [ ] A scheduled analysis run is populated
+- [x] Python appears in the detected languages list
+- [x] A scheduled analysis run is populated
 - [ ] The workflow run URL is active and the first run completes successfully
 - [ ] Code quality metrics begin appearing on merged PRs
