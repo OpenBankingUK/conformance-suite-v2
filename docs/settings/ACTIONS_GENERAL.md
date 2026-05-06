@@ -22,15 +22,17 @@
 
 | Pattern |
 |---------|
+| `astral-sh/setup-uv` |
 | `docker/*` |
 | `snyk/actions/*` |
 
-**Rationale**: Only the actions required for the planned CI pipeline are allowlisted:
+**Rationale**: Only the actions required for the CI pipeline are allowlisted:
 
+- **`astral-sh/setup-uv`** — Required for installing `uv` in CI to manage Python and dependencies.
 - **`docker/*`** — Required for building, tagging, and pushing the conformance suite Docker container image.
 - **`snyk/actions/*`** — Required for dependency and container security scanning as part of the CI security-scan job.
 
-Additional patterns (e.g. `astral-sh/setup-uv`, `codecov/*`) can be added when those pipeline stages are implemented. The principle is to remain closed by default and open incrementally.
+The principle is to remain closed by default and open incrementally.
 
 ---
 
