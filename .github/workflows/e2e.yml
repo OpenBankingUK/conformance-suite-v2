@@ -92,6 +92,7 @@ jobs:
           fi
 
           uv run pytest tests/e2e/ \
+            -p no:django \
             -m e2e \
             --json-report \
             --json-report-file=e2e-results.json \

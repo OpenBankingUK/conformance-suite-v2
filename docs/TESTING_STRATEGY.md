@@ -89,7 +89,7 @@ def test_conformance_results(run_conformance_tool):
 
 **In CI** (post-container run):
 ```bash
-uv run pytest tests/e2e/ -m e2e --json-report --json-report-file=e2e-results.json
+uv run pytest tests/e2e/ -p no:django -m e2e --json-report --json-report-file=e2e-results.json
 ```
 
 ---
@@ -116,7 +116,7 @@ uv run pytest -m unit
 uv run pytest -m "not e2e"
 
 # E2E only (requires model bank config)
-uv run pytest -m e2e --model-bank-url=https://model-bank.example.com
+uv run pytest -p no:django -m e2e --model-bank-url=https://model-bank.example.com
 ```
 
 ---
