@@ -1,7 +1,7 @@
 [project]
 name = "conformance-suite-v2"
 version = "0.1.0"
-description = "Add your description here"
+description = "Open Banking UK Conformance Test Tool for verifying API standards compliance"
 readme = "README.md"
 requires-python = ">=3.14.4"
 dependencies = [
