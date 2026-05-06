@@ -47,8 +47,7 @@ omit = [
 ]
 
 [tool.coverage.report]
-# TODO: Restore to 80 once application code exists beyond scaffolding
-fail_under = 0
+fail_under = 80
 show_missing = true   # Shows which lines weren't hit
 
 # ─── ruff (linter + formatter) ───────────────────────────────────────────────
