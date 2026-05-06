@@ -24,7 +24,10 @@ serve: ## Run local prod server (uvicorn, no reload)
 
 docker: ## Build and run Docker container
 	docker build -t conformance-suite .
-	docker run --rm -p 8000:8000 conformance-suite
+	docker run --rm -p 8000:8000 \
+		-e DJANGO_SECRET_KEY="$(DJANGO_SECRET_KEY)" \
+		-e DJANGO_ALLOWED_HOSTS="$(DJANGO_ALLOWED_HOSTS)" \
+		conformance-suite
 
 help: ## Show available targets
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-10s\033[0m %s\n", $$1, $$2}'
