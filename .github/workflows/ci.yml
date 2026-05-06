@@ -53,6 +53,10 @@ jobs:
       - name: mypy — type check
         run: uv run mypy .
 
+      - name: Detect secrets
+        run: |
+          git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
+
   # ────────────────────────────────────────────────
   # Job 2: Unit & Integration Tests
   # ────────────────────────────────────────────────
