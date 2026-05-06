@@ -152,7 +152,7 @@ Third-party code scanning tools can be added via GitHub Actions workflows. No ad
 |---------|-------|
 | Prevent direct alert dismissals | Off |
 
-**Rationale**: Same reasoning as the Secret scanning equivalent. Alert dismissal governance is handled through PR review process (2 required approvals including Copilot code review). May be revisited as the codebase matures.
+**Rationale**: Same reasoning as the Secret scanning equivalent. Alert dismissal governance is handled through PR review process (1 required human approval, advisory Copilot code review, and mandatory conversation resolution). May be revisited as the codebase matures.
 
 ---
 
