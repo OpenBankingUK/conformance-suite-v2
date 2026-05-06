@@ -138,9 +138,11 @@ jobs:
       - name: Run container smoke test
         env:
           DJANGO_SECRET_KEY: "ci-dummy-key-not-for-production"
+          DJANGO_ALLOWED_HOSTS: "localhost,127.0.0.1"
         run: |
           docker run -d --name smoke \
             -e DJANGO_SECRET_KEY="$DJANGO_SECRET_KEY" \
+            -e DJANGO_ALLOWED_HOSTS="$DJANGO_ALLOWED_HOSTS" \
             -p 8000:8000 \
             ob-conformance-tool:${{ github.sha }}
           # Wait for the server to be ready
