@@ -3,6 +3,12 @@
 .vscode/
 .idea/
 
+# Virtual environment
+.venv/
+
+# Database
+db.sqlite3
+
 *.env*
 
 __pycache__/

@@ -18,12 +18,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Developer tooling: Makefile, pre-commit secret scanning (detect-secrets), ruff, mypy (strict)
 - Repository governance documentation: branch rulesets, actions allowlist, advanced security settings
 
-### Changed
-### Deprecated
-### Removed
-### Fixed
-### Security
-
 ---
 
 ## [1.9.8] - Unreleased (in beta)

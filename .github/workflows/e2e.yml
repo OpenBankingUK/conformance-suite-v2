@@ -85,10 +85,11 @@ jobs:
           OB_MODEL_BANK_URL: ${{ inputs.model_bank_url || vars.E2E_MODEL_BANK_URL }}
           OB_CONFIG_FILE: ${{ inputs.config_file || 'config/e2e-default.yaml' }}
           OB_TEST_IMAGE: ob-conformance-tool:e2e-${{ github.sha }}
+          OB_TEST_FILTER: ${{ inputs.test_filter }}
         run: |
           FILTER_ARGS=""
-          if [[ -n "${{ inputs.test_filter }}" ]]; then
-            FILTER_ARGS="-k ${{ inputs.test_filter }}"
+          if [[ -n "$OB_TEST_FILTER" ]]; then
+            FILTER_ARGS="-k $OB_TEST_FILTER"
           fi
 
           uv run pytest tests/e2e/ \
