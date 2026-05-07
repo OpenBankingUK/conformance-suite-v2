@@ -37,5 +37,4 @@ db.sqlite3
 .githooks/
 .secrets.baseline
 docs/
-README.md
 CHANGELOG.md
