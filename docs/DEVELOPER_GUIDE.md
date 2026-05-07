@@ -35,7 +35,9 @@ make docker      # Build and run the Docker container
 |---------|--------|-------------|----------|
 | `make dev` | Django `runserver` | Yes | Day-to-day development |
 | `make serve` | Uvicorn | No | Test production behaviour locally |
-| `make docker` | Uvicorn (container) | No | Full production-like environment |
+| `make docker` | Uvicorn (container) | No | Full production-like environment (requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`) |
+
+`make dev` and `make serve` work with zero configuration. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
 
 All targets serve on `http://localhost:8000`.
 
@@ -138,14 +140,19 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 | `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
 | `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
 
-**For local development** (Django dev server):
-```bash
-make dev   # Sets DJANGO_DEBUG=true automatically
-```
+### How environment variables are managed per context
+
+| Context | Who provides env vars | Notes |
+|---------|----------------------|-------|
+| `make check` (lint/test) | No env vars needed | `settings.py` uses a safe `django-insecure-` fallback for `SECRET_KEY`; production guards are skipped |
+| `make dev` | Makefile sets `DJANGO_DEBUG=true` | Django ignores `ALLOWED_HOSTS` when `DEBUG=True` |
+| `make serve` | Makefile sets `DJANGO_ALLOWED_HOSTS` | Allows `localhost` and `127.0.0.1` for local Uvicorn |
+| `make docker` | Caller must provide both vars | Simulates production — fails fast if misconfigured |
+| Production | Orchestrator (K8s, ECS, Compose) | Must set a real `SECRET_KEY` and `ALLOWED_HOSTS` |
+
+**Design principle:** `settings.py` is declarative — it requires correct configuration and fails loudly when misconfigured. The Makefile provides developer ergonomics per context. An unconfigured production deployment will reject all requests (not silently degrade).
 
 **For local Docker** (production simulation):
 ```bash
 DJANGO_SECRET_KEY="my-local-key" DJANGO_ALLOWED_HOSTS="localhost" make docker  # pragma: allowlist secret
 ```
-
-**For checks** (lint, mypy, tests): no env vars needed — just run `make check`.

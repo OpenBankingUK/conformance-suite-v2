@@ -17,7 +17,7 @@ dev: ## Run local dev server (auto-reload, debug)
 	DJANGO_DEBUG=true uv run python manage.py runserver
 
 serve: ## Run local prod server (uvicorn, no reload)
-	uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8000
+	DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1" uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8000
 
 docker: ## Build and run Docker container (requires DJANGO_SECRET_KEY and DJANGO_ALLOWED_HOSTS)
 ifndef DJANGO_SECRET_KEY
