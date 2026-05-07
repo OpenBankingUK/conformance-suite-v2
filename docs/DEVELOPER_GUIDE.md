@@ -56,7 +56,7 @@ make test        # Tests only
 make help        # Show all targets
 ```
 
-All checks require `DJANGO_SECRET_KEY` to be set. The Makefile provides a dummy value automatically — no `.env` sourcing needed for checks.
+No environment variables are needed for `make check` — `settings.py` provides a safe `django-insecure-` fallback when `DJANGO_SECRET_KEY` is absent, allowing tooling (mypy, pytest) to boot Django without external configuration.
 
 ## Pre-Commit Hook
 
@@ -134,19 +134,18 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 
 | Variable | Required | Purpose |
 |----------|----------|---------|
-| `DJANGO_SECRET_KEY` | Yes | Django cryptographic signing key |
+| `DJANGO_SECRET_KEY` | Production only | Django cryptographic signing key. Falls back to a safe `django-insecure-` value for local tooling. |
 | `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
-| `DJANGO_ALLOWED_HOSTS` | No | Comma-separated allowed hosts |
+| `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
 
-For local development, create a `.env` file (git-ignored):
+**For local development** (Django dev server):
 ```bash
-export DJANGO_SECRET_KEY="your-local-dev-key-here"
-export DJANGO_DEBUG="true"
-export DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1"
+make dev   # Sets DJANGO_DEBUG=true automatically
 ```
 
-Source it before running Django directly:
+**For local Docker** (production simulation):
 ```bash
-source .env
-uv run python manage.py runserver
+DJANGO_SECRET_KEY="my-local-key" DJANGO_ALLOWED_HOSTS="localhost" make docker  # pragma: allowlist secret
 ```
+
+**For checks** (lint, mypy, tests): no env vars needed — just run `make check`.
