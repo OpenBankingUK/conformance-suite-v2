@@ -1,4 +1,4 @@
-.PHONY: check lint test secrets dev serve docker
+.PHONY: check lint test secrets dev serve docker help
 
 check: secrets lint test ## Run all checks (mirrors CI)
 
