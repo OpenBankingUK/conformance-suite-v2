@@ -1,8 +1,5 @@
 .PHONY: check lint test secrets dev serve docker
 
-export DJANGO_SECRET_KEY ?= local-check-dummy-key
-export DJANGO_ALLOWED_HOSTS ?= localhost,127.0.0.1
-
 check: secrets lint test ## Run all checks (mirrors CI)
 
 secrets: ## Scan for leaked secrets
@@ -17,12 +14,18 @@ test: ## Run unit/integration tests
 	uv run pytest -m "not e2e" -v --cov
 
 dev: ## Run local dev server (auto-reload, debug)
-	uv run python manage.py runserver
+	DJANGO_DEBUG=true uv run python manage.py runserver
 
 serve: ## Run local prod server (uvicorn, no reload)
 	uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8000
 
-docker: ## Build and run Docker container
+docker: ## Build and run Docker container (requires DJANGO_SECRET_KEY and DJANGO_ALLOWED_HOSTS)
+ifndef DJANGO_SECRET_KEY
+	$(error DJANGO_SECRET_KEY must be set to run Docker container)
+endif
+ifndef DJANGO_ALLOWED_HOSTS
+	$(error DJANGO_ALLOWED_HOSTS must be set to run Docker container)
+endif
 	docker build -t conformance-suite .
 	docker run --rm -p 8000:8000 \
 		-e DJANGO_SECRET_KEY="$(DJANGO_SECRET_KEY)" \

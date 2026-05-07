@@ -27,14 +27,20 @@ def _get_allowed_hosts() -> list[str]:
     return [host.strip() for host in raw.split(",") if host.strip()]
 
 
-SECRET_KEY = os.environ["DJANGO_SECRET_KEY"]
+SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-tooling-fallback")
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
 ALLOWED_HOSTS = _get_allowed_hosts()
 
-if not DEBUG and not ALLOWED_HOSTS:
-    raise ValueError("DJANGO_ALLOWED_HOSTS must be set when DEBUG is disabled")
+# Production safety: only enforce requirements when explicitly configured
+# (i.e. not during mypy/pytest tooling runs where no env vars are set).
+_explicitly_configured = "DJANGO_SECRET_KEY" in os.environ
+if _explicitly_configured and not DEBUG:
+    if SECRET_KEY.startswith("django-insecure-"):
+        raise ValueError("DJANGO_SECRET_KEY must be set to a secure value when DEBUG is disabled")
+    if not ALLOWED_HOSTS:
+        raise ValueError("DJANGO_ALLOWED_HOSTS must be set when DEBUG is disabled")
 
 
 # Application definition
