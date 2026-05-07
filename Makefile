@@ -3,7 +3,7 @@
 check: secrets lint test ## Run all checks (mirrors CI)
 
 secrets: ## Scan for leaked secrets
-	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline
+	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
 
 lint: ## Ruff + mypy
 	uv run ruff check .
