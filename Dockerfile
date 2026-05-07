@@ -2,7 +2,7 @@
 FROM python:3.14.4-slim-bookworm AS builder
 
 # Install uv for fast, reproducible dependency resolution
-COPY --from=ghcr.io/astral-sh/uv:0.10.4 /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
 
 WORKDIR /app
 

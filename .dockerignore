@@ -34,6 +34,8 @@ db.sqlite3
 
 # ─── CI/CD & docs ────────────────────────────────────────────────────────────
 .github/
+.githooks/
+.secrets.baseline
 docs/
 README.md
 CHANGELOG.md

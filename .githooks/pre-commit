@@ -20,7 +20,7 @@ fi
 echo "🔍 Scanning staged files for secrets..."
 
 # Scan only the staged content for new secrets against the baseline
-if uv run detect-secrets-hook --baseline .secrets.baseline "${staged_files[@]}"; then
+if uv run detect-secrets-hook --baseline .secrets.baseline -- "${staged_files[@]}"; then
     echo "✓ No secrets detected"
 else
     echo ""
