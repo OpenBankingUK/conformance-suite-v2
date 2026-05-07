@@ -138,4 +138,4 @@ uv run pytest -p no:django -m e2e --model-bank-url=https://model-bank.example.co
 | Unit + integration (`not e2e`) | 80% |
 | Critical security paths | 100% (enforced via `# pragma: no cover` policy) |
 
-Coverage is enforced in CI via `--cov-fail-under=80`. Reports are uploaded as CI artifacts.
+Coverage is enforced via `fail_under = 80` in `[tool.coverage.report]` in `pyproject.toml`. Reports are uploaded as CI artifacts.
