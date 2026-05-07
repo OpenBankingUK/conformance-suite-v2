@@ -27,14 +27,11 @@ WORKDIR /app
 RUN groupadd --gid 1000 appuser && \
     useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
 
-# Copy virtual environment and application from builder
-COPY --from=builder /app /app
+# Copy virtual environment and application from builder (with correct ownership)
+COPY --from=builder --chown=appuser:appuser /app /app
 
 # Ensure the venv is on PATH
 ENV PATH="/app/.venv/bin:$PATH"
-
-# Set ownership so the non-root user can write to the DB and any runtime files
-RUN chown -R appuser:appuser /app
 
 # Switch to non-root user
 USER appuser

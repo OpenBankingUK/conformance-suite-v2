@@ -37,6 +37,8 @@ ALLOWED_HOSTS = _get_allowed_hosts()
 # (i.e. not during mypy/pytest tooling runs where no env vars are set).
 _explicitly_configured = "DJANGO_SECRET_KEY" in os.environ
 if _explicitly_configured and not DEBUG:
+    if not SECRET_KEY.strip():
+        raise ValueError("DJANGO_SECRET_KEY must not be empty when DEBUG is disabled")
     if SECRET_KEY.startswith("django-insecure-"):
         raise ValueError("DJANGO_SECRET_KEY must be set to a secure value when DEBUG is disabled")
     if not ALLOWED_HOSTS:
