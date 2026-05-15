@@ -18,6 +18,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Developer tooling: Makefile, pre-commit secret scanning (detect-secrets), ruff, mypy (strict)
 - Developer guide: environment variable requirements and local development setup
 - Repository governance documentation: branch rulesets, actions allowlist, advanced security settings
+- Model-bank smoke-check core: JSON config loading, Ozone discovery fetch, JWKS follow-up request, structured result output, and manual runner
 
 ### Fixed
 

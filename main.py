@@ -1,4 +1,7 @@
 import logging
+import sys
+
+from conformance.cli import run
 
 logger = logging.getLogger(__name__)
 
@@ -9,4 +12,7 @@ def main() -> None:
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    main()
+    if len(sys.argv) == 1:
+        main()
+    else:
+        raise SystemExit(run())
