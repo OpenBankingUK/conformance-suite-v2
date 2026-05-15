@@ -74,6 +74,23 @@ def test_parse_model_bank_config_rejects_non_https_discovery_url(tmp_path: Path)
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "discovery_url",
+    [
+        "https://:443/discovery",
+        "https://example.com:abc/discovery",
+        "https://example.com:0/discovery",
+    ],
+)
+def test_parse_model_bank_config_rejects_invalid_discovery_url(discovery_url: str, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="discoveryUrl must be (a valid HTTPS URL|an HTTPS URL)"):
+        parse_model_bank_config(
+            {"environment": "ozone-model-bank", "discoveryUrl": discovery_url},
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
 def test_parse_model_bank_config_rejects_discovery_url_userinfo(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="discoveryUrl must not include credentials"):
         parse_model_bank_config(

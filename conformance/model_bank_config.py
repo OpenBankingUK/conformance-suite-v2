@@ -146,7 +146,14 @@ def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
 def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
     value = _required_string(raw_config, key)
     parsed_url = urlparse(value)
-    if parsed_url.scheme != "https" or not parsed_url.netloc:
+    try:
+        parsed_port = parsed_url.port
+    except ValueError as error:
+        raise ConfigError(f"{key} must be a valid HTTPS URL") from error
+
+    if parsed_port is not None and parsed_port <= 0:
+        raise ConfigError(f"{key} must be a valid HTTPS URL")
+    if parsed_url.scheme != "https" or parsed_url.hostname is None:
         raise ConfigError(f"{key} must be an HTTPS URL")
     if parsed_url.username is not None or parsed_url.password is not None:
         raise ConfigError(f"{key} must not include credentials")
