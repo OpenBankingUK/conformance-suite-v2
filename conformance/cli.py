@@ -24,11 +24,15 @@ def run(argv: Sequence[str] | None = None) -> int:
         return 2
 
     result = run_model_bank_smoke_check(config)
-    config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
-    config.result_output_path.write_text(
-        json.dumps(result.to_json_object(), indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
-    )
+    try:
+        config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
+        config.result_output_path.write_text(
+            json.dumps(result.to_json_object(), indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        logger.error("Unable to write model-bank smoke check result to %s: %s", config.result_output_path, error)
+        return 3
 
     if result.status == "passed":
         logger.info("Model-bank smoke check passed; wrote %s", config.result_output_path)

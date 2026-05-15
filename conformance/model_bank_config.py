@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -29,7 +29,7 @@ class ModelBankConfig:
     discovery_url: str
     timeout_seconds: float = 10.0
     follow_up_mode: FollowUpMode = "jwks"
-    tls: TlsConfig = TlsConfig()
+    tls: TlsConfig = field(default_factory=TlsConfig)
     result_output_path: Path = Path("test-results.json")
 
 

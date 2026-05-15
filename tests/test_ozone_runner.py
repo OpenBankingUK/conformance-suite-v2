@@ -8,7 +8,7 @@ from conformance.ozone_client import OzoneModelBankClient
 from conformance.runner import run_model_bank_smoke_check
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
     requested_urls: list[str] = []
 
@@ -44,7 +44,7 @@ def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
     assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0}
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_reports_discovery_failure() -> None:
     http_client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500)))
     client = OzoneModelBankClient(http_client)
@@ -61,7 +61,7 @@ def test_run_model_bank_smoke_check_reports_discovery_failure() -> None:
     assert result.steps[0].status == "failed"
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_reports_jwks_failure() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
@@ -90,7 +90,7 @@ def test_run_model_bank_smoke_check_reports_jwks_failure() -> None:
     assert result.steps[1].status == "failed"
 
 
-@pytest.mark.integration
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_can_stop_after_discovery() -> None:
     requested_urls: list[str] = []
 
