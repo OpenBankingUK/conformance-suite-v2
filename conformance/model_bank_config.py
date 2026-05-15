@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
 
-from conformance.json_types import JsonObject, JsonValue
+from conformance.json_types import JsonValue
 
 
 class ConfigError(ValueError):
@@ -193,22 +193,3 @@ def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[
     if unknown_keys:
         joined_keys = ", ".join(unknown_keys)
         raise ConfigError(f"Unknown {location} field(s): {joined_keys}")
-
-
-def to_json_object(config: ModelBankConfig) -> JsonObject:
-    tls: JsonObject = {}
-    if config.tls.ca_bundle_path is not None:
-        tls["caBundlePath"] = str(config.tls.ca_bundle_path)
-    if config.tls.client_certificate_path is not None:
-        tls["clientCertificatePath"] = str(config.tls.client_certificate_path)
-    if config.tls.client_private_key_path is not None:
-        tls["clientPrivateKeyPath"] = str(config.tls.client_private_key_path)
-
-    return {
-        "environment": config.environment,
-        "discoveryUrl": config.discovery_url,
-        "timeoutSeconds": config.timeout_seconds,
-        "followUp": {"mode": config.follow_up_mode},
-        "tls": tls,
-        "resultOutputPath": str(config.result_output_path),
-    }
