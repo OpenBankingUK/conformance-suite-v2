@@ -15,7 +15,10 @@ logger = logging.getLogger(__name__)
 def run(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a model-bank smoke check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
-    args = parser.parse_args(argv)
+    try:
+        args = parser.parse_args(argv)
+    except SystemExit as error:
+        return error.code if isinstance(error.code, int) else 2
 
     try:
         config = load_model_bank_config(args.config)

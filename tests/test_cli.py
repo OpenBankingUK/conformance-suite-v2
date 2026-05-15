@@ -162,3 +162,10 @@ def test_cli_returns_config_error_for_invalid_config(tmp_path: Path) -> None:
     exit_code = cli.run([str(config_path)])
 
     assert exit_code == 2
+
+
+@pytest.mark.unit
+def test_cli_returns_argparse_error_for_missing_config() -> None:
+    exit_code = cli.run([])
+
+    assert exit_code == 2
