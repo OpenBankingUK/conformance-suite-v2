@@ -15,9 +15,12 @@ def run_model_bank_smoke_check(
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
     owns_client = client is None
-    model_bank_client = client if client is not None else OzoneModelBankClient.from_config(config)
+    model_bank_client: OzoneModelBankClient | None = client
 
     try:
+        if model_bank_client is None:
+            model_bank_client = OzoneModelBankClient.from_config(config)
+
         try:
             discovery_document, discovery_response = model_bank_client.fetch_discovery_document(config.discovery_url)
         except OzoneClientError as error:
@@ -72,5 +75,5 @@ def run_model_bank_smoke_check(
         )
         return build_smoke_check_result(config.environment, steps, started_at=started_at)
     finally:
-        if owns_client:
+        if owns_client and model_bank_client is not None:
             model_bank_client.close()

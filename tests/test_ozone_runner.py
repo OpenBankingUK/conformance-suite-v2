@@ -9,6 +9,26 @@ from conformance.runner import run_model_bank_smoke_check
 
 
 @pytest.mark.unit
+def test_run_model_bank_smoke_check_preserves_client_construction_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    expected_error = RuntimeError("invalid client configuration")
+
+    def raise_client_construction_error(_config: ModelBankConfig) -> OzoneModelBankClient:
+        raise expected_error
+
+    monkeypatch.setattr(OzoneModelBankClient, "from_config", raise_client_construction_error)
+    config = ModelBankConfig(
+        environment="ozone-model-bank",
+        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+        result_output_path=Path("results.json"),
+    )
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_model_bank_smoke_check(config)
+
+    assert exc_info.value is expected_error
+
+
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
     requested_urls: list[str] = []
 
