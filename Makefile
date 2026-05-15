@@ -1,9 +1,12 @@
-.PHONY: check lint test secrets dev serve docker help
+.PHONY: check lint test secrets auditdev serve docker help
 
 check: secrets lint test ## Run all checks (mirrors CI)
 
 secrets: ## Scan for leaked secrets
 	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
+
+audit: ## Audit secrets baseline for unreviewed entries
+	uv run detect-secrets audit .secrets.baseline
 
 lint: ## Ruff + mypy
 	uv run ruff check .
