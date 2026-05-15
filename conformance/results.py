@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from types import MappingProxyType
 from typing import Literal
 
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 
 CheckStatus = Literal["passed", "failed"]
 
@@ -16,7 +19,10 @@ class StepResult:
     message: str
     url: str | None = None
     status_code: int | None = None
-    details: JsonObject = field(default_factory=dict)
+    details: Mapping[str, JsonValue] = field(default_factory=dict)
+
+    def __post_init__(self) -> None:
+        object.__setattr__(self, "details", MappingProxyType(deepcopy(dict(self.details))))
 
     def to_json_object(self) -> JsonObject:
         result: JsonObject = {
@@ -29,7 +35,7 @@ class StepResult:
         if self.status_code is not None:
             result["statusCode"] = self.status_code
         if self.details:
-            result["details"] = self.details
+            result["details"] = deepcopy(dict(self.details))
         return result
 
 
