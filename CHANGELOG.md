@@ -10,11 +10,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Added
-### Changed
-### Deprecated
-### Removed
+
+- Project scaffolding: Django application with health endpoint, ASGI server (uvicorn), and environment-based configuration
+- CI pipeline: lint (ruff), type checking (mypy strict), unit/integration tests, detect-secrets scanning, Docker build with container smoke test
+- E2E workflow: end-to-end test runner with manual dispatch and model bank configuration
+- Docker: multi-stage build with pinned Python 3.14.4, non-root user, and healthcheck
+- Developer tooling: Makefile, pre-commit secret scanning (detect-secrets), ruff, mypy (strict)
+- Developer guide: environment variable requirements and local development setup
+- Repository governance documentation: branch rulesets, actions allowlist, advanced security settings
+
 ### Fixed
-### Security
+
+- Pre-commit secret scanning hook now includes renamed files (`--diff-filter=ACMR`)
+- Corrected coverage omit comment for `config/settings.py` in `pyproject.toml`
+- Removed undeclared `--model-bank-url` pytest flag from testing strategy docs
+- Added `--no-install-project` to all `uv sync` calls — this is a container-deployed app, not a distributable Python package
 
 ---
 

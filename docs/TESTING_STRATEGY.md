@@ -2,18 +2,18 @@
 
 ## Table of Contents
 
-- [Framework Recommendation](#framework-recommendation)
-- [Test Categories](#test-categories)
-  - [1. Unit & Application Tests](#1-unit--application-tests)
-  - [2. Integration Tests](#2-integration-tests)
-  - [3. End-to-End Tests (Model Bank Endpoint Testing)](#3-end-to-end-tests-model-bank-endpoint-testing)
-  - [4. Result File Assertion Pattern](#4-result-file-assertion-pattern)
-- [Test Markers](#test-markers)
-- [Code Quality Tools](#code-quality-tools)
-- [Coverage Targets](#coverage-targets)
-- [pyproject.toml Configuration](#pyprojecttoml-configuration)
-- [Dev Dependencies (pyproject.toml)](#dev-dependencies-pyprojecttoml)
-- [Rationale: Why Not Alternatives?](#rationale-why-not-alternatives)
+- [Testing Strategy](#testing-strategy)
+  - [Table of Contents](#table-of-contents)
+  - [Framework Recommendation](#framework-recommendation)
+    - [Recommendation: pytest ecosystem](#recommendation-pytest-ecosystem)
+  - [Test Categories](#test-categories)
+    - [1. Unit \& Application Tests](#1-unit--application-tests)
+    - [2. Integration Tests](#2-integration-tests)
+    - [3. End-to-End Tests (Model Bank Endpoint Testing)](#3-end-to-end-tests-model-bank-endpoint-testing)
+    - [4. Result File Assertion Pattern](#4-result-file-assertion-pattern)
+  - [Test Markers](#test-markers)
+  - [Code Quality Tools](#code-quality-tools)
+  - [Coverage Targets](#coverage-targets)
 
 ---
 
@@ -89,7 +89,7 @@ def test_conformance_results(run_conformance_tool):
 
 **In CI** (post-container run):
 ```bash
-uv run pytest tests/e2e/ -m e2e --json-report --json-report-file=e2e-results.json
+uv run pytest tests/e2e/ -p no:django -m e2e --json-report --json-report-file=e2e-results.json
 ```
 
 ---
@@ -115,8 +115,8 @@ uv run pytest -m unit
 # All except E2E (CI default)
 uv run pytest -m "not e2e"
 
-# E2E only (requires model bank config)
-uv run pytest -m e2e --model-bank-url=https://model-bank.example.com
+# E2E only (requires model bank config — see .github/workflows/e2e.yml)
+uv run pytest -p no:django -m e2e
 ```
 
 ---
@@ -138,88 +138,4 @@ uv run pytest -m e2e --model-bank-url=https://model-bank.example.com
 | Unit + integration (`not e2e`) | 80% |
 | Critical security paths | 100% (enforced via `# pragma: no cover` policy) |
 
-Coverage is enforced in CI via `--cov-fail-under=80`. Reports are uploaded as CI artifacts.
-
----
-
-## pyproject.toml Configuration
-
-```toml
-[tool.pytest.ini_options]
-DJANGO_SETTINGS_MODULE = "config.settings.test"
-python_files = ["test_*.py", "*_test.py"]
-python_classes = ["Test*"]
-python_functions = ["test_*"]
-addopts = [
-    "--strict-markers",
-    "--tb=short",
-    "-ra",
-]
-markers = [
-    "unit: isolated unit tests",
-    "integration: Django client / DB required",
-    "e2e: requires Docker and model bank",
-]
-
-[tool.coverage.run]
-source = ["."]
-omit = [
-    "*/migrations/*",
-    "*/tests/*",
-    "manage.py",
-    "config/settings/*",
-]
-
-[tool.coverage.report]
-fail_under = 80
-show_missing = true
-
-[tool.ruff]
-line-length = 120
-target-version = "py312"
-
-[tool.ruff.lint]
-select = ["E", "F", "I", "N", "S", "B", "A", "C4", "UP", "ANN"]
-ignore = ["ANN101", "ANN102"]
-
-[tool.mypy]
-python_version = "3.12"
-strict = true
-ignore_missing_imports = true
-plugins = ["mypy_django_plugin.main"]
-```
-
----
-
-## Dev Dependencies (pyproject.toml)
-
-```toml
-[tool.uv]
-dev-dependencies = [
-    "pytest>=8.0",
-    "pytest-django>=4.9",
-    "pytest-cov>=6.0",
-    "pytest-xdist>=3.6",
-    "pytest-json-report>=1.5",
-    "pytest-asyncio>=0.24",
-    "factory_boy>=3.3",
-    "httpx>=0.27",
-    "respx>=0.21",
-    "testcontainers>=4.8",
-    "ruff>=0.9",
-    "mypy>=1.11",
-    "django-stubs>=5.0",
-]
-```
-
----
-
-## Rationale: Why Not Alternatives?
-
-| Alternative | Reason not chosen |
-|---|---|
-| Django `TestCase` (built-in) | Inferior fixture system, slower, less composable |
-| `unittest` | Verbose, inferior fixture model |
-| `nose2` | Effectively unmaintained |
-| `Playwright` for E2E | HTMX patterns are server-rendered; testcontainers approach is simpler and closer to real consumer usage |
-| `tox` | `uv run pytest` with markers achieves the same isolation more simply |
+Coverage is enforced via `fail_under = 80` in `[tool.coverage.report]` in `pyproject.toml`. Reports are uploaded as CI artifacts.

@@ -387,7 +387,7 @@ The badge reflects the latest CI run on the `main` branch. A red badge means the
 | Dependency updates | Dependabot raises PRs weekly for security updates |
 | Snyk monitoring | Continuous monitoring of production dependency tree |
 | No loose version ranges | `pyproject.toml` specifies minimum versions; `uv.lock` pins exact versions |
-| Dev/prod separation | `uv sync --no-dev` for production Docker builds |
+| Dev/prod separation | `uv sync --no-dev --no-install-project` for production Docker builds |
 
 ---
 
@@ -420,7 +420,7 @@ Before a new team member can contribute, the following must be completed by a re
 - [ ] Add to the `OpenBankingUK/ob-sps-developers` GitHub team
 - [ ] Confirm GitHub Copilot licence is assigned
 - [ ] Install the **Snyk IDE extension** for local security scanning (available for [VS Code](https://marketplace.visualstudio.com/items?itemName=snyk-security.snyk-vulnerability-scanner) and JetBrains IDEs) — recommended by the Security team
-- [ ] Clone the repository and run `uv sync` to install dependencies
+- [ ] Clone the repository and run `uv sync --frozen --no-install-project` to install dependencies
 - [ ] Read this document, [REQUIREMENTS.md](REQUIREMENTS.md), and [TESTING_STRATEGY.md](TESTING_STRATEGY.md)
 - [ ] Complete a first PR against `develop` to verify the pipeline works end-to-end
 
