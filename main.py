@@ -1,12 +1,13 @@
 import logging
+from collections.abc import Sequence
 
-logger = logging.getLogger(__name__)
+from conformance.cli import run
 
 
-def main() -> None:
-    logger.info("Hello from conformance-suite-v2!")
+def main(argv: Sequence[str] | None = None) -> int:
+    return run(argv)
 
 
 if __name__ == "__main__":
     logging.basicConfig(level=logging.INFO)
-    main()
+    raise SystemExit(main())

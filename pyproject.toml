@@ -59,6 +59,7 @@ show_missing = true   # Shows which lines weren't hit
 # 120 is a modern default — wide enough for descriptive names, narrow enough
 # to avoid horizontal scrolling on most screens.
 line-length = 120
+extend-exclude = ["*.json"]
 
 [tool.ruff.lint]
 select = [
