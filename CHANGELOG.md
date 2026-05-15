@@ -12,10 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Project scaffolding: Django application with health endpoint, ASGI server (uvicorn), and environment-based configuration
-- CI pipeline: lint, type check, unit/integration tests, Docker build with smoke test
+- CI pipeline: lint (ruff), type checking (mypy strict), unit/integration tests, detect-secrets scanning, Docker build with container smoke test
 - E2E workflow: end-to-end test runner with manual dispatch and model bank configuration
 - Docker: multi-stage build with pinned Python 3.14.4, non-root user, and healthcheck
 - Developer tooling: Makefile, pre-commit secret scanning (detect-secrets), ruff, mypy (strict)
+- Developer guide: environment variable requirements and local development setup
 - Repository governance documentation: branch rulesets, actions allowlist, advanced security settings
 
 ---

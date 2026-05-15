@@ -115,8 +115,8 @@ uv run pytest -m unit
 # All except E2E (CI default)
 uv run pytest -m "not e2e"
 
-# E2E only (requires model bank config)
-uv run pytest -p no:django -m e2e --model-bank-url=https://model-bank.example.com
+# E2E only (requires model bank config — see .github/workflows/e2e.yml)
+uv run pytest -p no:django -m e2e
 ```
 
 ---
