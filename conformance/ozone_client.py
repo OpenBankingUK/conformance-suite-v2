@@ -51,6 +51,7 @@ class OzoneModelBankClient:
         response = self._get_json(discovery_url)
         issuer = _required_response_string(response.body, "issuer")
         jwks_uri = _required_response_string(response.body, "jwks_uri")
+        _validate_https_url(issuer, key="issuer")
         _validate_https_url(jwks_uri, key="jwks_uri")
         return DiscoveryDocument(issuer=issuer, jwks_uri=jwks_uri, raw=response.body), response
 

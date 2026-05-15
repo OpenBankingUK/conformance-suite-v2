@@ -1,3 +1,4 @@
+import math
 from pathlib import Path
 
 import pytest
@@ -95,6 +96,20 @@ def test_parse_model_bank_config_rejects_discovery_url_userinfo(tmp_path: Path) 
     with pytest.raises(ConfigError, match="discoveryUrl must not include credentials"):
         parse_model_bank_config(
             {"environment": "ozone-model-bank", "discoveryUrl": "https://client@example.com/discovery"},
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("timeout_seconds", [math.nan, math.inf, -math.inf])
+def test_parse_model_bank_config_rejects_non_finite_timeout_seconds(timeout_seconds: float, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="timeoutSeconds must be a positive number"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "timeoutSeconds": timeout_seconds,
+            },
             base_dir=tmp_path,
         )
 

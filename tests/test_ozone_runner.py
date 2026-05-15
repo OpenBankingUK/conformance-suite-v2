@@ -26,15 +26,15 @@ def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
             return httpx.Response(200, json={"keys": [{"kid": "signing-key"}]})
         return httpx.Response(404, json={"error": "not found"})
 
-    http_client = httpx.Client(transport=httpx.MockTransport(handler))
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        result_output_path=Path("results.json"),
-    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "passed"
     assert requested_urls == [
@@ -46,15 +46,15 @@ def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
 
 @pytest.mark.unit
 def test_run_model_bank_smoke_check_reports_discovery_failure() -> None:
-    http_client = httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500)))
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        result_output_path=Path("results.json"),
-    )
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].name == "openid-discovery"
@@ -74,15 +74,15 @@ def test_run_model_bank_smoke_check_reports_jwks_failure() -> None:
             )
         return httpx.Response(200, json={"not_keys": []})
 
-    http_client = httpx.Client(transport=httpx.MockTransport(handler))
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        result_output_path=Path("results.json"),
-    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].status == "passed"
@@ -92,7 +92,7 @@ def test_run_model_bank_smoke_check_reports_jwks_failure() -> None:
 
 @pytest.mark.unit
 def test_run_model_bank_smoke_check_rejects_non_https_jwks_uri() -> None:
-    http_client = httpx.Client(
+    with httpx.Client(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(
                 200,
@@ -102,15 +102,15 @@ def test_run_model_bank_smoke_check_rejects_non_https_jwks_uri() -> None:
                 },
             )
         )
-    )
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        result_output_path=Path("results.json"),
-    )
+    ) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].name == "openid-discovery"
@@ -119,8 +119,64 @@ def test_run_model_bank_smoke_check_rejects_non_https_jwks_uri() -> None:
 
 
 @pytest.mark.unit
+def test_run_model_bank_smoke_check_rejects_non_https_issuer() -> None:
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "issuer": "http://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        )
+    ) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+
+        result = run_model_bank_smoke_check(config, client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].name == "openid-discovery"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "issuer must be an HTTPS URL"
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_rejects_issuer_userinfo() -> None:
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "issuer": "https://client@modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        )
+    ) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+
+        result = run_model_bank_smoke_check(config, client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].name == "openid-discovery"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "issuer must not include credentials"
+
+
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_rejects_jwks_uri_userinfo() -> None:
-    http_client = httpx.Client(
+    with httpx.Client(
         transport=httpx.MockTransport(
             lambda _request: httpx.Response(
                 200,
@@ -130,15 +186,15 @@ def test_run_model_bank_smoke_check_rejects_jwks_uri_userinfo() -> None:
                 },
             )
         )
-    )
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        result_output_path=Path("results.json"),
-    )
+    ) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].name == "openid-discovery"
@@ -160,15 +216,15 @@ def test_run_model_bank_smoke_check_can_stop_after_discovery() -> None:
             },
         )
 
-    http_client = httpx.Client(transport=httpx.MockTransport(handler))
-    client = OzoneModelBankClient(http_client)
-    config = ModelBankConfig(
-        environment="ozone-model-bank",
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        follow_up_mode="discovery_only",
-    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            follow_up_mode="discovery_only",
+        )
 
-    result = run_model_bank_smoke_check(config, client=client)
+        result = run_model_bank_smoke_check(config, client=client)
 
     assert result.status == "passed"
     assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
@@ -164,7 +165,7 @@ def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, def
     value = raw_config.get(key)
     if value is None:
         return default
-    if not isinstance(value, int | float) or isinstance(value, bool) or value <= 0:
+    if not isinstance(value, int | float) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
         raise ConfigError(f"{key} must be a positive number")
     return float(value)
 
