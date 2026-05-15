@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import cast
+from urllib.parse import urlparse
 
 import httpx
 
@@ -50,6 +51,7 @@ class OzoneModelBankClient:
         response = self._get_json(discovery_url)
         issuer = _required_response_string(response.body, "issuer")
         jwks_uri = _required_response_string(response.body, "jwks_uri")
+        _validate_https_url(jwks_uri, key="jwks_uri")
         return DiscoveryDocument(issuer=issuer, jwks_uri=jwks_uri, raw=response.body), response
 
     def fetch_jwks(self, jwks_uri: str) -> JsonHttpResponse:
@@ -83,3 +85,16 @@ def _required_response_string(response_body: JsonObject, key: str) -> str:
     if not isinstance(value, str) or not value.strip():
         raise OzoneClientError(f"Discovery document must contain a non-empty {key}")
     return value.strip()
+
+
+def _validate_https_url(value: str, *, key: str) -> None:
+    parsed_url = urlparse(value)
+    try:
+        parsed_port = parsed_url.port
+    except ValueError as error:
+        raise OzoneClientError(f"{key} must be a valid HTTPS URL") from error
+
+    if parsed_port is not None and parsed_port <= 0:
+        raise OzoneClientError(f"{key} must be a valid HTTPS URL")
+    if parsed_url.scheme != "https" or parsed_url.hostname is None:
+        raise OzoneClientError(f"{key} must be an HTTPS URL")
