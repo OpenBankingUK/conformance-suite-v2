@@ -18,7 +18,21 @@ def test_example_model_bank_config_is_valid_json_config(monkeypatch: pytest.Monk
     assert config.environment == "ozone-model-bank"
     assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
     assert config.follow_up_mode == "discovery_only"
-    assert config.result_output_path == tmp_path / "test-results.json"
+    assert config.result_output_path == tmp_path / "out" / "test-results.json"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_defaults_result_output_to_out_dir(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+        output_base_dir=tmp_path,
+    )
+
+    assert config.result_output_path == tmp_path / "out" / "test-results.json"
 
 
 @pytest.mark.unit

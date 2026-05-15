@@ -31,7 +31,7 @@ class ModelBankConfig:
     timeout_seconds: float = 10.0
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
-    result_output_path: Path = Path("test-results.json")
+    result_output_path: Path = Path("out/test-results.json")
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -81,7 +81,7 @@ def parse_model_bank_config(
         raw_config,
         "resultOutputPath",
         base_dir=output_base_dir or Path.cwd(),
-        default=Path("test-results.json"),
+        default=Path("out/test-results.json"),
     )
 
     return ModelBankConfig(

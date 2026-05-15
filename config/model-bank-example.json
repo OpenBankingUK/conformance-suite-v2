@@ -8,5 +8,5 @@
     "tls": {
         "certificatePathRoot": "./certs"
     },
-    "resultOutputPath": "./test-results.json"
+    "resultOutputPath": "./out/test-results.json"
 }

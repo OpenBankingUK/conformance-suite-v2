@@ -21,6 +21,7 @@ __pycache__/
 coverage.xml
 test-results.json
 e2e-results.json
+out/
 htmlcov/
 dist/
 *.egg-info/

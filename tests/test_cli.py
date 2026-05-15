@@ -77,7 +77,9 @@ def test_cli_runs_committed_example_config(monkeypatch: pytest.MonkeyPatch, tmp_
 
     assert exit_code == 0
     assert requested_urls == ["https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"]
-    result = json.loads((tmp_path / "test-results.json").read_text(encoding="utf-8"))
+    result_path = tmp_path / "out" / "test-results.json"
+    assert result_path.parent.is_dir()
+    result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["status"] == "passed"
     assert result["summary"] == {"total": 1, "passed": 1, "failed": 0}
 

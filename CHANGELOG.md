@@ -22,6 +22,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Defaulted model-bank smoke-check output to `out/test-results.json` and ignored generated `out/` contents
 - Pre-commit secret scanning hook now includes renamed files (`--diff-filter=ACMR`)
 - Corrected coverage omit comment for `config/settings.py` in `pyproject.toml`
 - Removed undeclared `--model-bank-url` pytest flag from testing strategy docs
