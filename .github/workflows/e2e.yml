@@ -87,9 +87,9 @@ jobs:
           OB_TEST_IMAGE: ob-conformance-tool:e2e-${{ github.sha }}
           OB_TEST_FILTER: ${{ inputs.test_filter }}
         run: |
-          FILTER_ARGS=""
+          filter_args=()
           if [[ -n "$OB_TEST_FILTER" ]]; then
-            FILTER_ARGS="-k $OB_TEST_FILTER"
+            filter_args=(-k "$OB_TEST_FILTER")
           fi
 
           uv run pytest tests/e2e/ \
@@ -98,7 +98,7 @@ jobs:
             --json-report \
             --json-report-file=e2e-results.json \
             -v \
-            $FILTER_ARGS
+            "${filter_args[@]}"
 
       - name: Summarise E2E results
         if: always() && steps.check-e2e.outputs.exists == 'true'
