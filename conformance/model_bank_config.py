@@ -148,6 +148,8 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
     parsed_url = urlparse(value)
     if parsed_url.scheme != "https" or not parsed_url.netloc:
         raise ConfigError(f"{key} must be an HTTPS URL")
+    if parsed_url.username is not None or parsed_url.password is not None:
+        raise ConfigError(f"{key} must not include credentials")
     return value
 
 

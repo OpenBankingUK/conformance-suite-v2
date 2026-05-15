@@ -74,6 +74,15 @@ def test_parse_model_bank_config_rejects_non_https_discovery_url(tmp_path: Path)
 
 
 @pytest.mark.unit
+def test_parse_model_bank_config_rejects_discovery_url_userinfo(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="discoveryUrl must not include credentials"):
+        parse_model_bank_config(
+            {"environment": "ozone-model-bank", "discoveryUrl": "https://client@example.com/discovery"},
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
 def test_parse_model_bank_config_rejects_unknown_fields(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="Unknown config field"):
         parse_model_bank_config(
