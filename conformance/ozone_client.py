@@ -98,3 +98,5 @@ def _validate_https_url(value: str, *, key: str) -> None:
         raise OzoneClientError(f"{key} must be a valid HTTPS URL")
     if parsed_url.scheme != "https" or parsed_url.hostname is None:
         raise OzoneClientError(f"{key} must be an HTTPS URL")
+    if parsed_url.username is not None or parsed_url.password is not None:
+        raise OzoneClientError(f"{key} must not include credentials")

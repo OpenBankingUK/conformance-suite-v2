@@ -119,6 +119,34 @@ def test_run_model_bank_smoke_check_rejects_non_https_jwks_uri() -> None:
 
 
 @pytest.mark.unit
+def test_run_model_bank_smoke_check_rejects_jwks_uri_userinfo() -> None:
+    http_client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://client@modelbank.example.com/jwks",
+                },
+            )
+        )
+    )
+    client = OzoneModelBankClient(http_client)
+    config = ModelBankConfig(
+        environment="ozone-model-bank",
+        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+        result_output_path=Path("results.json"),
+    )
+
+    result = run_model_bank_smoke_check(config, client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].name == "openid-discovery"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "jwks_uri must not include credentials"
+
+
+@pytest.mark.unit
 def test_run_model_bank_smoke_check_can_stop_after_discovery() -> None:
     requested_urls: list[str] = []
 
