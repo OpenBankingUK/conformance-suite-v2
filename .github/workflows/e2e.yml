@@ -50,7 +50,8 @@ jobs:
           enable-cache: true
 
       - name: Install dependencies (including dev/test tools)
-        run: uv sync --frozen
+        # --no-install-project: this is a container-deployed app, not a package
+        run: uv sync --frozen --no-install-project
 
       - name: Check for E2E tests
         id: check-e2e

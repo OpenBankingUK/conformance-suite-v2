@@ -9,14 +9,12 @@ WORKDIR /app
 # Copy dependency files first (maximises layer cache)
 COPY pyproject.toml uv.lock ./
 
-# Install production dependencies only (no dev group)
+# Install production dependencies only (no dev group, no project install — this
+# is a container-deployed Django app, not a distributable Python package)
 RUN uv sync --frozen --no-dev --no-install-project
 
 # Copy application source
 COPY . .
-
-# Install the project itself
-RUN uv sync --frozen --no-dev
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
 FROM python:3.14.4-slim-bookworm AS runtime

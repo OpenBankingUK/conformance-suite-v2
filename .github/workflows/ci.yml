@@ -40,7 +40,8 @@ jobs:
 
       - name: Install dependencies
         # Includes the dev dependency group by default (ruff, mypy, pytest, etc.)
-        run: uv sync --frozen
+        # --no-install-project: this is a container-deployed app, not a package
+        run: uv sync --frozen --no-install-project
 
       - name: Ruff — lint check
         run: uv run ruff check . --output-format=github
@@ -74,7 +75,8 @@ jobs:
 
       - name: Install dependencies
         # Includes the dev dependency group by default (ruff, mypy, pytest, etc.)
-        run: uv sync --frozen
+        # --no-install-project: this is a container-deployed app, not a package
+        run: uv sync --frozen --no-install-project
 
       - name: Run pytest (exclude E2E)
         run: |

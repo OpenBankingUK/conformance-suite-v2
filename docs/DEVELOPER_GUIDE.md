@@ -17,7 +17,8 @@ cd conformance-suite-v2
 # Install all dependencies (including dev tools)
 # uv includes the [dependency-groups] dev group by default.
 # Production builds (Dockerfile) use --no-dev to exclude dev tooling.
-uv sync --frozen
+# --no-install-project: this is a container-deployed app, not a distributable package.
+uv sync --frozen --no-install-project
 
 # Activate the pre-commit hook (one-time setup per clone)
 git config core.hooksPath .githooks
