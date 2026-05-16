@@ -29,7 +29,7 @@ The `docs/` folder remains useful for CI, testing, settings, and onboarding refe
 
 ## Working Rules For Agents
 
-- Read `PROJECT_CONTEXT.md`, `DECISION_LOG.md`, and `HANDOVER.md` before changing behaviour.
+- Read `.github/copilot-instructions.md`, `PROJECT_CONTEXT.md`, `DECISION_LOG.md`, and `HANDOVER.md` before changing behaviour.
 - Update `HANDOVER.md` whenever work stops with meaningful unfinished context.
 - Add a decision log entry when a choice affects architecture, security, data formats, public interfaces, certification behaviour, or future migration cost.
 - Keep routine implementation notes in `DEVELOPMENT_LOG.md`; keep durable decisions in `DECISION_LOG.md`.

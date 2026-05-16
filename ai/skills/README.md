@@ -13,7 +13,7 @@ The canonical skill design should live here even if the executable skill is inst
 
 ## Skill Design Rules
 
-- Skills should read `../PROJECT_CONTEXT.md`, `../DECISION_LOG.md`, and `../HANDOVER.md` before acting.
+- Skills should read `../../.github/copilot-instructions.md`, `../PROJECT_CONTEXT.md`, `../DECISION_LOG.md`, and `../HANDOVER.md` before acting.
 - Skills should not rewrite source-of-truth files unless their task explicitly requires it.
 - Skills should record uncertainty and open questions instead of inventing requirements.
 - Skills should keep regulated-domain decisions grounded in source documents, tests, and decision logs.
