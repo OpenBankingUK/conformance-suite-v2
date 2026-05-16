@@ -6,9 +6,21 @@ This repository contains the **Open Banking UK Conformance Test Tool** — a sta
 
 **This project operates in a regulated financial services context. Security, correctness, and reliability are non-negotiable.**
 
+### AI Agent Operating Context
+
+Before making non-trivial changes, read the AI agent workspace in `ai/`:
+
+- `ai/README.md` explains which files are authoritative for agent-assisted development.
+- `ai/PROJECT_CONTEXT.md` captures current product context, design intent, and progress.
+- `ai/DECISION_LOG.md` records architectural and implementation decisions that should persist across sessions.
+- `ai/HANDOVER.md` is the current-session handover surface for the next human or agent.
+- `ai/DEVELOPMENT_LOG.md` records dated progress, investigation notes, and unresolved questions.
+
+The generated documents in `docs/` are useful reference material, but they are not the adaptive source of truth for agent decisions unless a human explicitly promotes a detail into the `ai/` workspace or this instruction file. Favour the original FCS design documents, sprint plan, explicit user direction, and the `ai/` workspace over incidental choices made in generated documentation.
+
 ### Technology Stack
 
-- **Language**: Python 3.14
+- **Language**: Python 3.14.x (>=3.14.4)
 - **Web framework**: Django (with HTMX for frontend interactions)
 - **Package manager**: `uv` (lockfile-based, reproducible installs)
 - **Container**: Docker (non-root, minimal base image)
