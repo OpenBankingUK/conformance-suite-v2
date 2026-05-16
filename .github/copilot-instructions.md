@@ -6,7 +6,7 @@ This repository contains the **Open Banking UK Conformance Test Tool** — a sta
 
 **This project operates in a regulated financial services context. Security, correctness, and reliability are non-negotiable.**
 
-## AI Agent Operating Context
+### AI Agent Operating Context
 
 Before making non-trivial changes, read the AI agent workspace in `ai/`:
 
@@ -20,7 +20,7 @@ The generated documents in `docs/` are useful reference material, but they are n
 
 ### Technology Stack
 
-- **Language**: Python 3.14
+- **Language**: Python 3.14.x (>=3.14.4)
 - **Web framework**: Django (with HTMX for frontend interactions)
 - **Package manager**: `uv` (lockfile-based, reproducible installs)
 - **Container**: Docker (non-root, minimal base image)

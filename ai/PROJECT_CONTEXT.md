@@ -46,7 +46,7 @@ Decision logs are expected review-gate artefacts, especially by the July and Oct
 
 ## Current Architectural Direction
 
-- Python 3.14, Django, HTMX, pytest, ruff, mypy, uv.
+- Python 3.14.x (>=3.14.4), Django, HTMX, pytest, ruff, mypy, uv.
 - Async-first engine direction using `asyncio` and `httpx.AsyncClient` for I/O-bound ASPSP calls.
 - Django should run under ASGI for async views and SSE progress.
 - Use local SQLite only if Django requires a database in Phase 1.

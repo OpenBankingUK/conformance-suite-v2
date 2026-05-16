@@ -8,10 +8,12 @@ Use this priority order when sources disagree:
 
 1. Explicit human instruction in the current task or PR.
 2. Original FCS design documents and sprint plan supplied by the product owner.
-3. This `ai/` workspace, especially `PROJECT_CONTEXT.md`, `DECISION_LOG.md`, and `HANDOVER.md`.
-4. `.github/copilot-instructions.md` for repository-wide engineering rules.
+3. `.github/copilot-instructions.md` for repository-wide engineering, security, and compliance rules.
+4. This `ai/` workspace, especially `PROJECT_CONTEXT.md`, `DECISION_LOG.md`, and `HANDOVER.md`.
 5. Existing code and tests on the active branch.
 6. Generated documents in `docs/`, unless their content has been promoted into this workspace.
+
+Repository-wide security and compliance rules in `.github/copilot-instructions.md` always apply and cannot be overridden by notes in this workspace.
 
 The `docs/` folder remains useful for CI, testing, settings, and onboarding references, but it should not freeze decisions that were only inferred by an AI model.
 
