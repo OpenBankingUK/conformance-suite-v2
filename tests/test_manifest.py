@@ -127,6 +127,15 @@ def test_parse_manifest_rejects_non_https_request_url() -> None:
 
 
 @pytest.mark.unit
+def test_parse_manifest_rejects_non_get_request_method() -> None:
+    raw_manifest = valid_manifest()
+    request_config(raw_manifest)["method"] = "POST"
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.request\.method must be GET"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_manifest_rejects_unsupported_assertion_type() -> None:
     raw_manifest = valid_manifest()
     assertion_configs(raw_manifest).append({"type": "token_claim", "claim": "iss"})
@@ -141,4 +150,23 @@ def test_parse_manifest_rejects_unsupported_follow_up_shape() -> None:
     follow_up_config(raw_manifest)["type"] = "token_endpoint"
 
     with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp\.type must be jwks"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_manifest_rejects_null_follow_up() -> None:
+    raw_manifest = valid_manifest()
+    first_test(raw_manifest)["followUp"] = None
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp must be a JSON object"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_manifest_rejects_non_get_follow_up_request_method() -> None:
+    raw_manifest = valid_manifest()
+    follow_up_request = cast("dict[str, JsonValue]", follow_up_config(raw_manifest)["request"])
+    follow_up_request["method"] = "POST"
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp\.request\.method must be GET"):
         parse_manifest(raw_manifest)

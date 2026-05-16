@@ -113,7 +113,8 @@ def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
     )
 
     assertions = _required_object_array(raw_test, "assertions", location=location)
-    raw_follow_up = raw_test.get("followUp")
+    has_follow_up = "followUp" in raw_test
+    raw_follow_up = raw_test["followUp"] if has_follow_up else None
 
     return ManifestTest(
         id=_required_string(raw_test, "id", location=location),
@@ -126,9 +127,7 @@ def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
             _parse_assertion(raw_assertion, location=f"{location}.assertions[{assertion_index}]")
             for assertion_index, raw_assertion in enumerate(assertions)
         ),
-        follow_up=_parse_follow_up(raw_follow_up, location=f"{location}.followUp")
-        if raw_follow_up is not None
-        else None,
+        follow_up=_parse_follow_up(raw_follow_up, location=f"{location}.followUp") if has_follow_up else None,
     )
 
 
