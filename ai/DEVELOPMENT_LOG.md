@@ -23,4 +23,4 @@ This log captures dated progress and investigation notes that help the next deve
 ## Known Tooling Notes
 
 - `rg` was not available in the active shell during initial document extraction. Use `grep`, `find`, or installed project tooling when needed.
-- The Confluence exports are MHTML and contain large amounts of UI markup. Useful content can be extracted with `textutil -convert txt -stdout <file> | sed -n '<range>p'` or targeted `grep`.
+- The Confluence exports are MHTML and contain large amounts of UI markup. Prefer cross-platform targeted `grep` or Python standard-library parsing for extraction; on macOS, `textutil -convert txt -stdout <file> | sed -n '<range>p'` is also a useful local shortcut.
