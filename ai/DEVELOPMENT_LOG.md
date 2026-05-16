@@ -10,6 +10,7 @@ This log captures dated progress and investigation notes that help the next deve
 - PR #2 added the Ozone model-bank hello-world flow: `conformance` package, CLI, model-bank config parser, Ozone client, result model, runner, example config, and tests.
 - Created the `ai/` workspace to make agent handovers, decision logs, and development guidance the adaptive source of truth.
 - Added workspace prompt files under `.github/prompts/` for implementation, handover, and decision logging workflows.
+- Added `.github/prompts/create-agent-development-prompt.prompt.md` to convert feature recommendations or planning notes into copy-paste-ready agent development prompts.
 
 ## Useful Source Notes Captured
 

@@ -16,6 +16,7 @@ The project is still before the main M2/M3 architecture work. The next substanti
 - `ai/DECISION_LOG.md`: initial durable decisions and open decisions.
 - `ai/DEVELOPMENT_LOG.md`: chronological progress log.
 - `.github/prompts/`: reusable Copilot prompt workflows for implementation, handover, and decisions.
+- `.github/prompts/create-agent-development-prompt.prompt.md`: reusable prompt for converting next-feature recommendations into implementation-ready agent prompts.
 - `.github/copilot-instructions.md`: updated to point agents at the `ai/` workspace and deprioritise generated docs as a source of decisions.
 
 ## Next Recommended Work
