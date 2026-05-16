@@ -1,0 +1,48 @@
+{
+    "schemaVersion": "v0",
+    "name": "Ozone OpenID discovery and JWKS smoke check",
+    "tests": [
+        {
+            "id": "openid-discovery",
+            "name": "OpenID discovery document",
+            "request": {
+                "method": "GET",
+                "url": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+            },
+            "assertions": [
+                {
+                    "type": "http_status",
+                    "expected": 200
+                },
+                {
+                    "type": "json_field",
+                    "path": "issuer",
+                    "rule": "https_url"
+                },
+                {
+                    "type": "json_field",
+                    "path": "jwks_uri",
+                    "rule": "https_url"
+                }
+            ],
+            "followUp": {
+                "type": "jwks",
+                "urlSource": "response.body.jwks_uri",
+                "request": {
+                    "method": "GET"
+                },
+                "assertions": [
+                    {
+                        "type": "http_status",
+                        "expected": 200
+                    },
+                    {
+                        "type": "json_field",
+                        "path": "keys",
+                        "rule": "array"
+                    }
+                ]
+            }
+        }
+    ]
+}
