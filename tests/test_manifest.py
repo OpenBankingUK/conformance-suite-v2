@@ -75,6 +75,24 @@ def test_load_example_manifest_returns_typed_manifest() -> None:
 
 
 @pytest.mark.unit
+def test_load_manifest_rejects_malformed_json(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text('{"schemaVersion": "v0",', encoding="utf-8")
+
+    with pytest.raises(ManifestError, match="Invalid JSON manifest"):
+        load_manifest(manifest_path)
+
+
+@pytest.mark.unit
+def test_load_manifest_rejects_non_object_root(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text("[]", encoding="utf-8")
+
+    with pytest.raises(ManifestError, match="Manifest root must be a JSON object"):
+        load_manifest(manifest_path)
+
+
+@pytest.mark.unit
 def test_parse_manifest_accepts_valid_minimal_discovery_manifest() -> None:
     raw_manifest = valid_manifest()
     first_test(raw_manifest).pop("followUp")
@@ -127,6 +145,24 @@ def test_parse_manifest_rejects_non_https_request_url() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://example .com/.well-known/openid-configuration",
+        "https://example.com\n.evil.test/.well-known/openid-configuration",
+        "https://bad_host.example/.well-known/openid-configuration",
+        "https://-example.com/.well-known/openid-configuration",
+    ],
+)
+def test_parse_manifest_rejects_malformed_https_request_url(url: str) -> None:
+    raw_manifest = valid_manifest()
+    request_config(raw_manifest)["url"] = url
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.request\.url must be a valid HTTPS URL"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_manifest_rejects_non_get_request_method() -> None:
     raw_manifest = valid_manifest()
     request_config(raw_manifest)["method"] = "POST"
@@ -145,11 +181,41 @@ def test_parse_manifest_rejects_unsupported_assertion_type() -> None:
 
 
 @pytest.mark.unit
+def test_parse_manifest_rejects_unsupported_json_field_rule() -> None:
+    raw_manifest = valid_manifest()
+    json_field_assertion = cast("dict[str, JsonValue]", assertion_configs(raw_manifest)[1])
+    json_field_assertion["rule"] = "non_empty"
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.assertions\[1\]\.rule must be one of"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("expected", [True, 99, 600])
+def test_parse_manifest_rejects_invalid_http_status_code(expected: JsonValue) -> None:
+    raw_manifest = valid_manifest()
+    http_status_assertion = cast("dict[str, JsonValue]", assertion_configs(raw_manifest)[0])
+    http_status_assertion["expected"] = expected
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.assertions\[0\]\.expected must be an HTTP status code"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_manifest_rejects_unsupported_follow_up_shape() -> None:
     raw_manifest = valid_manifest()
     follow_up_config(raw_manifest)["type"] = "token_endpoint"
 
     with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp\.type must be jwks"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_manifest_rejects_unsupported_follow_up_url_source() -> None:
+    raw_manifest = valid_manifest()
+    follow_up_config(raw_manifest)["urlSource"] = "response.body.issuer"
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp\.urlSource must be response\.body\.jwks_uri"):
         parse_manifest(raw_manifest)
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
 from urllib.parse import urlparse
@@ -178,7 +179,7 @@ def _parse_follow_up_request(raw_request: dict[str, JsonValue], *, location: str
 
 
 def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> ManifestAssertion:
-    assertion_type = _required_string(raw_assertion, "type", location=location)
+    assertion_type = _required_assertion_type(raw_assertion, location=location)
     if assertion_type == "http_status":
         _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected"}, location=location)
         return HttpStatusAssertion(type="http_status", expected=_required_status_code(raw_assertion, location=location))
@@ -189,6 +190,14 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
             path=_required_string(raw_assertion, "path", location=location),
             rule=_required_json_field_rule(raw_assertion, location=location),
         )
+
+
+def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
+    assertion_type = _required_string(raw_assertion, "type", location=location)
+    if assertion_type == "http_status":
+        return "http_status"
+    if assertion_type == "json_field":
+        return "json_field"
     raise ManifestError(f"{location}.type must be one of: http_status, json_field")
 
 
@@ -226,6 +235,9 @@ def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: st
 
 def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
     value = _required_string(raw_config, key, location=location)
+    if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value):
+        raise ManifestError(f"{location}.{key} must be a valid HTTPS URL")
+
     parsed_url = urlparse(value)
     try:
         parsed_port = parsed_url.port
@@ -238,7 +250,34 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
         raise ManifestError(f"{location}.{key} must be an HTTPS URL")
     if parsed_url.username is not None or parsed_url.password is not None:
         raise ManifestError(f"{location}.{key} must not include credentials")
+    _validate_hostname(parsed_url.hostname, location=f"{location}.{key}")
     return value
+
+
+def _validate_hostname(hostname: str | None, *, location: str) -> None:
+    if hostname is None:
+        raise ManifestError(f"{location} must be an HTTPS URL")
+    try:
+        ip_address(hostname)
+    except ValueError:
+        _validate_dns_hostname(hostname, location=location)
+
+
+def _validate_dns_hostname(hostname: str, *, location: str) -> None:
+    try:
+        hostname.encode("ascii")
+    except UnicodeEncodeError as error:
+        raise ManifestError(f"{location} must be a valid HTTPS URL") from error
+
+    trimmed_hostname = hostname.removesuffix(".")
+    labels = trimmed_hostname.split(".")
+    if not trimmed_hostname or len(trimmed_hostname) > 253:
+        raise ManifestError(f"{location} must be a valid HTTPS URL")
+    for label in labels:
+        if not label or len(label) > 63 or label.startswith("-") or label.endswith("-"):
+            raise ManifestError(f"{location} must be a valid HTTPS URL")
+        if not all(character.isalnum() or character == "-" for character in label):
+            raise ManifestError(f"{location} must be a valid HTTPS URL")
 
 
 def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> dict[str, JsonValue]:
