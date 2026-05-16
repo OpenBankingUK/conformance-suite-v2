@@ -67,6 +67,7 @@ Decision logs are expected review-gate artefacts, especially by the July and Oct
 
 1. `.github/copilot-instructions.md`
 2. `ai/README.md`
-3. `ai/DECISION_LOG.md`
-4. `ai/HANDOVER.md`
-5. The code and tests directly affected by the task
+3. `ai/PROJECT_CONTEXT.md`
+4. `ai/DECISION_LOG.md`
+5. `ai/HANDOVER.md`
+6. The code and tests directly affected by the task
