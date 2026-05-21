@@ -1,3 +1,9 @@
+"""HTTP client for the initial Ozone model-bank discovery smoke check.
+
+The current smoke check exercises OpenID Provider discovery and JWKS retrieval,
+which are early FAPI/OIDC prerequisites before the full conformance engine lands.
+"""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -16,6 +22,14 @@ class OzoneClientError(RuntimeError):
 
 @dataclass(frozen=True)
 class JsonHttpResponse:
+    """Typed JSON response captured for result reporting.
+
+    Attributes:
+        url: Final response URL after redirects.
+        status_code: HTTP status code returned by the model bank.
+        body: Parsed JSON object body.
+    """
+
     url: str
     status_code: int
     body: JsonObject
@@ -23,17 +37,41 @@ class JsonHttpResponse:
 
 @dataclass(frozen=True)
 class DiscoveryDocument:
+    """Validated OpenID discovery metadata needed by the smoke check.
+
+    Attributes:
+        issuer: HTTPS issuer identifier from the discovery document.
+        jwks_uri: HTTPS JWKS endpoint advertised by the issuer.
+        raw: Complete discovery document retained for future result details.
+    """
+
     issuer: str
     jwks_uri: str
     raw: JsonObject
 
 
 class OzoneModelBankClient:
+    """Fetch Ozone model-bank OpenID metadata using configured TLS settings."""
+
     def __init__(self, client: httpx.Client) -> None:
+        """Create a model-bank client around an `httpx` client.
+
+        Args:
+            client: Preconfigured synchronous HTTP client. Tests can inject a
+                mock transport here without changing conformance logic.
+        """
         self._client = client
 
     @classmethod
     def from_config(cls, config: ModelBankConfig) -> OzoneModelBankClient:
+        """Build a model-bank client from validated runtime configuration.
+
+        Args:
+            config: Model-bank configuration containing timeout and TLS paths.
+
+        Returns:
+            Client ready to fetch discovery and JWKS metadata.
+        """
         verify: bool | str = True
         if config.tls.ca_bundle_path is not None:
             verify = str(config.tls.ca_bundle_path)
@@ -45,9 +83,23 @@ class OzoneModelBankClient:
         return cls(httpx.Client(timeout=config.timeout_seconds, verify=verify, cert=cert))
 
     def close(self) -> None:
+        """Close the underlying HTTP connection pool."""
         self._client.close()
 
     def fetch_discovery_document(self, discovery_url: str) -> tuple[DiscoveryDocument, JsonHttpResponse]:
+        """Fetch and validate OpenID Provider discovery metadata.
+
+        Args:
+            discovery_url: HTTPS discovery document URL to request.
+
+        Returns:
+            Tuple containing validated discovery metadata and the raw JSON HTTP
+            response used for structured result reporting.
+
+        Raises:
+            OzoneClientError: If the request fails or required discovery fields
+                are missing or unsafe.
+        """
         response = self._get_json(discovery_url)
         issuer = _required_response_string(response.body, "issuer")
         jwks_uri = _required_response_string(response.body, "jwks_uri")
@@ -56,6 +108,18 @@ class OzoneModelBankClient:
         return DiscoveryDocument(issuer=issuer, jwks_uri=jwks_uri, raw=response.body), response
 
     def fetch_jwks(self, jwks_uri: str) -> JsonHttpResponse:
+        """Fetch and minimally validate the issuer JWKS document.
+
+        Args:
+            jwks_uri: HTTPS JWKS endpoint from the discovery document.
+
+        Returns:
+            JSON HTTP response containing a `keys` array.
+
+        Raises:
+            OzoneClientError: If the request fails, the response is not a JSON
+                object, or the JWKS payload does not contain a keys array.
+        """
         response = self._get_json(jwks_uri)
         keys = response.body.get("keys")
         if not isinstance(keys, list):

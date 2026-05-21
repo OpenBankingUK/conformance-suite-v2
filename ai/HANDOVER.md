@@ -1,6 +1,6 @@
 # Handover
 
-Last updated: 2026-05-16
+Last updated: 2026-05-21
 
 ## Current State
 
@@ -18,6 +18,7 @@ The project is still before the main M2/M3 architecture work. The next substanti
 - `.github/prompts/`: reusable Copilot prompt workflows for implementation, handover, and decisions.
 - `.github/prompts/create-agent-development-prompt.prompt.md`: reusable prompt for converting next-feature recommendations into implementation-ready agent prompts.
 - `.github/copilot-instructions.md`: updated to point agents at the `ai/` workspace and deprioritise generated docs as a source of decisions.
+- Code documentation standard: `.github/copilot-instructions.md`, prompt files, and ruff now require Google-style docstrings for human-readable public code.
 
 ## Next Recommended Work
 

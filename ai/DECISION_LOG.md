@@ -63,6 +63,26 @@ Decision: Sensitive field masking and certification eligibility criteria should 
 
 Rationale: The FCS Q&A identifies masking by configured path, and the sprint plan requires certification eligibility assessment to be driven by configuration.
 
+## DL-0007: Adopt Google-Style Docstrings Enforced By Ruff
+
+Date: 2026-05-21
+Status: Accepted
+
+Decision: Require Google-style docstrings for non-test modules and public Python APIs, and enforce the convention with ruff pydocstyle rules. Agents must add or update docstrings whenever they create or modify public modules, classes, functions, or methods.
+
+Rationale: This regulated conformance tool must remain understandable to human maintainers, reviewers, and future agents without relying on chat history. Google-style docstrings are concise, IDE-friendly, and compatible with automated linting.
+
+Consequences: Existing `conformance/` modules are backfilled now. Tests are exempt from docstring rules because their names and assertions document behaviour. Framework boilerplate may use concise module docstrings or narrow per-file ignores when docstrings would add ceremony rather than clarity.
+
+## DL-0008: Attribute-Docstring Convention For Type Aliases
+
+Date: 2026-05-21
+Status: Accepted
+
+Decision: Document module-level type aliases, `Literal` assignments, and `Final` constants using the attribute-docstring convention (a bare `"""..."""` string literal immediately following the assignment). Do not use `#` comments or fold descriptions into the module docstring.
+
+Rationale: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's section-6 requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension. Ruff B018 explicitly exempts the pattern. A Copilot PR review false-positive flagged these as useless expressions; the fix is to teach the reviewer (via `.github/copilot-instructions.md`) rather than change the code.
+
 ## Open Decisions
 
 - Manifest schema shape and versioning details for M2.

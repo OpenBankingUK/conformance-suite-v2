@@ -21,6 +21,7 @@ Use instructions for rules that should rarely change, such as:
 
 - Security and privacy requirements.
 - Test and type-checking standards.
+- Code documentation standards for human-readable modules and public APIs.
 - Dependency and Docker expectations.
 - The source-of-truth order for AI-assisted development.
 
