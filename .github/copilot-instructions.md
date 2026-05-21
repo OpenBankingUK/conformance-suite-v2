@@ -130,6 +130,20 @@ Code in this repository must be understandable to a human reviewer without requi
 
 Docstrings must follow Google style and pass `ruff` pydocstyle checks. If a public symbol intentionally has no docstring, the exception must be local, narrow, and justified.
 
+**Attribute docstrings for type aliases and module-level constants:**
+
+Module-level `type` statements (PEP 695), `Literal` assignments, `TypeAlias` assignments, and `Final` constants **must** be documented using the attribute-docstring convention — a bare `"""..."""` string literal placed on the line immediately following the assignment. This is a project-local convention: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension of Google style. Example:
+
+```python
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+"""Recursive JSON value accepted from config files and HTTP responses."""
+
+CheckStatus = Literal["passed", "failed"]
+"""Outcome values emitted by smoke-check steps and summaries."""
+```
+
+These are **not** useless expressions. Ruff B018 explicitly exempts string-literal statements that immediately follow an assignment. Do not flag them as B018 violations, do not request they be converted to `#` comments, and do not request their removal.
+
 ---
 
 ### 7. Git Flow & PR Hygiene
@@ -170,6 +184,7 @@ When reviewing code that implements or tests Open Banking standards:
 - Smaller, focused PRs that do one thing well
 - Dependency updates that have passed Snyk scanning
 - Documentation improvements
+- Attribute docstrings (`"""..."""` immediately following a module-level assignment or `type` statement) used to document type aliases, `Literal` types, and module-level constants — these are B018-exempt and recognised by tooling
 
 ---
 
