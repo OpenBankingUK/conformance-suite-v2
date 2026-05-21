@@ -41,11 +41,12 @@ The generated documents in `docs/` are useful reference material, but they are n
   - [3. Django-Specific Standards](#3-django-specific-standards)
   - [4. Type Annotations](#4-type-annotations)
   - [5. Code Quality Standards](#5-code-quality-standards)
-  - [6. Git Flow & PR Hygiene](#6-git-flow--pr-hygiene)
-  - [7. Docker & Container Standards](#7-docker--container-standards)
-  - [8. Open Banking Domain Standards](#8-open-banking-domain-standards)
-  - [9. What to Always Approve](#9-what-to-always-approve)
-  - [10. What to Always Block](#10-what-to-always-block)
+  - [6. Code Documentation Standards](#6-code-documentation-standards)
+  - [7. Git Flow & PR Hygiene](#7-git-flow--pr-hygiene)
+  - [8. Docker & Container Standards](#8-docker--container-standards)
+  - [9. Open Banking Domain Standards](#9-open-banking-domain-standards)
+  - [10. What to Always Approve](#10-what-to-always-approve)
+  - [11. What to Always Block](#11-what-to-always-block)
 - [General Coding Preferences](#general-coding-preferences)
 
 ---
@@ -115,7 +116,23 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 6. Git Flow & PR Hygiene
+### 6. Code Documentation Standards
+
+Code in this repository must be understandable to a human reviewer without requiring chat history or generated documentation.
+
+**Always check for:**
+
+- **Module docstrings**: Every non-test Python module and package must explain its purpose and role in the conformance tool.
+- **Public API docstrings**: Every public class, dataclass, function, method, and module-level type alias with project meaning must have a Google-style docstring. Include `Args:`, `Returns:`, and `Raises:` sections when they add useful information.
+- **Domain intent**: Code implementing Open Banking, OAuth 2.0, OIDC, FAPI, JWKS, JWS, report, certification, or masking behaviour should name the relevant standard concept in the docstring or an adjacent comment.
+- **Why comments**: Inline comments should explain security, compliance, domain, or non-obvious design intent. Do not add comments that merely restate the next line of code.
+- **Generated or framework boilerplate**: Keep Django-generated entry points lightweight. Prefer a concise module docstring or a targeted `ruff` per-file ignore over ceremonial comments.
+
+Docstrings must follow Google style and pass `ruff` pydocstyle checks. If a public symbol intentionally has no docstring, the exception must be local, narrow, and justified.
+
+---
+
+### 7. Git Flow & PR Hygiene
 
 - **Branch naming**: Verify the source branch follows the naming convention: `feature/`, `bugfix/`, `release/`, or `hotfix/` prefixes. Flag non-conforming branch names.
 - **PR scope**: PRs should be focused. A PR that touches more than 500 lines across unrelated concerns should be questioned.
@@ -125,7 +142,7 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 7. Docker & Container Standards
+### 8. Docker & Container Standards
 
 - Base image must be pinned to a specific version tag (e.g. `python:3.14.4-slim-bookworm`, not `python:latest`).
 - Multi-stage builds are preferred to keep the final image minimal.
@@ -135,7 +152,7 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 8. Open Banking Domain Standards
+### 9. Open Banking Domain Standards
 
 When reviewing code that implements or tests Open Banking standards:
 
@@ -147,7 +164,7 @@ When reviewing code that implements or tests Open Banking standards:
 
 ---
 
-### 9. What to Always Approve
+### 10. What to Always Approve
 
 - Well-structured tests with clear assertions
 - Smaller, focused PRs that do one thing well
@@ -156,7 +173,7 @@ When reviewing code that implements or tests Open Banking standards:
 
 ---
 
-### 10. What to Always Block
+### 11. What to Always Block
 
 - Any `DEBUG = True` outside of development settings
 - Any hardcoded secret, token, or credential
@@ -164,6 +181,7 @@ When reviewing code that implements or tests Open Banking standards:
 - Raw SQL string construction from user input
 - `@csrf_exempt` without a documented security rationale
 - Docker images running as root
+- New or modified public Python modules, classes, functions, or methods without clear human-readable docstrings
 - PRs that reduce test coverage below 80% without justification
 - New dependencies not present in `uv.lock`
 - Merges to `main` without a passing E2E test run

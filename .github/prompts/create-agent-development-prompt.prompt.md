@@ -69,6 +69,7 @@ Do not:
 - Validate external input with clear errors.
 - Do not commit secrets, credentials, tokens, certificates, or participant-sensitive data.
 - Do not hardcode certification criteria or masking rules that should be configuration-driven.
+- Add or update docstrings on any new or modified public module, class, function, or method.
 - Add tests for meaningful business logic using the correct pytest markers.
 - Update `ai/DECISION_LOG.md` if the work makes a durable architecture, schema, API, security, certification, or migration decision.
 - Update `ai/HANDOVER.md` if useful context remains for the next session.

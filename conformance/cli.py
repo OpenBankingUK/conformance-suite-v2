@@ -1,3 +1,5 @@
+"""Command-line workflow for running the model-bank smoke check."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +15,15 @@ logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
+    """Run the model-bank smoke-check command.
+
+    Args:
+        argv: Optional argument list to parse instead of `sys.argv`.
+
+    Returns:
+        Process-style exit code: 0 for pass, 1 for conformance failure, 2 for
+        invalid input, and 3 when the structured result cannot be written.
+    """
     parser = argparse.ArgumentParser(description="Run a model-bank smoke check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
     try:

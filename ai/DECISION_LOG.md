@@ -63,6 +63,17 @@ Decision: Sensitive field masking and certification eligibility criteria should 
 
 Rationale: The FCS Q&A identifies masking by configured path, and the sprint plan requires certification eligibility assessment to be driven by configuration.
 
+## DL-0007: Adopt Google-Style Docstrings Enforced By Ruff
+
+Date: 2026-05-21
+Status: Accepted
+
+Decision: Require Google-style docstrings for non-test modules and public Python APIs, and enforce the convention with ruff pydocstyle rules. Agents must add or update docstrings whenever they create or modify public modules, classes, functions, or methods.
+
+Rationale: This regulated conformance tool must remain understandable to human maintainers, reviewers, and future agents without relying on chat history. Google-style docstrings are concise, IDE-friendly, and compatible with automated linting.
+
+Consequences: Existing `conformance/` modules are backfilled now. Tests are exempt from docstring rules because their names and assertions document behaviour. Framework boilerplate may use concise module docstrings or narrow per-file ignores when docstrings would add ceremony rather than clarity.
+
 ## Open Decisions
 
 - Manifest schema shape and versioning details for M2.

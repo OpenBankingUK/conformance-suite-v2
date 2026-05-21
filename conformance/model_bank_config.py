@@ -1,3 +1,5 @@
+"""Load and validate model-bank smoke-check configuration files."""
+
 from __future__ import annotations
 
 import json
@@ -19,6 +21,14 @@ FollowUpMode = Literal["jwks", "discovery_only"]
 
 @dataclass(frozen=True)
 class TlsConfig:
+    """Transport TLS file paths for outbound model-bank requests.
+
+    Attributes:
+        ca_bundle_path: Optional CA bundle used to verify the model bank.
+        client_certificate_path: Optional client certificate for mTLS.
+        client_private_key_path: Optional private key paired with the client certificate.
+    """
+
     ca_bundle_path: Path | None = None
     client_certificate_path: Path | None = None
     client_private_key_path: Path | None = None
@@ -26,6 +36,17 @@ class TlsConfig:
 
 @dataclass(frozen=True)
 class ModelBankConfig:
+    """Validated inputs needed to run the current model-bank smoke check.
+
+    Attributes:
+        environment: Human-readable environment name written to the result file.
+        discovery_url: HTTPS OpenID Provider discovery document URL.
+        timeout_seconds: Per-request timeout for model-bank HTTP calls.
+        follow_up_mode: Whether to fetch JWKS after discovery succeeds.
+        tls: Transport TLS settings for the HTTP client.
+        result_output_path: Path where the structured JSON result should be written.
+    """
+
     environment: str
     discovery_url: str
     timeout_seconds: float = 10.0
@@ -35,6 +56,17 @@ class ModelBankConfig:
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
+    """Load a model-bank JSON config file from disk.
+
+    Args:
+        config_path: Path to the JSON config file.
+
+    Returns:
+        Parsed and validated model-bank config.
+
+    Raises:
+        ConfigError: If the file cannot be read, parsed, or validated.
+    """
     resolved_config_path = config_path.resolve()
     try:
         raw_config = json.loads(resolved_config_path.read_text(encoding="utf-8"))
@@ -59,6 +91,20 @@ def parse_model_bank_config(
     base_dir: Path,
     output_base_dir: Path | None = None,
 ) -> ModelBankConfig:
+    """Validate raw JSON config data into a typed model-bank config.
+
+    Args:
+        raw_config: JSON object loaded from a model-bank config file.
+        base_dir: Directory used to resolve certificate paths.
+        output_base_dir: Directory used to resolve result output paths.
+
+    Returns:
+        Typed model-bank config ready for execution.
+
+    Raises:
+        ConfigError: If required fields are missing, unknown fields are present,
+            paths are unsafe, or values have invalid types.
+    """
     _reject_unknown_keys(
         raw_config,
         allowed_keys={
