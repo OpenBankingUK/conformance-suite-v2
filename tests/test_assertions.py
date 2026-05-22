@@ -72,6 +72,7 @@ def test_evaluate_https_url_json_field_passes_for_https_url() -> None:
     [
         ("http://modelbank.example.com/jwks", "JSON field jwks_uri must be an HTTPS URL"),
         ("https://client@modelbank.example.com/jwks", "JSON field jwks_uri must not include credentials"),
+        ("https://127.0.0.1/jwks", "JSON field jwks_uri must use a DNS hostname, not an IP literal"),
         (42, "JSON field jwks_uri must be a non-empty HTTPS URL string"),
     ],
 )

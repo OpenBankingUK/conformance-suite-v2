@@ -4,12 +4,11 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from ipaddress import ip_address
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from conformance.json_types import JsonValue
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 class ManifestError(ValueError):
@@ -391,65 +390,11 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
         ManifestError: If the value is not a safe, well-formed HTTPS URL.
     """
     value = _required_string(raw_config, key, location=location)
-    if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value):
-        raise ManifestError(f"{location}.{key} must be a valid HTTPS URL")
-
-    parsed_url = urlparse(value)
     try:
-        parsed_port = parsed_url.port
-    except ValueError as error:
-        raise ManifestError(f"{location}.{key} must be a valid HTTPS URL") from error
-
-    if parsed_port is not None and parsed_port <= 0:
-        raise ManifestError(f"{location}.{key} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        raise ManifestError(f"{location}.{key} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        raise ManifestError(f"{location}.{key} must not include credentials")
-    _validate_hostname(parsed_url.hostname, location=f"{location}.{key}")
+        validate_https_url(value, label=f"{location}.{key}")
+    except HttpsUrlValidationError as error:
+        raise ManifestError(str(error)) from error
     return value
-
-
-def _validate_hostname(hostname: str | None, *, location: str) -> None:
-    """Validate a URL hostname as a DNS name, rejecting IP literals.
-
-    Raises:
-        ManifestError: If the hostname is missing or fails validation.
-    """
-    if hostname is None:
-        raise ManifestError(f"{location} must be an HTTPS URL")
-    try:
-        ip_address(hostname)
-    except ValueError:
-        pass
-    else:
-        raise ManifestError(f"{location} must use a DNS hostname, not an IP literal")
-    _validate_dns_hostname(hostname, location=location)
-
-
-def _validate_dns_hostname(hostname: str, *, location: str) -> None:
-    """Validate a DNS hostname per RFC 1123 label rules.
-
-    Rejects non-ASCII, oversized labels, leading/trailing hyphens, and
-    characters outside the ``[a-zA-Z0-9-]`` set.
-
-    Raises:
-        ManifestError: If the hostname violates DNS naming rules.
-    """
-    try:
-        hostname.encode("ascii")
-    except UnicodeEncodeError as error:
-        raise ManifestError(f"{location} must be a valid HTTPS URL") from error
-
-    trimmed_hostname = hostname.removesuffix(".")
-    labels = trimmed_hostname.split(".")
-    if not trimmed_hostname or len(trimmed_hostname) > 253:
-        raise ManifestError(f"{location} must be a valid HTTPS URL")
-    for label in labels:
-        if not label or len(label) > 63 or label.startswith("-") or label.endswith("-"):
-            raise ManifestError(f"{location} must be a valid HTTPS URL")
-        if not all(character.isalnum() or character == "-" for character in label):
-            raise ManifestError(f"{location} must be a valid HTTPS URL")
 
 
 def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> dict[str, JsonValue]:

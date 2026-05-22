@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import HttpStatusAssertion, JsonFieldAssertion, ManifestAssertion
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 @dataclass(frozen=True)
@@ -69,17 +69,10 @@ def _evaluate_https_url(path: str, value: JsonValue) -> AssertionResult:
     """Evaluate whether a JSON value is an HTTPS URL string."""
     if not isinstance(value, str) or not value.strip():
         return AssertionResult(passed=False, message=f"JSON field {path} must be a non-empty HTTPS URL string")
-    parsed_url = urlparse(value.strip())
     try:
-        parsed_port = parsed_url.port
-    except ValueError:
-        return AssertionResult(passed=False, message=f"JSON field {path} must be a valid HTTPS URL")
-    if parsed_port is not None and parsed_port <= 0:
-        return AssertionResult(passed=False, message=f"JSON field {path} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        return AssertionResult(passed=False, message=f"JSON field {path} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        return AssertionResult(passed=False, message=f"JSON field {path} must not include credentials")
+        validate_https_url(value.strip(), label=f"JSON field {path}")
+    except HttpsUrlValidationError as error:
+        return AssertionResult(passed=False, message=str(error))
     return AssertionResult(passed=True, message=f"JSON field {path} is an HTTPS URL")
 
 

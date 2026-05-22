@@ -7,13 +7,13 @@ which are early FAPI/OIDC prerequisites before the full conformance engine lands
 from __future__ import annotations
 
 from dataclasses import dataclass
-from urllib.parse import urlparse
 
 import httpx
 
 from conformance.http import JsonHttpClientError, JsonHttpResponse, build_json_http_client, get_json
 from conformance.json_types import JsonObject
 from conformance.model_bank_config import ModelBankConfig
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 class OzoneClientError(RuntimeError):
@@ -113,9 +113,12 @@ class OzoneModelBankClient:
     def _get_json(self, url: str) -> JsonHttpResponse:
         """Fetch a JSON object response and translate generic errors."""
         try:
-            return get_json(self._client, url)
+            response = get_json(self._client, url)
         except JsonHttpClientError as error:
             raise OzoneClientError(str(error)) from error
+        if response.status_code >= 400:
+            raise OzoneClientError(f"Request failed for {url}: HTTP status {response.status_code}")
+        return response
 
 
 def _required_response_string(response_body: JsonObject, key: str) -> str:
@@ -126,15 +129,7 @@ def _required_response_string(response_body: JsonObject, key: str) -> str:
 
 
 def _validate_https_url(value: str, *, key: str) -> None:
-    parsed_url = urlparse(value)
     try:
-        parsed_port = parsed_url.port
-    except ValueError as error:
-        raise OzoneClientError(f"{key} must be a valid HTTPS URL") from error
-
-    if parsed_port is not None and parsed_port <= 0:
-        raise OzoneClientError(f"{key} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        raise OzoneClientError(f"{key} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        raise OzoneClientError(f"{key} must not include credentials")
+        validate_https_url(value, label=key)
+    except HttpsUrlValidationError as error:
+        raise OzoneClientError(str(error)) from error

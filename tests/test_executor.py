@@ -117,9 +117,77 @@ def test_run_manifest_reports_missing_follow_up_url() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_rejects_unsafe_follow_up_url_before_fetching() -> None:
+    raw_manifest = manifest_config()
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            200,
+            json={
+                "issuer": "https://modelbank.example.com",
+                "jwks_uri": "http://modelbank.example.com/jwks",
+            },
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+
+    assert result.status == "failed"
+    assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]
+    assert [step.status for step in result.steps] == ["passed", "failed"]
+    assert result.steps[1].message == "Follow-up URL from response.body.jwks_uri must be an HTTPS URL"
+
+
+@pytest.mark.unit
+def test_run_manifest_evaluates_expected_http_error_status() -> None:
+    raw_manifest = manifest_config()
+    first_test(raw_manifest).pop("followUp")
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 404}]
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(404, json={"error": "missing"}))
+    ) as client:
+        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+
+    assert result.status == "passed"
+    assert result.steps[0].status == "passed"
+    assert result.steps[0].status_code == 404
+    assert result.steps[0].details == {"assertions": [{"status": "passed", "message": "HTTP status was 404"}]}
+
+
+@pytest.mark.unit
+def test_run_manifest_reports_unexpected_http_error_status_as_assertion_failure() -> None:
+    raw_manifest = manifest_config()
+    first_test(raw_manifest).pop("followUp")
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(404, json={"error": "missing"}))
+    ) as client:
+        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].status_code == 404
+    assert result.steps[0].details == {
+        "assertions": [{"status": "failed", "message": "Expected HTTP status 200, got 404"}]
+    }
+
+
+@pytest.mark.unit
 def test_run_manifest_reports_request_error() -> None:
     manifest = parse_manifest(manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as client:
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(manifest, environment="ozone-model-bank", client=client)
 
     assert result.status == "failed"

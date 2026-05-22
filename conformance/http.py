@@ -20,7 +20,7 @@ class JsonHttpResponse:
     """Typed JSON response captured for result reporting.
 
     Attributes:
-        url: Final response URL after redirects.
+        url: Response URL reported by `httpx` for the returned response.
         status_code: HTTP status code returned by the endpoint.
         body: Parsed JSON object body.
     """
@@ -38,7 +38,7 @@ def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
         url: HTTPS endpoint URL to fetch.
 
     Returns:
-        Parsed JSON object response with final URL and status code.
+        Parsed JSON object response with URL and status code.
 
     Raises:
         JsonHttpClientError: If the request fails, the response is not valid
@@ -46,8 +46,7 @@ def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
     """
     try:
         response = client.get(url, headers={"Accept": "application/json"})
-        response.raise_for_status()
-    except httpx.HTTPError as error:
+    except httpx.RequestError as error:
         raise JsonHttpClientError(f"Request failed for {url}: {error}") from error
 
     try:

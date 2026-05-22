@@ -7,9 +7,9 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from conformance.json_types import JsonValue
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 class ConfigError(ValueError):
@@ -192,18 +192,10 @@ def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
 
 def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
     value = _required_string(raw_config, key)
-    parsed_url = urlparse(value)
     try:
-        parsed_port = parsed_url.port
-    except ValueError as error:
-        raise ConfigError(f"{key} must be a valid HTTPS URL") from error
-
-    if parsed_port is not None and parsed_port <= 0:
-        raise ConfigError(f"{key} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        raise ConfigError(f"{key} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        raise ConfigError(f"{key} must not include credentials")
+        validate_https_url(value, label=key)
+    except HttpsUrlValidationError as error:
+        raise ConfigError(str(error)) from error
     return value
 
 

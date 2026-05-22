@@ -11,6 +11,7 @@ from conformance.http import JsonHttpClientError, JsonHttpResponse, get_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestAssertion, ManifestFollowUp, ManifestTest
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 def run_manifest(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:
@@ -81,6 +82,15 @@ def _run_follow_up(
             status="failed",
             message=f"Unable to resolve follow-up URL from {follow_up.url_source}",
             url=response.url,
+        )
+    try:
+        validate_https_url(follow_up_url, label=f"Follow-up URL from {follow_up.url_source}")
+    except HttpsUrlValidationError as error:
+        return StepResult(
+            name=follow_up_name,
+            status="failed",
+            message=str(error),
+            url=follow_up_url,
         )
 
     try:

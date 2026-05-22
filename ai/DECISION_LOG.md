@@ -101,6 +101,15 @@ Decision: Broaden section 6 to require Google-style docstrings on every private 
 
 Rationale: The project goal for documentation is human readability *and* IDE hover support. A developer navigating `conformance/manifest.py` hovers private helpers far more often than public entry points — the parser's complexity lives in its validators and sub-parsers, not its two public functions. Without docstrings on privates, the IDE shows only a bare signature, defeating the stated goal. The one-line allowance prevents ceremonial bloat on trivial helpers where the signature speaks for itself.
 
+## DL-0011: Keep Manifest HTTP Fetches Status-Agnostic
+
+Date: 2026-05-22
+Status: Accepted
+
+Decision: Manifest execution must treat HTTP status codes as conformance evidence for `http_status` assertions, not as transport failures. JSON fetch helpers may return well-formed JSON object responses with 4xx or 5xx status codes; higher-level callers that require 2xx-only behaviour must enforce that policy explicitly.
+
+Rationale: Manifest v0 accepts expected HTTP status codes from 100 to 599, so raising before assertion evaluation would make valid negative-response conformance tests impossible. Keeping status policy at the caller boundary lets the manifest engine evaluate standards behaviour while legacy smoke-check code can still fail fast for model-bank request errors.
+
 ## Open Decisions
 
 - How manifest v0 evolves into later assertion evaluation, context carry-forward, and orchestration contracts.
