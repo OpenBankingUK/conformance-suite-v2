@@ -249,3 +249,40 @@ def test_run_model_bank_smoke_check_can_stop_after_discovery() -> None:
     assert result.status == "passed"
     assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]
     assert len(result.steps) == 1
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field", "url", "expected_message"),
+    [
+        ("issuer", "https://127.0.0.1", "issuer must use a DNS hostname, not an IP literal"),
+        ("jwks_uri", "https://127.0.0.1/jwks", "jwks_uri must use a DNS hostname, not an IP literal"),
+        ("issuer", "https://bad_host.example", "issuer must be a valid HTTPS URL"),
+        ("jwks_uri", "https://bad_host.example/jwks", "jwks_uri must be a valid HTTPS URL"),
+    ],
+)
+def test_run_model_bank_smoke_check_rejects_ip_literal_and_malformed_hostname(
+    field: str, url: str, expected_message: str
+) -> None:
+    discovery_body: dict[str, str] = {
+        "issuer": "https://modelbank.example.com",
+        "jwks_uri": "https://modelbank.example.com/jwks",
+    }
+    discovery_body[field] = url
+
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(200, json=discovery_body))
+    ) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="ozone-model-bank",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+
+        result = run_model_bank_smoke_check(config, client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].name == "openid-discovery"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == expected_message

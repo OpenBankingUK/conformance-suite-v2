@@ -194,3 +194,35 @@ def test_parse_model_bank_config_rejects_certificate_path_traversal(tmp_path: Pa
             },
             base_dir=tmp_path,
         )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "discovery_url",
+    [
+        "https://127.0.0.1/.well-known/openid-configuration",
+        "https://[::1]/.well-known/openid-configuration",
+    ],
+)
+def test_parse_model_bank_config_rejects_ip_literal_discovery_url(discovery_url: str, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="discoveryUrl must use a DNS hostname, not an IP literal"):
+        parse_model_bank_config(
+            {"environment": "ozone-model-bank", "discoveryUrl": discovery_url},
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "discovery_url",
+    [
+        "https://bad_host.example/.well-known/openid-configuration",
+        "https://-leading-dash.example/.well-known/openid-configuration",
+    ],
+)
+def test_parse_model_bank_config_rejects_malformed_hostname_discovery_url(discovery_url: str, tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="discoveryUrl must be a valid HTTPS URL"):
+        parse_model_bank_config(
+            {"environment": "ozone-model-bank", "discoveryUrl": discovery_url},
+            base_dir=tmp_path,
+        )

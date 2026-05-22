@@ -6,7 +6,7 @@ Last updated: 2026-05-22
 
 The repository is on `develop` with PR #1 and PR #2 merged. The project has a working Python/Django scaffold, CI/E2E setup, Dockerfile, and an initial Ozone model-bank hello-world path in the `conformance` package.
 
-M2 has now started with a small manifest v0 parser slice. The project still has not replaced the model-bank runner and does not yet have assertion execution, variable substitution, orchestration, report generation, REST API, or UI work.
+M2 has delivered a manifest v0 parser and executor. The project now has typed manifest parsing (`conformance/manifest.py`), assertion evaluation (`conformance/assertions.py`), a manifest executor (`conformance/executor.py`) wired into the CLI via `--manifest`, and hardened URL validation (`conformance/url_validation.py`). Variable substitution, orchestration, report generation, REST API, and UI work remain outstanding.
 
 ## What Was Just Added
 
