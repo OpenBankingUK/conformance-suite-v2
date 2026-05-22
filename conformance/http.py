@@ -78,7 +78,14 @@ def build_json_http_client(
 
     Returns:
         Configured synchronous HTTP client.
+
+    Raises:
+        ValueError: If only one of ``client_certificate_path`` /
+            ``client_private_key_path`` is provided.
     """
+    if (client_certificate_path is None) != (client_private_key_path is None):
+        raise ValueError("client_certificate_path and client_private_key_path must be supplied together")
+
     verify: bool | str = True
     if ca_bundle_path is not None:
         verify = str(ca_bundle_path)
