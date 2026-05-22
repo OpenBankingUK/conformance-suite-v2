@@ -315,7 +315,11 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
 
 
 def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
-    """Extract and validate the assertion type discriminator."""
+    """Extract and validate the assertion type discriminator.
+
+    Raises:
+        ManifestError: If the assertion type is missing or unsupported.
+    """
     assertion_type = _required_string(raw_assertion, "type", location=location)
     if assertion_type == "http_status":
         return "http_status"
@@ -325,7 +329,11 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> RequestMethod:
-    """Extract and validate that the request method is GET."""
+    """Extract and validate that the request method is GET.
+
+    Raises:
+        ManifestError: If the method is missing or not GET.
+    """
     method = _required_string(raw_config, "method", location=location)
     if method != "GET":
         raise ManifestError(f"{location}.method must be GET")
@@ -333,7 +341,11 @@ def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> 
 
 
 def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: str) -> JsonFieldRule:
-    """Extract and validate the JSON field assertion rule."""
+    """Extract and validate the JSON field assertion rule.
+
+    Raises:
+        ManifestError: If the JSON field rule is missing or unsupported.
+    """
     rule = _required_string(raw_assertion, "rule", location=location)
     if rule == "required":
         return "required"
@@ -345,7 +357,11 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
 
 
 def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str) -> int:
-    """Extract and validate an HTTP status code (100–599)."""
+    """Extract and validate an HTTP status code (100–599).
+
+    Raises:
+        ManifestError: If the value is not an HTTP status code.
+    """
     value = raw_assertion.get("expected")
     if not isinstance(value, int) or isinstance(value, bool) or value < 100 or value > 599:
         raise ManifestError(f"{location}.expected must be an HTTP status code")
@@ -353,7 +369,11 @@ def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str)
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
-    """Extract a required non-empty string from a JSON object."""
+    """Extract a required non-empty string from a JSON object.
+
+    Raises:
+        ManifestError: If the value is missing or not a non-empty string.
+    """
     value = raw_config.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ManifestError(f"{location}.{key} must be a non-empty string")
@@ -430,7 +450,11 @@ def _validate_dns_hostname(hostname: str, *, location: str) -> None:
 
 
 def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> dict[str, JsonValue]:
-    """Extract a required JSON object from a parent object."""
+    """Extract a required JSON object from a parent object.
+
+    Raises:
+        ManifestError: If the value is missing or not a JSON object.
+    """
     value = raw_config.get(key)
     if not isinstance(value, dict):
         raise ManifestError(f"{location}.{key} must be a JSON object")
@@ -438,7 +462,11 @@ def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: st
 
 
 def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, location: str) -> list[dict[str, JsonValue]]:
-    """Extract a required non-empty array of JSON objects."""
+    """Extract a required non-empty array of JSON objects.
+
+    Raises:
+        ManifestError: If the value is missing, empty, or contains non-objects.
+    """
     value = raw_config.get(key)
     if not isinstance(value, list) or not value:
         raise ManifestError(f"{location}.{key} must be a non-empty array")
@@ -451,7 +479,11 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:
-    """Raise if the JSON object contains keys outside the allowed set."""
+    """Raise if the JSON object contains keys outside the allowed set.
+
+    Raises:
+        ManifestError: If any keys are outside the allowed set.
+    """
     unknown_keys = sorted(set(raw_config) - allowed_keys)
     if unknown_keys:
         joined_keys = ", ".join(unknown_keys)
