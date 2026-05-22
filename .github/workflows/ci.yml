@@ -49,6 +49,12 @@ jobs:
       - name: Ruff — format check
         run: uv run ruff format --check .
 
+      - name: interrogate — docstring coverage
+        # Enforces that every function, method, and class — including private
+        # (_-prefixed) helpers — carries a docstring. Ruff's pydocstyle D1xx
+        # rules are public-only, so interrogate fills the gap.
+        run: uv run interrogate -c pyproject.toml .
+
       - name: mypy — type check
         run: uv run mypy .
 

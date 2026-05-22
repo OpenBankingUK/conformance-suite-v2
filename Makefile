@@ -8,10 +8,11 @@ secrets: ## Scan for leaked secrets
 audit: ## Audit secrets baseline for unreviewed entries
 	uv run detect-secrets audit .secrets.baseline
 
-lint: ## Ruff + mypy
+lint: ## Ruff + mypy + docstring coverage
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run mypy .
+	uv run interrogate -c pyproject.toml .
 
 test: ## Run unit/integration tests
 	uv run pytest -m "not e2e" -v --cov

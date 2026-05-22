@@ -132,6 +132,21 @@ class OzoneModelBankClient:
 
 
 def _required_response_string(response_body: JsonObject, key: str) -> str:
+    """Extract a required non-empty string from an Ozone discovery document response body.
+
+    Args:
+        response_body: Parsed JSON object returned by the Ozone discovery
+            document endpoint.
+        key: Field name that must be present and non-empty (e.g.
+            ``"issuer"`` or ``"jwks_uri"``).
+
+    Returns:
+        The stripped string value.
+
+    Raises:
+        OzoneClientError: If the key is missing, the value is not a string,
+            or the string is blank after stripping whitespace.
+    """
     value = response_body.get(key)
     if not isinstance(value, str) or not value.strip():
         raise OzoneClientError(f"Discovery document must contain a non-empty {key}")

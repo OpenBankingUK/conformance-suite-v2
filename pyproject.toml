@@ -14,6 +14,7 @@ dependencies = [
 dev = [
     "detect-secrets>=1.5.0",
     "django-stubs>=6.0.3",
+    "interrogate>=1.7.0",
     "mypy>=1.20.2",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
@@ -86,6 +87,31 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
+
+# ─── interrogate (docstring coverage) ────────────────────────────────────────
+[tool.interrogate]
+# Fail if any function, method, class, or nested definition — public or
+# private — is missing a docstring. 100% threshold leaves no budget for agents
+# to silently skip a helper.
+fail-under = 100
+# Private (`_`) and semiprivate (`__`) names are the primary failure mode this
+# gate is designed to catch; do not skip them.
+ignore-private = false
+ignore-semiprivate = false
+# Nested functions and classes must also carry docstrings.
+ignore-nested-functions = false
+ignore-nested-classes = false
+# Django auto-generates __init__ module boilerplate; no docstring needed there.
+ignore-init-module = true
+# __init__ method docstrings belong on the class itself; the method is exempt.
+ignore-init-method = true
+# Magic methods are meaningful to document (e.g. __str__, __repr__).
+ignore-magic = false
+# Mirrors the coverage omit list and the ruff per-file-ignores for tests.
+exclude = ["tests", ".venv", "migrations", "manage.py", "config/asgi.py", "config/wsgi.py"]
+# List every missing docstring in CI output so the author knows exactly what
+# to fix without hunting through the source.
+verbose = 2
 
 # ─── mypy (static type checker) ──────────────────────────────────────────────
 [tool.mypy]
