@@ -191,6 +191,18 @@ def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
 
 
 def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
+    """Extract and validate a required HTTPS URL from raw config.
+
+    Args:
+        raw_config: Raw configuration dictionary.
+        key: Configuration key to extract.
+
+    Returns:
+        Validated HTTPS URL string.
+
+    Raises:
+        ConfigError: If the value is missing, empty, or not a valid HTTPS URL.
+    """
     value = _required_string(raw_config, key)
     try:
         validate_https_url(value, label=key)

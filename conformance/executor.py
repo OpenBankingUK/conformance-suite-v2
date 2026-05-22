@@ -42,7 +42,19 @@ def _run_primary_test(
     *,
     client: httpx.Client,
 ) -> tuple[StepResult, JsonHttpResponse | None]:
-    """Run the primary request for one manifest test."""
+    """Run the primary request for one manifest test.
+
+    Issues an HTTP GET to the test's configured URL and evaluates the
+    configured assertions against the response.
+
+    Args:
+        manifest_test: Parsed manifest test containing the URL and assertions.
+        client: Preconfigured synchronous HTTP client.
+
+    Returns:
+        A tuple of the step result and the parsed HTTP response (or ``None``
+        if the request failed before a response was received).
+    """
     try:
         response = get_json(client, manifest_test.request.url)
     except JsonHttpClientError as error:
@@ -73,7 +85,20 @@ def _run_follow_up(
     *,
     client: httpx.Client,
 ) -> StepResult:
-    """Run a manifest follow-up request derived from a primary response."""
+    """Run a manifest follow-up request derived from a primary response.
+
+    Resolves a follow-up URL from the primary response body, validates it as
+    HTTPS, issues an HTTP GET, and evaluates the follow-up assertions.
+
+    Args:
+        manifest_test: Parent manifest test (used for naming the step).
+        follow_up: Follow-up specification with URL source and assertions.
+        response: Parsed response from the primary request.
+        client: Preconfigured synchronous HTTP client.
+
+    Returns:
+        Step result indicating pass/fail for the follow-up assertions.
+    """
     follow_up_name = f"{manifest_test.id}.followUp"
     follow_up_url = _follow_up_url(response.body, follow_up)
     if follow_up_url is None:

@@ -36,7 +36,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Security
 
-- Manifest URLs now reject IP-literal hostnames to harden against future SSRF exposure when network execution is added
+- Manifest URLs now reject IP-literal hostnames to harden against SSRF in manifest-driven HTTP execution
 
 ---
 

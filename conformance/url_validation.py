@@ -41,6 +41,10 @@ def validate_https_url(value: str, *, label: str) -> None:
 def _validate_hostname(hostname: str, *, label: str) -> None:
     """Validate a URL hostname as a DNS name, rejecting IP literals.
 
+    Args:
+        hostname: Hostname component extracted from a parsed URL.
+        label: Human-readable label used in error messages (e.g. field name).
+
     Raises:
         HttpsUrlValidationError: If the hostname is not a valid DNS hostname.
     """

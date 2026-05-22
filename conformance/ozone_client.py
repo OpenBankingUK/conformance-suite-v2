@@ -111,7 +111,17 @@ class OzoneModelBankClient:
         return response
 
     def _get_json(self, url: str) -> JsonHttpResponse:
-        """Fetch a JSON object response and translate generic errors."""
+        """Fetch a JSON object response and translate generic errors.
+
+        Args:
+            url: Absolute HTTPS URL to request.
+
+        Returns:
+            Parsed JSON HTTP response with status code and body.
+
+        Raises:
+            OzoneClientError: If the request fails or returns HTTP 4xx/5xx.
+        """
         try:
             response = get_json(self._client, url)
         except JsonHttpClientError as error:
@@ -129,6 +139,15 @@ def _required_response_string(response_body: JsonObject, key: str) -> str:
 
 
 def _validate_https_url(value: str, *, key: str) -> None:
+    """Validate a discovery document URL as a well-formed HTTPS endpoint.
+
+    Args:
+        value: URL string extracted from the discovery document.
+        key: Discovery document field name used in error messages.
+
+    Raises:
+        OzoneClientError: If the URL fails HTTPS validation.
+    """
     try:
         validate_https_url(value, label=key)
     except HttpsUrlValidationError as error:

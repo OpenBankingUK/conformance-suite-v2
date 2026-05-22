@@ -54,7 +54,18 @@ def _evaluate_http_status(assertion: HttpStatusAssertion, *, status_code: int) -
 
 
 def _evaluate_json_field(assertion: JsonFieldAssertion, *, body: JsonObject) -> AssertionResult:
-    """Evaluate a JSON field assertion against a parsed response body."""
+    """Evaluate a JSON field assertion against a parsed response body.
+
+    Resolves the dot-separated path, checks presence, then delegates to the
+    rule-specific evaluator (required, https_url, or array).
+
+    Args:
+        assertion: Parsed JSON field assertion with path and rule.
+        body: Parsed JSON response body to evaluate against.
+
+    Returns:
+        Assertion result indicating whether the field satisfies the rule.
+    """
     value = _resolve_json_path(body, assertion.path)
     if isinstance(value, _MissingValue):
         return AssertionResult(passed=False, message=f"JSON field {assertion.path} is missing")

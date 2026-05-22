@@ -299,7 +299,19 @@ def _parse_follow_up_request(raw_request: dict[str, JsonValue], *, location: str
 
 
 def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> ManifestAssertion:
-    """Parse and dispatch a single assertion by its type discriminator."""
+    """Parse and dispatch a single assertion by its type discriminator.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A typed assertion dataclass (HttpStatusAssertion or JsonFieldAssertion).
+
+    Raises:
+        ManifestError: If the assertion type is missing, unsupported, or
+            required fields are invalid.
+    """
     assertion_type = _required_assertion_type(raw_assertion, location=location)
     if assertion_type == "http_status":
         _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected"}, location=location)
