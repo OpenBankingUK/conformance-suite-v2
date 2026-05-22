@@ -163,6 +163,23 @@ def test_parse_manifest_rejects_malformed_https_request_url(url: str) -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://127.0.0.1/.well-known/openid-configuration",
+        "https://10.0.0.1/.well-known/openid-configuration",
+        "https://[::1]/.well-known/openid-configuration",
+    ],
+)
+def test_parse_manifest_rejects_ip_literal_request_url(url: str) -> None:
+    raw_manifest = valid_manifest()
+    request_config(raw_manifest)["url"] = url
+
+    with pytest.raises(ManifestError, match=r"tests\[0\]\.request\.url must use a DNS hostname"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_manifest_rejects_non_get_request_method() -> None:
     raw_manifest = valid_manifest()
     request_config(raw_manifest)["method"] = "POST"

@@ -384,8 +384,8 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
     """Extract and validate a hardened HTTPS URL from a JSON object.
 
     Rejects non-HTTPS schemes, embedded credentials, control characters,
-    IP-literal abuse, and malformed DNS hostnames. Used for all manifest
-    URLs that will be fetched over the network.
+    IP-literal hostnames, and malformed DNS hostnames. Used for all
+    manifest URLs that will be fetched over the network.
 
     Raises:
         ManifestError: If the value is not a safe, well-formed HTTPS URL.
@@ -411,7 +411,7 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
 
 
 def _validate_hostname(hostname: str | None, *, location: str) -> None:
-    """Validate a URL hostname as either a valid IP address or DNS name.
+    """Validate a URL hostname as a DNS name, rejecting IP literals.
 
     Raises:
         ManifestError: If the hostname is missing or fails validation.
@@ -421,7 +421,10 @@ def _validate_hostname(hostname: str | None, *, location: str) -> None:
     try:
         ip_address(hostname)
     except ValueError:
-        _validate_dns_hostname(hostname, location=location)
+        pass
+    else:
+        raise ManifestError(f"{location} must use a DNS hostname, not an IP literal")
+    _validate_dns_hostname(hostname, location=location)
 
 
 def _validate_dns_hostname(hostname: str, *, location: str) -> None:

@@ -33,6 +33,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Removed undeclared `--model-bank-url` pytest flag from testing strategy docs
 - Added `--no-install-project` to all `uv sync` calls — this is a container-deployed app, not a distributable Python package
 
+### Security
+
+- Manifest URLs now reject IP-literal hostnames to harden against future SSRF exposure when network execution is added
+
 ---
 
 ## [1.9.8] - Unreleased (in beta)
