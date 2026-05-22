@@ -92,6 +92,15 @@ Decision: Document module-level type aliases, `Literal` assignments, and `Final`
 
 Rationale: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's section-6 requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension. Ruff B018 explicitly exempts the pattern. A Copilot PR review false-positive flagged these as useless expressions; the fix is to teach the reviewer (via `.github/copilot-instructions.md`) rather than change the code.
 
+## DL-0010: Require Docstrings On Private Functions And Methods
+
+Date: 2026-05-22
+Status: Accepted
+
+Decision: Broaden section 6 to require Google-style docstrings on every private (`_`-prefixed) module-level function and method, not just public APIs. Trivial private helpers (fewer than ~10 lines with an obvious signature) may use a one-line summary; `Raises:` is still mandatory when the helper raises directly. The rule is enforced by code review, not by ruff (Google pydocstyle convention exempts privates from D1xx).
+
+Rationale: The project goal for documentation is human readability *and* IDE hover support. A developer navigating `conformance/manifest.py` hovers private helpers far more often than public entry points — the parser's complexity lives in its validators and sub-parsers, not its two public functions. Without docstrings on privates, the IDE shows only a bare signature, defeating the stated goal. The one-line allowance prevents ceremonial bloat on trivial helpers where the signature speaks for itself.
+
 ## Open Decisions
 
 - How manifest v0 evolves into later assertion evaluation, context carry-forward, and orchestration contracts.
