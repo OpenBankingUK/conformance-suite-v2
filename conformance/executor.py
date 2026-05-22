@@ -173,7 +173,14 @@ def _build_assertion_step(
 
 
 def _assertion_result_to_json(assertion_result: AssertionResult) -> JsonObject:
-    """Convert an assertion result to the step details JSON shape."""
+    """Convert an assertion result to the step details JSON shape.
+
+    Args:
+        assertion_result: Evaluated assertion outcome to serialise.
+
+    Returns:
+        JSON-serialisable dictionary with ``status`` and ``message`` keys.
+    """
     return {
         "status": "passed" if assertion_result.passed else "failed",
         "message": assertion_result.message,
@@ -181,7 +188,16 @@ def _assertion_result_to_json(assertion_result: AssertionResult) -> JsonObject:
 
 
 def _follow_up_url(body: JsonObject, follow_up: ManifestFollowUp) -> str | None:
-    """Resolve the v0 follow-up URL source from the primary response body."""
+    """Resolve the v0 follow-up URL source from the primary response body.
+
+    Args:
+        body: Parsed JSON response body from the primary request.
+        follow_up: Manifest follow-up descriptor specifying the URL source.
+
+    Returns:
+        The resolved URL string, or ``None`` if the source is unrecognised or
+        the value is absent/empty.
+    """
     if follow_up.url_source != "response.body.jwks_uri":
         return None
     value: JsonValue | None = body.get("jwks_uri")

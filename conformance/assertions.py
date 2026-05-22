@@ -44,7 +44,15 @@ def evaluate_assertion(
 
 
 def _evaluate_http_status(assertion: HttpStatusAssertion, *, status_code: int) -> AssertionResult:
-    """Evaluate an HTTP status assertion."""
+    """Evaluate an HTTP status assertion.
+
+    Args:
+        assertion: Parsed HTTP status assertion with the expected code.
+        status_code: Actual HTTP response status code.
+
+    Returns:
+        Assertion result indicating whether the status code matched.
+    """
     if status_code == assertion.expected:
         return AssertionResult(passed=True, message=f"HTTP status was {status_code}")
     return AssertionResult(
@@ -77,7 +85,15 @@ def _evaluate_json_field(assertion: JsonFieldAssertion, *, body: JsonObject) -> 
 
 
 def _evaluate_https_url(path: str, value: JsonValue) -> AssertionResult:
-    """Evaluate whether a JSON value is an HTTPS URL string."""
+    """Evaluate whether a JSON value is an HTTPS URL string.
+
+    Args:
+        path: Dot-separated JSON path used for diagnostic messages.
+        value: Resolved JSON value to validate as an HTTPS URL.
+
+    Returns:
+        Assertion result indicating whether the value is a valid HTTPS URL.
+    """
     if not isinstance(value, str) or not value.strip():
         return AssertionResult(passed=False, message=f"JSON field {path} must be a non-empty HTTPS URL string")
     try:
@@ -88,7 +104,15 @@ def _evaluate_https_url(path: str, value: JsonValue) -> AssertionResult:
 
 
 def _evaluate_array(path: str, value: JsonValue) -> AssertionResult:
-    """Evaluate whether a JSON value is an array."""
+    """Evaluate whether a JSON value is an array.
+
+    Args:
+        path: Dot-separated JSON path used for diagnostic messages.
+        value: Resolved JSON value to check for list type.
+
+    Returns:
+        Assertion result indicating whether the value is an array.
+    """
     if isinstance(value, list):
         return AssertionResult(passed=True, message=f"JSON field {path} is an array")
     return AssertionResult(passed=False, message=f"JSON field {path} must be an array")
@@ -102,7 +126,15 @@ _MISSING = _MissingValue()
 
 
 def _resolve_json_path(body: JsonObject, path: str) -> JsonValue | _MissingValue:
-    """Resolve a dot-separated JSON object path."""
+    """Resolve a dot-separated JSON object path.
+
+    Args:
+        body: Parsed JSON response body to traverse.
+        path: Dot-separated field path (e.g. ``openid_configuration.issuer``).
+
+    Returns:
+        The resolved value, or the ``_MISSING`` sentinel if any segment is absent.
+    """
     current_value: JsonValue = body
     for path_part in path.split("."):
         if not isinstance(current_value, dict) or path_part not in current_value:

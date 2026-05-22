@@ -95,11 +95,11 @@ Rationale: PEP 695 `type` statements cannot carry a function-style docstring, so
 ## DL-0010: Require Docstrings On Private Functions And Methods
 
 Date: 2026-05-22
-Status: Accepted
+Status: Accepted (amended)
 
-Decision: Broaden section 6 to require Google-style docstrings on every private (`_`-prefixed) module-level function and method, not just public APIs. Trivial private helpers (fewer than ~10 lines with an obvious signature) may use a one-line summary; `Raises:` is still mandatory when the helper raises directly. The rule is enforced by code review, not by ruff (Google pydocstyle convention exempts privates from D1xx).
+Decision: Require full Google-style docstrings on every private (`_`-prefixed) module-level function and method — a one-line summary plus `Args:` and `Returns:` sections whenever the signature has parameters or a non-`None` return type, and a `Raises:` section whenever the helper raises an exception directly. There is no carve-out for trivial helpers. Enforcement is mechanical: `interrogate` (configured in `pyproject.toml` with `fail-under = 100`, `ignore-private = false`, `ignore-semiprivate = false`) runs as a required CI step and fails the build if any definition is missing a docstring. Ruff's Google pydocstyle convention does not enforce `D1xx` on private names, so `interrogate` fills that gap.
 
-Rationale: The project goal for documentation is human readability *and* IDE hover support. A developer navigating `conformance/manifest.py` hovers private helpers far more often than public entry points — the parser's complexity lives in its validators and sub-parsers, not its two public functions. Without docstrings on privates, the IDE shows only a bare signature, defeating the stated goal. The one-line allowance prevents ceremonial bloat on trivial helpers where the signature speaks for itself.
+Rationale: The project goal for documentation is human readability *and* IDE hover support. A developer navigating `conformance/manifest.py` hovers private helpers far more often than public entry points — the parser's complexity lives in its validators and sub-parsers, not its two public functions. Without docstrings on privates, the IDE shows only a bare signature, defeating the stated goal. Mechanical enforcement via `interrogate` removes ambiguity about which helpers need docstrings and prevents regressions without relying solely on code review.
 
 ## DL-0011: Keep Manifest HTTP Fetches Status-Agnostic
 
