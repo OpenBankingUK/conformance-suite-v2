@@ -1,6 +1,6 @@
 # Handover
 
-Last updated: 2026-05-16
+Last updated: 2026-05-21
 
 ## Current State
 
@@ -22,6 +22,7 @@ M2 has now started with a small manifest v0 parser slice. The project still has 
 - `config/manifest-v0-openid-jwks-example.json`: example manifest for OpenID discovery with optional JWKS follow-up.
 - `tests/test_manifest.py`: unit coverage for valid manifests, unsupported schema versions, missing required fields, unknown fields, non-HTTPS request URLs, unsupported assertion types, and unsupported follow-up shapes.
 - `ai/DECISION_LOG.md`: DL-0007 records the manifest v0 parser-only contract boundary.
+- Code documentation standard: `.github/copilot-instructions.md`, prompt files, and ruff now require Google-style docstrings for human-readable public code.
 
 ## Next Recommended Work
 

@@ -76,11 +76,16 @@ select = [
     "PT",            # flake8-pytest-style — best practices in test code
     "SIM",           # flake8-simplify — flags unnecessarily complex code
     "PTH",           # flake8-use-pathlib — flags os.path usage (prefer pathlib.Path)
+    "D",             # pydocstyle — public code must explain its human intent
 ]
 
 [tool.ruff.lint.per-file-ignores]
+# D: tests describe behaviour through their names and assertions.
 # S101: "use of assert". Obviously we want assert in tests.
-"tests/**" = ["S101"]
+"tests/**" = ["D", "S101"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
 
 # ─── mypy (static type checker) ──────────────────────────────────────────────
 [tool.mypy]

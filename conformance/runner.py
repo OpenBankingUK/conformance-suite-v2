@@ -1,3 +1,5 @@
+"""Orchestrate the current model-bank discovery and JWKS smoke check."""
+
 from __future__ import annotations
 
 from datetime import UTC, datetime
@@ -12,6 +14,16 @@ def run_model_bank_smoke_check(
     *,
     client: OzoneModelBankClient | None = None,
 ) -> SmokeCheckResult:
+    """Run the model-bank smoke check and return a structured result.
+
+    Args:
+        config: Validated model-bank runtime configuration.
+        client: Optional preconfigured client used by tests or callers that own
+            the HTTP client lifecycle.
+
+    Returns:
+        Smoke-check result containing ordered discovery and optional JWKS steps.
+    """
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
     owns_client = client is None

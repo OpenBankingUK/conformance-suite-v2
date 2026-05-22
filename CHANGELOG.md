@@ -21,6 +21,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model-bank smoke-check core: JSON config loading, Ozone discovery fetch, JWKS follow-up request, structured result output, and manual runner
 - Manifest v0 parser: typed JSON manifest contract for OpenID discovery requests with optional JWKS follow-up checks
 
+### Changed
+
+- Enforced Google-style docstrings via ruff pydocstyle and backfilled the `conformance/` package
+
 ### Fixed
 
 - Defaulted model-bank smoke-check output to `out/test-results.json` and ignored generated `out/` contents
