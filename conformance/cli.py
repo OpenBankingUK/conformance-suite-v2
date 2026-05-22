@@ -8,6 +8,9 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
+from conformance.executor import run_manifest
+from conformance.http import build_json_http_client
+from conformance.manifest import ManifestError, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
 
@@ -26,6 +29,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Run a model-bank smoke check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
+    parser.add_argument("--manifest", type=Path, help="Optional manifest v0 JSON file to execute")
     try:
         args = parser.parse_args(argv)
     except SystemExit as error:
@@ -37,7 +41,25 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Config error: %s", error)
         return 2
 
-    result = run_model_bank_smoke_check(config)
+    if args.manifest is None:
+        result = run_model_bank_smoke_check(config)
+    else:
+        try:
+            manifest = load_manifest(args.manifest)
+        except ManifestError as error:
+            logger.error("Manifest error: %s", error)
+            return 2
+
+        http_client = build_json_http_client(
+            timeout_seconds=config.timeout_seconds,
+            ca_bundle_path=config.tls.ca_bundle_path,
+            client_certificate_path=config.tls.client_certificate_path,
+            client_private_key_path=config.tls.client_private_key_path,
+        )
+        try:
+            result = run_manifest(manifest, environment=config.environment, client=http_client)
+        finally:
+            http_client.close()
     try:
         config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
         config.result_output_path.write_text(

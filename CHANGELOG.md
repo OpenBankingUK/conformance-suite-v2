@@ -20,6 +20,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Repository governance documentation: branch rulesets, actions allowlist, advanced security settings
 - Model-bank smoke-check core: JSON config loading, Ozone discovery fetch, JWKS follow-up request, structured result output, and manual runner
 - Manifest v0 parser: typed JSON manifest contract for OpenID discovery requests with optional JWKS follow-up checks
+- Manifest v0 executor: configuration-driven JSON request execution, assertion evaluation, JWKS follow-up handling, and CLI `--manifest` support
 
 ### Changed
 
