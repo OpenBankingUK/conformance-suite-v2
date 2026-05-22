@@ -6,7 +6,14 @@ from django.urls import path
 
 
 def health(request: HttpRequest) -> JsonResponse:
-    """Return the lightweight application health response."""
+    """Return the lightweight application health response.
+
+    Args:
+        request: The incoming HTTP request (unused; endpoint is unconditional).
+
+    Returns:
+        JSON object with a single ``status`` key indicating service health.
+    """
     return JsonResponse({"status": "ok"})
 
 

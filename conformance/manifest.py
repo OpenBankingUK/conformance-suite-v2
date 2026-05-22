@@ -235,7 +235,19 @@ def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
 
 
 def _parse_request(raw_request: dict[str, JsonValue], *, location: str) -> ManifestRequest:
-    """Parse and validate a manifest test request object."""
+    """Parse and validate a manifest test request object.
+
+    Args:
+        raw_request: Raw JSON object expected to contain ``method`` and ``url``.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Validated request with a GET method and a hardened HTTPS URL.
+
+    Raises:
+        ManifestError: If required fields are missing, invalid, or unknown keys
+            are present.
+    """
     _reject_unknown_keys(raw_request, allowed_keys={"method", "url"}, location=location)
     return ManifestRequest(
         method=_required_get_method(raw_request, location=location),
@@ -293,7 +305,19 @@ def _parse_follow_up(raw_follow_up: JsonValue, *, location: str) -> ManifestFoll
 
 
 def _parse_follow_up_request(raw_request: dict[str, JsonValue], *, location: str) -> FollowUpRequest:
-    """Parse the request object inside a manifest follow-up step."""
+    """Parse the request object inside a manifest follow-up step.
+
+    Args:
+        raw_request: Raw JSON object expected to contain only ``method``.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Validated follow-up request with a GET method.
+
+    Raises:
+        ManifestError: If the method is missing, not GET, or unknown keys
+            are present.
+    """
     _reject_unknown_keys(raw_request, allowed_keys={"method"}, location=location)
     return FollowUpRequest(method=_required_get_method(raw_request, location=location))
 
@@ -328,6 +352,13 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
 def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
     """Extract and validate the assertion type discriminator.
 
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated assertion type literal (``http_status`` or ``json_field``).
+
     Raises:
         ManifestError: If the assertion type is missing or unsupported.
     """
@@ -342,6 +373,13 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> RequestMethod:
     """Extract and validate that the request method is GET.
 
+    Args:
+        raw_config: The parent JSON object containing a ``method`` field.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The literal string ``"GET"``.
+
     Raises:
         ManifestError: If the method is missing or not GET.
     """
@@ -353,6 +391,13 @@ def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> 
 
 def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: str) -> JsonFieldRule:
     """Extract and validate the JSON field assertion rule.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated rule literal (``required``, ``https_url``, or ``array``).
 
     Raises:
         ManifestError: If the JSON field rule is missing or unsupported.
@@ -370,6 +415,13 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
 def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str) -> int:
     """Extract and validate an HTTP status code (100–599).
 
+    Args:
+        raw_assertion: Raw assertion dict expected to contain an ``expected`` field.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        An integer HTTP status code in the 100–599 range.
+
     Raises:
         ManifestError: If the value is not an HTTP status code.
     """
@@ -381,6 +433,14 @@ def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str)
 
 def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
     """Extract a required non-empty string from a JSON object.
+
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The stripped, non-empty string value.
 
     Raises:
         ManifestError: If the value is missing or not a non-empty string.
@@ -398,6 +458,14 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
     IP-literal hostnames, and malformed DNS hostnames. Used for all
     manifest URLs that will be fetched over the network.
 
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated HTTPS URL string.
+
     Raises:
         ManifestError: If the value is not a safe, well-formed HTTPS URL.
     """
@@ -412,6 +480,14 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location:
 def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> dict[str, JsonValue]:
     """Extract a required JSON object from a parent object.
 
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The nested JSON object (dict).
+
     Raises:
         ManifestError: If the value is missing or not a JSON object.
     """
@@ -423,6 +499,14 @@ def _required_object(raw_config: dict[str, JsonValue], key: str, *, location: st
 
 def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, location: str) -> list[dict[str, JsonValue]]:
     """Extract a required non-empty array of JSON objects.
+
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A non-empty list of validated JSON object dicts.
 
     Raises:
         ManifestError: If the value is missing, empty, or contains non-objects.
@@ -440,6 +524,11 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:
     """Raise if the JSON object contains keys outside the allowed set.
+
+    Args:
+        raw_config: The JSON object to validate.
+        allowed_keys: Set of permitted key names.
+        location: Dot-path location string used in error messages.
 
     Raises:
         ManifestError: If any keys are outside the allowed set.

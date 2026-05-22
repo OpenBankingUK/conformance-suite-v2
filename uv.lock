@@ -123,6 +123,7 @@ dev = [
     { name = "django-stubs" },
     { name = "interrogate" },
     { name = "mypy" },
+    { name = "pydoclint" },
     { name = "pytest" },
     { name = "pytest-cov" },
     { name = "pytest-django" },
@@ -144,6 +145,7 @@ dev = [
     { name = "django-stubs", specifier = ">=6.0.3" },
     { name = "interrogate", specifier = ">=1.7.0" },
     { name = "mypy", specifier = ">=1.20.2" },
+    { name = "pydoclint", specifier = ">=0.8.4" },
     { name = "pytest", specifier = ">=9.0.3" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-django", specifier = ">=4.12.0" },
@@ -244,6 +246,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/fb/e6/5dcdaa785ec3eed5fc196c7e68fb7ad9d9fe6d5acccea4690e65f2546417/django_stubs_ext-6.0.3.tar.gz", hash = "sha256:3307d42132bc295d5744de6276bc5fdf6896efc70f891e21c0ae8bdf529d2762", size = 6663, upload-time = "2026-04-18T15:10:53.667Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/10/fa/0a3a05c29d6295dbd52fa3cb4047a95de11ba4f2696072d6f3f2c1e6f370/django_stubs_ext-6.0.3-py3-none-any.whl", hash = "sha256:9e4105955419ae310d7da9cfd808e039d4dae3092c628f021057bb4f2c237f8f", size = 10354, upload-time = "2026-04-18T15:10:52.395Z" },
+]
+
+[[package]]
+name = "docstring-parser-fork"
+version = "0.0.14"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/66/bf/27f9cab2f0cd1d17a4420572088bbc19f36d726fbcf165edf226a8926dbc/docstring_parser_fork-0.0.14.tar.gz", hash = "sha256:a2743a63d8d36c09650594f7b4ab5b2758fee8629dcf794d1b221b23179baa5c", size = 34551, upload-time = "2025-09-07T17:27:38.272Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/bf/50/98b146aea0f1cd7531d25f12bea69fa9ce8d1662124f93fb30dc4511b65e/docstring_parser_fork-0.0.14-py3-none-any.whl", hash = "sha256:4c544f234ef2cc2749a3df32b70c437d77888b1099143a1ad5454452c574b9af", size = 43063, upload-time = "2025-09-07T17:27:37.012Z" },
 ]
 
 [[package]]
@@ -447,6 +458,19 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/98/ff/fec109ceb715d2a6b4c4a85a61af3b40c723a961e8828319fbcb15b868dc/py-1.11.0.tar.gz", hash = "sha256:51c75c4126074b472f746a24399ad32f6053d1b34b68d2fa41e558e6f4a98719", size = 207796, upload-time = "2021-11-04T17:17:01.377Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/f6/f0/10642828a8dfb741e5f3fbaac830550a518a775c7fff6f04a007259b0548/py-1.11.0-py2.py3-none-any.whl", hash = "sha256:607c53218732647dff4acdfcd50cb62615cedf612e72d1724fb1a0cc6405b378", size = 98708, upload-time = "2021-11-04T17:17:00.152Z" },
+]
+
+[[package]]
+name = "pydoclint"
+version = "0.8.4"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "click" },
+    { name = "docstring-parser-fork" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/0a/c9/357fb4af8ca78b97b6642e18e8b692a7073bf118709e559ec6f8a893774d/pydoclint-0.8.4.tar.gz", hash = "sha256:5eb5d8ae3d17bba9a1e4ac3ccdedf46152d45e60528895c26712cf7337b2a054", size = 195295, upload-time = "2026-05-16T20:31:37.046Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/0b/f9/f15c95d6b200167cb22c5eca5eecfa9d28a8ee3f74095f1cd2345c71f2f9/pydoclint-0.8.4-py3-none-any.whl", hash = "sha256:5e0f94f785d0e902faacebb117aadf84d6e30c5f781e0fdd0ee03c3b80ea2098", size = 82023, upload-time = "2026-05-16T20:31:36.024Z" },
 ]
 
 [[package]]

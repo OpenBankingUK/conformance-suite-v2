@@ -12,7 +12,11 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 
 
 def _get_allowed_hosts() -> list[str]:
-    """Parse DJANGO_ALLOWED_HOSTS into a clean list, stripping whitespace and empty entries."""
+    """Parse DJANGO_ALLOWED_HOSTS into a clean list, stripping whitespace and empty entries.
+
+    Returns:
+        List of non-empty, whitespace-stripped hostnames from the environment variable.
+    """
     raw = os.environ.get("DJANGO_ALLOWED_HOSTS", "")
     return [host.strip() for host in raw.split(",") if host.strip()]
 
