@@ -145,7 +145,19 @@ def _build_assertion_step(
     response: JsonHttpResponse,
     assertions: tuple[ManifestAssertion, ...],
 ) -> StepResult:
-    """Build a step result by evaluating all assertions for a response."""
+    """Build a step result by evaluating all assertions for a response.
+
+    Args:
+        name: The step name displayed in the conformance report.
+        success_message: Message emitted when all assertions pass.
+        failure_message: Message emitted when any assertion fails.
+        response: The HTTP response to evaluate assertions against.
+        assertions: The manifest assertions to apply to the response.
+
+    Returns:
+        A completed step result containing the overall pass/fail status
+        and per-assertion details.
+    """
     assertion_results = tuple(
         evaluate_assertion(assertion, status_code=response.status_code, body=response.body) for assertion in assertions
     )

@@ -60,6 +60,11 @@ def _validate_hostname(hostname: str, *, label: str) -> None:
 def _validate_dns_hostname(hostname: str, *, label: str) -> None:
     """Validate a DNS hostname per RFC 1123 label rules.
 
+    Args:
+        hostname: The DNS hostname to validate (e.g. "example.com").
+        label: A human-readable label identifying the field being validated,
+            used in error messages.
+
     Raises:
         HttpsUrlValidationError: If the hostname violates DNS naming rules.
     """
