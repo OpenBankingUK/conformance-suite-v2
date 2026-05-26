@@ -381,9 +381,7 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
     """
     matched_tokens = list(_PLACEHOLDER_FIND_PATTERN.finditer(value))
     if value.count("${") > len(matched_tokens):
-        raise ManifestError(
-            f"{location} contains an unterminated placeholder (missing closing '}}')"
-        )
+        raise ManifestError(f"{location} contains an unterminated placeholder (missing closing '}}')")
     for match in matched_tokens:
         token = match.group(0)
         valid_match = _PLACEHOLDER_PATTERN.fullmatch(token)
