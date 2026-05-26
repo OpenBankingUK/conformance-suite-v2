@@ -100,6 +100,9 @@ class ExecutionContext:
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
 """Regex matching ``${...}`` tokens for resolution."""
 
+_MALFORMED_PLACEHOLDER_PATTERN = re.compile(r"\$\{[^}]*$", re.MULTILINE)
+"""Regex detecting an unterminated ``${`` that has no closing ``}``."""
+
 
 def record_step(
     context: ExecutionContext,
@@ -123,6 +126,40 @@ def record_step(
     return ExecutionContext(steps=new_steps)
 
 
+def _validate_placeholder_syntax(template: str) -> None:
+    """Raise if the template contains malformed ``${...}`` placeholder syntax.
+
+    Checks for two classes of malformed token that ``_PLACEHOLDER_PATTERN``
+    silently skips:
+
+    * **Empty placeholder** — ``${}`` contains no path expression and would
+      never be resolvable.
+    * **Unterminated placeholder** — ``${...`` has no closing ``}`` and would
+      be silently passed through, leaking the raw token into URL validation
+      or HTTP execution with confusing downstream errors.
+
+    This validation is intentionally called only when the template contains
+    ``${``, so it runs after the fast-path early exit in
+    :func:`resolve_placeholders`.
+
+    Args:
+        template: Template string that has already been confirmed to contain
+            at least one ``${`` occurrence.
+
+    Raises:
+        PlaceholderResolutionError: If an empty or unterminated placeholder
+            token is detected.
+    """
+    if "${}" in template:
+        raise PlaceholderResolutionError(
+            "Empty placeholder '${}'  is not valid — provide a dot-path expression"
+        )
+    if _MALFORMED_PLACEHOLDER_PATTERN.search(template):
+        raise PlaceholderResolutionError(
+            f"Unterminated placeholder in template (missing closing '}}'): {template!r}"
+        )
+
+
 def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     """Replace all ``${...}`` placeholders in a template string.
 
@@ -138,11 +175,14 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
         The template with all placeholders replaced by resolved values.
 
     Raises:
-        PlaceholderResolutionError: If any placeholder cannot be resolved
-            (missing step id, missing path segment, or non-primitive value).
+        PlaceholderResolutionError: If any placeholder token is malformed
+            (empty or unterminated) or cannot be resolved (missing step id,
+            missing path segment, or non-primitive value).
     """
     if "${" not in template:
         return template
+
+    _validate_placeholder_syntax(template)
 
     def _replace(match: re.Match[str]) -> str:
         """Resolve a single placeholder match.

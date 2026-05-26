@@ -253,3 +253,28 @@ class TestResolvePlaceholdersErrors:
         ctx = _discovery_context()
         with pytest.raises(PlaceholderResolutionError, match="Cannot resolve request path"):
             resolve_placeholders("${steps.openid-discovery.request.body.x}", ctx)
+
+
+@pytest.mark.unit
+class TestResolvePlaceholdersMalformedSyntax:
+    """Malformed ``${...}`` token syntax must be detected before resolution."""
+
+    def test_empty_placeholder_raises(self) -> None:
+        ctx = _discovery_context()
+        with pytest.raises(PlaceholderResolutionError, match="Empty placeholder"):
+            resolve_placeholders("${}", ctx)
+
+    def test_empty_placeholder_mixed_with_valid_raises(self) -> None:
+        ctx = _discovery_context()
+        with pytest.raises(PlaceholderResolutionError, match="Empty placeholder"):
+            resolve_placeholders("${steps.openid-discovery.request.method}${}", ctx)
+
+    def test_unterminated_placeholder_raises(self) -> None:
+        ctx = _discovery_context()
+        with pytest.raises(PlaceholderResolutionError, match="Unterminated placeholder"):
+            resolve_placeholders("https://example.com/${steps.openid-discovery.request.url", ctx)
+
+    def test_unterminated_placeholder_at_start_raises(self) -> None:
+        ctx = _discovery_context()
+        with pytest.raises(PlaceholderResolutionError, match="Unterminated placeholder"):
+            resolve_placeholders("${steps.openid-discovery.request.method", ctx)
