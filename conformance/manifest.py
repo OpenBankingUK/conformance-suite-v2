@@ -741,8 +741,7 @@ def _validate_step_id(step_id: str, *, location: str) -> None:
     """
     if not _STEP_ID_PATTERN.match(step_id):
         raise ManifestError(
-            f"{location}.id '{step_id}' contains invalid characters "
-            "(must match [A-Za-z0-9][A-Za-z0-9_-]*)"
+            f"{location}.id '{step_id}' contains invalid characters (must match [A-Za-z0-9][A-Za-z0-9_-]*)"
         )
 
 
