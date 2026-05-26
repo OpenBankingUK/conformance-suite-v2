@@ -120,7 +120,7 @@ def record_step(
     """
     new_steps = dict(context.steps)
     new_steps[step_id] = StepRecord(request=request, response=response)
-    return ExecutionContext(steps=MappingProxyType(new_steps))
+    return ExecutionContext(steps=new_steps)
 
 
 def resolve_placeholders(template: str, context: ExecutionContext) -> str:

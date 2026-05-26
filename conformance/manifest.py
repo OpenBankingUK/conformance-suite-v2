@@ -88,7 +88,7 @@ class JsonFieldAssertion:
 
 
 ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion
-"""Assertion variants accepted by v0 manifest tests and follow-up steps."""
+"""Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
 @dataclass(frozen=True)
