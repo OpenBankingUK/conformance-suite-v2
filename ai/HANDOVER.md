@@ -1,36 +1,32 @@
 # Handover
 
-Last updated: 2026-05-22
+Last updated: 2026-05-26
 
 ## Current State
 
-The repository is on `develop` with PR #1 and PR #2 merged. The project has a working Python/Django scaffold, CI/E2E setup, Dockerfile, and an initial Ozone model-bank hello-world path in the `conformance` package.
+The repository is on `develop` with PRs #1–#6 merged. The project has a working Python/Django scaffold, CI/E2E setup, Dockerfile, and a conformance engine that supports two manifest schema versions (v0 and v1).
 
-M2 has delivered a manifest v0 parser and executor. The project now has typed manifest parsing (`conformance/manifest.py`), assertion evaluation (`conformance/assertions.py`), a manifest executor (`conformance/executor.py`) wired into the CLI via `--manifest`, and hardened URL validation (`conformance/url_validation.py`). Variable substitution, orchestration, report generation, REST API, and UI work remain outstanding.
+M2 delivered manifest v0 (parser + executor). M3 (in progress) adds manifest v1 with sequential steps and context carry-forward via `${...}` placeholders. The execution context module (`conformance/context.py`) accumulates step records so later steps can resolve earlier responses.
 
-## What Was Just Added
+## What Was Just Added (M3 — Manifest v1)
 
-- `ai/README.md`: source-of-truth order and working rules.
-- `ai/AGENT_TOOLING_GUIDE.md`: developer guide for how AI instructions, prompts, logs, and handovers fit together.
-- `ai/PROJECT_CONTEXT.md`: compact product context and current progress.
-- `ai/DECISION_LOG.md`: initial durable decisions and open decisions.
-- `ai/DEVELOPMENT_LOG.md`: chronological progress log.
-- `.github/prompts/`: reusable Copilot prompt workflows for implementation, handover, and decisions.
-- `.github/prompts/create-agent-development-prompt.prompt.md`: reusable prompt for converting next-feature recommendations into implementation-ready agent prompts.
-- `.github/copilot-instructions.md`: updated to point agents at the `ai/` workspace and deprioritise generated docs as a source of decisions.
-- `conformance/manifest.py`: typed, parser-only manifest v0 dataclasses and loader.
-- `config/manifest-v0-openid-jwks-example.json`: example manifest for OpenID discovery with optional JWKS follow-up.
-- `tests/test_manifest.py`: unit coverage for valid manifests, unsupported schema versions, missing required fields, unknown fields, non-HTTPS request URLs, unsupported assertion types, and unsupported follow-up shapes.
-- `ai/DECISION_LOG.md`: DL-0007 records the manifest v0 parser-only contract boundary.
-- Code documentation standard: `.github/copilot-instructions.md`, prompt files, and ruff now require Google-style docstrings for human-readable public code.
+- `conformance/context.py`: `ExecutionContext`, `record_step`, `resolve_placeholders`, `PlaceholderResolutionError`. Immutable step-record accumulation with dot-path resolution.
+- `conformance/manifest.py`: extended to accept `schemaVersion: "v1"` with `steps` array. v1 step parsing with placeholder syntax validation, duplicate-id detection, and forward-reference rejection.
+- `conformance/executor.py`: refactored to dispatch v0/v1. v0 desugars `followUp` to v1 steps internally (preserving skip-on-fail semantics). v1 executes all steps sequentially with context carry-forward.
+- `config/manifest-v1-openid-jwks-example.json`: same discovery + JWKS flow expressed as two v1 steps.
+- `tests/test_context.py`: full coverage for resolution (happy and error paths).
+- `tests/test_manifest.py`: v1 parser tests (multi-step, duplicates, forward refs, malformed placeholders, HTTPS deferral).
+- `tests/test_executor.py`: v1 execution tests (substitution, fail-and-continue, transport errors).
+- `ai/DECISION_LOG.md`: DL-0012 — manifest v1 contract and v0 desugaring.
+- `CHANGELOG.md`: updated under `[Unreleased]`.
 
 ## Next Recommended Work
 
-1. Review the initial decision log and confirm or adjust the proposed entries.
-2. Add any useful development choices from previous chat files into `DEVELOPMENT_LOG.md` first, then promote durable choices into `DECISION_LOG.md`.
-3. Design how manifest v0 assertions map to an execution context and structured result records without hardcoding certification criteria.
-4. Decide whether to add JSON Schema files alongside the Python parser for participant-facing validation.
-5. Keep generated `/docs` useful for onboarding and CI references, but avoid treating it as binding architecture.
+1. Header and body templating for POST requests (M4 prerequisite).
+2. Non-GET HTTP methods in manifest v1 (needed for token exchange in M4 FAPI flow).
+3. Groups / two-phase setup+execution model (M5 orchestrator).
+4. Report JSON schema and certification summary.
+5. REST API layer over the engine for the HTMX/Django UI.
 
 ## Files To Read First In A New Session
 
@@ -43,7 +39,7 @@ M2 has delivered a manifest v0 parser and executor. The project now has typed ma
 ## Open Questions
 
 - Should manifest v0 gain JSON Schema files before engine code, or should schema and parser continue to evolve together?
-- Should JWKS follow-up assertions remain generic manifest assertions, or become a specialised reusable step when orchestration starts?
 - Which JWT/JWS library should be adopted for the FAPI flow?
 - What should the report JSON schema look like at the top level?
 - What exact secure Docker base image should be used for the final community image?
+- Should placeholder substitution extend to assertion `path`/`expected` values?

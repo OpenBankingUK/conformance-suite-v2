@@ -111,9 +111,9 @@ def test_parse_manifest_accepts_valid_minimal_discovery_manifest() -> None:
 @pytest.mark.unit
 def test_parse_manifest_rejects_unsupported_schema_version() -> None:
     raw_manifest = valid_manifest()
-    raw_manifest["schemaVersion"] = "v1"
+    raw_manifest["schemaVersion"] = "v99"
 
-    with pytest.raises(ManifestError, match="schemaVersion must be v0"):
+    with pytest.raises(ManifestError, match="schemaVersion must be v0 or v1"):
         parse_manifest(raw_manifest)
 
 
@@ -253,3 +253,199 @@ def test_parse_manifest_rejects_non_get_follow_up_request_method() -> None:
 
     with pytest.raises(ManifestError, match=r"tests\[0\]\.followUp\.request\.method must be GET"):
         parse_manifest(raw_manifest)
+
+
+# --- v1 manifest parser tests ---
+
+
+def valid_v1_manifest() -> dict[str, JsonValue]:
+    return {
+        "schemaVersion": "v1",
+        "name": "Ozone OpenID discovery and JWKS (v1)",
+        "steps": [
+            {
+                "id": "openid-discovery",
+                "name": "OpenID discovery document",
+                "request": {
+                    "method": "GET",
+                    "url": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+                },
+                "assertions": [
+                    {"type": "http_status", "expected": 200},
+                    {"type": "json_field", "path": "jwks_uri", "rule": "https_url"},
+                ],
+            },
+            {
+                "id": "jwks-fetch",
+                "name": "JWKS endpoint",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.openid-discovery.response.body.jwks_uri}",
+                },
+                "assertions": [
+                    {"type": "http_status", "expected": 200},
+                    {"type": "json_field", "path": "keys", "rule": "array"},
+                ],
+            },
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_minimal_multi_step() -> None:
+    raw_manifest = valid_v1_manifest()
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.schema_version == "v1"
+    assert manifest.name == "Ozone OpenID discovery and JWKS (v1)"
+    assert len(manifest.steps) == 2
+    assert manifest.steps[0].id == "openid-discovery"
+    assert manifest.steps[0].request.url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+    assert manifest.steps[1].id == "jwks-fetch"
+    assert manifest.steps[1].request.url == "${steps.openid-discovery.response.body.jwks_uri}"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_single_step_without_placeholders() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Single step",
+        "steps": [
+            {
+                "id": "health",
+                "name": "Health check",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/health",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+
+    assert len(manifest.steps) == 1
+    assert manifest.steps[0].id == "health"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_duplicate_step_ids() -> None:
+    raw_manifest = valid_v1_manifest()
+    steps = cast("list[dict[str, JsonValue]]", raw_manifest["steps"])
+    steps[1]["id"] = "openid-discovery"
+
+    with pytest.raises(ManifestError, match=r"steps\[1\]\.id 'openid-discovery' is a duplicate"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_forward_reference() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Forward ref",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.step-b.response.body.url}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/b",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.request\.url references undefined step 'step-b'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_malformed_placeholder() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad placeholder",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/path",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "GET",
+                    "url": "${invalid syntax}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=r"steps\[1\]\.request\.url contains malformed placeholder"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unknown_keys_in_step() -> None:
+    raw_manifest = valid_v1_manifest()
+    steps = cast("list[dict[str, JsonValue]]", raw_manifest["steps"])
+    steps[0]["extra"] = "bad"
+
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unknown_keys_at_root() -> None:
+    raw_manifest = valid_v1_manifest()
+    raw_manifest["tests"] = []
+
+    with pytest.raises(ManifestError, match="Unknown manifest field"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_non_https_url_without_placeholder() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Non-HTTPS",
+        "steps": [
+            {
+                "id": "bad",
+                "name": "Bad URL",
+                "request": {
+                    "method": "GET",
+                    "url": "http://example.com/api",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match="must be an HTTPS URL"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_defers_https_validation_for_placeholder_url() -> None:
+    """URLs containing placeholders should not be validated at parse time."""
+    raw_manifest = valid_v1_manifest()
+    manifest = parse_manifest(raw_manifest)
+
+    # The second step has a placeholder URL — it should parse fine
+    assert "${steps.openid-discovery.response.body.jwks_uri}" in manifest.steps[1].request.url

@@ -25,3 +25,18 @@ This log captures dated progress and investigation notes that help the next deve
 
 - `rg` was not available in the active shell during initial document extraction. Use `grep`, `find`, or installed project tooling when needed.
 - The Confluence exports are MHTML and contain large amounts of UI markup. Prefer cross-platform targeted `grep` or Python standard-library parsing for extraction; on macOS, `textutil -convert txt -stdout <file> | sed -n '<range>p'` is also a useful local shortcut.
+
+## 2026-05-26: M3 — Manifest v1 Sequential Steps + Context Carry-Forward
+
+Implemented the v1 manifest schema with sequential steps and execution context:
+
+- **Phase 1 (parser):** Extended `conformance/manifest.py` to accept `schemaVersion: "v1"` with a `steps` array. Added `ManifestStep` dataclass, placeholder syntax validation via regex, duplicate-id rejection, and forward-reference detection. Static HTTPS validation is deferred for placeholder-containing URLs.
+- **Phase 2 (context):** Created `conformance/context.py` with `ExecutionContext` (frozen, accumulates `StepRecord`s), `record_step` (returns new context), and `resolve_placeholders` (dot-path resolution with clear error messages). Supports `request.method`, `request.url`, `request.headers.<key>`, `response.status_code`, `response.body.<path>`, `response.headers.<key>`.
+- **Phase 3 (executor):** Refactored `conformance/executor.py`. New `_run_manifest_v1` iterates steps, resolves placeholders, validates URLs, fetches endpoints, evaluates assertions, and records context. v0 now desugars `followUp` to v1 steps inside `_run_manifest_v0` while preserving the skip-on-fail gate.
+- **Phase 4 (docs):** Added `config/manifest-v1-openid-jwks-example.json`, CHANGELOG entries, DL-0012, and updated handover/dev-log.
+
+Key design choices (captured in DL-0012):
+- Placeholder grammar is regex-based (`${steps.<id>.(request|response).<field>.<path>}`). Intentionally not jinja/jsonpath.
+- Substitution applies only to `url` field in this milestone.
+- Steps that fail assertions still record their response into context (carry-forward is unconditional).
+- v0 is retained as supported sugar over v1 for at least one more milestone.
