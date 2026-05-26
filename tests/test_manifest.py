@@ -401,6 +401,60 @@ def test_parse_v1_manifest_rejects_malformed_placeholder() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_placeholder",
+    [
+        # request: body is not a valid request field
+        "${steps.step-a.request.body.key}",
+        # request: status_code is not a valid request field
+        "${steps.step-a.request.status_code}",
+        # request: url with extra sub-segment
+        "${steps.step-a.request.url.extra}",
+        # request: method with extra sub-segment
+        "${steps.step-a.request.method.extra}",
+        # response: method is not a valid response field
+        "${steps.step-a.response.method}",
+        # response: url is not a valid response field
+        "${steps.step-a.response.url}",
+        # response: body with no sub-path
+        "${steps.step-a.response.body}",
+        # response: status_code with extra sub-segment
+        "${steps.step-a.response.status_code.extra}",
+    ],
+)
+def test_parse_v1_manifest_rejects_direction_invalid_placeholder(bad_placeholder: str) -> None:
+    """Direction-specific placeholder shapes that pass the generic format but are
+    not resolvable must be rejected at parse time."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Direction-invalid placeholder",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/path",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "GET",
+                    "url": bad_placeholder,
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    with pytest.raises(ManifestError, match="malformed placeholder"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_rejects_unknown_keys_in_step() -> None:
     raw_manifest = valid_v1_manifest()
     steps = cast("list[dict[str, JsonValue]]", raw_manifest["steps"])

@@ -236,10 +236,17 @@ _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 
 _PLACEHOLDER_PATTERN = re.compile(
     r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
-    r"\.(request|response)\.(body|status_code|method|url)"
-    r"((?:\.[A-Za-z0-9_-]+)*)\}"
+    r"\.(?:"
+    r"request\.(?:method|url)"
+    r"|"
+    r"response\.(?:status_code|body(?:\.[A-Za-z0-9_-]+)+)"
+    r")\}"
 )
-"""Regex matching valid ``${steps.<id>.<request|response>.<segment>...}`` placeholders."""
+"""Regex matching valid ``${steps.<id>...}`` placeholders with direction-specific rules.
+
+Request direction accepts: ``method``, ``url`` (no sub-segments).
+Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
+"""
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 """Regex matching any ``${...}`` token for syntax validation."""

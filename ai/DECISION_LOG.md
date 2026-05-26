@@ -121,7 +121,7 @@ Rationale: The v0 `followUp` shape hardcodes `response.body.jwks_uri` as the onl
 
 Consequences:
 - `conformance/context.py` provides `ExecutionContext`, `record_step`, and `resolve_placeholders`.
-- Placeholder grammar is a simple regex (`${steps.<id>.(request|response).(body|headers|status_code|method|url).<path>}`). No jinja, no jsonpath.
+- Placeholder grammar is a simple regex. Supported: `request.method`, `request.url`; `response.status_code`, `response.body.<path>` (at least one sub-segment required). No header templating. No jinja, no jsonpath.
 - Substitution applies only to the request `url` field in this milestone. Header/body templating arrives with M4/POST.
 - Parser validates placeholder syntax and rejects forward references and duplicate step ids.
 - HTTPS URL validation is deferred to execution time for URLs containing placeholders.

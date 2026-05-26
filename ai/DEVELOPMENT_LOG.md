@@ -31,7 +31,7 @@ This log captures dated progress and investigation notes that help the next deve
 Implemented the v1 manifest schema with sequential steps and execution context:
 
 - **Phase 1 (parser):** Extended `conformance/manifest.py` to accept `schemaVersion: "v1"` with a `steps` array. Added `ManifestStep` dataclass, placeholder syntax validation via regex, duplicate-id rejection, and forward-reference detection. Static HTTPS validation is deferred for placeholder-containing URLs.
-- **Phase 2 (context):** Created `conformance/context.py` with `ExecutionContext` (frozen, accumulates `StepRecord`s), `record_step` (returns new context), and `resolve_placeholders` (dot-path resolution with clear error messages). Supports `request.method`, `request.url`, `request.headers.<key>`, `response.status_code`, `response.body.<path>`, `response.headers.<key>`.
+- **Phase 2 (context):** Created `conformance/context.py` with `ExecutionContext` (frozen, accumulates `StepRecord`s), `record_step` (returns new context), and `resolve_placeholders` (dot-path resolution with clear error messages). Supported grammar: `request.method`, `request.url`; `response.status_code`, `response.body.<path>`. Header templating is not implemented in this milestone.
 - **Phase 3 (executor):** Refactored `conformance/executor.py`. New `_run_manifest_v1` iterates steps, resolves placeholders, validates URLs, fetches endpoints, evaluates assertions, and records context. v0 now desugars `followUp` to v1 steps inside `_run_manifest_v0` while preserving the skip-on-fail gate.
 - **Phase 4 (docs):** Added `config/manifest-v1-openid-jwks-example.json`, CHANGELOG entries, DL-0012, and updated handover/dev-log.
 

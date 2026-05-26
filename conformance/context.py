@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -47,21 +48,28 @@ class ResponseRecord:
 
     Attributes:
         status_code: HTTP status code returned.
-        body: Parsed JSON object response body (immutable proxy).
+        body: Deep copy of the parsed JSON object response body, wrapped in a
+            shallow read-only proxy. Top-level keys cannot be added or removed;
+            nested containers inside the body are not frozen.
     """
 
     status_code: int
     body: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
 
     def __init__(self, *, status_code: int, body: JsonObject) -> None:
-        """Wrap the body dict in a read-only proxy to enforce immutability.
+        """Deep-copy and wrap the body dict to isolate it from external mutation.
+
+        A deep copy is taken so that mutations to the original ``body`` argument
+        after construction do not affect the stored record.  The copy is then
+        wrapped in a ``MappingProxyType`` to prevent top-level key mutations.
+        Nested containers remain mutable if a caller obtains a direct reference.
 
         Args:
             status_code: HTTP status code returned.
             body: Parsed JSON object response body.
         """
         object.__setattr__(self, "status_code", status_code)
-        object.__setattr__(self, "body", MappingProxyType(body))
+        object.__setattr__(self, "body", MappingProxyType(copy.deepcopy(body)))
 
 
 @dataclass(frozen=True)

@@ -20,6 +20,7 @@ from conformance.json_types import JsonObject
 from conformance.manifest import (
     Manifest,
     ManifestAssertion,
+    ManifestRequest,
     ManifestStep,
     ManifestTest,
 )
@@ -189,8 +190,6 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
     """
-    from conformance.manifest import ManifestRequest
-
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
     context = ExecutionContext()
