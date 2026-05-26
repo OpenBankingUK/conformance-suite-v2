@@ -55,6 +55,12 @@ jobs:
         # rules are public-only, so interrogate fills the gap.
         run: uv run interrogate -c pyproject.toml .
 
+      - name: pydoclint — docstring structure
+        # Enforces that Args/Returns/Raises sections match the function
+        # signature. Complements interrogate (presence) with structural
+        # correctness.
+        run: uv run pydoclint .
+
       - name: mypy — type check
         run: uv run mypy .
 
