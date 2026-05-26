@@ -56,6 +56,19 @@ def _run_primary_test(
         if the request failed before a response was received).
     """
     try:
+        validate_https_url(manifest_test.request.url, label="Manifest test request URL")
+    except HttpsUrlValidationError as error:
+        return (
+            StepResult(
+                name=manifest_test.id,
+                status="failed",
+                message=str(error),
+                url=manifest_test.request.url,
+            ),
+            None,
+        )
+
+    try:
         response = get_json(client, manifest_test.request.url)
     except JsonHttpClientError as error:
         return (

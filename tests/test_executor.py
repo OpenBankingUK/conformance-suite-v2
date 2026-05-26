@@ -207,3 +207,39 @@ def test_run_manifest_reports_invalid_json_response() -> None:
     assert result.steps[0].message == (
         "Response from https://modelbank.example.com/.well-known/openid-configuration was not valid JSON"
     )
+
+
+@pytest.mark.unit
+def test_run_manifest_rejects_unsafe_primary_url() -> None:
+    raw_manifest = manifest_config()
+    first_test(raw_manifest)["request"] = {"method": "GET", "url": "http://modelbank.example.com/unsafe"}
+    first_test(raw_manifest).pop("followUp")
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
+    # Bypass the parser's URL validation to simulate programmatic construction.
+    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
+
+    unsafe_manifest = Manifest(
+        schema_version="v0",
+        name="unsafe",
+        tests=(
+            ManifestTest(
+                id="unsafe-test",
+                name="Unsafe test",
+                request=ManifestRequest(method="GET", url="http://modelbank.example.com/unsafe"),
+                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+            ),
+        ),
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(unsafe_manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert requested_urls == []
+    assert result.steps[0].status == "failed"
+    assert "must be an HTTPS URL" in result.steps[0].message
