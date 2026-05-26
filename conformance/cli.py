@@ -1,4 +1,4 @@
-"""Command-line workflow for running the model-bank smoke check."""
+"""Command-line workflow for running conformance checks."""
 
 from __future__ import annotations
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run the model-bank smoke-check command.
+    """Run a conformance check (model-bank smoke check or manifest run).
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -27,7 +27,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         Process-style exit code: 0 for pass, 1 for conformance failure, 2 for
         invalid input, and 3 when the structured result cannot be written.
     """
-    parser = argparse.ArgumentParser(description="Run a model-bank smoke check")
+    parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
     parser.add_argument("--manifest", type=Path, help="Optional manifest v0 JSON file to execute")
     try:
@@ -67,12 +67,13 @@ def run(argv: Sequence[str] | None = None) -> int:
             encoding="utf-8",
         )
     except OSError as error:
-        logger.error("Unable to write model-bank smoke check result to %s: %s", config.result_output_path, error)
+        logger.error("Unable to write result to %s: %s", config.result_output_path, error)
         return 3
 
+    run_label = f"Manifest run ({args.manifest})" if args.manifest else "Model-bank smoke check"
     if result.status == "passed":
-        logger.info("Model-bank smoke check passed; wrote %s", config.result_output_path)
+        logger.info("%s passed; wrote %s", run_label, config.result_output_path)
         return 0
 
-    logger.error("Model-bank smoke check failed; wrote %s", config.result_output_path)
+    logger.error("%s failed; wrote %s", run_label, config.result_output_path)
     return 1
