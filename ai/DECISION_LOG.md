@@ -63,12 +63,12 @@ Decision: Sensitive field masking and certification eligibility criteria should 
 
 Rationale: The FCS Q&A identifies masking by configured path, and the sprint plan requires certification eligibility assessment to be driven by configuration.
 
-## DL-0007: Start Manifest v0 As A Parser-Only Contract
+## DL-0007: Define Manifest v0 Schema Contract Via Parser
 
 Date: 2026-05-16
 Status: Accepted
 
-Decision: Introduce manifest schema version `v0` as a JSON-only, parser-only contract represented by frozen dataclasses. The first supported shape is intentionally narrow: HTTPS `GET` OpenID discovery requests, a small allowlist of response assertions, and an optional JWKS follow-up sourced from `response.body.jwks_uri`. Manifest parsing remains separate from execution.
+Decision: Introduce manifest schema version `v0` as a JSON-only contract whose shape is defined and validated by a strict parser, represented by frozen dataclasses. Execution is intentionally decoupled from parsing but ships alongside it. The first supported shape is intentionally narrow: HTTPS `GET` OpenID discovery requests, a small allowlist of response assertions, and an optional JWKS follow-up sourced from `response.body.jwks_uri`.
 
 Rationale: M2 needs an explicit data contract that can describe the current Ozone discovery/JWKS smoke path without replacing the runner or prematurely designing the full assertion engine, FAPI/OIDC token flows, REST API, or UI. Keeping unsupported request, assertion, and follow-up shapes rejected by the loader makes future schema evolution explicit.
 
