@@ -75,6 +75,41 @@ class TestRecordStep:
         assert "existing" in new_ctx.steps
         assert "new-step" in new_ctx.steps
 
+    def test_steps_isolated_from_caller_mutation(self) -> None:
+        mutable_dict: dict[str, StepRecord] = {
+            "step-a": StepRecord(
+                request=RequestRecord(method="GET", url="https://example.com/a"),
+                response=ResponseRecord(status_code=200, body={}),
+            )
+        }
+        ctx = ExecutionContext(steps=mutable_dict)
+
+        # Mutate the original dict after construction
+        mutable_dict["injected"] = StepRecord(
+            request=RequestRecord(method="GET", url="https://evil.com"),
+            response=None,
+        )
+
+        # Context must be unaffected
+        assert "injected" not in ctx.steps
+        assert list(ctx.steps.keys()) == ["step-a"]
+
+    def test_steps_rejects_in_place_mutation(self) -> None:
+        ctx = ExecutionContext(
+            steps={
+                "step-a": StepRecord(
+                    request=RequestRecord(method="GET", url="https://example.com/a"),
+                    response=ResponseRecord(status_code=200, body={}),
+                )
+            }
+        )
+
+        with pytest.raises(TypeError):
+            ctx.steps["new"] = StepRecord(  # type: ignore[index]
+                request=RequestRecord(method="GET", url="https://evil.com"),
+                response=None,
+            )
+
 
 @pytest.mark.unit
 class TestResolvePlaceholdersHappyPaths:

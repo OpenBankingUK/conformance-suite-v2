@@ -35,7 +35,9 @@ class RequestRecord:
 
     Attributes:
         method: HTTP method used.
-        url: Resolved URL that was fetched.
+        url: URL recorded at the time the step was captured. This is the
+            resolved URL when placeholder resolution succeeded, or the
+            original unresolved template when resolution failed.
     """
 
     method: str
@@ -84,6 +86,15 @@ class ExecutionContext:
     """
 
     steps: Mapping[str, StepRecord] = field(default_factory=lambda: MappingProxyType({}))
+
+    def __post_init__(self) -> None:
+        """Wrap ``steps`` in a read-only proxy to enforce immutability.
+
+        Copies the incoming mapping to break aliasing with the caller's
+        original dict, then wraps in ``MappingProxyType`` so top-level
+        mutations are rejected at runtime.
+        """
+        object.__setattr__(self, "steps", MappingProxyType(dict(self.steps)))
 
 
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
