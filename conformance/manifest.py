@@ -379,13 +379,16 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
     Raises:
         ManifestError: If a placeholder is malformed or references a forward step.
     """
-    for match in _PLACEHOLDER_FIND_PATTERN.finditer(value):
+    matched_tokens = list(_PLACEHOLDER_FIND_PATTERN.finditer(value))
+    if value.count("${") > len(matched_tokens):
+        raise ManifestError(
+            f"{location} contains an unterminated placeholder (missing closing '}}')"
+        )
+    for match in matched_tokens:
         token = match.group(0)
-        if not _PLACEHOLDER_PATTERN.fullmatch(token):
-            raise ManifestError(f"{location} contains malformed placeholder: {token}")
-        # Extract the step id from the valid placeholder
         valid_match = _PLACEHOLDER_PATTERN.fullmatch(token)
-        assert valid_match is not None  # noqa: S101 — guaranteed by the fullmatch above
+        if valid_match is None:
+            raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)
         if referenced_id not in seen_ids:
             raise ManifestError(f"{location} references undefined step '{referenced_id}'")

@@ -455,6 +455,38 @@ def test_parse_v1_manifest_rejects_direction_invalid_placeholder(bad_placeholder
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_rejects_unterminated_placeholder() -> None:
+    """An unclosed ``${`` token must be rejected at parse time, not deferred to execution."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Unterminated placeholder",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/path",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.step-a.response.body.x",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    with pytest.raises(ManifestError, match="unterminated placeholder"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_rejects_unknown_keys_in_step() -> None:
     raw_manifest = valid_v1_manifest()
     steps = cast("list[dict[str, JsonValue]]", raw_manifest["steps"])
