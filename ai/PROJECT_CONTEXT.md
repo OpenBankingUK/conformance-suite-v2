@@ -12,13 +12,13 @@ Phase 2 is expected later and should not distort Phase 1 unless a design choice 
 
 ## Current Repository Progress
 
-Current branch observed: `develop`.
+Current branch observed: `feature/manifest-v1-sequential-steps`.
 
 PRs #1–#6 merged. The project has:
 - Python/Django scaffold, CI/E2E, Dockerfile, Makefile, uv lockfile (PR #1).
 - Ozone model-bank hello-world: CLI, config parsing, runner, results (PR #2).
 - Manifest v0 parser and executor with typed assertions and JWKS follow-up (PRs #3–#5).
-- **Manifest v1** (PR #6 / in progress): sequential multi-step format with `${...}` context carry-forward. Execution context accumulates step records; placeholder resolution traverses response bodies via dot-paths.
+- **Manifest v1** (PR #7 / in progress): sequential multi-step format with `${...}` context carry-forward. Execution context accumulates step records; placeholder resolution traverses response bodies via dot-paths.
 
 M2 is complete. M3 (assertion engine + context carry-forward) is substantially delivered by the v1 manifest implementation. Remaining M3 scope: substitution in assertion paths, header templating (deferred to M4).
 
