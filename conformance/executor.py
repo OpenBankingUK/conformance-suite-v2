@@ -207,34 +207,64 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
 
         # Follow-up: only execute if primary passed (v0 semantics)
         if step_result.status == "passed" and test.follow_up is not None:
-            follow_up_url = _desugar_follow_up_url(test)
-            follow_up_step = ManifestStep(
-                id=f"{test.id}.followUp",
-                name=f"{test.name} follow-up",
-                request=ManifestRequest(method=test.follow_up.request.method, url=follow_up_url),
-                assertions=test.follow_up.assertions,
-            )
-            follow_up_result, context = _execute_v1_step(follow_up_step, context=context, client=client)
-            steps.append(follow_up_result)
+            follow_up_id = f"{test.id}.followUp"
+            follow_up_url = _extract_v0_follow_up_url(context, test)
+            if follow_up_url is None:
+                # Preserve v0 explicit "unable to resolve" failure before attempting any HTTP call.
+                primary_url = context.steps[test.id].request.url
+                context = record_step(
+                    context,
+                    follow_up_id,
+                    RequestRecord(method=test.follow_up.request.method, url=primary_url),
+                    None,
+                )
+                steps.append(
+                    StepResult(
+                        name=follow_up_id,
+                        status="failed",
+                        message=f"Unable to resolve follow-up URL from {test.follow_up.url_source}",
+                        url=primary_url,
+                    )
+                )
+            else:
+                follow_up_step = ManifestStep(
+                    id=follow_up_id,
+                    name=f"{test.name} follow-up",
+                    request=ManifestRequest(method=test.follow_up.request.method, url=follow_up_url),
+                    assertions=test.follow_up.assertions,
+                )
+                follow_up_result, context = _execute_v1_step(follow_up_step, context=context, client=client)
+                steps.append(follow_up_result)
 
     return build_smoke_check_result(environment, steps, started_at=started_at)
 
 
-def _desugar_follow_up_url(test: ManifestTest) -> str:
-    """Build the placeholder URL for a desugared v0 follow-up step.
+def _extract_v0_follow_up_url(context: ExecutionContext, test: ManifestTest) -> str | None:
+    """Extract the v0 follow-up URL from the primary step's response body.
 
-    Maps the v0 ``urlSource`` value to an equivalent v1 ``${...}`` placeholder
-    expression referencing the primary step's response body.
+    Applies original v0 extraction semantics: the resolved value must be a
+    non-empty string and is stripped of surrounding whitespace before use.
+    Only the ``response.body.jwks_uri`` source path is supported.
 
     Args:
-        test: The v0 manifest test containing the follow-up to desugar.
+        context: Execution context containing the primary step's recorded response.
+        test: The v0 manifest test whose ``follow_up.url_source`` is resolved.
 
     Returns:
-        A ``${...}`` placeholder string for the follow-up URL.
+        The stripped URL string, or ``None`` if the source path is not
+        recognised, the key is absent, the value is not a string, or the
+        stripped value is empty.
     """
     assert test.follow_up is not None  # noqa: S101 — caller guarantees follow_up exists
-    # Map "response.body.jwks_uri" → "${steps.<id>.response.body.jwks_uri}"
-    return f"${{steps.{test.id}.{test.follow_up.url_source}}}"
+    if test.follow_up.url_source != "response.body.jwks_uri":
+        return None
+    step_record = context.steps.get(test.id)
+    if step_record is None or step_record.response is None:
+        return None
+    value = step_record.response.body.get("jwks_uri")
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value.strip()
 
 
 def _build_assertion_step(

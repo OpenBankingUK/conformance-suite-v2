@@ -113,7 +113,7 @@ def test_run_manifest_reports_missing_follow_up_url() -> None:
     assert result.status == "failed"
     assert [step.status for step in result.steps] == ["passed", "failed"]
     assert result.steps[1].name == "openid-discovery.followUp"
-    assert "Path segment 'jwks_uri' not found" in result.steps[1].message
+    assert result.steps[1].message == "Unable to resolve follow-up URL from response.body.jwks_uri"
 
 
 @pytest.mark.unit
@@ -325,6 +325,59 @@ def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
     assert result.steps[1].message == "Unsupported request method: POST"
+
+
+@pytest.mark.unit
+def test_run_manifest_v0_strips_whitespace_from_follow_up_url() -> None:
+    """v0 URL extraction strips surrounding whitespace before HTTPS validation."""
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if "openid-configuration" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "  https://modelbank.example.com/jwks  ",
+                },
+            )
+        return httpx.Response(200, json={"keys": [{"kid": "k1"}]})
+
+    raw_manifest = manifest_config()
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert requested_urls == [
+        "https://modelbank.example.com/.well-known/openid-configuration",
+        "https://modelbank.example.com/jwks",
+    ]
+
+
+@pytest.mark.unit
+def test_run_manifest_v0_rejects_non_string_follow_up_url() -> None:
+    """v0 URL extraction fails explicitly when jwks_uri is not a string."""
+    raw_manifest = manifest_config()
+    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                json={"issuer": "https://modelbank.example.com", "jwks_uri": 42},
+            )
+        )
+    ) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert [step.status for step in result.steps] == ["passed", "failed"]
+    assert result.steps[1].name == "openid-discovery.followUp"
+    assert result.steps[1].message == "Unable to resolve follow-up URL from response.body.jwks_uri"
 
 
 # --- v1 manifest executor tests ---
