@@ -1,4 +1,4 @@
-from typing import cast
+from typing import Any, cast
 
 import httpx
 import pytest
@@ -243,3 +243,85 @@ def test_run_manifest_rejects_unsafe_primary_url() -> None:
     assert requested_urls == []
     assert result.steps[0].status == "failed"
     assert "must be an HTTPS URL" in result.steps[0].message
+
+
+@pytest.mark.unit
+def test_run_manifest_rejects_unsupported_primary_method() -> None:
+    """Defence-in-depth: fail the step if request method is not GET."""
+    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
+
+    bad_manifest = Manifest(
+        schema_version="v0",
+        name="bad-method",
+        tests=(
+            ManifestTest(
+                id="post-test",
+                name="POST test",
+                request=ManifestRequest(method=cast(Any, "POST"), url="https://example.com/api"),
+                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+            ),
+        ),
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(bad_manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert requested_urls == []
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "Unsupported request method: POST"
+
+
+@pytest.mark.unit
+def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
+    """Defence-in-depth: fail the follow-up step if its method is not GET."""
+    from conformance.manifest import (
+        FollowUpRequest,
+        HttpStatusAssertion,
+        Manifest,
+        ManifestFollowUp,
+        ManifestRequest,
+        ManifestTest,
+    )
+
+    bad_manifest = Manifest(
+        schema_version="v0",
+        name="bad-follow-up-method",
+        tests=(
+            ManifestTest(
+                id="oidc",
+                name="OIDC discovery",
+                request=ManifestRequest(method="GET", url="https://example.com/.well-known/openid-configuration"),
+                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+                follow_up=ManifestFollowUp(
+                    type="jwks",
+                    url_source="response.body.jwks_uri",
+                    request=FollowUpRequest(method=cast(Any, "POST")),
+                    assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+                ),
+            ),
+        ),
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            200,
+            json={"issuer": "https://example.com", "jwks_uri": "https://example.com/jwks"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(bad_manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    # Primary request should succeed; only the follow-up should fail
+    assert requested_urls == ["https://example.com/.well-known/openid-configuration"]
+    assert result.steps[0].status == "passed"
+    assert result.steps[1].status == "failed"
+    assert result.steps[1].message == "Unsupported follow-up request method: POST"

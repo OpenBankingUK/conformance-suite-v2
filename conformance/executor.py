@@ -55,6 +55,17 @@ def _run_primary_test(
         A tuple of the step result and the parsed HTTP response (or ``None``
         if the request failed before a response was received).
     """
+    if manifest_test.request.method != "GET":
+        return (
+            StepResult(
+                name=manifest_test.id,
+                status="failed",
+                message=f"Unsupported request method: {manifest_test.request.method}",
+                url=manifest_test.request.url,
+            ),
+            None,
+        )
+
     try:
         validate_https_url(manifest_test.request.url, label="Manifest test request URL")
     except HttpsUrlValidationError as error:
@@ -113,6 +124,15 @@ def _run_follow_up(
         Step result indicating pass/fail for the follow-up assertions.
     """
     follow_up_name = f"{manifest_test.id}.followUp"
+
+    if follow_up.request.method != "GET":
+        return StepResult(
+            name=follow_up_name,
+            status="failed",
+            message=f"Unsupported follow-up request method: {follow_up.request.method}",
+            url=response.url,
+        )
+
     follow_up_url = _follow_up_url(response.body, follow_up)
     if follow_up_url is None:
         return StepResult(
