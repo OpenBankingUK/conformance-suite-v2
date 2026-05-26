@@ -221,46 +221,6 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
     return build_smoke_check_result(environment, steps, started_at=started_at)
 
 
-def _desugar_v0_to_v1_steps(manifest: Manifest) -> list[ManifestStep]:
-    """Convert v0 manifest tests into v1 sequential steps.
-
-    Each v0 test becomes a primary step. If the test has a followUp,
-    a second step is generated that references the primary step's response
-    body to resolve the follow-up URL via a placeholder.
-
-    Args:
-        manifest: Parsed v0 manifest to desugar.
-
-    Returns:
-        List of v1-style steps equivalent to the v0 tests.
-    """
-    from conformance.manifest import ManifestRequest
-
-    steps: list[ManifestStep] = []
-    for test in manifest.tests:
-        # Primary step
-        steps.append(
-            ManifestStep(
-                id=test.id,
-                name=test.name,
-                request=test.request,
-                assertions=test.assertions,
-            )
-        )
-        # Follow-up step (desugared)
-        if test.follow_up is not None:
-            follow_up_url = _desugar_follow_up_url(test)
-            steps.append(
-                ManifestStep(
-                    id=f"{test.id}.followUp",
-                    name=f"{test.name} follow-up",
-                    request=ManifestRequest(method=test.follow_up.request.method, url=follow_up_url),
-                    assertions=test.follow_up.assertions,
-                )
-            )
-    return steps
-
-
 def _desugar_follow_up_url(test: ManifestTest) -> str:
     """Build the placeholder URL for a desugared v0 follow-up step.
 

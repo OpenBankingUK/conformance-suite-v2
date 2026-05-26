@@ -231,10 +231,13 @@ def _parse_v0_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     )
 
 
+_STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
+"""Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
+
 _PLACEHOLDER_PATTERN = re.compile(
-    r"\$\{steps\.([A-Za-z0-9][A-Za-z0-9._-]*)"
-    r"\.(request|response)\.(body|headers|status_code|method|url)"
-    r"([A-Za-z0-9._-]*(?:\.[A-Za-z0-9._-]+)*)\}"
+    r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
+    r"\.(request|response)\.(body|status_code|method|url)"
+    r"((?:\.[A-Za-z0-9_-]+)*)\}"
 )
 """Regex matching valid ``${steps.<id>.<request|response>.<segment>...}`` placeholders."""
 
@@ -296,6 +299,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     )
 
     step_id = _required_string(raw_step, "id", location=location)
+    _validate_step_id(step_id, location=location)
     if step_id in seen_ids:
         raise ManifestError(f"{location}.id '{step_id}' is a duplicate")
 
@@ -404,8 +408,11 @@ def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
     has_follow_up = "followUp" in raw_test
     raw_follow_up = raw_test["followUp"] if has_follow_up else None
 
+    test_id = _required_string(raw_test, "id", location=location)
+    _validate_step_id(test_id, location=location)
+
     return ManifestTest(
-        id=_required_string(raw_test, "id", location=location),
+        id=test_id,
         name=_required_string(raw_test, "name", location=location),
         request=_parse_request(
             _required_object(raw_test, "request", location=location),
@@ -705,6 +712,31 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
             raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
         objects.append(item)
     return objects
+
+
+_STEP_ID_PATTERN = re.compile(r"^" + _STEP_ID_CHAR_CLASS + r"$")
+"""Compiled pattern for validating step/test IDs at parse time."""
+
+
+def _validate_step_id(step_id: str, *, location: str) -> None:
+    """Validate that a step or test ID uses only allowed characters.
+
+    IDs must start with an alphanumeric character and may contain only
+    alphanumerics, hyphens, and underscores. Dots are forbidden because
+    the placeholder resolver splits on dots.
+
+    Args:
+        step_id: The candidate ID string to validate.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        ManifestError: If the ID contains invalid characters.
+    """
+    if not _STEP_ID_PATTERN.match(step_id):
+        raise ManifestError(
+            f"{location}.id '{step_id}' contains invalid characters "
+            "(must match [A-Za-z0-9][A-Za-z0-9_-]*)"
+        )
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:

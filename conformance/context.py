@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from types import MappingProxyType
 
 from conformance.json_types import JsonObject, JsonValue
 
@@ -17,8 +19,8 @@ class StepRecord:
     """Captured request/response pair for one executed manifest step.
 
     Attributes:
-        request: The HTTP request as issued (method, url, headers).
-        response: The HTTP response captured (status_code, body, headers),
+        request: The HTTP request as issued (method, url).
+        response: The HTTP response captured (status_code, body),
             or ``None`` if no response was received.
     """
 
@@ -33,12 +35,10 @@ class RequestRecord:
     Attributes:
         method: HTTP method used.
         url: Resolved URL that was fetched.
-        headers: Request headers sent (may be empty).
     """
 
     method: str
     url: str
-    headers: dict[str, str] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -47,13 +47,21 @@ class ResponseRecord:
 
     Attributes:
         status_code: HTTP status code returned.
-        body: Parsed JSON object response body.
-        headers: Response headers (may be empty).
+        body: Parsed JSON object response body (immutable proxy).
     """
 
     status_code: int
-    body: JsonObject
-    headers: dict[str, str] = field(default_factory=dict)
+    body: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
+
+    def __init__(self, *, status_code: int, body: JsonObject) -> None:
+        """Wrap the body dict in a read-only proxy to enforce immutability.
+
+        Args:
+            status_code: HTTP status code returned.
+            body: Parsed JSON object response body.
+        """
+        object.__setattr__(self, "status_code", status_code)
+        object.__setattr__(self, "body", MappingProxyType(body))
 
 
 @dataclass(frozen=True)
@@ -64,10 +72,10 @@ class ExecutionContext:
     ``${steps.<id>...}`` placeholders against earlier responses.
 
     Attributes:
-        steps: Mapping from step id to captured request/response record.
+        steps: Immutable mapping from step id to captured request/response record.
     """
 
-    steps: dict[str, StepRecord] = field(default_factory=dict)
+    steps: Mapping[str, StepRecord] = field(default_factory=lambda: MappingProxyType({}))
 
 
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -93,15 +101,15 @@ def record_step(
     """
     new_steps = dict(context.steps)
     new_steps[step_id] = StepRecord(request=request, response=response)
-    return ExecutionContext(steps=new_steps)
+    return ExecutionContext(steps=MappingProxyType(new_steps))
 
 
 def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     """Replace all ``${...}`` placeholders in a template string.
 
     Supported dot-path grammar:
-    ``steps.<id>.request.(method|url|headers.<key>)``
-    ``steps.<id>.response.(status_code|body.<dot.path>|headers.<key>)``
+    ``steps.<id>.request.(method|url)``
+    ``steps.<id>.response.(status_code|body.<dot.path>)``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -193,11 +201,6 @@ def _resolve_request_path(request: RequestRecord, field_name: str, remaining: li
         return request.method
     if field_name == "url" and not remaining:
         return request.url
-    if field_name == "headers" and len(remaining) == 1:
-        key = remaining[0]
-        if key not in request.headers:
-            raise PlaceholderResolutionError(f"Request header '{key}' not found: ${{{dot_path}}}")
-        return request.headers[key]
     raise PlaceholderResolutionError(f"Cannot resolve request path: ${{{dot_path}}}")
 
 
@@ -219,17 +222,12 @@ def _resolve_response_path(response: ResponseRecord, field_name: str, remaining:
     """
     if field_name == "status_code" and not remaining:
         return str(response.status_code)
-    if field_name == "headers" and len(remaining) == 1:
-        key = remaining[0]
-        if key not in response.headers:
-            raise PlaceholderResolutionError(f"Response header '{key}' not found: ${{{dot_path}}}")
-        return response.headers[key]
     if field_name == "body":
         return _resolve_body_path(response.body, remaining, dot_path)
     raise PlaceholderResolutionError(f"Cannot resolve response path: ${{{dot_path}}}")
 
 
-def _resolve_body_path(body: JsonObject, segments: list[str], dot_path: str) -> str:
+def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_path: str) -> str:
     """Walk a JSON body using dot-path segments to extract a primitive value.
 
     Args:
@@ -244,17 +242,17 @@ def _resolve_body_path(body: JsonObject, segments: list[str], dot_path: str) -> 
         PlaceholderResolutionError: If a segment is missing, the traversal
             encounters a non-object intermediate, or the leaf is non-primitive.
     """
-    current: JsonValue = body
+    current: JsonValue | Mapping[str, JsonValue] = body
     for segment in segments:
-        if not isinstance(current, dict):
+        if not isinstance(current, Mapping):
             raise PlaceholderResolutionError(f"Cannot traverse non-object at '{segment}': ${{{dot_path}}}")
         if segment not in current:
             raise PlaceholderResolutionError(f"Path segment '{segment}' not found: ${{{dot_path}}}")
         current = current[segment]
 
     # If no segments, we'd be resolving the entire body (non-primitive)
-    if isinstance(current, (dict, list)):
-        kind = "object" if isinstance(current, dict) else "array"
+    if isinstance(current, (Mapping, list)):
+        kind = "object" if isinstance(current, Mapping) else "array"
         raise PlaceholderResolutionError(f"Resolved value is not a primitive (got {kind}): ${{{dot_path}}}")
 
     if current is None:

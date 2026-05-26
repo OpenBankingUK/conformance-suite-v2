@@ -19,7 +19,6 @@ def _discovery_context() -> ExecutionContext:
                 request=RequestRecord(
                     method="GET",
                     url="https://auth.example.com/.well-known/openid-configuration",
-                    headers={"Accept": "application/json"},
                 ),
                 response=ResponseRecord(
                     status_code=200,
@@ -29,7 +28,6 @@ def _discovery_context() -> ExecutionContext:
                         "token_endpoint": "https://auth.example.com/token",
                         "nested": {"deep": {"value": "found"}},
                     },
-                    headers={"content-type": "application/json"},
                 ),
             ),
         }
@@ -104,16 +102,6 @@ class TestResolvePlaceholdersHappyPaths:
         ctx = _discovery_context()
         result = resolve_placeholders("${steps.openid-discovery.request.method}", ctx)
         assert result == "GET"
-
-    def test_resolves_request_header(self) -> None:
-        ctx = _discovery_context()
-        result = resolve_placeholders("${steps.openid-discovery.request.headers.Accept}", ctx)
-        assert result == "application/json"
-
-    def test_resolves_response_header(self) -> None:
-        ctx = _discovery_context()
-        result = resolve_placeholders("${steps.openid-discovery.response.headers.content-type}", ctx)
-        assert result == "application/json"
 
     def test_returns_template_unchanged_when_no_placeholders(self) -> None:
         ctx = _discovery_context()
@@ -225,16 +213,6 @@ class TestResolvePlaceholdersErrors:
         )
         with pytest.raises(PlaceholderResolutionError, match="has no response"):
             resolve_placeholders("${steps.failed.response.body.x}", ctx)
-
-    def test_missing_request_header(self) -> None:
-        ctx = _discovery_context()
-        with pytest.raises(PlaceholderResolutionError, match="Request header 'X-Missing' not found"):
-            resolve_placeholders("${steps.openid-discovery.request.headers.X-Missing}", ctx)
-
-    def test_missing_response_header(self) -> None:
-        ctx = _discovery_context()
-        with pytest.raises(PlaceholderResolutionError, match="Response header 'X-Missing' not found"):
-            resolve_placeholders("${steps.openid-discovery.response.headers.X-Missing}", ctx)
 
     def test_invalid_request_field(self) -> None:
         ctx = _discovery_context()

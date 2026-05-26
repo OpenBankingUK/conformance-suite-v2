@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 
 from conformance.json_types import JsonObject, JsonValue
@@ -137,7 +138,7 @@ def _resolve_json_path(body: JsonObject, path: str) -> JsonValue | _MissingValue
     """
     current_value: JsonValue = body
     for path_part in path.split("."):
-        if not isinstance(current_value, dict) or path_part not in current_value:
+        if not isinstance(current_value, Mapping) or path_part not in current_value:
             return _MISSING
         current_value = current_value[path_part]
     return current_value
