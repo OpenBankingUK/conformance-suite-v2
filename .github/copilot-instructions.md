@@ -124,6 +124,7 @@ Code in this repository must be understandable to a human reviewer without requi
 
 - **Module docstrings**: Every non-test Python module and package must explain its purpose and role in the conformance tool.
 - **Public API docstrings**: Every public class, dataclass, function, method, and module-level type alias with project meaning must have a Google-style docstring. Include `Args:`, `Returns:`, and `Raises:` sections when they add useful information.
+- **Private function and method docstrings**: Every private (`_`-prefixed) module-level function and method must carry a full Google-style docstring — a one-line summary plus `Args:` and `Returns:` sections whenever the signature has parameters or a non-`None` return type, and a `Raises:` section whenever the helper raises an exception directly. There is no carve-out for "trivial" helpers: every `_`-prefixed function must be documented, regardless of length. Note: ruff's Google pydocstyle convention does not enforce `D1xx` on private names. This repository therefore runs `interrogate` (configured in `pyproject.toml` with `fail-under = 100`, `ignore-private = false`, `ignore-semiprivate = false`) as a required CI step that fails the build if any function, method, class, or nested definition — public or private — is missing a docstring.
 - **Domain intent**: Code implementing Open Banking, OAuth 2.0, OIDC, FAPI, JWKS, JWS, report, certification, or masking behaviour should name the relevant standard concept in the docstring or an adjacent comment.
 - **Why comments**: Inline comments should explain security, compliance, domain, or non-obvious design intent. Do not add comments that merely restate the next line of code.
 - **Generated or framework boilerplate**: Keep Django-generated entry points lightweight. Prefer a concise module docstring or a targeted `ruff` per-file ignore over ceremonial comments.
@@ -196,7 +197,7 @@ When reviewing code that implements or tests Open Banking standards:
 - Raw SQL string construction from user input
 - `@csrf_exempt` without a documented security rationale
 - Docker images running as root
-- New or modified public Python modules, classes, functions, or methods without clear human-readable docstrings
+- New or modified Python modules, classes, functions, or methods — public **or private** (`_`-prefixed) — without a clear Google-style docstring. This is mechanically enforced by `interrogate` in CI (100% threshold, private names included); do not rely on code review alone to catch missing docstrings
 - PRs that reduce test coverage below 80% without justification
 - New dependencies not present in `uv.lock`
 - Merges to `main` without a passing E2E test run

@@ -7,9 +7,9 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal
-from urllib.parse import urlparse
 
 from conformance.json_types import JsonValue
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 class ConfigError(ValueError):
@@ -141,6 +141,23 @@ def parse_model_bank_config(
 
 
 def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
+    """Parse the optional ``followUp`` section of a model bank config dict.
+
+    If the key is absent, the default follow-up mode ``"jwks"`` is returned.
+    The only currently supported modes are ``"jwks"`` and
+    ``"discovery_only"``.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file.
+
+    Returns:
+        The resolved ``FollowUpMode`` value.
+
+    Raises:
+        ConfigError: If ``followUp`` is present but not a JSON object, contains
+            unknown keys, or specifies an unrecognised mode.
+    """
     raw_follow_up = raw_config.get("followUp")
     if raw_follow_up is None:
         return "jwks"
@@ -156,6 +173,27 @@ def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
 
 
 def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> TlsConfig:
+    """Parse the optional ``tls`` section of a model bank config dict.
+
+    If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
+    returned.  Relative certificate paths are resolved against ``base_dir``.
+    ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be supplied
+    together or not at all.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary.
+        base_dir: Directory of the config file, used as the root for resolving
+            relative certificate paths.
+
+    Returns:
+        A populated ``TlsConfig`` dataclass.
+
+    Raises:
+        ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
+            specifies paths that escape ``certificatePathRoot``, specifies
+            paths that do not exist, or supplies only one of the client
+            certificate / private key pair.
+    """
     raw_tls = raw_config.get("tls")
     if raw_tls is None:
         return TlsConfig()
@@ -184,6 +222,19 @@ def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Tl
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
+    """Extract a required non-empty string value from a raw config dict.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value must be a non-empty string.
+
+    Returns:
+        The stripped string value.
+
+    Raises:
+        ConfigError: If the key is missing, the value is not a string, or the
+            string is blank after stripping whitespace.
+    """
     value = raw_config.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{key} must be a non-empty string")
@@ -191,23 +242,45 @@ def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
 
 
 def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
-    value = _required_string(raw_config, key)
-    parsed_url = urlparse(value)
-    try:
-        parsed_port = parsed_url.port
-    except ValueError as error:
-        raise ConfigError(f"{key} must be a valid HTTPS URL") from error
+    """Extract and validate a required HTTPS URL from raw config.
 
-    if parsed_port is not None and parsed_port <= 0:
-        raise ConfigError(f"{key} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        raise ConfigError(f"{key} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        raise ConfigError(f"{key} must not include credentials")
+    Args:
+        raw_config: Raw configuration dictionary.
+        key: Configuration key to extract.
+
+    Returns:
+        Validated HTTPS URL string.
+
+    Raises:
+        ConfigError: If the value is missing, empty, or not a valid HTTPS URL.
+    """
+    value = _required_string(raw_config, key)
+    try:
+        validate_https_url(value, label=key)
+    except HttpsUrlValidationError as error:
+        raise ConfigError(str(error)) from error
     return value
 
 
 def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, default: float) -> float:
+    """Extract an optional positive finite number from a raw config dict.
+
+    If the key is absent, ``default`` is returned unchanged.  ``bool``
+    values are explicitly rejected even though they are a subtype of ``int``
+    in Python.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value must be a positive finite number.
+        default: Value to return when the key is absent.
+
+    Returns:
+        The extracted number as a ``float``, or ``default``.
+
+    Raises:
+        ConfigError: If the value is present but is not a positive finite
+            number (including bool, negative, zero, or non-finite).
+    """
     value = raw_config.get(key)
     if value is None:
         return default
@@ -217,6 +290,25 @@ def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, def
 
 
 def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path, default: Path) -> Path:
+    """Extract an optional filesystem path, resolving relative paths against ``base_dir``.
+
+    If the key is absent, ``default`` is resolved against ``base_dir`` (or
+    returned as-is if already absolute).  If present, the value is resolved
+    against ``base_dir`` when relative.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+        base_dir: Directory used as the base for resolving relative paths.
+        default: Path to return when the key is absent.
+
+    Returns:
+        Absolute resolved ``Path``.
+
+    Raises:
+        ConfigError: If the key is present but the value is not a non-empty
+            string.
+    """
     value = raw_config.get(key)
     if value is None:
         return (base_dir / default).resolve() if not default.is_absolute() else default.resolve()
@@ -227,6 +319,26 @@ def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path
 
 
 def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
+    """Extract an optional path that must resolve inside ``root`` and point to an existing file.
+
+    Enforces a path-traversal guard: the resolved path must be ``root`` itself
+    or a descendant of ``root``.  Both absolute and relative path strings are
+    accepted; relative paths are resolved against ``root``.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+        root: Directory that the resolved path must reside inside (the
+            ``certificatePathRoot``).
+
+    Returns:
+        Absolute resolved ``Path`` when the key is present, or ``None``.
+
+    Raises:
+        ConfigError: If the key is present but the value is not a non-empty
+            string, the resolved path escapes ``root``, or the path does not
+            point to an existing file.
+    """
     value = raw_config.get(key)
     if value is None:
         return None
@@ -245,6 +357,21 @@ def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *,
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:
+    """Raise ``ConfigError`` if ``raw_config`` contains any key not in ``allowed_keys``.
+
+    This prevents silently ignoring typo'd or unsupported configuration fields
+    that would otherwise be swallowed without effect.
+
+    Args:
+        raw_config: Raw configuration dictionary to validate.
+        allowed_keys: Set of recognised field names.
+        location: Human-readable config path used in the error message
+            (e.g. ``"tls"`` or ``"followUp"``).
+
+    Raises:
+        ConfigError: If one or more unrecognised keys are present, listing
+            them in sorted order.
+    """
     unknown_keys = sorted(set(raw_config) - allowed_keys)
     if unknown_keys:
         joined_keys = ", ".join(unknown_keys)

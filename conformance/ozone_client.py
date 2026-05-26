@@ -7,32 +7,17 @@ which are early FAPI/OIDC prerequisites before the full conformance engine lands
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import cast
-from urllib.parse import urlparse
 
 import httpx
 
-from conformance.json_types import JsonObject, JsonValue
+from conformance.http import JsonHttpClientError, JsonHttpResponse, build_json_http_client, get_json
+from conformance.json_types import JsonObject
 from conformance.model_bank_config import ModelBankConfig
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
 class OzoneClientError(RuntimeError):
     """Raised when the Ozone model-bank request or response is invalid."""
-
-
-@dataclass(frozen=True)
-class JsonHttpResponse:
-    """Typed JSON response captured for result reporting.
-
-    Attributes:
-        url: Final response URL after redirects.
-        status_code: HTTP status code returned by the model bank.
-        body: Parsed JSON object body.
-    """
-
-    url: str
-    status_code: int
-    body: JsonObject
 
 
 @dataclass(frozen=True)
@@ -72,15 +57,14 @@ class OzoneModelBankClient:
         Returns:
             Client ready to fetch discovery and JWKS metadata.
         """
-        verify: bool | str = True
-        if config.tls.ca_bundle_path is not None:
-            verify = str(config.tls.ca_bundle_path)
-
-        cert: tuple[str, str] | None = None
-        if config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None:
-            cert = (str(config.tls.client_certificate_path), str(config.tls.client_private_key_path))
-
-        return cls(httpx.Client(timeout=config.timeout_seconds, verify=verify, cert=cert))
+        return cls(
+            build_json_http_client(
+                timeout_seconds=config.timeout_seconds,
+                ca_bundle_path=config.tls.ca_bundle_path,
+                client_certificate_path=config.tls.client_certificate_path,
+                client_private_key_path=config.tls.client_private_key_path,
+            )
+        )
 
     def close(self) -> None:
         """Close the underlying HTTP connection pool."""
@@ -127,25 +111,42 @@ class OzoneModelBankClient:
         return response
 
     def _get_json(self, url: str) -> JsonHttpResponse:
+        """Fetch a JSON object response and translate generic errors.
+
+        Args:
+            url: Absolute HTTPS URL to request.
+
+        Returns:
+            Parsed JSON HTTP response with status code and body.
+
+        Raises:
+            OzoneClientError: If the request fails or returns HTTP 4xx/5xx.
+        """
         try:
-            response = self._client.get(url, headers={"Accept": "application/json"})
-            response.raise_for_status()
-        except httpx.HTTPError as error:
-            raise OzoneClientError(f"Request failed for {url}: {error}") from error
-
-        try:
-            response_body: object = response.json()
-        except ValueError as error:
-            raise OzoneClientError(f"Response from {url} was not valid JSON") from error
-
-        if not isinstance(response_body, dict):
-            raise OzoneClientError(f"Response from {url} must be a JSON object")
-
-        json_body = cast(dict[str, JsonValue], response_body)
-        return JsonHttpResponse(url=str(response.url), status_code=response.status_code, body=json_body)
+            response = get_json(self._client, url)
+        except JsonHttpClientError as error:
+            raise OzoneClientError(str(error)) from error
+        if response.status_code >= 400:
+            raise OzoneClientError(f"Request failed for {url}: HTTP status {response.status_code}")
+        return response
 
 
 def _required_response_string(response_body: JsonObject, key: str) -> str:
+    """Extract a required non-empty string from an Ozone discovery document response body.
+
+    Args:
+        response_body: Parsed JSON object returned by the Ozone discovery
+            document endpoint.
+        key: Field name that must be present and non-empty (e.g.
+            ``"issuer"`` or ``"jwks_uri"``).
+
+    Returns:
+        The stripped string value.
+
+    Raises:
+        OzoneClientError: If the key is missing, the value is not a string,
+            or the string is blank after stripping whitespace.
+    """
     value = response_body.get(key)
     if not isinstance(value, str) or not value.strip():
         raise OzoneClientError(f"Discovery document must contain a non-empty {key}")
@@ -153,15 +154,16 @@ def _required_response_string(response_body: JsonObject, key: str) -> str:
 
 
 def _validate_https_url(value: str, *, key: str) -> None:
-    parsed_url = urlparse(value)
-    try:
-        parsed_port = parsed_url.port
-    except ValueError as error:
-        raise OzoneClientError(f"{key} must be a valid HTTPS URL") from error
+    """Validate a discovery document URL as a well-formed HTTPS endpoint.
 
-    if parsed_port is not None and parsed_port <= 0:
-        raise OzoneClientError(f"{key} must be a valid HTTPS URL")
-    if parsed_url.scheme != "https" or parsed_url.hostname is None:
-        raise OzoneClientError(f"{key} must be an HTTPS URL")
-    if parsed_url.username is not None or parsed_url.password is not None:
-        raise OzoneClientError(f"{key} must not include credentials")
+    Args:
+        value: URL string extracted from the discovery document.
+        key: Discovery document field name used in error messages.
+
+    Raises:
+        OzoneClientError: If the URL fails HTTPS validation.
+    """
+    try:
+        validate_https_url(value, label=key)
+    except HttpsUrlValidationError as error:
+        raise OzoneClientError(str(error)) from error

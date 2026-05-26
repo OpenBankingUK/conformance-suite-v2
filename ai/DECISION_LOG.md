@@ -63,7 +63,16 @@ Decision: Sensitive field masking and certification eligibility criteria should 
 
 Rationale: The FCS Q&A identifies masking by configured path, and the sprint plan requires certification eligibility assessment to be driven by configuration.
 
-## DL-0007: Adopt Google-Style Docstrings Enforced By Ruff
+## DL-0007: Define Manifest v0 Schema Contract Via Parser
+
+Date: 2026-05-16
+Status: Accepted
+
+Decision: Introduce manifest schema version `v0` as a JSON-only contract whose shape is defined and validated by a strict parser, represented by frozen dataclasses. Execution is intentionally decoupled from parsing but ships alongside it. The first supported shape is intentionally narrow: HTTPS `GET` OpenID discovery requests, a small allowlist of response assertions, and an optional JWKS follow-up sourced from `response.body.jwks_uri`.
+
+Rationale: M2 needs an explicit data contract that can describe the current Ozone discovery/JWKS smoke path without replacing the runner or prematurely designing the full assertion engine, FAPI/OIDC token flows, REST API, or UI. Keeping unsupported request, assertion, and follow-up shapes rejected by the loader makes future schema evolution explicit.
+
+## DL-0008: Adopt Google-Style Docstrings Enforced By Ruff
 
 Date: 2026-05-21
 Status: Accepted
@@ -74,7 +83,7 @@ Rationale: This regulated conformance tool must remain understandable to human m
 
 Consequences: Existing `conformance/` modules are backfilled now. Tests are exempt from docstring rules because their names and assertions document behaviour. Framework boilerplate may use concise module docstrings or narrow per-file ignores when docstrings would add ceremony rather than clarity.
 
-## DL-0008: Attribute-Docstring Convention For Type Aliases
+## DL-0009: Attribute-Docstring Convention For Type Aliases
 
 Date: 2026-05-21
 Status: Accepted
@@ -83,9 +92,27 @@ Decision: Document module-level type aliases, `Literal` assignments, and `Final`
 
 Rationale: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's section-6 requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension. Ruff B018 explicitly exempts the pattern. A Copilot PR review false-positive flagged these as useless expressions; the fix is to teach the reviewer (via `.github/copilot-instructions.md`) rather than change the code.
 
+## DL-0010: Require Docstrings On Private Functions And Methods
+
+Date: 2026-05-22
+Status: Accepted (amended)
+
+Decision: Require full Google-style docstrings on every private (`_`-prefixed) module-level function and method — a one-line summary plus `Args:` and `Returns:` sections whenever the signature has parameters or a non-`None` return type, and a `Raises:` section whenever the helper raises an exception directly. There is no carve-out for trivial helpers. Enforcement is mechanical: `interrogate` (configured in `pyproject.toml` with `fail-under = 100`, `ignore-private = false`, `ignore-semiprivate = false`) runs as a required CI step and fails the build if any definition is missing a docstring. Ruff's Google pydocstyle convention does not enforce `D1xx` on private names, so `interrogate` fills that gap.
+
+Rationale: The project goal for documentation is human readability *and* IDE hover support. A developer navigating `conformance/manifest.py` hovers private helpers far more often than public entry points — the parser's complexity lives in its validators and sub-parsers, not its two public functions. Without docstrings on privates, the IDE shows only a bare signature, defeating the stated goal. Mechanical enforcement via `interrogate` removes ambiguity about which helpers need docstrings and prevents regressions without relying solely on code review.
+
+## DL-0011: Keep Manifest HTTP Fetches Status-Agnostic
+
+Date: 2026-05-22
+Status: Accepted
+
+Decision: Manifest execution must treat HTTP status codes as conformance evidence for `http_status` assertions, not as transport failures. JSON fetch helpers may return well-formed JSON object responses with 4xx or 5xx status codes; higher-level callers that require 2xx-only behaviour must enforce that policy explicitly.
+
+Rationale: Manifest v0 accepts expected HTTP status codes from 100 to 599, so raising before assertion evaluation would make valid negative-response conformance tests impossible. Keeping status policy at the caller boundary lets the manifest engine evaluate standards behaviour while legacy smoke-check code can still fail fast for model-bank request errors.
+
 ## Open Decisions
 
-- Manifest schema shape and versioning details for M2.
+- How manifest v0 evolves into later assertion evaluation, context carry-forward, and orchestration contracts.
 - TestPlan schema boundaries: what belongs in the plan versus manifest versus reusable test data.
 - Report JSON schema and certification summary structure.
 - Exact Docker secure base image once the community secure image choice is confirmed.
