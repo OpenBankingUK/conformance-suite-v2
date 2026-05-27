@@ -77,7 +77,10 @@ def send_json(
         JsonHttpClientError: If the request fails, the response is not valid
             JSON, or the payload is not a JSON object.
     """
-    request_headers: dict[str, str] = {"Accept": "application/json"}
+    # Use httpx.Headers (case-insensitive per RFC 7230) so a manifest-supplied
+    # header such as ``accept`` correctly overrides the default ``Accept``
+    # instead of producing two separate Accept fields on the wire.
+    request_headers = httpx.Headers({"Accept": "application/json"})
     if headers:
         request_headers.update(headers)
 

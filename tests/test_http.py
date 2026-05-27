@@ -100,3 +100,51 @@ class TestSendJsonDeleteBody:
 
         assert result.status_code == 200
         assert received_bodies[0] == b""
+
+
+@pytest.mark.unit
+class TestSendJsonHeaderMerging:
+    """Verify that send_json merges headers case-insensitively per RFC 7230."""
+
+    def test_manifest_header_overrides_default_accept_case_insensitively(self) -> None:
+        """A lowercase ``accept`` header must replace the default ``Accept``."""
+        captured: list[httpx.Headers] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request headers and return a JSON response."""
+            captured.append(request.headers)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "GET",
+                "https://example.com/resource",
+                headers={"accept": "application/vnd.example+json"},
+            )
+
+        sent = captured[0]
+        # httpx.Headers exposes case-insensitive lookup and collapses duplicate
+        # case-equivalent names; ``get_list`` returns every value that was set.
+        assert sent.get_list("Accept", split_commas=True) == ["application/vnd.example+json"]
+
+    def test_manifest_header_added_alongside_default_accept(self) -> None:
+        """A header with a different name is added without affecting Accept."""
+        captured: list[httpx.Headers] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request headers and return a JSON response."""
+            captured.append(request.headers)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "GET",
+                "https://example.com/resource",
+                headers={"X-Request-ID": "abc-123"},
+            )
+
+        sent = captured[0]
+        assert sent["accept"] == "application/json"
+        assert sent["x-request-id"] == "abc-123"
