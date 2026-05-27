@@ -58,7 +58,7 @@ def send_json(
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
-    body (POST, PUT, PATCH), ``json_body`` is serialised as JSON via ``httpx``.
+    body (POST, PUT, PATCH, DELETE), ``json_body`` is serialised as JSON via ``httpx``.
     The response is parsed as a JSON object regardless of HTTP status code
     (status-agnostic contract per DL-0011).
 
@@ -68,7 +68,7 @@ def send_json(
         url: HTTPS endpoint URL to send the request to.
         headers: Optional additional headers to include in the request.
         json_body: Optional JSON-serialisable body (sent as ``application/json``
-            for POST/PUT/PATCH).
+            for POST/PUT/PATCH/DELETE).
 
     Returns:
         Parsed JSON object response with URL and status code.
@@ -82,7 +82,7 @@ def send_json(
         request_headers.update(headers)
 
     # Only send json_body for methods that support a body
-    send_body = json_body if method in ("POST", "PUT", "PATCH") else None
+    send_body = json_body if method in ("POST", "PUT", "PATCH", "DELETE") else None
 
     try:
         response = client.request(method, url, headers=request_headers, json=send_body)

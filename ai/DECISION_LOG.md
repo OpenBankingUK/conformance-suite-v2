@@ -143,7 +143,7 @@ Consequences:
 Date: 2026-05-27
 Status: Accepted
 
-Decision: Extend the v1 manifest step request shape to support `POST`, `PUT`, `PATCH`, and `DELETE` methods alongside `GET`. Add two new optional fields to v1 step requests: `headers` (dict of string-valued headers validated against RFC 7230 token names) and `body` (arbitrary JSON value sent as `application/json`). Placeholder substitution (`${steps.<id>...}`) applies to header values and all string leaves of the body structure using the same grammar as URL substitution. Body is rejected on GET requests. The executor dispatches via `httpx.Client.request()` and records the fully-resolved request (post-substitution) in the step record.
+Decision: Extend the v1 manifest step request shape to support `POST`, `PUT`, `PATCH`, and `DELETE` methods alongside `GET`. Add two new optional fields to v1 step requests: `headers` (dict of string-valued headers validated against RFC 7230 token names) and `body` (arbitrary JSON value sent as `application/json`). Placeholder substitution (`${steps.<id>...}`) applies to header values and all string leaves of the body structure using the same grammar as URL substitution. Body is rejected on GET requests. The executor dispatches via `httpx.Client.request()` and records the method and resolved URL (post-substitution) in the step record. Full request recording (headers, body) is deferred until masking is implemented.
 
 Rationale: The M4 OAuth2 token-exchange step requires POST with a body built from the discovery response and a consent code. This is the smallest engine change that unblocks that step without committing to mTLS, JWS, form-urlencoded encoding, or callback handling. The engine remains domain-agnostic: it learns HTTP semantics, not OAuth2.
 

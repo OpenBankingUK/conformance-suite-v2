@@ -6,7 +6,7 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from conformance.json_types import JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -425,7 +425,7 @@ def _required_v1_method(raw_config: dict[str, JsonValue], *, location: str) -> R
     allowed: set[str] = {"GET", "POST", "PUT", "PATCH", "DELETE"}
     if method not in allowed:
         raise ManifestError(f"{location}.method must be one of: GET, POST, PUT, PATCH, DELETE")
-    return method  # type: ignore[return-value]
+    return cast(RequestMethod, method)
 
 
 def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> dict[str, str] | None:

@@ -3,9 +3,10 @@
 from pathlib import Path
 from unittest.mock import patch
 
+import httpx
 import pytest
 
-from conformance.http import build_json_http_client
+from conformance.http import build_json_http_client, send_json
 
 
 @pytest.mark.unit
@@ -53,3 +54,49 @@ class TestBuildJsonHttpClientMtlsValidation:
         """Omitting both mTLS paths does not raise."""
         client = build_json_http_client(timeout_seconds=10.0)
         client.close()
+
+
+@pytest.mark.unit
+class TestSendJsonDeleteBody:
+    """Verify that send_json transmits the JSON body for DELETE requests."""
+
+    def test_delete_sends_json_body(self) -> None:
+        """DELETE method should include json_body in the request."""
+        received_bodies: list[bytes | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the request body and return a JSON response."""
+            received_bodies.append(request.content)
+            return httpx.Response(200, json={"deleted": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = send_json(
+                client,
+                "DELETE",
+                "https://example.com/resource/1",
+                json_body={"reason": "expired"},
+            )
+
+        assert result.status_code == 200
+        assert received_bodies[0] is not None
+        assert b'"reason"' in received_bodies[0]
+
+    def test_get_does_not_send_json_body(self) -> None:
+        """GET method should not include json_body in the request."""
+        received_bodies: list[bytes | None] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the request body and return a JSON response."""
+            received_bodies.append(request.content)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = send_json(
+                client,
+                "GET",
+                "https://example.com/resource",
+                json_body={"ignored": True},
+            )
+
+        assert result.status_code == 200
+        assert received_bodies[0] == b""
