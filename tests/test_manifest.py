@@ -535,3 +535,427 @@ def test_parse_v1_manifest_defers_https_validation_for_placeholder_url() -> None
 
     # The second step has a placeholder URL — it should parse fine
     assert "${steps.openid-discovery.response.body.jwks_uri}" in manifest.steps[1].request.url
+
+
+# --- v1 manifest parser tests: POST/PUT/PATCH/DELETE, headers, body ---
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("method", ["POST", "PUT", "PATCH", "DELETE"])
+def test_parse_v1_manifest_accepts_non_get_methods(method: str) -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Non-GET method",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": method,
+                    "url": "https://example.com/api",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.method == method
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unknown_method() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad method",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "OPTIONS",
+                    "url": "https://example.com/api",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="method must be one of"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_headers() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "With headers",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {
+                        "Authorization": "Bearer token123",
+                        "X-Custom": "value",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.headers == {
+        "Authorization": "Bearer token123",
+        "X-Custom": "value",
+    }
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_headers_on_get() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "GET with headers",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": "Bearer token123"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.headers == {"Authorization": "Bearer token123"}
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_non_string_header_value() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"X-Count": 42},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must be a string value"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_empty_header_value() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Empty header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": "  "},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must not be empty"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_invalid_header_name() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad header name",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Invalid Header": "value"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="not a valid HTTP header name"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_json_body() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "With body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"grant_type": "authorization_code", "code": "abc123"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.body == {"grant_type": "authorization_code", "code": "abc123"}
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_body_on_get() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "GET with body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/api",
+                    "body": {"key": "value"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="GET requests must not declare a body"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_validates_placeholders_in_headers() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Header placeholders",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "headers": {
+                        "X-Issuer": "${steps.discovery.response.body.issuer}",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[1].request.headers is not None
+    assert "${steps.discovery.response.body.issuer}" in manifest.steps[1].request.headers["X-Issuer"]
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_forward_reference_in_header() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Forward ref in header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {
+                        "Authorization": "${steps.step-b.response.body.token}",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {"method": "GET", "url": "https://example.com/b"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    with pytest.raises(ManifestError, match="references undefined step 'step-b'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_validates_placeholders_in_body() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Body placeholders",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "body": {
+                        "grant_type": "authorization_code",
+                        "token_endpoint": "${steps.discovery.response.body.token_endpoint}",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[1].request.body is not None
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_forward_reference_in_body() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Forward ref in body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"ref": "${steps.step-b.response.body.value}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {"method": "GET", "url": "https://example.com/b"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    with pytest.raises(ManifestError, match="references undefined step 'step-b'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_malformed_placeholder_in_body() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad placeholder in body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/a",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/b",
+                    "body": {"data": "${invalid syntax}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    with pytest.raises(ManifestError, match="malformed placeholder"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_body_on_delete() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "DELETE with body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "DELETE",
+                    "url": "https://example.com/api/resource",
+                    "body": {"reason": "test cleanup"},
+                },
+                "assertions": [{"type": "http_status", "expected": 204}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.body == {"reason": "test cleanup"}
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_body_with_nested_arrays() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Nested body",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {
+                        "items": [
+                            {"url": "${steps.discovery.response.body.issuer}"},
+                            "literal",
+                        ],
+                        "count": 2,
+                        "active": True,
+                        "meta": None,
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[1].request.body is not None

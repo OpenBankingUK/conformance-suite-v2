@@ -9,6 +9,7 @@ from conformance.context import (
     record_step,
     resolve_placeholders,
 )
+from conformance.json_types import JsonValue
 
 
 def _discovery_context() -> ExecutionContext:
@@ -288,3 +289,78 @@ class TestResolvePlaceholdersMalformedSyntax:
             resolve_placeholders(template, ctx)
         error_msg = str(exc_info.value)
         assert "SUPER_SECRET_TOKEN_12345" not in error_msg
+
+
+@pytest.mark.unit
+class TestResolveInStructure:
+    def test_resolves_string_leaf(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        result = resolve_in_structure("${steps.openid-discovery.response.body.issuer}", ctx)
+        assert result == "https://auth.example.com"
+
+    def test_resolves_nested_dict(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        structure: JsonValue = {
+            "endpoint": "${steps.openid-discovery.response.body.token_endpoint}",
+            "static": "literal",
+        }
+        result = resolve_in_structure(structure, ctx)
+        assert result == {
+            "endpoint": "https://auth.example.com/token",
+            "static": "literal",
+        }
+
+    def test_resolves_nested_list(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        structure: JsonValue = ["${steps.openid-discovery.response.body.issuer}", "static"]
+        result = resolve_in_structure(structure, ctx)
+        assert result == ["https://auth.example.com", "static"]
+
+    def test_preserves_non_string_leaves(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        structure: JsonValue = {
+            "count": 42,
+            "active": True,
+            "ratio": 3.14,
+            "nothing": None,
+        }
+        result = resolve_in_structure(structure, ctx)
+        assert result == {"count": 42, "active": True, "ratio": 3.14, "nothing": None}
+
+    def test_deeply_nested_structure(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        structure: JsonValue = {
+            "outer": {
+                "inner": [
+                    {"url": "${steps.openid-discovery.response.body.jwks_uri}"},
+                ]
+            }
+        }
+        result = resolve_in_structure(structure, ctx)
+        assert result == {"outer": {"inner": [{"url": "https://auth.example.com/jwks"}]}}
+
+    def test_raises_on_unresolvable_placeholder(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        structure: JsonValue = {"ref": "${steps.openid-discovery.response.body.nonexistent}"}
+        with pytest.raises(PlaceholderResolutionError, match="nonexistent"):
+            resolve_in_structure(structure, ctx)
+
+    def test_scalar_passthrough(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _discovery_context()
+        assert resolve_in_structure(42, ctx) == 42
+        assert resolve_in_structure(True, ctx) is True
+        assert resolve_in_structure(None, ctx) is None

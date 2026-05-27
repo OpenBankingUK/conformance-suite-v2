@@ -247,7 +247,7 @@ def test_run_manifest_rejects_unsafe_primary_url() -> None:
 
 @pytest.mark.unit
 def test_run_manifest_rejects_unsupported_primary_method() -> None:
-    """Defence-in-depth: fail the step if request method is not GET."""
+    """Defence-in-depth: fail the step if request method is outside the supported set."""
     from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
 
     bad_manifest = Manifest(
@@ -255,9 +255,9 @@ def test_run_manifest_rejects_unsupported_primary_method() -> None:
         name="bad-method",
         tests=(
             ManifestTest(
-                id="post-test",
-                name="POST test",
-                request=ManifestRequest(method=cast(Any, "POST"), url="https://example.com/api"),
+                id="options-test",
+                name="OPTIONS test",
+                request=ManifestRequest(method=cast(Any, "OPTIONS"), url="https://example.com/api"),
                 assertions=(HttpStatusAssertion(type="http_status", expected=200),),
             ),
         ),
@@ -274,12 +274,12 @@ def test_run_manifest_rejects_unsupported_primary_method() -> None:
     assert result.status == "failed"
     assert requested_urls == []
     assert result.steps[0].status == "failed"
-    assert result.steps[0].message == "Unsupported request method: POST"
+    assert result.steps[0].message == "Unsupported request method: OPTIONS"
 
 
 @pytest.mark.unit
 def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
-    """Defence-in-depth: fail the follow-up step if its method is not GET."""
+    """Defence-in-depth: fail the follow-up step if its method is outside the supported set."""
     from conformance.manifest import (
         FollowUpRequest,
         HttpStatusAssertion,
@@ -301,7 +301,7 @@ def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
                 follow_up=ManifestFollowUp(
                     type="jwks",
                     url_source="response.body.jwks_uri",
-                    request=FollowUpRequest(method=cast(Any, "POST")),
+                    request=FollowUpRequest(method=cast(Any, "OPTIONS")),
                     assertions=(HttpStatusAssertion(type="http_status", expected=200),),
                 ),
             ),
@@ -324,7 +324,7 @@ def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
     assert requested_urls == ["https://example.com/.well-known/openid-configuration"]
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
-    assert result.steps[1].message == "Unsupported request method: POST"
+    assert result.steps[1].message == "Unsupported request method: OPTIONS"
 
 
 @pytest.mark.unit
@@ -631,3 +631,230 @@ def test_run_manifest_v1_run_completes_all_steps_despite_failures() -> None:
 
     assert result.status == "failed"
     assert [s.status for s in result.steps] == ["passed", "failed", "passed"]
+
+
+# --- v1 manifest executor tests: POST with headers and body ---
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_post_with_body_and_headers() -> None:
+    """POST step sends JSON body and custom headers."""
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        if "openid-configuration" in str(request.url):
+            return httpx.Response(
+                200,
+                json={
+                    "token_endpoint": "https://example.com/token",
+                    "issuer": "https://example.com",
+                },
+            )
+        return httpx.Response(200, json={"access_token": "tok_123"})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "POST with body",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "headers": {
+                        "X-Issuer": "${steps.discovery.response.body.issuer}",
+                    },
+                    "body": {
+                        "grant_type": "authorization_code",
+                        "code": "auth_code_123",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert len(captured_requests) == 2
+    # Second request is POST to the token endpoint
+    token_request = captured_requests[1]
+    assert token_request.method == "POST"
+    assert str(token_request.url) == "https://example.com/token"
+    assert token_request.headers["x-issuer"] == "https://example.com"
+    import json
+
+    assert json.loads(token_request.content) == {
+        "grant_type": "authorization_code",
+        "code": "auth_code_123",
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_post_resolves_body_placeholders() -> None:
+    """Placeholders in body string leaves are resolved from context."""
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        if "openid-configuration" in str(request.url):
+            return httpx.Response(
+                200,
+                json={"token_endpoint": "https://example.com/token"},
+            )
+        return httpx.Response(200, json={"access_token": "tok_abc"})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Body placeholders",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "body": {
+                        "redirect_uri": "${steps.discovery.response.body.token_endpoint}/callback",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    import json
+
+    token_body = json.loads(captured_requests[1].content)
+    assert token_body["redirect_uri"] == "https://example.com/token/callback"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_get_unaffected_by_post_changes() -> None:
+    """GET-only manifests continue to work exactly as before."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "GET only",
+        "steps": [
+            {
+                "id": "health",
+                "name": "Health",
+                "request": {"method": "GET", "url": "https://example.com/health"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        return httpx.Response(200, json={"status": "ok"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_post_https_validation_on_resolved_url() -> None:
+    """HTTPS validation applies to resolved URLs for POST steps."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "HTTP URL post-resolution",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "body": {"grant_type": "client_credentials"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            json={"token_endpoint": "http://insecure.example.com/token"},
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert result.steps[1].status == "failed"
+    assert "must be an HTTPS URL" in result.steps[1].message
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_post_status_agnostic_4xx() -> None:
+    """POST steps receiving 4xx are reported to assertions, not treated as errors."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "4xx on POST",
+        "steps": [
+            {
+                "id": "create",
+                "name": "Create resource",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api/resource",
+                    "body": {"name": "test"},
+                },
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "bad_request"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert result.steps[0].status == "passed"
+    assert result.steps[0].status_code == 400

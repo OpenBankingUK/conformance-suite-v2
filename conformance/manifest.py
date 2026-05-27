@@ -19,7 +19,7 @@ class ManifestError(ValueError):
 ManifestSchemaVersion = Literal["v0", "v1"]
 """Manifest schema versions accepted by the parser."""
 
-RequestMethod = Literal["GET"]
+RequestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 """HTTP methods supported by manifest-driven smoke-check requests."""
 
 AssertionType = Literal["http_status", "json_field"]
@@ -42,10 +42,14 @@ class ManifestRequest:
     Attributes:
         method: HTTP method used for the manifest request.
         url: HTTPS URL fetched for the manifest test.
+        headers: Optional string-valued headers to send with the request.
+        body: Optional JSON body to send (POST/PUT/PATCH only).
     """
 
     method: RequestMethod
     url: str
+    headers: dict[str, str] | None = None
+    body: JsonValue | None = None
 
 
 @dataclass(frozen=True)
@@ -234,6 +238,9 @@ def _parse_v0_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
 _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 """Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
 
+_HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
+"""RFC 7230 token pattern for valid HTTP header field names."""
+
 _PLACEHOLDER_PATTERN = re.compile(
     r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
     r"\.(?:"
@@ -332,25 +339,26 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
 def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:
     """Parse and validate a v1 manifest step request object.
 
-    Unlike the v0 parser, this allows ``${...}`` placeholders in the URL field.
-    HTTPS validation is deferred to execution time for URLs containing placeholders.
-    URLs without placeholders are validated immediately.
+    Unlike the v0 parser, this allows ``${...}`` placeholders in the URL field,
+    header values, and body string leaves. Supports GET, POST, PUT, PATCH, and
+    DELETE methods. Body is rejected on GET requests.
 
     Args:
-        raw_request: Raw JSON object expected to contain ``method`` and ``url``.
+        raw_request: Raw JSON object expected to contain ``method``, ``url``,
+            and optionally ``headers`` and ``body``.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
 
     Returns:
-        Validated request with a GET method and a URL (possibly containing
-        placeholders).
+        Validated request with method, URL, optional headers, and optional body
+        (body may contain placeholders in string leaves).
 
     Raises:
         ManifestError: If required fields are missing, invalid, or placeholders
             reference forward steps.
     """
-    _reject_unknown_keys(raw_request, allowed_keys={"method", "url"}, location=location)
-    method = _required_get_method(raw_request, location=location)
+    _reject_unknown_keys(raw_request, allowed_keys={"method", "url", "headers", "body"}, location=location)
+    method = _required_v1_method(raw_request, location=location)
     url = _required_string(raw_request, "url", location=location)
 
     _validate_placeholder_syntax(url, location=f"{location}.url", seen_ids=seen_ids)
@@ -362,7 +370,13 @@ def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_
         except HttpsUrlValidationError as error:
             raise ManifestError(str(error)) from error
 
-    return ManifestRequest(method=method, url=url)
+    # Parse optional headers
+    headers = _parse_v1_headers(raw_request, location=location, seen_ids=seen_ids)
+
+    # Parse optional body
+    body = _parse_v1_body(raw_request, method=method, location=location, seen_ids=seen_ids)
+
+    return ManifestRequest(method=method, url=url, headers=headers, body=body)
 
 
 def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:
@@ -390,6 +404,122 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
         referenced_id = valid_match.group(1)
         if referenced_id not in seen_ids:
             raise ManifestError(f"{location} references undefined step '{referenced_id}'")
+
+
+def _required_v1_method(raw_config: dict[str, JsonValue], *, location: str) -> RequestMethod:
+    """Extract and validate the request method for a v1 step.
+
+    Accepts GET, POST, PUT, PATCH, and DELETE.
+
+    Args:
+        raw_config: The parent JSON object containing a ``method`` field.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated HTTP method literal.
+
+    Raises:
+        ManifestError: If the method is missing or not one of the supported values.
+    """
+    method = _required_string(raw_config, "method", location=location)
+    allowed: set[str] = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    if method not in allowed:
+        raise ManifestError(f"{location}.method must be one of: GET, POST, PUT, PATCH, DELETE")
+    return method  # type: ignore[return-value]
+
+
+def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> dict[str, str] | None:
+    """Parse and validate optional headers from a v1 step request.
+
+    Header names must be RFC 7230 tokens. Header values must be non-empty
+    strings (may contain ``${...}`` placeholders).
+
+    Args:
+        raw_request: Raw request JSON object potentially containing ``headers``.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        A dict mapping header names to string values, or ``None`` if no
+        headers key is present.
+
+    Raises:
+        ManifestError: If header names or values are invalid, or if
+            placeholders reference forward steps.
+    """
+    if "headers" not in raw_request:
+        return None
+    raw_headers = raw_request["headers"]
+    if not isinstance(raw_headers, dict):
+        raise ManifestError(f"{location}.headers must be a JSON object")
+
+    headers: dict[str, str] = {}
+    for name, value in raw_headers.items():
+        header_location = f"{location}.headers.{name}"
+        if not _HEADER_NAME_PATTERN.match(name):
+            raise ManifestError(f"{header_location} is not a valid HTTP header name (RFC 7230 token)")
+        if not isinstance(value, str):
+            raise ManifestError(f"{header_location} must be a string value")
+        if not value.strip():
+            raise ManifestError(f"{header_location} must not be empty")
+        _validate_placeholder_syntax(value, location=header_location, seen_ids=seen_ids)
+        headers[name] = value
+    return headers
+
+
+def _parse_v1_body(
+    raw_request: dict[str, JsonValue], *, method: RequestMethod, location: str, seen_ids: set[str]
+) -> JsonValue | None:
+    """Parse and validate optional body from a v1 step request.
+
+    Body is rejected on GET requests. Placeholders in string leaves of the
+    body structure are validated for syntax and forward references.
+
+    Args:
+        raw_request: Raw request JSON object potentially containing ``body``.
+        method: The parsed HTTP method (used to reject body on GET).
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        The JSON body value, or ``None`` if no body key is present.
+
+    Raises:
+        ManifestError: If body is present on a GET request, or if placeholders
+            in body string leaves are invalid.
+    """
+    if "body" not in raw_request:
+        return None
+    if method == "GET":
+        raise ManifestError(f"{location}: GET requests must not declare a body")
+    body = raw_request["body"]
+    _validate_placeholders_in_structure(body, location=f"{location}.body", seen_ids=seen_ids)
+    return body
+
+
+def _validate_placeholders_in_structure(value: JsonValue, *, location: str, seen_ids: set[str]) -> None:
+    """Recursively validate placeholders in all string leaves of a JSON structure.
+
+    Walks dicts and lists depth-first, checking each string leaf for valid
+    ``${...}`` placeholder syntax and forward-reference violations.
+
+    Args:
+        value: JSON value (possibly nested) to validate.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Raises:
+        ManifestError: If any string leaf contains malformed or forward-referencing
+            placeholders.
+    """
+    if isinstance(value, str):
+        _validate_placeholder_syntax(value, location=location, seen_ids=seen_ids)
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            _validate_placeholders_in_structure(child, location=f"{location}.{key}", seen_ids=seen_ids)
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            _validate_placeholders_in_structure(child, location=f"{location}[{index}]", seen_ids=seen_ids)
 
 
 def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:

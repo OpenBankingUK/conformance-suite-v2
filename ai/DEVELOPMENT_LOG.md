@@ -40,3 +40,27 @@ Key design choices (captured in DL-0012):
 - Substitution applies only to `url` field in this milestone.
 - Steps that fail assertions still record their response into context (carry-forward is unconditional).
 - v0 is retained as supported sugar over v1 for at least one more milestone.
+
+## 2026-05-27: M4 Prerequisite — Non-GET Methods + Header/Body Templating
+
+Implemented manifest v1 support for POST/PUT/PATCH/DELETE with header and body templating:
+
+- **Parser (`conformance/manifest.py`):** Widened `RequestMethod` to `GET|POST|PUT|PATCH|DELETE`. Added optional `headers` (dict[str, str], RFC 7230 token-validated names, non-empty string values) and `body` (JsonValue) fields to `ManifestRequest`. Body rejected on GET. Placeholder validation recurses into header values and body string leaves via `_validate_placeholders_in_structure`.
+- **Context (`conformance/context.py`):** Added `resolve_in_structure` — walks dicts and lists, resolves placeholders in string leaves, preserves non-string scalars.
+- **HTTP (`conformance/http.py`):** Added `send_json` — dispatches arbitrary method with optional headers and JSON body via `httpx.Client.request()`. `get_json` now delegates to `send_json` preserving its public signature.
+- **Executor (`conformance/executor.py`):** `_execute_v1_step` now resolves placeholders in URL, headers, and body sequentially. Dispatches all methods via `send_json`. Defence-in-depth guard rejects unsupported methods.
+- **Example:** `config/manifest-v1-token-exchange-example.json` — two-step flow (GET discovery, POST token exchange with placeholders in headers and body).
+- **Tests:** 20+ new test cases covering parser acceptance/rejection, `resolve_in_structure`, and executor POST dispatch with placeholder resolution.
+- **Docs:** CHANGELOG entry, DL-0013, updated HANDOVER and this log.
+
+Key design choices (captured in DL-0013):
+- Body templating substitutes string leaves only. Non-string scalars pass through unchanged.
+- `application/json` is the only natively-formatted body type; form-urlencoded deferred to next slice.
+- Masking is not yet applied to substituted secrets in step records.
+- The engine remains domain-agnostic: no OAuth2/FAPI terminology in engine modules.
+
+Follow-ups identified:
+- Form-urlencoded body encoding for real OAuth2 token exchange.
+- mTLS transport wiring.
+- JWS request-object signing.
+- Callback/redirect handling.
