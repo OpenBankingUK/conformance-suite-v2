@@ -278,3 +278,13 @@ class TestResolvePlaceholdersMalformedSyntax:
         ctx = _discovery_context()
         with pytest.raises(PlaceholderResolutionError, match="Unterminated placeholder"):
             resolve_placeholders("${steps.openid-discovery.request.method", ctx)
+
+    def test_unterminated_placeholder_does_not_leak_full_template(self) -> None:
+        """Error message must not contain the full template when it is long."""
+        ctx = _discovery_context()
+        sensitive_prefix = "https://bank.example.com/authorize?client_secret=SUPER_SECRET_TOKEN_12345&"
+        template = f"{sensitive_prefix}redirect_uri=${{steps.openid-discovery.request.url"
+        with pytest.raises(PlaceholderResolutionError, match="Unterminated placeholder") as exc_info:
+            resolve_placeholders(template, ctx)
+        error_msg = str(exc_info.value)
+        assert "SUPER_SECRET_TOKEN_12345" not in error_msg

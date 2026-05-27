@@ -126,6 +126,35 @@ def record_step(
     return ExecutionContext(steps=new_steps)
 
 
+_TRUNCATION_CONTEXT_CHARS = 20
+"""Maximum characters to show either side of a malformed placeholder token."""
+
+
+def _truncate_around_malformed(template: str) -> str:
+    """Return a short context window around the first unterminated ``${`` token.
+
+    Avoids exposing the full template — which may contain sensitive URL
+    query parameters — in error messages that propagate to result files.
+
+    Args:
+        template: Template containing at least one unterminated ``${``.
+
+    Returns:
+        A string showing up to :data:`_TRUNCATION_CONTEXT_CHARS` characters
+        before the ``${`` and the remainder of the template after it (also
+        capped), with ellipsis markers when truncated.
+    """
+    idx = template.rfind("${")
+    if idx == -1:
+        return "..."
+    start = max(0, idx - _TRUNCATION_CONTEXT_CHARS)
+    end = min(len(template), idx + _TRUNCATION_CONTEXT_CHARS)
+    snippet = template[start:end]
+    prefix = "..." if start > 0 else ""
+    suffix = "..." if end < len(template) else ""
+    return f"{prefix}{snippet}{suffix}"
+
+
 def _validate_placeholder_syntax(template: str) -> None:
     """Raise if the template contains malformed ``${...}`` placeholder syntax.
 
@@ -151,9 +180,11 @@ def _validate_placeholder_syntax(template: str) -> None:
             token is detected.
     """
     if "${}" in template:
-        raise PlaceholderResolutionError("Empty placeholder '${}'  is not valid — provide a dot-path expression")
+        raise PlaceholderResolutionError("Empty placeholder '${}' is not valid — provide a dot-path expression")
     if _MALFORMED_PLACEHOLDER_PATTERN.search(template):
-        raise PlaceholderResolutionError(f"Unterminated placeholder in template (missing closing '}}'): {template!r}")
+        context_window = _truncate_around_malformed(template)
+        msg = f"Unterminated placeholder in template (missing closing '}}')): {context_window}"
+        raise PlaceholderResolutionError(msg)
 
 
 def resolve_placeholders(template: str, context: ExecutionContext) -> str:
