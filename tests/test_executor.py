@@ -858,3 +858,53 @@ def test_run_manifest_v1_post_status_agnostic_4xx() -> None:
     assert result.status == "passed"
     assert result.steps[0].status == "passed"
     assert result.steps[0].status_code == 400
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
+    """Resolved header values containing control characters fail the step gracefully."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "openid-configuration" in str(request.url):
+            # Return a value with DEL (0x7F) embedded — simulates bad upstream data
+            return httpx.Response(200, json={"api_token": "evil\x7fvalue"})
+        return httpx.Response(200, json={"ok": True})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Resolved header control char",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "use-token",
+                "name": "Use token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {
+                        "Authorization": "Bearer ${steps.discovery.response.body.api_token}",
+                    },
+                    "body": {"action": "test"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    # First step passes, second step fails due to resolved header validation
+    assert result.steps[0].status == "passed"
+    assert result.steps[1].status == "failed"
+    assert "Resolved header validation failed" in (result.steps[1].message or "")
+    assert "forbidden control character" in (result.steps[1].message or "")

@@ -697,7 +697,7 @@ def test_parse_v1_manifest_rejects_header_value_with_crlf(bad_value: str) -> Non
             }
         ],
     }
-    with pytest.raises(ManifestError, match="must not contain CR or LF"):
+    with pytest.raises(ManifestError, match="contains forbidden control character"):
         parse_manifest(raw_manifest)
 
 
@@ -1006,3 +1006,59 @@ def test_parse_v1_manifest_accepts_body_with_nested_arrays() -> None:
     }
     manifest = parse_manifest(raw_manifest)
     assert manifest.steps[1].request.body is not None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "Bearer\x00token",  # NUL
+        "value\x7ftrailing",  # DEL
+        "value\x01control",  # SOH
+        "before\x1fafter",  # US (unit separator)
+    ],
+    ids=["NUL", "DEL", "SOH", "US"],
+)
+def test_parse_v1_manifest_rejects_header_value_with_control_chars(bad_value: str) -> None:
+    """Header values with non-CR/LF control characters are rejected (RFC 7230 §3.2.6)."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Control char header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": bad_value},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="contains forbidden control character"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_header_value_with_htab() -> None:
+    """HTAB (0x09) is permitted in header field values per RFC 7230 §3.2.6."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "HTAB header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": "Bearer\ttoken"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].request.headers == {"Authorization": "Bearer\ttoken"}

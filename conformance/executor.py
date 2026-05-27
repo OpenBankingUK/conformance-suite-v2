@@ -21,9 +21,11 @@ from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     Manifest,
     ManifestAssertion,
+    ManifestError,
     ManifestRequest,
     ManifestStep,
     ManifestTest,
+    validate_header_value,
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -146,6 +148,27 @@ def _execute_v1_step(
                 ),
                 new_context,
             )
+
+    # Validate resolved header values (post-substitution defence-in-depth)
+    if resolved_headers is not None:
+        for header_name, header_value in resolved_headers.items():
+            try:
+                validate_header_value(
+                    header_value,
+                    location=f"step '{manifest_step.id}' resolved header {header_name}",
+                )
+            except ManifestError as error:
+                request_record = RequestRecord(method=method, url=resolved_url)
+                new_context = record_step(context, manifest_step.id, request_record, None)
+                return (
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Resolved header validation failed: {error}",
+                        url=resolved_url,
+                    ),
+                    new_context,
+                )
 
     # Resolve placeholders in body
     resolved_body: JsonValue | None = None

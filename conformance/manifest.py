@@ -241,6 +241,14 @@ _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 _HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 """RFC 7230 token pattern for valid HTTP header field names."""
 
+_HEADER_VALUE_INVALID_PATTERN = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
+"""Pattern matching control characters forbidden in HTTP header field values.
+
+RFC 7230 §3.2.6 defines field content as VCHAR (0x21-0x7E), SP (0x20),
+HTAB (0x09), and obs-text (0x80-0xFF). All other octets — NUL, CR, LF,
+DEL, and remaining C0 controls — are invalid.
+"""
+
 _PLACEHOLDER_PATTERN = re.compile(
     r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
     r"\.(?:"
@@ -257,6 +265,34 @@ Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 """Regex matching any ``${...}`` token for syntax validation."""
+
+
+def validate_header_value(value: str, *, location: str) -> None:
+    """Validate an HTTP header field value per RFC 7230 §3.2.6.
+
+    Rejects empty/whitespace-only values and values containing control
+    characters not permitted in header field content. Permitted characters
+    are HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text (0x80-0xFF).
+
+    This function is used both at manifest parse time (static values) and
+    after placeholder resolution (dynamic values) to ensure no invalid
+    characters reach the HTTP transport layer.
+
+    Args:
+        value: The header field value to validate.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        ManifestError: If the value is empty or contains forbidden control
+            characters.
+    """
+    if not value.strip():
+        raise ManifestError(f"{location} must not be empty")
+    match = _HEADER_VALUE_INVALID_PATTERN.search(value)
+    if match:
+        bad_char = match.group()
+        code_point = ord(bad_char)
+        raise ManifestError(f"{location} contains forbidden control character U+{code_point:04X} (RFC 7230 §3.2.6)")
 
 
 def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
@@ -460,10 +496,7 @@ def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_
             raise ManifestError(f"{header_location} is not a valid HTTP header name (RFC 7230 token)")
         if not isinstance(value, str):
             raise ManifestError(f"{header_location} must be a string value")
-        if not value.strip():
-            raise ManifestError(f"{header_location} must not be empty")
-        if any(c in value for c in "\r\n"):
-            raise ManifestError(f"{header_location} must not contain CR or LF characters")
+        validate_header_value(value, location=header_location)
         _validate_placeholder_syntax(value, location=header_location, seen_ids=seen_ids)
         headers[name] = value
     return headers
