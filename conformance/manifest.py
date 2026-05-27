@@ -56,11 +56,15 @@ class ManifestRequest:
 class FollowUpRequest:
     """HTTP request shape for a manifest follow-up step.
 
+    v0 follow-ups are always GET requests. The narrow type enforces the
+    contract at the type level; ``_required_get_method`` enforces it at
+    parse time.
+
     Attributes:
-        method: HTTP method used for the follow-up request.
+        method: HTTP method used for the follow-up request (always GET).
     """
 
-    method: RequestMethod
+    method: Literal["GET"]
 
 
 @dataclass(frozen=True)
@@ -246,7 +250,9 @@ _HEADER_VALUE_INVALID_PATTERN = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
 
 RFC 7230 §3.2.6 defines field content as VCHAR (0x21-0x7E), SP (0x20),
 HTAB (0x09), and obs-text (0x80-0xFF). All other octets — NUL, CR, LF,
-DEL, and remaining C0 controls — are invalid.
+DEL, and remaining C0 controls — are invalid. Characters above U+00FF
+are additionally rejected by `validate_header_value` since they fall
+outside the single-octet range defined by the RFC.
 """
 
 _PLACEHOLDER_PATTERN = re.compile(
@@ -288,6 +294,12 @@ def validate_header_value(value: str, *, location: str) -> None:
     """
     if not value.strip():
         raise ManifestError(f"{location} must not be empty")
+    for char in value:
+        if ord(char) > 0xFF:
+            raise ManifestError(
+                f"{location} contains character U+{ord(char):04X} outside the "
+                "RFC 7230 §3.2.6 octet range (0x00-0xFF)"
+            )
     match = _HEADER_VALUE_INVALID_PATTERN.search(value)
     if match:
         bad_char = match.group()
@@ -737,7 +749,7 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
     raise ManifestError(f"{location}.type must be one of: http_status, json_field")
 
 
-def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> RequestMethod:
+def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:
     """Extract and validate that the request method is GET.
 
     Args:
