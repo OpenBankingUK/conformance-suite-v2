@@ -148,3 +148,37 @@ class TestSendJsonHeaderMerging:
         sent = captured[0]
         assert sent["accept"] == "application/json"
         assert sent["x-request-id"] == "abc-123"
+
+
+@pytest.mark.unit
+class TestSendJsonMethodCaseInsensitive:
+    """Verify that send_json normalises the HTTP method to uppercase.
+
+    The body-selection guard treats the supported methods as a closed
+    uppercase set, but httpx accepts any case. Without normalisation, a
+    caller passing ``"post"`` would silently drop the JSON body.
+    """
+
+    @pytest.mark.parametrize("method", ["post", "Post", "PUT", "patch", "delete"])
+    def test_lowercase_or_mixed_case_method_still_sends_body(self, method: str) -> None:
+        """Body must be transmitted regardless of method casing."""
+        received_bodies: list[bytes] = []
+        received_methods: list[str] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the request method and body, then return JSON."""
+            received_methods.append(request.method)
+            received_bodies.append(request.content)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                method,
+                "https://example.com/resource",
+                json_body={"key": "value"},
+            )
+
+        # httpx uppercases the method on the wire; we assert the body made it through.
+        assert received_methods[0] == method.upper()
+        assert b'"key"' in received_bodies[0]

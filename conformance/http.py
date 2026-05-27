@@ -77,6 +77,12 @@ def send_json(
         JsonHttpClientError: If the request fails, the response is not valid
             JSON, or the payload is not a JSON object.
     """
+    # Normalise the method to uppercase once so the body-selection guard and
+    # the dispatch call agree regardless of the caller's casing. httpx accepts
+    # any case, but our guard treats the supported set as a closed uppercase
+    # literal — without normalisation, ``"post"`` would silently drop the body.
+    method = method.upper()
+
     # Use httpx.Headers (case-insensitive per RFC 7230) so a manifest-supplied
     # header such as ``accept`` correctly overrides the default ``Accept``
     # instead of producing two separate Accept fields on the wire.
