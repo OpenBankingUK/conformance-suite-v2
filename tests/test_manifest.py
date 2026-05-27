@@ -678,6 +678,30 @@ def test_parse_v1_manifest_rejects_empty_header_value() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("bad_value", ["Bearer\r\nX-Injected: evil", "token\nfoo", "token\rfoo"])
+def test_parse_v1_manifest_rejects_header_value_with_crlf(bad_value: str) -> None:
+    """Header values containing CR or LF are rejected (RFC 7230 §3.2.6)."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "CRLF header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": bad_value},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must not contain CR or LF"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_rejects_invalid_header_name() -> None:
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
@@ -740,6 +764,29 @@ def test_parse_v1_manifest_rejects_body_on_get() -> None:
         ],
     }
     with pytest.raises(ManifestError, match="GET requests must not declare a body"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_null_body() -> None:
+    """Explicit body: null is rejected — omit the key to send no body."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Null body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": None,
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must not be null"):
         parse_manifest(raw_manifest)
 
 

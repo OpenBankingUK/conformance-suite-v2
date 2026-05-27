@@ -43,7 +43,7 @@ class ManifestRequest:
         method: HTTP method used for the manifest request.
         url: HTTPS URL fetched for the manifest test.
         headers: Optional string-valued headers to send with the request.
-        body: Optional JSON body to send (POST/PUT/PATCH only).
+        body: Optional JSON body to send (POST/PUT/PATCH/DELETE requests).
     """
 
     method: RequestMethod
@@ -462,6 +462,8 @@ def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_
             raise ManifestError(f"{header_location} must be a string value")
         if not value.strip():
             raise ManifestError(f"{header_location} must not be empty")
+        if any(c in value for c in "\r\n"):
+            raise ManifestError(f"{header_location} must not contain CR or LF characters")
         _validate_placeholder_syntax(value, location=header_location, seen_ids=seen_ids)
         headers[name] = value
     return headers
@@ -493,6 +495,8 @@ def _parse_v1_body(
     if method == "GET":
         raise ManifestError(f"{location}: GET requests must not declare a body")
     body = raw_request["body"]
+    if body is None:
+        raise ManifestError(f"{location}.body must not be null (omit the key to send no body)")
     _validate_placeholders_in_structure(body, location=f"{location}.body", seen_ids=seen_ids)
     return body
 
