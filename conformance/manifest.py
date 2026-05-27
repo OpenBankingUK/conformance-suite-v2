@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 from dataclasses import dataclass
@@ -544,7 +545,11 @@ def _parse_v1_body(
     if body is None:
         raise ManifestError(f"{location}.body must not be null (omit the key to send no body)")
     _validate_placeholders_in_structure(body, location=f"{location}.body", seen_ids=seen_ids)
-    return body
+    # Deep-copy so the parsed ``ManifestRequest`` owns its body. Without this,
+    # the frozen dataclass would alias mutable JSON structures from the raw
+    # manifest dict, and any post-parse mutation of the input could bypass
+    # parse-time placeholder validation and change what the executor sends.
+    return copy.deepcopy(body)
 
 
 def _validate_placeholders_in_structure(value: JsonValue, *, location: str, seen_ids: set[str]) -> None:

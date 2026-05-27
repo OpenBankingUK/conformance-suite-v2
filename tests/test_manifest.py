@@ -746,6 +746,49 @@ def test_parse_v1_manifest_accepts_json_body() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_body_is_isolated_from_raw_dict() -> None:
+    """Mutating the raw manifest dict after parsing must not change the parsed body.
+
+    The parsed ``ManifestRequest`` is frozen, but its ``body`` field holds
+    nested JSON structures. Without a deep copy at parse time, post-parse
+    mutation of the input could bypass placeholder validation and change
+    what the executor sends.
+    """
+    inner_body: dict[str, JsonValue] = {
+        "credentials": {"client_id": "original"},
+        "scopes": ["openid"],
+    }
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Mutation safety",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": inner_body,
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    # Mutate the original nested structures after parsing.
+    inner_body["credentials"] = {"client_id": "tampered"}
+    cast(list[JsonValue], inner_body["scopes"]).append("offline_access")
+
+    parsed_body = manifest.steps[0].request.body
+    assert parsed_body == {
+        "credentials": {"client_id": "original"},
+        "scopes": ["openid"],
+    }
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_rejects_body_on_get() -> None:
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
