@@ -110,11 +110,29 @@ Decision: Manifest execution must treat HTTP status codes as conformance evidenc
 
 Rationale: Manifest v0 accepts expected HTTP status codes from 100 to 599, so raising before assertion evaluation would make valid negative-response conformance tests impossible. Keeping status policy at the caller boundary lets the manifest engine evaluate standards behaviour while legacy smoke-check code can still fail fast for model-bank request errors.
 
+## DL-0012: Introduce Manifest v1 Sequential Steps With Context Carry-Forward
+
+Date: 2026-05-26
+Status: Accepted
+
+Decision: Introduce manifest schema version `v1` alongside v0. v1 replaces the `tests` + `followUp` shape with a flat `steps` array of sequential steps. Each step has an `id`, `name`, `request`, and `assertions`. Later steps can reference earlier step responses via `${steps.<id>.response.body.<path>}` placeholder syntax. v0 remains supported: the executor desugars v0 `followUp` to an equivalent v1 step internally, preserving v0 skip-on-fail semantics.
+
+Rationale: The v0 `followUp` shape hardcodes `response.body.jwks_uri` as the only carry-forward mechanism. Every future flow (token endpoint from discovery, JWKS keys for JWS verification, etc.) needs generalised context. A sequential step model with explicit dot-path substitution gives a domain-agnostic engine that serves M3 (assertion engine + context), M4 (FAPI flow), and M5 (orchestrator) without introducing groups or concurrency prematurely.
+
+Consequences:
+- `conformance/context.py` provides `ExecutionContext`, `record_step`, and `resolve_placeholders`.
+- Placeholder grammar is a simple regex. Supported: `request.method`, `request.url`; `response.status_code`, `response.body.<path>` (at least one sub-segment required). No header templating. No jinja, no jsonpath.
+- Substitution applies only to the request `url` field in this milestone. Header/body templating arrives with M4/POST.
+- Parser validates placeholder syntax and rejects forward references and duplicate step ids.
+- HTTPS URL validation is deferred to execution time for URLs containing placeholders.
+- v0 is retained for at least one more milestone.
+
 ## Open Decisions
 
-- How manifest v0 evolves into later assertion evaluation, context carry-forward, and orchestration contracts.
 - TestPlan schema boundaries: what belongs in the plan versus manifest versus reusable test data.
 - Report JSON schema and certification summary structure.
 - Exact Docker secure base image once the community secure image choice is confirmed.
 - Whether local SQLite is required for the Phase 1 Django runtime or can be avoided.
 - JWT/JWS library choice for the FAPI flow.
+- Groups / two-phase setup+execution model (M5 orchestrator concern).
+- Header and body templating for POST requests (M4).

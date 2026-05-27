@@ -1,8 +1,9 @@
-"""Load and validate v0 conformance manifest files."""
+"""Load and validate v0/v1 conformance manifest files."""
 
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -15,8 +16,8 @@ class ManifestError(ValueError):
     """Raised when a conformance manifest cannot be loaded or validated."""
 
 
-ManifestSchemaVersion = Literal["v0"]
-"""Manifest schema versions accepted by the v0 parser."""
+ManifestSchemaVersion = Literal["v0", "v1"]
+"""Manifest schema versions accepted by the parser."""
 
 RequestMethod = Literal["GET"]
 """HTTP methods supported by manifest-driven smoke-check requests."""
@@ -87,7 +88,7 @@ class JsonFieldAssertion:
 
 
 ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion
-"""Assertion variants accepted by v0 manifest tests and follow-up steps."""
+"""Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
 @dataclass(frozen=True)
@@ -127,18 +128,37 @@ class ManifestTest:
 
 
 @dataclass(frozen=True)
+class ManifestStep:
+    """Single sequential step declared by a v1 manifest.
+
+    Attributes:
+        id: Stable identifier for the step, referenced by later placeholders.
+        name: Human-readable step name.
+        request: HTTP request to execute (may contain ``${...}`` placeholders).
+        assertions: Assertions evaluated against the step response.
+    """
+
+    id: str
+    name: str
+    request: ManifestRequest
+    assertions: tuple[ManifestAssertion, ...]
+
+
+@dataclass(frozen=True)
 class Manifest:
-    """Validated v0 conformance manifest.
+    """Validated conformance manifest (v0 or v1).
 
     Attributes:
         schema_version: Manifest schema version accepted by this parser.
         name: Human-readable manifest name.
-        tests: Ordered manifest tests to execute.
+        tests: Ordered manifest tests to execute (v0 only, empty for v1).
+        steps: Ordered sequential steps to execute (v1 only, empty for v0).
     """
 
     schema_version: ManifestSchemaVersion
     name: str
-    tests: tuple[ManifestTest, ...]
+    tests: tuple[ManifestTest, ...] = ()
+    steps: tuple[ManifestStep, ...] = ()
 
 
 def load_manifest(manifest_path: Path) -> Manifest:
@@ -168,7 +188,7 @@ def load_manifest(manifest_path: Path) -> Manifest:
 
 
 def parse_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
-    """Parse a raw JSON object into a validated v0 manifest.
+    """Parse a raw JSON object into a validated manifest (v0 or v1).
 
     Args:
         raw_manifest: JSON object loaded from a conformance manifest file.
@@ -179,11 +199,27 @@ def parse_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     Raises:
         ManifestError: If required fields are missing or validation fails.
     """
-    _reject_unknown_keys(raw_manifest, allowed_keys={"schemaVersion", "name", "tests"}, location="manifest")
-
     schema_version = _required_string(raw_manifest, "schemaVersion", location="manifest")
-    if schema_version != "v0":
-        raise ManifestError("schemaVersion must be v0")
+    if schema_version == "v0":
+        return _parse_v0_manifest(raw_manifest)
+    if schema_version == "v1":
+        return _parse_v1_manifest(raw_manifest)
+    raise ManifestError("schemaVersion must be v0 or v1")
+
+
+def _parse_v0_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
+    """Parse a raw JSON object into a validated v0 manifest.
+
+    Args:
+        raw_manifest: JSON object loaded from a conformance manifest file.
+
+    Returns:
+        Parsed and validated v0 conformance manifest.
+
+    Raises:
+        ManifestError: If required fields are missing or validation fails.
+    """
+    _reject_unknown_keys(raw_manifest, allowed_keys={"schemaVersion", "name", "tests"}, location="manifest")
 
     name = _required_string(raw_manifest, "name", location="manifest")
     tests = _required_object_array(raw_manifest, "tests", location="manifest")
@@ -193,6 +229,167 @@ def parse_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
         name=name,
         tests=tuple(_parse_test(raw_test, index=index) for index, raw_test in enumerate(tests)),
     )
+
+
+_STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
+"""Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
+
+_PLACEHOLDER_PATTERN = re.compile(
+    r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
+    r"\.(?:"
+    r"request\.(?:method|url)"
+    r"|"
+    r"response\.(?:status_code|body(?:\.[A-Za-z0-9_-]+)+)"
+    r")\}"
+)
+"""Regex matching valid ``${steps.<id>...}`` placeholders with direction-specific rules.
+
+Request direction accepts: ``method``, ``url`` (no sub-segments).
+Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
+"""
+
+_PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
+"""Regex matching any ``${...}`` token for syntax validation."""
+
+
+def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
+    """Parse a raw JSON object into a validated v1 manifest.
+
+    Args:
+        raw_manifest: JSON object loaded from a conformance manifest file.
+
+    Returns:
+        Parsed and validated v1 conformance manifest with sequential steps.
+
+    Raises:
+        ManifestError: If required fields are missing or validation fails.
+    """
+    _reject_unknown_keys(raw_manifest, allowed_keys={"schemaVersion", "name", "steps"}, location="manifest")
+
+    name = _required_string(raw_manifest, "name", location="manifest")
+    raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
+
+    seen_ids: set[str] = set()
+    steps: list[ManifestStep] = []
+    for index, raw_step in enumerate(raw_steps):
+        step = _parse_v1_step(raw_step, index=index, seen_ids=seen_ids)
+        seen_ids.add(step.id)
+        steps.append(step)
+
+    return Manifest(
+        schema_version="v1",
+        name=name,
+        steps=tuple(steps),
+    )
+
+
+def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> ManifestStep:
+    """Parse a single step entry from the v1 manifest steps array.
+
+    Args:
+        raw_step: Raw JSON object representing one manifest step.
+        index: Zero-based position in the steps array, used for error locations.
+        seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+
+    Returns:
+        Validated manifest step with request and assertions.
+
+    Raises:
+        ManifestError: If required fields are missing, ids are duplicated, or
+            placeholders reference forward/unknown steps.
+    """
+    location = f"steps[{index}]"
+    _reject_unknown_keys(
+        raw_step,
+        allowed_keys={"id", "name", "request", "assertions"},
+        location=location,
+    )
+
+    step_id = _required_string(raw_step, "id", location=location)
+    _validate_step_id(step_id, location=location)
+    if step_id in seen_ids:
+        raise ManifestError(f"{location}.id '{step_id}' is a duplicate")
+
+    step_name = _required_string(raw_step, "name", location=location)
+    request = _parse_v1_request(
+        _required_object(raw_step, "request", location=location),
+        location=f"{location}.request",
+        seen_ids=seen_ids,
+    )
+    assertions = _required_object_array(raw_step, "assertions", location=location)
+
+    return ManifestStep(
+        id=step_id,
+        name=step_name,
+        request=request,
+        assertions=tuple(
+            _parse_assertion(raw_assertion, location=f"{location}.assertions[{assertion_index}]")
+            for assertion_index, raw_assertion in enumerate(assertions)
+        ),
+    )
+
+
+def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:
+    """Parse and validate a v1 manifest step request object.
+
+    Unlike the v0 parser, this allows ``${...}`` placeholders in the URL field.
+    HTTPS validation is deferred to execution time for URLs containing placeholders.
+    URLs without placeholders are validated immediately.
+
+    Args:
+        raw_request: Raw JSON object expected to contain ``method`` and ``url``.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        Validated request with a GET method and a URL (possibly containing
+        placeholders).
+
+    Raises:
+        ManifestError: If required fields are missing, invalid, or placeholders
+            reference forward steps.
+    """
+    _reject_unknown_keys(raw_request, allowed_keys={"method", "url"}, location=location)
+    method = _required_get_method(raw_request, location=location)
+    url = _required_string(raw_request, "url", location=location)
+
+    _validate_placeholder_syntax(url, location=f"{location}.url", seen_ids=seen_ids)
+
+    # Only validate HTTPS if there are no placeholders (deferred otherwise)
+    if not _PLACEHOLDER_FIND_PATTERN.search(url):
+        try:
+            validate_https_url(url, label=f"{location}.url")
+        except HttpsUrlValidationError as error:
+            raise ManifestError(str(error)) from error
+
+    return ManifestRequest(method=method, url=url)
+
+
+def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:
+    """Validate that all ``${...}`` tokens in a string are syntactically correct.
+
+    Checks that each placeholder matches the canonical grammar and that any
+    referenced step id exists in ``seen_ids`` (i.e. no forward references).
+
+    Args:
+        value: String potentially containing ``${...}`` placeholders.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Raises:
+        ManifestError: If a placeholder is malformed or references a forward step.
+    """
+    matched_tokens = list(_PLACEHOLDER_FIND_PATTERN.finditer(value))
+    if value.count("${") > len(matched_tokens):
+        raise ManifestError(f"{location} contains an unterminated placeholder (missing closing '}}')")
+    for match in matched_tokens:
+        token = match.group(0)
+        valid_match = _PLACEHOLDER_PATTERN.fullmatch(token)
+        if valid_match is None:
+            raise ManifestError(f"{location} contains malformed placeholder: {token}")
+        referenced_id = valid_match.group(1)
+        if referenced_id not in seen_ids:
+            raise ManifestError(f"{location} references undefined step '{referenced_id}'")
 
 
 def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
@@ -219,8 +416,11 @@ def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
     has_follow_up = "followUp" in raw_test
     raw_follow_up = raw_test["followUp"] if has_follow_up else None
 
+    test_id = _required_string(raw_test, "id", location=location)
+    _validate_step_id(test_id, location=location)
+
     return ManifestTest(
-        id=_required_string(raw_test, "id", location=location),
+        id=test_id,
         name=_required_string(raw_test, "name", location=location),
         request=_parse_request(
             _required_object(raw_test, "request", location=location),
@@ -520,6 +720,30 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
             raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
         objects.append(item)
     return objects
+
+
+_STEP_ID_PATTERN = re.compile(r"^" + _STEP_ID_CHAR_CLASS + r"$")
+"""Compiled pattern for validating step/test IDs at parse time."""
+
+
+def _validate_step_id(step_id: str, *, location: str) -> None:
+    """Validate that a step or test ID uses only allowed characters.
+
+    IDs must start with an alphanumeric character and may contain only
+    alphanumerics, hyphens, and underscores. Dots are forbidden because
+    the placeholder resolver splits on dots.
+
+    Args:
+        step_id: The candidate ID string to validate.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        ManifestError: If the ID contains invalid characters.
+    """
+    if not _STEP_ID_PATTERN.match(step_id):
+        raise ManifestError(
+            f"{location}.id '{step_id}' contains invalid characters (must match [A-Za-z0-9][A-Za-z0-9_-]*)"
+        )
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:

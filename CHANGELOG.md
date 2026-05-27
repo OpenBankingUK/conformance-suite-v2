@@ -21,10 +21,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Model-bank smoke-check core: JSON config loading, Ozone discovery fetch, JWKS follow-up request, structured result output, and manual runner
 - Manifest v0 parser: typed JSON manifest contract for OpenID discovery requests with optional JWKS follow-up checks
 - Manifest v0 executor: configuration-driven JSON request execution, assertion evaluation, JWKS follow-up handling, and CLI `--manifest` support
+- Manifest v1 schema: sequential multi-step manifest format with `${...}` placeholder substitution for context carry-forward between steps
+- Execution context module (`conformance/context.py`): immutable step-record accumulation and dot-path placeholder resolution
 
 ### Changed
 
 - Enforced Google-style docstrings via ruff pydocstyle and backfilled the `conformance/` package
+- Manifest v0 `followUp` is now internally desugared to v1 sequential steps at execution time (no external behaviour change for v0 consumers)
+- Manifest v0 test IDs now enforce `[A-Za-z0-9][A-Za-z0-9_-]*` validation (dots are rejected) to keep placeholder step-path parsing unambiguous
 
 ### Fixed
 

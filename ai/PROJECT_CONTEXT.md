@@ -1,6 +1,6 @@
 # Project Context For AI Agents
 
-Last updated: 2026-05-16
+Last updated: 2026-05-26
 
 ## Product Summary
 
@@ -12,13 +12,15 @@ Phase 2 is expected later and should not distort Phase 1 unless a design choice 
 
 ## Current Repository Progress
 
-Current branch observed: `develop`.
+Current branch observed: `feature/manifest-v1-sequential-steps`.
 
-PR #1, `Feature/project setup`, established the Python/Django scaffold, CI and E2E workflows, Dockerfile, Makefile, uv lockfile, pre-commit hooks, detect-secrets baseline, Django settings, and initial smoke/health tests.
+PRs #1–#6 merged. The project has:
+- Python/Django scaffold, CI/E2E, Dockerfile, Makefile, uv lockfile (PR #1).
+- Ozone model-bank hello-world: CLI, config parsing, runner, results (PR #2).
+- Manifest v0 parser and executor with typed assertions and JWKS follow-up (PRs #3–#5).
+- **Manifest v1** (PR #7 / in progress): sequential multi-step format with `${...}` context carry-forward. Execution context accumulates step records; placeholder resolution traverses response bodies via dot-paths.
 
-PR #2, `Feature/ozone model bank hello world`, added the first conformance package modules: CLI, model-bank config parsing, Ozone client, result modelling, runner, model-bank example config, README usage, and unit tests around those behaviours.
-
-This means the project is beyond empty scaffold but still early. It has a model-bank hello-world path, not the full manifest schema, assertion engine, FAPI flow, report generator, REST API, or UI.
+M2 is complete. M3 (assertion engine + context carry-forward) is substantially delivered by the v1 manifest implementation. Remaining M3 scope: substitution in assertion paths, header templating (deferred to M4).
 
 ## Sprint Plan Anchor
 
