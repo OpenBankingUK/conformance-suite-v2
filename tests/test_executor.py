@@ -907,4 +907,4 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
     assert "Resolved header validation failed" in (result.steps[1].message or "")
-    assert "forbidden control character" in (result.steps[1].message or "")
+    assert "non-transportable character" in (result.steps[1].message or "")

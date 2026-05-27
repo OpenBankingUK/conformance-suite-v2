@@ -697,7 +697,7 @@ def test_parse_v1_manifest_rejects_header_value_with_crlf(bad_value: str) -> Non
             }
         ],
     }
-    with pytest.raises(ManifestError, match="contains forbidden control character"):
+    with pytest.raises(ManifestError, match="non-transportable character"):
         parse_manifest(raw_manifest)
 
 
@@ -1037,7 +1037,7 @@ def test_parse_v1_manifest_rejects_header_value_with_control_chars(bad_value: st
             }
         ],
     }
-    with pytest.raises(ManifestError, match="contains forbidden control character"):
+    with pytest.raises(ManifestError, match="non-transportable character"):
         parse_manifest(raw_manifest)
 
 
@@ -1069,7 +1069,7 @@ def test_parse_v1_manifest_rejects_header_value_above_0xff(bad_value: str) -> No
             }
         ],
     }
-    with pytest.raises(ManifestError, match="outside the RFC 7230"):
+    with pytest.raises(ManifestError, match="non-transportable character"):
         parse_manifest(raw_manifest)
 
 
@@ -1094,3 +1094,35 @@ def test_parse_v1_manifest_accepts_header_value_with_htab() -> None:
     }
     manifest = parse_manifest(raw_manifest)
     assert manifest.steps[0].request.headers == {"Authorization": "Bearer\ttoken"}
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "caf\xe9",  # U+00E9 (obs-text, not ASCII-transportable)
+        "token\x80rest",  # U+0080 (lowest obs-text)
+        "value\xffend",  # U+00FF (highest obs-text)
+    ],
+    ids=["obs-text-e9", "obs-text-80", "obs-text-ff"],
+)
+def test_parse_v1_manifest_rejects_header_value_with_obs_text(bad_value: str) -> None:
+    """Obs-text characters (0x80-0xFF) are rejected because httpx cannot transport them."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Obs-text header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": bad_value},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="non-transportable character"):
+        parse_manifest(raw_manifest)

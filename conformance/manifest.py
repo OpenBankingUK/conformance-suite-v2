@@ -245,14 +245,14 @@ _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 _HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 """RFC 7230 token pattern for valid HTTP header field names."""
 
-_HEADER_VALUE_INVALID_PATTERN = re.compile(r"[\x00-\x08\x0a-\x1f\x7f]")
-"""Pattern matching control characters forbidden in HTTP header field values.
+_HEADER_VALUE_INVALID_PATTERN = re.compile(r"[^\x09\x20-\x7e]")
+"""Pattern matching characters not transportable as HTTP header field values.
 
-RFC 7230 §3.2.6 defines field content as VCHAR (0x21-0x7E), SP (0x20),
-HTAB (0x09), and obs-text (0x80-0xFF). All other octets — NUL, CR, LF,
-DEL, and remaining C0 controls — are invalid. Characters above U+00FF
-are additionally rejected by `validate_header_value` since they fall
-outside the single-octet range defined by the RFC.
+httpx encodes string header values as ASCII, so only the ASCII-safe subset
+of RFC 7230 §3.2.6 field content is transportable: HTAB (0x09), SP (0x20),
+and VCHAR (0x21-0x7E). The RFC's obs-text range (0x80-0xFF) is rejected
+because it cannot be transmitted without a UnicodeEncodeError at the
+transport layer.
 """
 
 _PLACEHOLDER_PATTERN = re.compile(
@@ -274,11 +274,15 @@ _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 
 
 def validate_header_value(value: str, *, location: str) -> None:
-    """Validate an HTTP header field value per RFC 7230 §3.2.6.
+    """Validate an HTTP header field value for transport safety.
 
-    Rejects empty/whitespace-only values and values containing control
-    characters not permitted in header field content. Permitted characters
-    are HTAB (0x09), SP (0x20), VCHAR (0x21-0x7E), and obs-text (0x80-0xFF).
+    Rejects empty/whitespace-only values and values containing characters
+    that cannot be transmitted by httpx (which encodes headers as ASCII).
+    Permitted characters are HTAB (0x09), SP (0x20), and VCHAR (0x21-0x7E).
+
+    The RFC 7230 §3.2.6 obs-text range (0x80-0xFF) is intentionally excluded
+    because httpx raises ``UnicodeEncodeError`` for non-ASCII str header
+    values. This restriction ensures all validated values are transportable.
 
     This function is used both at manifest parse time (static values) and
     after placeholder resolution (dynamic values) to ensure no invalid
@@ -289,21 +293,19 @@ def validate_header_value(value: str, *, location: str) -> None:
         location: Dot-path location string used in error messages.
 
     Raises:
-        ManifestError: If the value is empty or contains forbidden control
+        ManifestError: If the value is empty or contains non-transportable
             characters.
     """
     if not value.strip():
         raise ManifestError(f"{location} must not be empty")
-    for char in value:
-        if ord(char) > 0xFF:
-            raise ManifestError(
-                f"{location} contains character U+{ord(char):04X} outside the RFC 7230 §3.2.6 octet range (0x00-0xFF)"
-            )
     match = _HEADER_VALUE_INVALID_PATTERN.search(value)
     if match:
         bad_char = match.group()
         code_point = ord(bad_char)
-        raise ManifestError(f"{location} contains forbidden control character U+{code_point:04X} (RFC 7230 §3.2.6)")
+        raise ManifestError(
+            f"{location} contains non-transportable character U+{code_point:04X} "
+            "(only HTAB, SP, and VCHAR 0x21-0x7E are permitted)"
+        )
 
 
 def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
