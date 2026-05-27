@@ -1042,6 +1042,38 @@ def test_parse_v1_manifest_rejects_header_value_with_control_chars(bad_value: st
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_value",
+    [
+        "Bearer \U0001f600 token",  # emoji U+1F600
+        "line\u2028separator",  # U+2028 line separator
+        "value\u0100end",  # U+0100 (just above 0xFF)
+    ],
+    ids=["emoji", "line-separator", "U+0100"],
+)
+def test_parse_v1_manifest_rejects_header_value_above_0xff(bad_value: str) -> None:
+    """Header values with characters above U+00FF are rejected (RFC 7230 §3.2.6)."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Above 0xFF header",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "headers": {"Authorization": bad_value},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="outside the RFC 7230"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_accepts_header_value_with_htab() -> None:
     """HTAB (0x09) is permitted in header field values per RFC 7230 §3.2.6."""
     raw_manifest: dict[str, JsonValue] = {
