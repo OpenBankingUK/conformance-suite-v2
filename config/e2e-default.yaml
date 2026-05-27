@@ -1,0 +1,9 @@
+# Default E2E test configuration
+#
+# This config is used by the E2E workflow when no custom config is specified.
+# It will be populated with model bank connection details and test parameters
+# when the E2E test suite is implemented.
+#
+# See: .github/workflows/e2e.yml (workflow_dispatch input: config_file)
+
+# TODO: Define E2E configuration schema and populate with defaults

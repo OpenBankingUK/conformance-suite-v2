@@ -1,0 +1,12 @@
+{
+    "environment": "ozone-model-bank",
+    "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+    "timeoutSeconds": 10,
+    "followUp": {
+        "mode": "discovery_only"
+    },
+    "tls": {
+        "certificatePathRoot": "./certs"
+    },
+    "resultOutputPath": "./out/test-results.json"
+}

@@ -6,9 +6,21 @@ This repository contains the **Open Banking UK Conformance Test Tool** — a sta
 
 **This project operates in a regulated financial services context. Security, correctness, and reliability are non-negotiable.**
 
+### AI Agent Operating Context
+
+Before making non-trivial changes, read the AI agent workspace in `ai/`:
+
+- `ai/README.md` explains which files are authoritative for agent-assisted development.
+- `ai/PROJECT_CONTEXT.md` captures current product context, design intent, and progress.
+- `ai/DECISION_LOG.md` records architectural and implementation decisions that should persist across sessions.
+- `ai/HANDOVER.md` is the current-session handover surface for the next human or agent.
+- `ai/DEVELOPMENT_LOG.md` records dated progress, investigation notes, and unresolved questions.
+
+The generated documents in `docs/` are useful reference material, but they are not the adaptive source of truth for agent decisions unless a human explicitly promotes a detail into the `ai/` workspace or this instruction file. Favour the original FCS design documents, sprint plan, explicit user direction, and the `ai/` workspace over incidental choices made in generated documentation.
+
 ### Technology Stack
 
-- **Language**: Python 3.12
+- **Language**: Python 3.14.x (>=3.14.4)
 - **Web framework**: Django (with HTMX for frontend interactions)
 - **Package manager**: `uv` (lockfile-based, reproducible installs)
 - **Container**: Docker (non-root, minimal base image)
@@ -29,11 +41,12 @@ This repository contains the **Open Banking UK Conformance Test Tool** — a sta
   - [3. Django-Specific Standards](#3-django-specific-standards)
   - [4. Type Annotations](#4-type-annotations)
   - [5. Code Quality Standards](#5-code-quality-standards)
-  - [6. Git Flow & PR Hygiene](#6-git-flow--pr-hygiene)
-  - [7. Docker & Container Standards](#7-docker--container-standards)
-  - [8. Open Banking Domain Standards](#8-open-banking-domain-standards)
-  - [9. What to Always Approve](#9-what-to-always-approve)
-  - [10. What to Always Block](#10-what-to-always-block)
+  - [6. Code Documentation Standards](#6-code-documentation-standards)
+  - [7. Git Flow & PR Hygiene](#7-git-flow--pr-hygiene)
+  - [8. Docker & Container Standards](#8-docker--container-standards)
+  - [9. Open Banking Domain Standards](#9-open-banking-domain-standards)
+  - [10. What to Always Approve](#10-what-to-always-approve)
+  - [11. What to Always Block](#11-what-to-always-block)
 - [General Coding Preferences](#general-coding-preferences)
 
 ---
@@ -103,7 +116,38 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 6. Git Flow & PR Hygiene
+### 6. Code Documentation Standards
+
+Code in this repository must be understandable to a human reviewer without requiring chat history or generated documentation.
+
+**Always check for:**
+
+- **Module docstrings**: Every non-test Python module and package must explain its purpose and role in the conformance tool.
+- **Public API docstrings**: Every public class, dataclass, function, method, and module-level type alias with project meaning must have a Google-style docstring. Include `Args:`, `Returns:`, and `Raises:` sections when they add useful information.
+- **Private function and method docstrings**: Every private (`_`-prefixed) module-level function and method must carry a full Google-style docstring — a one-line summary plus `Args:` and `Returns:` sections whenever the signature has parameters or a non-`None` return type, and a `Raises:` section whenever the helper raises an exception directly. There is no carve-out for "trivial" helpers: every `_`-prefixed function must be documented, regardless of length. Note: ruff's Google pydocstyle convention does not enforce `D1xx` on private names. This repository therefore runs `interrogate` (configured in `pyproject.toml` with `fail-under = 100`, `ignore-private = false`, `ignore-semiprivate = false`) as a required CI step that fails the build if any function, method, class, or nested definition — public or private — is missing a docstring.
+- **Domain intent**: Code implementing Open Banking, OAuth 2.0, OIDC, FAPI, JWKS, JWS, report, certification, or masking behaviour should name the relevant standard concept in the docstring or an adjacent comment.
+- **Why comments**: Inline comments should explain security, compliance, domain, or non-obvious design intent. Do not add comments that merely restate the next line of code.
+- **Generated or framework boilerplate**: Keep Django-generated entry points lightweight. Prefer a concise module docstring or a targeted `ruff` per-file ignore over ceremonial comments.
+
+Docstrings must follow Google style and pass `ruff` pydocstyle checks. If a public symbol intentionally has no docstring, the exception must be local, narrow, and justified.
+
+**Attribute docstrings for type aliases and module-level constants:**
+
+Module-level `type` statements (PEP 695), `Literal` assignments, `TypeAlias` assignments, and `Final` constants **must** be documented using the attribute-docstring convention — a bare `"""..."""` string literal placed on the line immediately following the assignment. This is a project-local convention: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension of Google style. Example:
+
+```python
+type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
+"""Recursive JSON value accepted from config files and HTTP responses."""
+
+CheckStatus = Literal["passed", "failed"]
+"""Outcome values emitted by smoke-check steps and summaries."""
+```
+
+These are **not** useless expressions. Ruff B018 explicitly exempts string-literal statements that immediately follow an assignment. Do not flag them as B018 violations, do not request they be converted to `#` comments, and do not request their removal.
+
+---
+
+### 7. Git Flow & PR Hygiene
 
 - **Branch naming**: Verify the source branch follows the naming convention: `feature/`, `bugfix/`, `release/`, or `hotfix/` prefixes. Flag non-conforming branch names.
 - **PR scope**: PRs should be focused. A PR that touches more than 500 lines across unrelated concerns should be questioned.
@@ -113,9 +157,9 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 7. Docker & Container Standards
+### 8. Docker & Container Standards
 
-- Base image must be pinned to a specific version tag (e.g. `python:3.12-slim-bookworm`, not `python:latest`).
+- Base image must be pinned to a specific version tag (e.g. `python:3.14.4-slim-bookworm`, not `python:latest`).
 - Multi-stage builds are preferred to keep the final image minimal.
 - The application process must run as a non-root user.
 - `COPY` instructions should be ordered to maximise layer cache efficiency (copy dependency files first, then source code).
@@ -123,7 +167,7 @@ This project is used by financial services participants. Security flaws can have
 
 ---
 
-### 8. Open Banking Domain Standards
+### 9. Open Banking Domain Standards
 
 When reviewing code that implements or tests Open Banking standards:
 
@@ -135,16 +179,17 @@ When reviewing code that implements or tests Open Banking standards:
 
 ---
 
-### 9. What to Always Approve
+### 10. What to Always Approve
 
 - Well-structured tests with clear assertions
 - Smaller, focused PRs that do one thing well
 - Dependency updates that have passed Snyk scanning
 - Documentation improvements
+- Attribute docstrings (`"""..."""` immediately following a module-level assignment or `type` statement) used to document type aliases, `Literal` types, and module-level constants — these are B018-exempt and recognised by tooling
 
 ---
 
-### 10. What to Always Block
+### 11. What to Always Block
 
 - Any `DEBUG = True` outside of development settings
 - Any hardcoded secret, token, or credential
@@ -152,6 +197,7 @@ When reviewing code that implements or tests Open Banking standards:
 - Raw SQL string construction from user input
 - `@csrf_exempt` without a documented security rationale
 - Docker images running as root
+- New or modified Python modules, classes, functions, or methods — public **or private** (`_`-prefixed) — without a clear Google-style docstring. This is mechanically enforced by `interrogate` in CI (100% threshold, private names included); do not rely on code review alone to catch missing docstrings
 - PRs that reduce test coverage below 80% without justification
 - New dependencies not present in `uv.lock`
 - Merges to `main` without a passing E2E test run
