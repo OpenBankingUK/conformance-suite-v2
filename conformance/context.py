@@ -183,7 +183,7 @@ def _validate_placeholder_syntax(template: str) -> None:
         raise PlaceholderResolutionError("Empty placeholder '${}' is not valid — provide a dot-path expression")
     if _MALFORMED_PLACEHOLDER_PATTERN.search(template):
         context_window = _truncate_around_malformed(template)
-        msg = f"Unterminated placeholder in template (missing closing '}}')): {context_window}"
+        msg = f"Unterminated placeholder in template (missing closing '}}'): {context_window}"
         raise PlaceholderResolutionError(msg)
 
 
