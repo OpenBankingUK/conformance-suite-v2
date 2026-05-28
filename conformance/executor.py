@@ -259,6 +259,24 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
     context = ExecutionContext()
 
     for test in manifest.tests:
+        # v0 contract: primary requests are GET-only. _parse_request enforces this
+        # at JSON parse time, but ManifestRequest.method is typed as RequestMethod
+        # (any of GET/POST/PUT/PATCH/DELETE), so a programmatically constructed
+        # ManifestTest could supply a non-GET method. Reject before desugaring
+        # through the shared v1 executor, which accepts all five methods.
+        if test.request.method != "GET":
+            request_record = RequestRecord(method=test.request.method, url=test.request.url)
+            context = record_step(context, test.id, request_record, None)
+            steps.append(
+                StepResult(
+                    name=test.id,
+                    status="failed",
+                    message=f"v0 manifest primary requests must use GET, got: {test.request.method}",
+                    url=test.request.url,
+                )
+            )
+            continue
+
         # Primary step
         primary_step = ManifestStep(
             id=test.id,

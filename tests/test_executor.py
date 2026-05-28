@@ -248,13 +248,13 @@ def test_run_manifest_rejects_unsafe_primary_url() -> None:
 @pytest.mark.unit
 def test_run_manifest_rejects_unsupported_primary_method() -> None:
     """Defence-in-depth: fail the step if request method is outside the supported set."""
-    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
+    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestStep
 
     bad_manifest = Manifest(
-        schema_version="v0",
+        schema_version="v1",
         name="bad-method",
-        tests=(
-            ManifestTest(
+        steps=(
+            ManifestStep(
                 id="options-test",
                 name="OPTIONS test",
                 request=ManifestRequest(method=cast(Any, "OPTIONS"), url="https://example.com/api"),
@@ -275,6 +275,44 @@ def test_run_manifest_rejects_unsupported_primary_method() -> None:
     assert requested_urls == []
     assert result.steps[0].status == "failed"
     assert result.steps[0].message == "Unsupported request method: OPTIONS"
+
+
+@pytest.mark.unit
+def test_run_manifest_v0_rejects_non_get_primary_method() -> None:
+    """v0 primary requests must be GET; non-GET methods are rejected before any HTTP call.
+
+    The JSON parser already enforces GET-only at parse time, but ``ManifestRequest.method``
+    is typed as the broader v1 ``RequestMethod`` union. A programmatically constructed v0
+    manifest could therefore bypass the GET-only contract via the shared v1 executor.
+    This guard closes that hole.
+    """
+    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
+
+    bad_manifest = Manifest(
+        schema_version="v0",
+        name="v0-non-get",
+        tests=(
+            ManifestTest(
+                id="post-test",
+                name="POST test",
+                request=ManifestRequest(method="POST", url="https://example.com/api"),
+                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+            ),
+        ),
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(bad_manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert requested_urls == []
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "v0 manifest primary requests must use GET, got: POST"
 
 
 @pytest.mark.unit
