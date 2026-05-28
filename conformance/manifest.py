@@ -732,6 +732,10 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
             path=_required_string(raw_assertion, "path", location=location),
             rule=_required_json_field_rule(raw_assertion, location=location),
         )
+    # Defensive: _required_assertion_type already constrains assertion_type to the
+    # AssertionType literal, but an explicit raise removes the implicit None
+    # fall-through and guards against future literal additions.
+    raise ManifestError(f"{location}.type has unexpected value: {assertion_type!r}")
 
 
 def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
