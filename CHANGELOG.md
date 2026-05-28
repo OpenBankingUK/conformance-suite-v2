@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Manifest v1 supports POST, PUT, PATCH, and DELETE methods with optional `headers` and JSON `body` fields, including `${...}` placeholder substitution in header values and body string leaves
+- HTTP helper `send_json` for dispatching arbitrary-method requests with JSON body through the conformance engine
+- Context helper `resolve_in_structure` for recursive placeholder resolution in nested JSON structures
+- Example manifest `config/manifest-v1-token-exchange-example.json` demonstrating a two-step discovery + POST token exchange flow
 - Project scaffolding: Django application with health endpoint, ASGI server (uvicorn), and environment-based configuration
 - CI pipeline: lint (ruff), type checking (mypy strict), unit/integration tests, detect-secrets scanning, Docker build with container smoke test
 - E2E workflow: end-to-end test runner with manual dispatch and model bank configuration

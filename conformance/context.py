@@ -127,32 +127,40 @@ def record_step(
 
 
 _TRUNCATION_CONTEXT_CHARS = 20
-"""Maximum characters to show either side of a malformed placeholder token."""
+"""Maximum characters of trailing context to show after a malformed placeholder token."""
 
 
 def _truncate_around_malformed(template: str) -> str:
-    """Return a short context window around the first unterminated ``${`` token.
+    """Return a short context window starting at the last unterminated ``${`` token.
 
-    Avoids exposing the full template — which may contain sensitive URL
-    query parameters — in error messages that propagate to result files.
+    Avoids exposing the template *prefix* — which may contain sensitive URL
+    query parameters such as ``client_secret`` or bearer tokens — in error
+    messages that propagate to result files. Only the ``${`` opener and a
+    short trailing window are returned, which is enough to identify which
+    placeholder is malformed without leaking anything preceding it.
+
+    When the template contains multiple ``${`` openers, the trailing one is
+    the unterminated token (any earlier well-formed ``${...}`` has already
+    been matched by the resolver pattern), so ``rfind`` deliberately
+    selects the rightmost — and also the least likely to be surrounded by
+    secret-bearing prefix context.
 
     Args:
         template: Template containing at least one unterminated ``${``.
 
     Returns:
-        A string showing up to :data:`_TRUNCATION_CONTEXT_CHARS` characters
-        before the ``${`` and the remainder of the template after it (also
-        capped), with ellipsis markers when truncated.
+        A string starting with ``${`` followed by up to
+        :data:`_TRUNCATION_CONTEXT_CHARS` characters from the template, with
+        a trailing ellipsis marker when the suffix is truncated. Returns
+        ``"..."`` if no ``${`` token is found.
     """
     idx = template.rfind("${")
     if idx == -1:
         return "..."
-    start = max(0, idx - _TRUNCATION_CONTEXT_CHARS)
-    end = min(len(template), idx + _TRUNCATION_CONTEXT_CHARS)
-    snippet = template[start:end]
-    prefix = "..." if start > 0 else ""
+    end = min(len(template), idx + 2 + _TRUNCATION_CONTEXT_CHARS)
+    snippet = template[idx:end]
     suffix = "..." if end < len(template) else ""
-    return f"{prefix}{snippet}{suffix}"
+    return f"{snippet}{suffix}"
 
 
 def _validate_placeholder_syntax(template: str) -> None:
@@ -344,3 +352,31 @@ def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_p
     if current is None:
         return "null"
     return str(current)
+
+
+def resolve_in_structure(value: JsonValue, context: ExecutionContext) -> JsonValue:
+    """Recursively resolve ``${...}`` placeholders in all string leaves of a JSON structure.
+
+    Walks dicts and lists depth-first and applies :func:`resolve_placeholders`
+    to every string leaf. Non-string leaves (numbers, booleans, null) are
+    returned unchanged.
+
+    Args:
+        value: JSON value (possibly nested) containing placeholder strings.
+        context: Execution context providing step records for resolution.
+
+    Returns:
+        A new JSON structure with all string-leaf placeholders resolved.
+
+    Raises:
+        PlaceholderResolutionError: If any string leaf contains an unresolvable
+            or malformed placeholder.
+    """
+    if isinstance(value, str):
+        return resolve_placeholders(value, context)
+    if isinstance(value, dict):
+        return {key: resolve_in_structure(child, context) for key, child in value.items()}
+    if isinstance(value, list):
+        return [resolve_in_structure(child, context) for child in value]
+    # Scalar: int, float, bool, None — pass through unchanged
+    return value

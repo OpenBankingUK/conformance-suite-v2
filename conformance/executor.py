@@ -13,16 +13,19 @@ from conformance.context import (
     RequestRecord,
     ResponseRecord,
     record_step,
+    resolve_in_structure,
     resolve_placeholders,
 )
-from conformance.http import JsonHttpClientError, JsonHttpResponse, get_json
-from conformance.json_types import JsonObject
+from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     Manifest,
     ManifestAssertion,
+    ManifestError,
     ManifestRequest,
     ManifestStep,
     ManifestTest,
+    validate_header_value,
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -81,9 +84,9 @@ def _execute_v1_step(
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
-    Resolves placeholders in the request URL, validates the resolved URL,
-    issues the HTTP request, evaluates assertions, and records the step
-    into the execution context.
+    Resolves placeholders in the request URL, headers, and body, validates the
+    resolved URL, issues the HTTP request, evaluates assertions, and records
+    the step into the execution context.
 
     Args:
         manifest_step: The v1 step to execute.
@@ -93,12 +96,28 @@ def _execute_v1_step(
     Returns:
         A tuple of the step result and the updated execution context.
     """
+    method = manifest_step.request.method
+
+    # Defence-in-depth: reject methods outside the supported set
+    _supported_methods = {"GET", "POST", "PUT", "PATCH", "DELETE"}
+    if method not in _supported_methods:
+        request_record = RequestRecord(method=method, url=manifest_step.request.url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            StepResult(
+                name=manifest_step.id,
+                status="failed",
+                message=f"Unsupported request method: {method}",
+                url=manifest_step.request.url,
+            ),
+            new_context,
+        )
+
     # Resolve placeholders in the URL
     try:
         resolved_url = resolve_placeholders(manifest_step.request.url, context)
     except PlaceholderResolutionError as error:
-        # Record request (with unresolved URL) but no response
-        request_record = RequestRecord(method=manifest_step.request.method, url=manifest_step.request.url)
+        request_record = RequestRecord(method=method, url=manifest_step.request.url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             StepResult(
@@ -110,25 +129,70 @@ def _execute_v1_step(
             new_context,
         )
 
-    # Validate method
-    if manifest_step.request.method != "GET":
-        request_record = RequestRecord(method=manifest_step.request.method, url=resolved_url)
-        new_context = record_step(context, manifest_step.id, request_record, None)
-        return (
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=f"Unsupported request method: {manifest_step.request.method}",
-                url=resolved_url,
-            ),
-            new_context,
-        )
+    # Resolve placeholders in headers
+    resolved_headers: dict[str, str] | None = None
+    if manifest_step.request.headers is not None:
+        try:
+            resolved_headers = {
+                name: resolve_placeholders(value, context) for name, value in manifest_step.request.headers.items()
+            }
+        except PlaceholderResolutionError as error:
+            request_record = RequestRecord(method=method, url=resolved_url)
+            new_context = record_step(context, manifest_step.id, request_record, None)
+            return (
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=resolved_url,
+                ),
+                new_context,
+            )
+
+    # Validate resolved header values (post-substitution defence-in-depth)
+    if resolved_headers is not None:
+        for header_name, header_value in resolved_headers.items():
+            try:
+                validate_header_value(
+                    header_value,
+                    location=f"step '{manifest_step.id}' resolved header {header_name}",
+                )
+            except ManifestError as error:
+                request_record = RequestRecord(method=method, url=resolved_url)
+                new_context = record_step(context, manifest_step.id, request_record, None)
+                return (
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Resolved header validation failed: {error}",
+                        url=resolved_url,
+                    ),
+                    new_context,
+                )
+
+    # Resolve placeholders in body
+    resolved_body: JsonValue | None = None
+    if manifest_step.request.body is not None:
+        try:
+            resolved_body = resolve_in_structure(manifest_step.request.body, context)
+        except PlaceholderResolutionError as error:
+            request_record = RequestRecord(method=method, url=resolved_url)
+            new_context = record_step(context, manifest_step.id, request_record, None)
+            return (
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=resolved_url,
+                ),
+                new_context,
+            )
 
     # Validate resolved URL is HTTPS
     try:
         validate_https_url(resolved_url, label=f"Step '{manifest_step.id}' request URL")
     except HttpsUrlValidationError as error:
-        request_record = RequestRecord(method="GET", url=resolved_url)
+        request_record = RequestRecord(method=method, url=resolved_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             StepResult(
@@ -141,9 +205,9 @@ def _execute_v1_step(
         )
 
     # Execute HTTP request
-    request_record = RequestRecord(method="GET", url=resolved_url)
+    request_record = RequestRecord(method=method, url=resolved_url)
     try:
-        response = get_json(client, resolved_url)
+        response = send_json(client, method, resolved_url, headers=resolved_headers, json_body=resolved_body)
     except JsonHttpClientError as error:
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
@@ -195,6 +259,24 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
     context = ExecutionContext()
 
     for test in manifest.tests:
+        # v0 contract: primary requests are GET-only. _parse_request enforces this
+        # at JSON parse time, but ManifestRequest.method is typed as RequestMethod
+        # (any of GET/POST/PUT/PATCH/DELETE), so a programmatically constructed
+        # ManifestTest could supply a non-GET method. Reject before desugaring
+        # through the shared v1 executor, which accepts all five methods.
+        if test.request.method != "GET":
+            request_record = RequestRecord(method=test.request.method, url=test.request.url)
+            context = record_step(context, test.id, request_record, None)
+            steps.append(
+                StepResult(
+                    name=test.id,
+                    status="failed",
+                    message=f"v0 manifest primary requests must use GET, got: {test.request.method}",
+                    url=test.request.url,
+                )
+            )
+            continue
+
         # Primary step
         primary_step = ManifestStep(
             id=test.id,

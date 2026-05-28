@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "v1",
+  "name": "Synthetic token exchange (v1 POST example)",
+  "steps": [
+    {
+      "id": "discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "https://auth.example.com/.well-known/openid-configuration"
+      },
+      "assertions": [
+        { "type": "http_status", "expected": 200 },
+        { "type": "json_field", "path": "token_endpoint", "rule": "https_url" }
+      ]
+    },
+    {
+      "id": "token-exchange",
+      "name": "Token exchange via POST",
+      "request": {
+        "method": "POST",
+        "url": "${steps.discovery.response.body.token_endpoint}",
+        "headers": {
+          "X-Request-Id": "synthetic-test-run-001",
+          "X-Issuer": "${steps.discovery.response.body.issuer}"
+        },
+        "body": {
+          "grant_type": "authorization_code",
+          "code": "SYNTHETIC_AUTH_CODE_PLACEHOLDER",
+          "client_id": "synthetic-client-id-00000000",
+          "redirect_uri": "https://conformance.example.com/callback"
+        }
+      },
+      "assertions": [
+        { "type": "http_status", "expected": 200 },
+        { "type": "json_field", "path": "access_token", "rule": "required" }
+      ]
+    }
+  ]
+}
