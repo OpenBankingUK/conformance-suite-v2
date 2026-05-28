@@ -946,3 +946,47 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
     assert result.steps[1].status == "failed"
     assert "Resolved header validation failed" in (result.steps[1].message or "")
     assert "non-transportable character" in (result.steps[1].message or "")
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_delete_204_passes_http_status_assertion() -> None:
+    """A DELETE step returning 204 No Content must reach assertion evaluation.
+
+    Regresses against the prior behaviour where ``send_json`` raised
+    ``JsonHttpClientError("not valid JSON")`` for any empty-bodied response,
+    preventing the executor from evaluating the user's
+    ``http_status: 204`` assertion. RFC 9110 defines 204 as carrying no
+    message body, so the transport must not reject it.
+    """
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        # 204 No Content with zero-length body, as a spec-compliant
+        # endpoint would emit for a successful resource deletion.
+        return httpx.Response(204)
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "DELETE 204 smoke",
+        "steps": [
+            {
+                "id": "revoke-consent",
+                "name": "Revoke consent",
+                "request": {
+                    "method": "DELETE",
+                    "url": "https://example.com/consents/consent-123",
+                },
+                "assertions": [{"type": "http_status", "expected": 204}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert len(captured_requests) == 1
+    assert captured_requests[0].method == "DELETE"
+    assert result.steps[0].status == "passed"

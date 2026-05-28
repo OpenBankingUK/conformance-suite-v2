@@ -10,6 +10,16 @@ import httpx
 
 from conformance.json_types import JsonObject, JsonValue
 
+# HTTP statuses that RFC 9110 defines as carrying no message body.
+# A compliant endpoint (and most reverse proxies) will return zero-length
+# bodies for these, so attempting ``response.json()`` would raise
+# ``ValueError`` and mask the user's status-only assertion (e.g. a manifest
+# step that DELETEs a resource and asserts ``http_status: 204``). We
+# normalise these to an empty JSON object so the assertion phase still
+# runs; a ``json_field`` assertion against an empty object naturally fails
+# with "field is missing".
+_NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
+
 
 class JsonHttpClientError(RuntimeError):
     """Raised when a JSON HTTP request or response is invalid."""
@@ -60,7 +70,10 @@ def send_json(
     Dispatches the request using the given method. For methods that support a
     body (POST, PUT, PATCH, DELETE), ``json_body`` is serialised as JSON via ``httpx``.
     The response is parsed as a JSON object regardless of HTTP status code
-    (status-agnostic contract per DL-0011).
+    (status-agnostic contract per DL-0011), except for the HTTP no-content
+    statuses (204, 205, 304) which are defined by RFC 9110 to carry no
+    message body and are normalised to an empty JSON object so status-only
+    assertions can still be evaluated.
 
     Args:
         client: Preconfigured synchronous HTTP client.
@@ -97,6 +110,13 @@ def send_json(
         response = client.request(method, url, headers=request_headers, json=send_body)
     except httpx.RequestError as error:
         raise JsonHttpClientError(f"Request failed for {url}: {error}") from error
+
+    # RFC 9110 no-content statuses carry no message body. Skip JSON parsing
+    # and return an empty object so the executor can still evaluate
+    # status-only assertions (e.g. DELETE → 204). ``json_field`` assertions
+    # against an empty object will correctly fail with "field is missing".
+    if response.status_code in _NO_CONTENT_STATUS_CODES:
+        return JsonHttpResponse(url=str(response.url), status_code=response.status_code, body={})
 
     try:
         response_body: object = response.json()
