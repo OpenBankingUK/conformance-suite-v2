@@ -5,8 +5,10 @@ from __future__ import annotations
 import copy
 import json
 import re
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal, cast
 
 from conformance.json_types import JsonValue
@@ -37,6 +39,47 @@ FollowUpUrlSource = Literal["response.body.jwks_uri"]
 
 
 @dataclass(frozen=True)
+class JsonBody:
+    """Manifest request body sent as ``application/json``.
+
+    The default body shape for v1 manifests. A bare body value
+    (no ``encoding`` tag) is also parsed into ``JsonBody`` for
+    backwards compatibility with the original DL-0013 contract.
+
+    Attributes:
+        value: JSON value sent verbatim as the request body. String leaves
+            may contain ``${...}`` placeholders that the executor resolves
+            against the execution context before dispatch.
+    """
+
+    value: JsonValue
+
+
+@dataclass(frozen=True)
+class FormBody:
+    """Manifest request body sent as ``application/x-www-form-urlencoded``.
+
+    Used by OAuth 2.0 token-exchange and similar flows where the wire format
+    is form-urlencoded rather than JSON. The executor sets ``Content-Type:
+    application/x-www-form-urlencoded`` automatically only when the manifest
+    has not supplied a ``Content-Type`` header (case-insensitive per RFC
+    7230). Encoding is delegated to ``httpx`` (never hand-rolled).
+
+    Attributes:
+        fields: Mapping of form field name to value. Both names and values
+            are strings; placeholder substitution applies to each value
+            before dispatch. Stored as a read-only ``MappingProxyType`` so
+            the parsed body cannot be mutated after parse time.
+    """
+
+    fields: Mapping[str, str]
+
+
+type ManifestBody = JsonBody | FormBody
+"""Discriminated request body shape carried by ``ManifestRequest.body``."""
+
+
+@dataclass(frozen=True)
 class ManifestRequest:
     """HTTP request declared by a manifest test.
 
@@ -44,13 +87,14 @@ class ManifestRequest:
         method: HTTP method used for the manifest request.
         url: HTTPS URL fetched for the manifest test.
         headers: Optional string-valued headers to send with the request.
-        body: Optional JSON body to send (POST/PUT/PATCH/DELETE requests).
+        body: Optional typed body (JSON or form-urlencoded). Allowed on
+            POST/PUT/PATCH/DELETE; rejected on GET at parse time.
     """
 
     method: RequestMethod
     url: str
     headers: dict[str, str] | None = None
-    body: JsonValue | None = None
+    body: ManifestBody | None = None
 
 
 @dataclass(frozen=True)
@@ -518,11 +562,27 @@ def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_
 
 def _parse_v1_body(
     raw_request: dict[str, JsonValue], *, method: RequestMethod, location: str, seen_ids: set[str]
-) -> JsonValue | None:
-    """Parse and validate optional body from a v1 step request.
+) -> ManifestBody | None:
+    """Parse and validate the optional body from a v1 step request.
 
-    Body is rejected on GET requests. Placeholders in string leaves of the
-    body structure are validated for syntax and forward references.
+    Body is rejected on GET requests. Two body shapes are accepted:
+
+    1. **Bare JSON value** (no ``encoding`` tag): parsed as ``JsonBody``.
+       Preserves DL-0013 back-compat — any v1 manifest written before
+       DL-0014 keeps working without change.
+    2. **Tagged dict** ``{"encoding": "json" | "form", ...}``: parsed as
+       ``JsonBody`` (with required ``value``) or ``FormBody`` (with
+       required non-empty ``fields`` mapping of string→string).
+
+    The tagged-vs-bare discrimination is conservative: only a dict that
+    contains an ``encoding`` key is treated as tagged. A bare dict without
+    ``encoding`` is still a JSON body — manifests that happen to send a
+    JSON object with no ``encoding`` field continue to work.
+
+    Placeholder syntax is validated in:
+    - every string leaf of a JSON body (recursively, via
+      ``_validate_placeholders_in_structure``), and
+    - every value of a form body's ``fields`` mapping.
 
     Args:
         raw_request: Raw request JSON object potentially containing ``body``.
@@ -531,11 +591,12 @@ def _parse_v1_body(
         seen_ids: Set of step ids already parsed (for forward-ref detection).
 
     Returns:
-        The JSON body value, or ``None`` if no body key is present.
+        A ``JsonBody`` or ``FormBody``, or ``None`` if no body key is present.
 
     Raises:
-        ManifestError: If body is present on a GET request, or if placeholders
-            in body string leaves are invalid.
+        ManifestError: If body is present on a GET request, the tagged shape
+            is malformed, ``encoding`` is unknown, ``fields`` are empty or
+            contain non-string values, or any placeholder is invalid.
     """
     if "body" not in raw_request:
         return None
@@ -544,12 +605,73 @@ def _parse_v1_body(
     body = raw_request["body"]
     if body is None:
         raise ManifestError(f"{location}.body must not be null (omit the key to send no body)")
-    _validate_placeholders_in_structure(body, location=f"{location}.body", seen_ids=seen_ids)
+
+    body_location = f"{location}.body"
+
+    # Tagged shape: only triggered when body is a dict carrying an
+    # ``encoding`` key. Bare JSON objects without ``encoding`` remain
+    # JsonBody for back-compat with DL-0013 manifests.
+    if isinstance(body, dict) and "encoding" in body:
+        return _parse_tagged_body(body, location=body_location, seen_ids=seen_ids)
+
+    # Bare body: implicit JSON (DL-0013 behaviour preserved).
+    _validate_placeholders_in_structure(body, location=body_location, seen_ids=seen_ids)
     # Deep-copy so the parsed ``ManifestRequest`` owns its body. Without this,
     # the frozen dataclass would alias mutable JSON structures from the raw
     # manifest dict, and any post-parse mutation of the input could bypass
     # parse-time placeholder validation and change what the executor sends.
-    return copy.deepcopy(body)
+    return JsonBody(value=copy.deepcopy(body))
+
+
+def _parse_tagged_body(body: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestBody:
+    """Parse a ``{"encoding": ..., ...}`` tagged body dict into a typed body.
+
+    Args:
+        body: The raw body dict, known to contain an ``encoding`` key.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        A typed ``JsonBody`` or ``FormBody``.
+
+    Raises:
+        ManifestError: If ``encoding`` is unknown, required tagged-shape keys
+            are missing, ``fields`` are empty or non-string-valued, or any
+            placeholder inside the body is invalid.
+    """
+    encoding = body.get("encoding")
+    if encoding == "json":
+        _reject_unknown_keys(body, allowed_keys={"encoding", "value"}, location=location)
+        if "value" not in body:
+            raise ManifestError(f"{location}: tagged JSON body must include a 'value' key")
+        value = body["value"]
+        if value is None:
+            raise ManifestError(f"{location}.value must not be null (omit the body key to send no body)")
+        _validate_placeholders_in_structure(value, location=f"{location}.value", seen_ids=seen_ids)
+        return JsonBody(value=copy.deepcopy(value))
+    if encoding == "form":
+        _reject_unknown_keys(body, allowed_keys={"encoding", "fields"}, location=location)
+        if "fields" not in body:
+            raise ManifestError(f"{location}: form body must include a 'fields' object")
+        raw_fields = body["fields"]
+        if not isinstance(raw_fields, dict):
+            raise ManifestError(f"{location}.fields must be a JSON object")
+        if not raw_fields:
+            raise ManifestError(f"{location}.fields must not be empty")
+        validated_fields: dict[str, str] = {}
+        for field_name, field_value in raw_fields.items():
+            field_location = f"{location}.fields.{field_name}"
+            if not field_name:
+                raise ManifestError(f"{location}.fields contains an empty field name")
+            if not isinstance(field_value, str):
+                raise ManifestError(f"{field_location} must be a string value")
+            _validate_placeholder_syntax(field_value, location=field_location, seen_ids=seen_ids)
+            validated_fields[field_name] = field_value
+        # Freeze the parsed fields against post-parse mutation. The dict is
+        # built locally so deep-copy is unnecessary; MappingProxyType keeps
+        # the public Mapping read-only.
+        return FormBody(fields=MappingProxyType(validated_fields))
+    raise ManifestError(f"{location}.encoding must be one of: json, form (got: {encoding!r})")
 
 
 def _validate_placeholders_in_structure(value: JsonValue, *, location: str, seen_ids: set[str]) -> None:
