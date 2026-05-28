@@ -135,4 +135,25 @@ Consequences:
 - Whether local SQLite is required for the Phase 1 Django runtime or can be avoided.
 - JWT/JWS library choice for the FAPI flow.
 - Groups / two-phase setup+execution model (M5 orchestrator concern).
-- Header and body templating for POST requests (M4).
+- Form-urlencoded body encoding for OAuth2 token exchange (next slice after DL-0013).
+- Body size caps on response recording before report work begins.
+
+## DL-0013: Manifest v1 Non-GET Methods With Header And Body Templating
+
+Date: 2026-05-27
+Status: Accepted
+
+Decision: Extend the v1 manifest step request shape to support `POST`, `PUT`, `PATCH`, and `DELETE` methods alongside `GET`. Add two new optional fields to v1 step requests: `headers` (dict of string-valued headers validated against RFC 7230 token names) and `body` (arbitrary JSON value sent as `application/json`). Placeholder substitution (`${steps.<id>...}`) applies to header values and all string leaves of the body structure using the same grammar as URL substitution. Body is rejected on GET requests. The executor dispatches via `httpx.Client.request()` and records the method and resolved URL (post-substitution) in the step record. Full request recording (headers, body) is deferred until masking is implemented.
+
+Rationale: The M4 OAuth2 token-exchange step requires POST with a body built from the discovery response and a consent code. This is the smallest engine change that unblocks that step without committing to mTLS, JWS, form-urlencoded encoding, or callback handling. The engine remains domain-agnostic: it learns HTTP semantics, not OAuth2.
+
+Key choices:
+- **Methods supported:** GET, POST, PUT, PATCH, DELETE. Others (OPTIONS, HEAD) are intentionally excluded.
+- **Body templating:** Substitution applies only to string leaves. Non-string leaves (numbers, booleans, null) pass through unchanged. A string leaf containing multiple placeholders and literal text is concatenated as a string.
+- **Headers:** Single-valued strings only. RFC 7230 token validation on names. Empty values rejected. No list-valued headers in this slice.
+- **Content-Type:** `application/json` is the only natively-formatted body type. Form-urlencoded and multipart are deferred to the next slice.
+- **Masking:** Not yet applied to substituted secrets in the step record. Masking is a later milestone (PRD §"Result Outcomes").
+- **GET body:** Rejected at parse time. Headers on GET are allowed.
+- **DELETE body:** Allowed (some APIs use it for soft-delete payloads).
+
+Open consequence: The real OAuth2 token exchange needs `application/x-www-form-urlencoded` encoding. This will require either a content-type discriminator on the body field or a typed body shape (e.g. `{"encoding": "form", "fields": {...}}`). Deferred to the next slice.

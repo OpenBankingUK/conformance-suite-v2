@@ -344,3 +344,31 @@ def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_p
     if current is None:
         return "null"
     return str(current)
+
+
+def resolve_in_structure(value: JsonValue, context: ExecutionContext) -> JsonValue:
+    """Recursively resolve ``${...}`` placeholders in all string leaves of a JSON structure.
+
+    Walks dicts and lists depth-first and applies :func:`resolve_placeholders`
+    to every string leaf. Non-string leaves (numbers, booleans, null) are
+    returned unchanged.
+
+    Args:
+        value: JSON value (possibly nested) containing placeholder strings.
+        context: Execution context providing step records for resolution.
+
+    Returns:
+        A new JSON structure with all string-leaf placeholders resolved.
+
+    Raises:
+        PlaceholderResolutionError: If any string leaf contains an unresolvable
+            or malformed placeholder.
+    """
+    if isinstance(value, str):
+        return resolve_placeholders(value, context)
+    if isinstance(value, dict):
+        return {key: resolve_in_structure(child, context) for key, child in value.items()}
+    if isinstance(value, list):
+        return [resolve_in_structure(child, context) for child in value]
+    # Scalar: int, float, bool, None — pass through unchanged
+    return value
