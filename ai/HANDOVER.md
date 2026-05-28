@@ -20,11 +20,12 @@ M2 delivered manifest v0 (parser + executor). M3 delivered manifest v1 with sequ
 
 ## Next Recommended Work
 
-1. Form-urlencoded body encoding for the OAuth2 token exchange (`application/x-www-form-urlencoded`).
-2. mTLS client-certificate wiring in `conformance/http.py` (already scaffolded but unused by manifest executor).
+1. Form-urlencoded body encoding for the OAuth2 token exchange (`application/x-www-form-urlencoded`). Plan: `ai/plans/2026-05-28-form-urlencoded-body.md`.
+1a. Tier 1 Ozone integration test: wire the existing v1 discovery + JWKS manifest against the real Ozone discovery URL, gated by `OZONE_DISCOVERY_URL` and `@pytest.mark.integration`. Recommended to land in the same PR as (or immediately before) item 1. Plan: `ai/plans/2026-05-28-ozone-integration-tiers.md`.
+2. mTLS client-certificate wiring in `conformance/http.py` (already scaffolded but unused by manifest executor). Unlocks tier 2 Ozone integration (token endpoint).
 3. JWS request-object signing for FAPI flows.
 4. Callback/redirect handling for authorization code flow.
-5. Groups / two-phase setup+execution model (M5 orchestrator).
+5. Groups / two-phase setup+execution model (M5 orchestrator) — also tier 3 Ozone integration milestone.
 6. Report JSON schema and certification summary.
 7. REST API layer over the engine for the HTMX/Django UI.
 
