@@ -310,7 +310,9 @@ class TestSendJsonFormBody:
             )
 
         sent = captured[0]
-        # ``=`` ``&`` ``?`` ``:`` and space must all be percent-encoded.
+        # ``application/x-www-form-urlencoded`` form-url-encoding: reserved
+        # characters (``=`` ``&`` ``?`` ``:``) are percent-encoded, and space
+        # may be encoded as ``+`` or ``%20`` depending on the httpx version.
         # Match individual encoded substrings rather than the full body so the
         # test is robust to field ordering between httpx versions.
         assert b"redirect_uri=https%3A%2F%2Fclient%2Fcb%3Fx%3D1%26y%3D2" in sent.content

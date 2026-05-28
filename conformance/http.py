@@ -75,8 +75,10 @@ def send_json(
 
     - ``json_body`` is serialised as ``application/json`` via ``httpx``.
     - ``form_body`` is serialised as ``application/x-www-form-urlencoded``
-      via ``httpx``'s native form encoder (never hand-rolled). Values are
-      percent-encoded per RFC 3986.
+      via ``httpx``'s native form encoder (never hand-rolled), following
+      form-url-encoding semantics (e.g. spaces may be encoded as ``+``,
+      reserved characters percent-encoded). The exact byte representation
+      is delegated to ``httpx``.
 
     For ``form_body`` requests, ``Content-Type:
     application/x-www-form-urlencoded`` is set automatically **only** when
