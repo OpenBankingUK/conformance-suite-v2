@@ -16,10 +16,10 @@ lint: ## Ruff + mypy + docstring coverage + docstring structure
 	uv run pydoclint .
 
 test: ## Run unit tests (excludes live-network integration and Docker e2e tiers)
-	uv run pytest -m "not e2e and not integration" -v --cov
+	DJANGO_DEBUG=true uv run pytest -m "not e2e and not integration" -v --cov
 
 integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
-	uv run pytest -m integration -v tests/integration
+	DJANGO_DEBUG=true uv run pytest -m integration -v tests/integration
 
 dev: ## Run local dev server (auto-reload, debug)
 	DJANGO_DEBUG=true uv run python manage.py runserver
