@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
@@ -64,11 +65,28 @@ def send_json(
     *,
     headers: dict[str, str] | None = None,
     json_body: JsonValue | None = None,
+    form_body: Mapping[str, str] | None = None,
 ) -> JsonHttpResponse:
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
-    body (POST, PUT, PATCH, DELETE), ``json_body`` is serialised as JSON via ``httpx``.
+    body (POST, PUT, PATCH, DELETE), exactly one of ``json_body`` or
+    ``form_body`` may be supplied:
+
+    - ``json_body`` is serialised as ``application/json`` via ``httpx``.
+    - ``form_body`` is serialised as ``application/x-www-form-urlencoded``
+      via ``httpx``'s native form encoder (never hand-rolled), following
+      form-url-encoding semantics (e.g. spaces may be encoded as ``+``,
+      reserved characters percent-encoded). The exact byte representation
+      is delegated to ``httpx``.
+
+    For ``form_body`` requests, ``Content-Type:
+    application/x-www-form-urlencoded`` is set automatically **only** when
+    the caller has not already supplied a ``Content-Type`` header
+    (case-insensitive per RFC 7230). This lets a manifest opt into a
+    custom content-type (for example ``application/x-www-form-urlencoded;
+    charset=UTF-8``) without the helper silently overriding it.
+
     The response is parsed as a JSON object regardless of HTTP status code
     (status-agnostic contract per DL-0011), except for the HTTP no-content
     statuses (204, 205, 304) which are defined by RFC 9110 to carry no
@@ -80,8 +98,12 @@ def send_json(
         method: HTTP method (GET, POST, PUT, PATCH, DELETE).
         url: HTTPS endpoint URL to send the request to.
         headers: Optional additional headers to include in the request.
-        json_body: Optional JSON-serialisable body (sent as ``application/json``
-            for POST/PUT/PATCH/DELETE).
+        json_body: Optional JSON-serialisable body (sent as
+            ``application/json`` for POST/PUT/PATCH/DELETE). Mutually
+            exclusive with ``form_body``.
+        form_body: Optional form-field mapping (sent as
+            ``application/x-www-form-urlencoded`` for POST/PUT/PATCH/DELETE).
+            Mutually exclusive with ``json_body``.
 
     Returns:
         Parsed JSON object response with URL and status code.
@@ -89,7 +111,14 @@ def send_json(
     Raises:
         JsonHttpClientError: If the request fails, the response is not valid
             JSON, or the payload is not a JSON object.
+        ValueError: If both ``json_body`` and ``form_body`` are supplied.
     """
+    # Reject ambiguous calls eagerly: a single request can carry only one
+    # body encoding. Allowing both would force the helper to silently pick
+    # one, hiding manifest authoring mistakes.
+    if json_body is not None and form_body is not None:
+        raise ValueError("send_json: json_body and form_body are mutually exclusive")
+
     # Normalise the method to uppercase once so the body-selection guard and
     # the dispatch call agree regardless of the caller's casing. httpx accepts
     # any case, but our guard treats the supported set as a closed uppercase
@@ -103,11 +132,27 @@ def send_json(
     if headers:
         request_headers.update(headers)
 
-    # Only send json_body for methods that support a body
-    send_body = json_body if method in ("POST", "PUT", "PATCH", "DELETE") else None
+    # Drop any body for methods that don't carry one. Mutual exclusion
+    # between json_body and form_body has already been enforced above, so
+    # at most one of these is non-None here — there is no precedence rule.
+    method_allows_body = method in ("POST", "PUT", "PATCH", "DELETE")
+    send_json_body = json_body if method_allows_body else None
+    send_form_body: Mapping[str, str] | None = form_body if method_allows_body else None
+
+    # Set the form Content-Type default only when the manifest has not
+    # supplied one. ``httpx.Headers.__contains__`` is case-insensitive, so
+    # ``content-type`` from a manifest correctly suppresses the default.
+    if send_form_body is not None and "content-type" not in request_headers:
+        request_headers["Content-Type"] = "application/x-www-form-urlencoded"
 
     try:
-        response = client.request(method, url, headers=request_headers, json=send_body)
+        response = client.request(
+            method,
+            url,
+            headers=request_headers,
+            json=send_json_body,
+            data=send_form_body,
+        )
     except httpx.RequestError as error:
         raise JsonHttpClientError(f"Request failed for {url}: {error}") from error
 

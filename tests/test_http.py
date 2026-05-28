@@ -253,3 +253,146 @@ class TestSendJsonNoContentResponses:
             pytest.raises(JsonHttpClientError, match="must be a JSON object"),
         ):
             send_json(client, "GET", "https://example.com/resource")
+
+
+@pytest.mark.unit
+class TestSendJsonFormBody:
+    """Verify form-urlencoded body dispatch.
+
+    Covers the ``application/x-www-form-urlencoded`` capability used by
+    OAuth 2.0 token-exchange-style manifest steps. The helper must:
+
+    - Encode form fields using httpx's native form encoder (never a
+      hand-rolled ``urllib.parse.urlencode``).
+    - Default ``Content-Type: application/x-www-form-urlencoded`` when the
+      caller has not supplied one.
+    - Allow the caller to override ``Content-Type`` case-insensitively.
+    - Preserve the default ``Accept`` header.
+    - Reject ambiguous calls that supply both ``json_body`` and ``form_body``.
+    """
+
+    def test_form_body_sets_default_content_type_and_encodes_fields(self) -> None:
+        """A POST with form_body sends form-urlencoded fields with the default Content-Type."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request and return a JSON response."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "POST",
+                "https://example.com/token",
+                form_body={"grant_type": "authorization_code", "code": "abc123"},
+            )
+
+        sent = captured[0]
+        assert sent.headers["content-type"] == "application/x-www-form-urlencoded"
+        assert sent.content == b"grant_type=authorization_code&code=abc123"
+
+    def test_form_body_percent_encodes_special_characters(self) -> None:
+        """Reserved characters in form values are percent-encoded on the wire."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request and return a JSON response."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "POST",
+                "https://example.com/token",
+                form_body={"redirect_uri": "https://client/cb?x=1&y=2", "scope": "openid profile"},
+            )
+
+        sent = captured[0]
+        # ``application/x-www-form-urlencoded`` form-url-encoding: reserved
+        # characters (``=`` ``&`` ``?`` ``:``) are percent-encoded, and space
+        # may be encoded as ``+`` or ``%20`` depending on the httpx version.
+        # Match individual encoded substrings rather than the full body so the
+        # test is robust to field ordering between httpx versions.
+        assert b"redirect_uri=https%3A%2F%2Fclient%2Fcb%3Fx%3D1%26y%3D2" in sent.content
+        assert b"scope=openid+profile" in sent.content or b"scope=openid%20profile" in sent.content
+
+    def test_manifest_content_type_overrides_form_default_case_insensitively(self) -> None:
+        """A manifest-supplied Content-Type (any case) replaces the form default."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request and return a JSON response."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "POST",
+                "https://example.com/token",
+                headers={"content-type": "application/x-www-form-urlencoded; charset=UTF-8"},
+                form_body={"grant_type": "client_credentials"},
+            )
+
+        sent = captured[0]
+        # Exactly one Content-Type, matching the manifest-supplied value.
+        assert sent.headers.get_list("Content-Type", split_commas=False) == [
+            "application/x-www-form-urlencoded; charset=UTF-8"
+        ]
+
+    def test_form_body_preserves_default_accept_header(self) -> None:
+        """The default ``Accept: application/json`` header is preserved on form requests."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request and return a JSON response."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "POST",
+                "https://example.com/token",
+                form_body={"grant_type": "client_credentials"},
+            )
+
+        assert captured[0].headers["accept"] == "application/json"
+
+    def test_form_body_dropped_on_get_method(self) -> None:
+        """GET requests must not transmit a form body, mirroring the JSON-on-GET rule."""
+        captured: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the outgoing request and return a JSON response."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            send_json(
+                client,
+                "GET",
+                "https://example.com/resource",
+                form_body={"ignored": "true"},
+            )
+
+        sent = captured[0]
+        assert sent.content == b""
+        # No default form Content-Type leaked onto a body-less GET.
+        assert "content-type" not in sent.headers
+
+    def test_rejects_simultaneous_json_and_form_body(self) -> None:
+        """Supplying both json_body and form_body raises ValueError."""
+        with (
+            httpx.Client(transport=httpx.MockTransport(lambda r: httpx.Response(200, json={}))) as client,
+            pytest.raises(ValueError, match="mutually exclusive"),
+        ):
+            send_json(
+                client,
+                "POST",
+                "https://example.com/resource",
+                json_body={"a": 1},
+                form_body={"b": "2"},
+            )
