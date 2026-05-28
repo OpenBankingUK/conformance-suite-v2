@@ -19,6 +19,8 @@ from conformance.context import (
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
+    FormBody,
+    JsonBody,
     Manifest,
     ManifestAssertion,
     ManifestError,
@@ -170,11 +172,26 @@ def _execute_v1_step(
                     new_context,
                 )
 
-    # Resolve placeholders in body
-    resolved_body: JsonValue | None = None
+    # Resolve placeholders in body. JsonBody walks the structure recursively;
+    # FormBody resolves each field value. Form fields are intentionally NOT
+    # recorded into the step record yet — masking secrets in step evidence is
+    # still deferred (DL-0013), and OAuth2 token-exchange field values
+    # frequently carry secrets (authorization codes, client secrets).
+    resolved_json_body: JsonValue | None = None
+    resolved_form_body: dict[str, str] | None = None
     if manifest_step.request.body is not None:
         try:
-            resolved_body = resolve_in_structure(manifest_step.request.body, context)
+            if isinstance(manifest_step.request.body, JsonBody):
+                resolved_json_body = resolve_in_structure(manifest_step.request.body.value, context)
+            else:
+                # FormBody: resolve each value individually. Names are not
+                # templated by design (DL-0014) — only values may carry
+                # placeholders.
+                form_body: FormBody = manifest_step.request.body
+                resolved_form_body = {
+                    field_name: resolve_placeholders(field_value, context)
+                    for field_name, field_value in form_body.fields.items()
+                }
         except PlaceholderResolutionError as error:
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
@@ -207,7 +224,14 @@ def _execute_v1_step(
     # Execute HTTP request
     request_record = RequestRecord(method=method, url=resolved_url)
     try:
-        response = send_json(client, method, resolved_url, headers=resolved_headers, json_body=resolved_body)
+        response = send_json(
+            client,
+            method,
+            resolved_url,
+            headers=resolved_headers,
+            json_body=resolved_json_body,
+            form_body=resolved_form_body,
+        )
     except JsonHttpClientError as error:
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (

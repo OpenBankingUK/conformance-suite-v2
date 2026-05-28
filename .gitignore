@@ -26,4 +26,4 @@ htmlcov/
 dist/
 *.egg-info/
 
-ai/
+ai/*

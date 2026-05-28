@@ -157,3 +157,22 @@ Key choices:
 - **DELETE body:** Allowed (some APIs use it for soft-delete payloads).
 
 Open consequence: The real OAuth2 token exchange needs `application/x-www-form-urlencoded` encoding. This will require either a content-type discriminator on the body field or a typed body shape (e.g. `{"encoding": "form", "fields": {...}}`). Deferred to the next slice.
+
+## DL-0014: Tagged Body Encoding On Manifest v1 Requests
+
+Date: 2026-05-28
+Status: Accepted
+
+Decision: Promote `ManifestRequest.body` to a discriminated `JsonBody | FormBody` union (`ManifestBody`). A v1 request may declare its body in one of three shapes: a bare JSON value (implicit `JsonBody`, preserves DL-0013 back-compat); a tagged `{"encoding": "json", "value": <json>}`; or a tagged `{"encoding": "form", "fields": {<string>: <string>, ...}}`. Form bodies are dispatched through `send_json(form_body=...)` as `application/x-www-form-urlencoded` (encoded by `httpx`, never hand-rolled). The executor sets `Content-Type: application/x-www-form-urlencoded` only when the manifest has not supplied a `Content-Type` header (case-insensitive per RFC 7230). Form-field names are not templated; only values may carry `${...}` placeholders.
+
+Rationale: The real OAuth 2.0 token-exchange step needs form-urlencoded encoding (the open consequence flagged in DL-0013). A tagged discriminator makes intent explicit at parse time, keeps substitution rules unambiguous (every form value is a string), and avoids the surprise of a header alone silently changing wire encoding. Keeping bare JSON as the default preserves every existing v1 manifest unchanged.
+
+Key choices:
+- **Encodings supported:** `json` (default) and `form`. `multipart/form-data` is intentionally excluded — no Phase 1 ASPSP flow needs it.
+- **Form-field grammar:** `dict[str, str]` only. Names must be non-empty; values must be strings after placeholder resolution remains a string. Empty `fields` is rejected at parse time.
+- **Method gating:** `form` (like `json`) is allowed on POST/PUT/PATCH/DELETE and rejected on GET.
+- **Immutability:** Parsed form `fields` are wrapped in `types.MappingProxyType` so the frozen `FormBody` cannot be tampered with post-parse.
+- **Step record:** Form fields are NOT recorded into the step result. Masking secret values (DL-0013) is still owed, and OAuth2 form fields routinely carry secrets (authorization codes, client secrets). A regression test asserts the absence to lock the deferral in.
+- **Encoding helper:** Wire encoding is delegated to `httpx` (`data=fields`). Hand-rolled `urllib.parse.urlencode` is forbidden.
+
+Open consequence: Once masking lands, the masking layer must apply both to JSON-body string leaves and to form-field values, and the step record should then carry the masked field set so reports remain auditable.

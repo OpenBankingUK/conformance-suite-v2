@@ -25,10 +25,13 @@
           "X-Issuer": "${steps.discovery.response.body.issuer}"
         },
         "body": {
-          "grant_type": "authorization_code",
-          "code": "SYNTHETIC_AUTH_CODE_PLACEHOLDER",
-          "client_id": "synthetic-client-id-00000000",
-          "redirect_uri": "https://conformance.example.com/callback"
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "SYNTHETIC_AUTH_CODE_PLACEHOLDER",
+            "client_id": "synthetic-client-id-00000000",
+            "redirect_uri": "https://conformance.example.com/callback"
+          }
         }
       },
       "assertions": [

@@ -4,7 +4,7 @@ from typing import cast
 import pytest
 
 from conformance.json_types import JsonValue
-from conformance.manifest import ManifestError, load_manifest, parse_manifest
+from conformance.manifest import FormBody, JsonBody, ManifestError, load_manifest, parse_manifest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v0-openid-jwks-example.json"
@@ -742,7 +742,9 @@ def test_parse_v1_manifest_accepts_json_body() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.body == {"grant_type": "authorization_code", "code": "abc123"}
+    parsed = manifest.steps[0].request.body
+    assert isinstance(parsed, JsonBody)
+    assert parsed.value == {"grant_type": "authorization_code", "code": "abc123"}
 
 
 @pytest.mark.unit
@@ -782,7 +784,8 @@ def test_parse_v1_manifest_body_is_isolated_from_raw_dict() -> None:
     cast(list[JsonValue], inner_body["scopes"]).append("offline_access")
 
     parsed_body = manifest.steps[0].request.body
-    assert parsed_body == {
+    assert isinstance(parsed_body, JsonBody)
+    assert parsed_body.value == {
         "credentials": {"client_id": "original"},
         "scopes": ["openid"],
     }
@@ -1009,7 +1012,9 @@ def test_parse_v1_manifest_accepts_body_on_delete() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.body == {"reason": "test cleanup"}
+    parsed = manifest.steps[0].request.body
+    assert isinstance(parsed, JsonBody)
+    assert parsed.value == {"reason": "test cleanup"}
 
 
 @pytest.mark.unit
@@ -1169,3 +1174,276 @@ def test_parse_v1_manifest_rejects_header_value_with_obs_text(bad_value: str) ->
     }
     with pytest.raises(ManifestError, match="non-transportable character"):
         parse_manifest(raw_manifest)
+
+
+# --- v1 manifest parser tests: tagged form body (DL-0014) ---
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_form_body() -> None:
+    """A valid tagged form body parses into a FormBody with the declared fields."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Form body",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "abc123",
+                            "client_id": "test-client",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    parsed = manifest.steps[0].request.body
+    assert isinstance(parsed, FormBody)
+    assert dict(parsed.fields) == {
+        "grant_type": "authorization_code",
+        "code": "abc123",
+        "client_id": "test-client",
+    }
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_form_body_placeholders_in_values() -> None:
+    """Placeholders inside form-field values are syntactically validated at parse time."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Form body with placeholders",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {"method": "GET", "url": "https://example.com/consent"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "${steps.consent.response.body.code}",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    parsed = manifest.steps[1].request.body
+    assert isinstance(parsed, FormBody)
+    assert parsed.fields["code"] == "${steps.consent.response.body.code}"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_form_body_on_get() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "GET with form body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "form", "fields": {"k": "v"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="GET requests must not declare a body"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_empty_form_fields() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Empty form fields",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "form", "fields": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must not be empty"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_missing_form_fields() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Missing form fields key",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "form"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must include a 'fields' object"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "bad_value",
+    [123, True, None, ["a"], {"nested": "x"}],
+    ids=["int", "bool", "null", "list", "object"],
+)
+def test_parse_v1_manifest_rejects_non_string_form_value(bad_value: JsonValue) -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Non-string form value",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "form", "fields": {"k": bad_value}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="must be a string value"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unknown_encoding() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad encoding",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "multipart", "fields": {"k": "v"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match="encoding must be one of: json, form"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_malformed_placeholder_in_form_field() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Bad placeholder in form field",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "step-b",
+                "name": "Step B",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/b",
+                    "body": {"encoding": "form", "fields": {"code": "${invalid syntax}"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    with pytest.raises(ManifestError, match="malformed placeholder"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_tagged_json_body() -> None:
+    """Explicit ``{"encoding": "json", "value": ...}`` shape is accepted and parses to JsonBody."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Tagged JSON body",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "json", "value": {"k": "v"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    parsed = manifest.steps[0].request.body
+    assert isinstance(parsed, JsonBody)
+    assert parsed.value == {"k": "v"}
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_form_body_is_immutable_after_parse() -> None:
+    """Form fields are exposed as a read-only mapping to prevent post-parse tampering."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Form body immutability",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/api",
+                    "body": {"encoding": "form", "fields": {"k": "v"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    parsed = manifest.steps[0].request.body
+    assert isinstance(parsed, FormBody)
+    # Cast to a mutable mapping so mypy permits the assignment; the runtime
+    # TypeError still fires from MappingProxyType.__setitem__, which is what
+    # this test is verifying.
+    with pytest.raises(TypeError):
+        cast(dict[str, str], parsed.fields)["k"] = "tampered"

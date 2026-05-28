@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Manifest v1 supports a tagged request body shape `{"encoding": "json" | "form", ...}`. A `form` body declares a `fields` mapping of string→string that the executor dispatches as `application/x-www-form-urlencoded` (encoded by `httpx`, never hand-rolled) via the `send_json(form_body=...)` path. Placeholder substitution applies to each field value. Bare-body manifests (no `encoding` tag) continue to mean JSON for backwards compatibility (DL-0014).
 - HTTP helper `send_json` now supports `application/x-www-form-urlencoded` request bodies via a `form_body` parameter (encoded by httpx's native form encoder; default `Content-Type` only set when the caller has not supplied one; mutually exclusive with `json_body`). Unlocks OAuth 2.0 token-exchange manifest steps without leaking transport details into the executor.
 - Manifest v1 supports POST, PUT, PATCH, and DELETE methods with optional `headers` and JSON `body` fields, including `${...}` placeholder substitution in header values and body string leaves
 - HTTP helper `send_json` for dispatching arbitrary-method requests with JSON body through the conformance engine

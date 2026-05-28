@@ -1,3 +1,4 @@
+import json
 from typing import Any, cast
 
 import httpx
@@ -734,7 +735,6 @@ def test_run_manifest_v1_post_with_body_and_headers() -> None:
     assert token_request.method == "POST"
     assert str(token_request.url) == "https://example.com/token"
     assert token_request.headers["x-issuer"] == "https://example.com"
-    import json
 
     assert json.loads(token_request.content) == {
         "grant_type": "authorization_code",
@@ -789,7 +789,6 @@ def test_run_manifest_v1_post_resolves_body_placeholders() -> None:
         result = run_manifest(manifest, environment="test", client=client)
 
     assert result.status == "passed"
-    import json
 
     token_body = json.loads(captured_requests[1].content)
     assert token_body["redirect_uri"] == "https://example.com/token/callback"
@@ -990,3 +989,205 @@ def test_run_manifest_v1_delete_204_passes_http_status_assertion() -> None:
     assert len(captured_requests) == 1
     assert captured_requests[0].method == "DELETE"
     assert result.steps[0].status == "passed"
+
+
+# --- v1 manifest executor tests: form body dispatch (DL-0014) ---
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_post_form_body_sends_urlencoded() -> None:
+    """A FormBody step dispatches application/x-www-form-urlencoded with resolved values."""
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        if "openid-configuration" in str(request.url):
+            return httpx.Response(
+                200,
+                json={"token_endpoint": "https://example.com/token"},
+            )
+        return httpx.Response(200, json={"access_token": "tok_form"})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Form-body token exchange",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "code with spaces & special=chars",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    token_request = captured_requests[1]
+    assert token_request.method == "POST"
+    assert token_request.headers["content-type"] == "application/x-www-form-urlencoded"
+    # Body is form-urlencoded by httpx; assert percent-encoded fragments are
+    # present rather than the exact byte sequence (httpx chooses how to encode
+    # spaces — typically as '+').
+    wire_body = token_request.content.decode("ascii")
+    assert "grant_type=authorization_code" in wire_body
+    assert "code=" in wire_body
+    assert "%26" in wire_body  # '&' inside a value must be percent-encoded
+    assert "%3D" in wire_body  # '=' inside a value must be percent-encoded
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_form_body_resolves_placeholders_in_values() -> None:
+    """Placeholders in form-field values are resolved from the execution context."""
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        if "consent" in str(request.url):
+            return httpx.Response(200, json={"code": "resolved-auth-code"})
+        return httpx.Response(200, json={"access_token": "tok"})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Form placeholder resolution",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {"method": "GET", "url": "https://example.com/consent"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "code": "${steps.consent.response.body.code}",
+                            "grant_type": "authorization_code",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    wire_body = captured_requests[1].content.decode("ascii")
+    assert "code=resolved-auth-code" in wire_body
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_form_body_respects_manifest_content_type() -> None:
+    """A manifest-supplied Content-Type overrides the default form Content-Type."""
+    captured_requests: list[httpx.Request] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Custom Content-Type",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "headers": {
+                        "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+                    },
+                    "body": {"encoding": "form", "fields": {"k": "v"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        run_manifest(manifest, environment="test", client=client)
+
+    assert captured_requests[0].headers["content-type"] == "application/x-www-form-urlencoded; charset=UTF-8"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
+    """Form fields must not appear in the step result — masking is deferred (DL-0013).
+
+    Locks in the DL-0013 deferral: until secrets masking lands, form-field
+    values (which often carry OAuth2 secrets) are not recorded into the
+    step result. The result still reports method, URL, and assertions, but
+    no field names or values.
+    """
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "No field leak",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "client_secret": "super-secret-value-shhh",  # pragma: allowlist secret
+                            "grant_type": "client_credentials",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].status == "passed"
+    assert result.steps[0].url == "https://example.com/token"
+    # Scan the full step result (incl. details) for any leak of the secret
+    # or field name. ``str`` covers nested dataclasses/mappings without
+    # imposing a JSON-serialisable constraint on the result.
+    serialised = str(result.steps[0])
+    assert "super-secret-value-shhh" not in serialised
+    assert "client_secret" not in serialised
