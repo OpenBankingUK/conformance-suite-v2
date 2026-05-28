@@ -17,6 +17,11 @@ class ConfigError(ValueError):
 
 
 FollowUpMode = Literal["jwks", "discovery_only"]
+"""Smoke-check follow-up strategy after fetching OpenID discovery.
+
+``"jwks"`` fetches the JWKS document referenced by ``jwks_uri``;
+``"discovery_only"`` stops after the discovery document itself.
+"""
 
 
 @dataclass(frozen=True)
