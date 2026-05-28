@@ -34,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bumped pinned third-party GitHub Actions to Node 24-compatible releases to clear GitHub's Node 20 deprecation warnings: `actions/checkout` → v6.0.2, `actions/upload-artifact` → v7.0.1, `astral-sh/setup-uv` → v8.1.0, `docker/setup-buildx-action` → v4.1.0, `docker/build-push-action` → v7.2.0. All pins remain full-SHA with the version tag in a trailing comment.
 - Enforced Google-style docstrings via ruff pydocstyle and backfilled the `conformance/` package
 - Manifest v0 `followUp` is now internally desugared to v1 sequential steps at execution time (no external behaviour change for v0 consumers)
 - Manifest v0 test IDs now enforce `[A-Za-z0-9][A-Za-z0-9_-]*` validation (dots are rejected) to keep placeholder step-path parsing unambiguous
