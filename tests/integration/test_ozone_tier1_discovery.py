@@ -115,3 +115,8 @@ def test_ozone_tier1_invalid_path_is_recorded_not_raised(ozone_discovery_url: st
     step = result.steps[0]
     assert step.status == "failed"
     assert step.url == invalid_url
+    # DL-0011 pins *4xx* (client-error) behaviour specifically. A 5xx from a
+    # proxy or the Ozone host itself would also satisfy `status == "failed"`,
+    # so assert the status-code class explicitly to keep the test honest.
+    assert step.status_code is not None, "Ozone host returned no HTTP status"
+    assert 400 <= step.status_code < 500, step.status_code

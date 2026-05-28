@@ -11,9 +11,9 @@ name: Ozone Integration
 #                        for merges: it is NOT in the required-status-checks
 #                        list, matching the admin-override allowance in
 #                        docs/CICD_STRATEGY.md for Ozone misbehaviour. When the
-#                        OZONE_DISCOVERY_URL secret is not available (e.g. a
-#                        fork PR), the job skips with a notice rather than
-#                        failing.
+#                        OZONE_DISCOVERY_URL repository variable is not
+#                        available (e.g. a fork PR), the job skips with a
+#                        notice rather than failing.
 #   - workflow_dispatch: on-demand from the Actions UI.
 #   - schedule:          nightly at 03:17 UTC so failures surface daily
 #                        independently of PR activity.
@@ -40,7 +40,7 @@ on:
   workflow_dispatch:
     inputs:
       discovery_url_override:
-        description: "Override OZONE_DISCOVERY_URL for this run (leave blank to use the environment secret)"
+        description: "Override OZONE_DISCOVERY_URL for this run (leave blank to use the repository variable)"
         required: false
         default: ""
         type: string
@@ -112,11 +112,14 @@ jobs:
       - name: Run Ozone tier 1 integration tests
         if: steps.resolve.outputs.available == 'true'
         env:
-          # The discovery URL is masked above when supplied via the
-          # workflow_dispatch override and is already masked by GitHub when
-          # sourced from the environment secret.
+          # The discovery URL is masked above only when supplied via the
+          # workflow_dispatch override. When sourced from
+          # `vars.OZONE_DISCOVERY_URL` it is intentionally NOT masked: it is a
+          # publishable repository variable (see the file-header rationale
+          # block), not a secret.
           OZONE_DISCOVERY_URL: ${{ steps.resolve.outputs.discovery_url }}
         run: |
+          set -euo pipefail
           uv run pytest \
             -m ozone \
             --json-report \
