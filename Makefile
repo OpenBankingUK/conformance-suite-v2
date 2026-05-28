@@ -1,6 +1,6 @@
 .PHONY: check lint test integration secrets audit dev serve docker help
 
-check: secrets lint test ## Run all checks (mirrors CI)
+check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
 secrets: ## Scan for leaked secrets
 	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
