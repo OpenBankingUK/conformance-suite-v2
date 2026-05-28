@@ -132,9 +132,9 @@ def send_json(
     if headers:
         request_headers.update(headers)
 
-    # Only send a body for methods that support one. Form takes priority
-    # over JSON when both are None-checked above; the mutual-exclusion guard
-    # has already rejected the both-supplied case.
+    # Drop any body for methods that don't carry one. Mutual exclusion
+    # between json_body and form_body has already been enforced above, so
+    # at most one of these is non-None here — there is no precedence rule.
     method_allows_body = method in ("POST", "PUT", "PATCH", "DELETE")
     send_json_body = json_body if method_allows_body else None
     send_form_body: Mapping[str, str] | None = form_body if method_allows_body else None
