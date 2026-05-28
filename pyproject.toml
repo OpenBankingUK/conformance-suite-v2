@@ -32,6 +32,7 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 markers = [
     "unit: fast, isolated unit tests",
     "integration: tests requiring Django test client or DB",
+    "ozone: live-network Ozone conformance tier tests (gated on tier env vars; require network access)",
     "e2e: end-to-end tests requiring Docker and a model bank",
 ]
 # -ra: show summary of all non-passing tests at the end of the run.

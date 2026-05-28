@@ -118,7 +118,7 @@ jobs:
           OZONE_DISCOVERY_URL: ${{ steps.resolve.outputs.discovery_url }}
         run: |
           uv run pytest \
-            -m integration \
+            -m ozone \
             --json-report \
             --json-report-file=ozone-integration-results.json \
             -v \

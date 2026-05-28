@@ -70,7 +70,7 @@ def _v1_discovery_manifest(discovery_url: str) -> dict[str, JsonValue]:
     }
 
 
-@pytest.mark.integration
+@pytest.mark.ozone
 @_OZONE_TIER1
 def test_ozone_tier1_discovery(ozone_discovery_url: str) -> None:
     manifest = parse_manifest(_v1_discovery_manifest(ozone_discovery_url))
@@ -84,7 +84,7 @@ def test_ozone_tier1_discovery(ozone_discovery_url: str) -> None:
     assert discovery_step.status_code == 200
 
 
-@pytest.mark.integration
+@pytest.mark.ozone
 @_OZONE_TIER1
 def test_ozone_tier1_invalid_path_is_recorded_not_raised(ozone_discovery_url: str) -> None:
     """A 4xx on the Ozone host must produce a failed step, not propagate an exception (DL-0011)."""

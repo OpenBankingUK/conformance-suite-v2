@@ -36,7 +36,7 @@ M2 delivered manifest v0 (parser + executor). M3 delivered manifest v1 with sequ
 
 ## Next Recommended Work
 
-1. Tier 1 Ozone integration test: wire the existing v1 discovery + JWKS manifest against the real Ozone discovery URL, gated by `OZONE_DISCOVERY_URL` and `@pytest.mark.integration`.
+1. Tier 1 Ozone integration test: wire the existing v1 discovery + JWKS manifest against the real Ozone discovery URL, gated by `OZONE_DISCOVERY_URL` and `@pytest.mark.ozone`.
 2. mTLS client-certificate wiring in `conformance/http.py` (already scaffolded but unused by manifest executor). Unlocks tier 2 Ozone integration (token endpoint).
 3. JWS request-object signing for FAPI flows.
 4. Callback/redirect handling for authorization code flow.
