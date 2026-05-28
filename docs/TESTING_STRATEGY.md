@@ -50,6 +50,8 @@ Test HTTP request/response cycles against the running Django app, including HTMX
 | `httpx` | ASGI test transport for async-compatible requests |
 | `respx` | Mock external HTTP calls deterministically |
 
+**Live-network Ozone integration tests** live under `tests/integration/` and carry the `integration` marker. They are gated on tier-specific environment variables via `tests/_ozone.py::requires_ozone(tier)` — for example, tier 1 (OpenID discovery against the real Ozone host) requires `OZONE_DISCOVERY_URL`. Tests skip cleanly with a self-documenting reason when env vars are absent and never silently pass. `make test` (and therefore `make check`) excludes the `integration` marker so default unit runs stay offline; `make integration` runs the live-network tier when env vars are set. In CI, the `Ozone Integration` workflow (`.github/workflows/ozone-integration.yml`) runs the tier on every PR (surfacing pytest output on the PR check page), nightly on a schedule, and on manual `workflow_dispatch`, sourcing `OZONE_DISCOVERY_URL` from the `ozone-integration` GitHub Environment. The workflow is non-blocking for PR merges; fork PRs without secret access skip with a notice rather than fail. See [`ai/plans/2026-05-28-ozone-integration-tiers.md`](../ai/plans/2026-05-28-ozone-integration-tiers.md) for the full tier definition.
+
 ### 3. End-to-End Tests (Model Bank Endpoint Testing)
 
 The application is run as a Docker container with a config file pointing to a model bank. The container executes, writes a structured result file, and exits. The E2E test suite:
