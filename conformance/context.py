@@ -127,32 +127,34 @@ def record_step(
 
 
 _TRUNCATION_CONTEXT_CHARS = 20
-"""Maximum characters to show either side of a malformed placeholder token."""
+"""Maximum characters of trailing context to show after a malformed placeholder token."""
 
 
 def _truncate_around_malformed(template: str) -> str:
-    """Return a short context window around the first unterminated ``${`` token.
+    """Return a short context window starting at the first unterminated ``${`` token.
 
-    Avoids exposing the full template — which may contain sensitive URL
-    query parameters — in error messages that propagate to result files.
+    Avoids exposing the template *prefix* — which may contain sensitive URL
+    query parameters such as ``client_secret`` or bearer tokens — in error
+    messages that propagate to result files. Only the ``${`` opener and a
+    short trailing window are returned, which is enough to identify which
+    placeholder is malformed without leaking anything preceding it.
 
     Args:
         template: Template containing at least one unterminated ``${``.
 
     Returns:
-        A string showing up to :data:`_TRUNCATION_CONTEXT_CHARS` characters
-        before the ``${`` and the remainder of the template after it (also
-        capped), with ellipsis markers when truncated.
+        A string starting with ``${`` followed by up to
+        :data:`_TRUNCATION_CONTEXT_CHARS` characters from the template, with
+        a trailing ellipsis marker when the suffix is truncated. Returns
+        ``"..."`` if no ``${`` token is found.
     """
     idx = template.rfind("${")
     if idx == -1:
         return "..."
-    start = max(0, idx - _TRUNCATION_CONTEXT_CHARS)
-    end = min(len(template), idx + _TRUNCATION_CONTEXT_CHARS)
-    snippet = template[start:end]
-    prefix = "..." if start > 0 else ""
+    end = min(len(template), idx + 2 + _TRUNCATION_CONTEXT_CHARS)
+    snippet = template[idx:end]
     suffix = "..." if end < len(template) else ""
-    return f"{prefix}{snippet}{suffix}"
+    return f"{snippet}{suffix}"
 
 
 def _validate_placeholder_syntax(template: str) -> None:

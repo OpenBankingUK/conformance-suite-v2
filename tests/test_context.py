@@ -290,6 +290,27 @@ class TestResolvePlaceholdersMalformedSyntax:
         error_msg = str(exc_info.value)
         assert "SUPER_SECRET_TOKEN_12345" not in error_msg
 
+    def test_unterminated_placeholder_error_excludes_prefix_entirely(self) -> None:
+        """Error context must never include any characters preceding ``${``.
+
+        Defence in depth: even short prefix fragments (e.g. partial token
+        tails or query-parameter names) must not appear in error output.
+        Only the ``${`` opener and trailing identifier should be shown.
+        """
+        ctx = _discovery_context()
+        # A short prefix whose final characters would have been captured by
+        # the previous prefix-window implementation.
+        sensitive_prefix = "?token=abcdef0123456789"
+        template = f"{sensitive_prefix}${{steps.openid-discovery.request.url"
+        with pytest.raises(PlaceholderResolutionError, match="Unterminated placeholder") as exc_info:
+            resolve_placeholders(template, ctx)
+        error_msg = str(exc_info.value)
+        # No character from the prefix may appear in the error context.
+        for fragment in ("token=", "abcdef", "0123456789", "?token"):
+            assert fragment not in error_msg
+        # The error must still identify the malformed token meaningfully.
+        assert "${steps.openid" in error_msg
+
 
 @pytest.mark.unit
 class TestResolveInStructure:
