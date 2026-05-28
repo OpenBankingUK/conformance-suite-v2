@@ -27,6 +27,16 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
 ALLOWED_HOSTS = _get_allowed_hosts()
 
+# Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
+# The healthcheck runs inside the container against ``http://localhost:8000/``
+# but sends an explicit ``Host: healthcheck.local`` header so the probe does
+# not depend on operators including ``localhost`` in ``DJANGO_ALLOWED_HOSTS``.
+# This token is reserved for the in-container probe and is unconditionally
+# trusted; it is not routable from outside the container.
+HEALTHCHECK_HOST = "healthcheck.local"
+if HEALTHCHECK_HOST not in ALLOWED_HOSTS:
+    ALLOWED_HOSTS.append(HEALTHCHECK_HOST)
+
 # Production safety: only enforce requirements when explicitly configured
 # (i.e. not during mypy/pytest tooling runs where no env vars are set).
 _explicitly_configured = "DJANGO_SECRET_KEY" in os.environ
