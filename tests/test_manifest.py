@@ -1442,5 +1442,8 @@ def test_parse_v1_manifest_form_body_is_immutable_after_parse() -> None:
     manifest = parse_manifest(raw_manifest)
     parsed = manifest.steps[0].request.body
     assert isinstance(parsed, FormBody)
+    # Cast to a mutable mapping so mypy permits the assignment; the runtime
+    # TypeError still fires from MappingProxyType.__setitem__, which is what
+    # this test is verifying.
     with pytest.raises(TypeError):
-        parsed.fields["k"] = "tampered"  # type: ignore[index]
+        cast(dict[str, str], parsed.fields)["k"] = "tampered"
