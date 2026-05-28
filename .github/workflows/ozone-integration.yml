@@ -24,11 +24,11 @@ name: Ozone Integration
 #
 # Secrets / variables:
 #   vars.OZONE_DISCOVERY_URL — the absolute HTTPS discovery URL for the
-#     target Ozone environment. Stored as an environment **variable** (not a
-#     secret) under the "ozone-integration" GitHub Environment because the
-#     discovery URL is publishable to ASPSPs and we benefit from it appearing
-#     unmasked in logs. Higher tiers (mTLS keys, signing keys) will live in
-#     `secrets.*` under the same environment.
+#     target Ozone environment. Stored as a repository-level **variable**
+#     (not a secret) because the discovery URL is publishable to ASPSPs and
+#     we benefit from it appearing unmasked in logs. Higher tiers (mTLS keys,
+#     signing keys) will be added later as secrets — promote this workflow
+#     back to a scoped GitHub Environment when that happens.
 
 on:
   pull_request:
@@ -60,9 +60,10 @@ jobs:
   ozone-integration:
     name: Ozone Tier 1 Integration
     runs-on: ubuntu-latest
-    # Environment-scoped configuration. Configure the OZONE_DISCOVERY_URL
-    # variable under repo settings → Environments → ozone-integration.
-    environment: ozone-integration
+    # Repository-level configuration. Configure the OZONE_DISCOVERY_URL
+    # variable under repo settings → Secrets and variables → Actions →
+    # Variables. When tier 2 introduces mTLS material, move OZONE_DISCOVERY_URL
+    # and the new secrets into a scoped GitHub Environment.
 
     steps:
       - name: Checkout repository
@@ -94,18 +95,17 @@ jobs:
             printf 'discovery_url<<EOF\n%s\nEOF\n' "${OVERRIDE_URL}" >> "$GITHUB_OUTPUT"
             echo "available=true" >> "$GITHUB_OUTPUT"
           elif [[ -n "${ENV_URL}" ]]; then
-            echo "source=environment variable" >> "$GITHUB_OUTPUT"
+            echo "source=repository variable" >> "$GITHUB_OUTPUT"
             printf 'discovery_url<<EOF\n%s\nEOF\n' "${ENV_URL}" >> "$GITHUB_OUTPUT"
             echo "available=true" >> "$GITHUB_OUTPUT"
           elif [[ "${EVENT_NAME}" == "pull_request" ]]; then
-            # PRs that cannot access the environment (fork PRs, or branches
-            # outside the environment's deployment-branch rules) land here.
-            # Skip gracefully so the check stays green and surfaces a clear
-            # notice rather than blocking the PR.
-            echo "::notice::OZONE_DISCOVERY_URL is not available for this PR (fork or branch outside the ozone-integration environment's allowed deployment branches). Skipping tier 1 integration tests; the nightly run will exercise them against the trusted environment."
+            # PRs from forks cannot read repository variables. Skip gracefully
+            # so the check stays green and surfaces a clear notice rather
+            # than blocking the PR.
+            echo "::notice::OZONE_DISCOVERY_URL is not available for this PR (likely a fork). Skipping tier 1 integration tests; the nightly run will exercise them against the trusted environment."
             echo "available=false" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::OZONE_DISCOVERY_URL is not set and no override was provided. Configure the variable on the 'ozone-integration' environment, or supply discovery_url_override via workflow_dispatch."
+            echo "::error::OZONE_DISCOVERY_URL is not set and no override was provided. Configure the repository-level variable under Settings → Secrets and variables → Actions → Variables, or supply discovery_url_override via workflow_dispatch."
             exit 1
           fi
 
