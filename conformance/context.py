@@ -131,13 +131,19 @@ _TRUNCATION_CONTEXT_CHARS = 20
 
 
 def _truncate_around_malformed(template: str) -> str:
-    """Return a short context window starting at the first unterminated ``${`` token.
+    """Return a short context window starting at the last unterminated ``${`` token.
 
     Avoids exposing the template *prefix* — which may contain sensitive URL
     query parameters such as ``client_secret`` or bearer tokens — in error
     messages that propagate to result files. Only the ``${`` opener and a
     short trailing window are returned, which is enough to identify which
     placeholder is malformed without leaking anything preceding it.
+
+    When the template contains multiple ``${`` openers, the trailing one is
+    the unterminated token (any earlier well-formed ``${...}`` has already
+    been matched by the resolver pattern), so ``rfind`` deliberately
+    selects the rightmost — and also the least likely to be surrounded by
+    secret-bearing prefix context.
 
     Args:
         template: Template containing at least one unterminated ``${``.
