@@ -287,9 +287,9 @@ class TestSendJsonNoContentResponses:
     def test_connection_failure_has_no_status_code(self) -> None:
         """A transport-level failure raises with status_code=None (no response received)."""
 
-        def handler(_request: httpx.Request) -> httpx.Response:
+        def handler(request: httpx.Request) -> httpx.Response:
             """Simulate a connection error before any response is received."""
-            raise httpx.ConnectError("connection refused")
+            raise httpx.ConnectError("connection refused", request=request)
 
         with (
             httpx.Client(transport=httpx.MockTransport(handler)) as client,
