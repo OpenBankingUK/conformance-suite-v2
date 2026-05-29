@@ -2,6 +2,17 @@
 
 Last updated: 2026-05-28
 
+## GitHub Actions — Variables, Forks & `workflow_dispatch` (Gotchas)
+
+While wiring `.github/workflows/ozone-integration.yml` (PR #14), several non-obvious GitHub behaviours cost time. Record them so future agents don't loop:
+
+- **Timing is the most common cause of empty `vars.X` in logs (confirmed on PR #14).** A variable created *after* a job has already started will not appear in that job's environment — `vars` are resolved at job-startup time and not re-evaluated. **First diagnostic step is always to re-run the job** after creating/changing a variable. Only investigate scoping or fork issues if a fresh run still shows an empty value.
+- **Repository-level vs. Environment-level variables are separate namespaces.** `${{ vars.X }}` only reads the variable at the scope the job is bound to. A job with no `environment:` directive reads **only** repository variables (Settings → Secrets and variables → Actions → **Variables** tab). A job with `environment: foo` reads the environment-scoped value (which can be empty even if a repo-level one with the same name exists). The current workflow has no `environment:` directive — `OZONE_DISCOVERY_URL` **must** be at repo scope.
+- **`workflow_dispatch` "Run workflow" button only appears once the workflow file is on the repository's default branch.** While the workflow lives only on a feature branch, the manual-trigger button is invisible in the Actions UI. This is intentional GitHub behaviour. Merging to `develop` makes the button appear.
+- **This repo is a fork of an upstream.** Fork-specific Actions controls:
+  - Settings → Actions → General → **"Fork pull request workflows from outside collaborators"** governs whether PRs from *forks of this repo* run with secrets/vars. It does **not** apply to same-repo branch PRs (PRs from a branch pushed directly to `OpenBankingUK/conformance-suite-v2`), which always receive secrets/vars. Fork status was *not* the cause of the PR #14 empty-vars symptom.
+- **Approval gate as last resort.** If the integration test must run on fork PRs, use an `environment:` with required reviewers so secrets/vars are gated by a human approval, rather than relying on contributor-list permissions.
+
 ## Current State
 
 The repository is on `develop` with PRs #1–#6 merged. The project has a working Python/Django scaffold, CI/E2E setup, Dockerfile, and a conformance engine that supports two manifest schema versions (v0 and v1).
@@ -25,7 +36,7 @@ M2 delivered manifest v0 (parser + executor). M3 delivered manifest v1 with sequ
 
 ## Next Recommended Work
 
-1. Tier 1 Ozone integration test: wire the existing v1 discovery + JWKS manifest against the real Ozone discovery URL, gated by `OZONE_DISCOVERY_URL` and `@pytest.mark.integration`.
+1. Tier 1 Ozone integration test: wire the existing v1 discovery + JWKS manifest against the real Ozone discovery URL, gated by `OZONE_DISCOVERY_URL` and `@pytest.mark.ozone`.
 2. mTLS client-certificate wiring in `conformance/http.py` (already scaffolded but unused by manifest executor). Unlocks tier 2 Ozone integration (token endpoint).
 3. JWS request-object signing for FAPI flows.
 4. Callback/redirect handling for authorization code flow.

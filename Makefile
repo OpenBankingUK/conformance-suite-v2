@@ -1,6 +1,6 @@
-.PHONY: check lint test secrets audit dev serve docker help
+.PHONY: check lint test integration secrets audit dev serve docker help
 
-check: secrets lint test ## Run all checks (mirrors CI)
+check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
 secrets: ## Scan for leaked secrets
 	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
@@ -15,8 +15,11 @@ lint: ## Ruff + mypy + docstring coverage + docstring structure
 	uv run interrogate -c pyproject.toml .
 	uv run pydoclint .
 
-test: ## Run unit/integration tests
-	uv run pytest -m "not e2e" -v --cov
+test: ## Run unit + offline Django integration tests (excludes live-network Ozone and Docker e2e tiers)
+	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov
+
+integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
+	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration
 
 dev: ## Run local dev server (auto-reload, debug)
 	DJANGO_DEBUG=true uv run python manage.py runserver

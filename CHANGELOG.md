@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Tier 1 Ozone integration tests under `tests/integration/`: parameterised v1 OpenID-discovery run plus a status-agnostic 4xx assertion (DL-0011), gated on `OZONE_DISCOVERY_URL` via the `requires_ozone` helper in `tests/_ozone.py`. Tests carry a dedicated `ozone` pytest marker (distinct from the existing `integration` marker for offline Django/DB tests). `make integration` runs the tier when env vars are set; `make test` (and therefore `make check`) excludes the `ozone` marker so default runs stay offline while continuing to execute the offline Django integration tests.
+- `Ozone Integration` GitHub Actions workflow (`.github/workflows/ozone-integration.yml`): runs on every PR into `main`/`develop`/`release/**`/`hotfix/**`, plus a nightly schedule and `workflow_dispatch` (with an optional discovery-URL override). Reads the discovery URL from the repository-level `vars.OZONE_DISCOVERY_URL` variable (the URL is publishable, not a secret); higher tiers will introduce a scoped GitHub Environment when mTLS material is added. Fork PRs without variable access skip with a clear notice rather than fail. Surfaces a per-run summary on the PR check page with the tail of the pytest output, and uploads `pytest-json-report` test metadata as an artefact. Non-blocking on PRs by design — response bodies are deliberately not captured until the result-masking milestone lands.
 - Manifest v1 supports a tagged request body shape `{"encoding": "json" | "form", ...}`. A `form` body declares a `fields` mapping of string→string that the executor dispatches as `application/x-www-form-urlencoded` (encoded by `httpx`, never hand-rolled) via the `send_json(form_body=...)` path. Placeholder substitution applies to each field value. Bare-body manifests (no `encoding` tag) continue to mean JSON for backwards compatibility (DL-0014).
 - HTTP helper `send_json` now supports `application/x-www-form-urlencoded` request bodies via a `form_body` parameter (encoded by httpx's native form encoder; default `Content-Type` only set when the caller has not supplied one; mutually exclusive with `json_body`). Unlocks OAuth 2.0 token-exchange manifest steps without leaking transport details into the executor.
 - Manifest v1 supports POST, PUT, PATCH, and DELETE methods with optional `headers` and JSON `body` fields, including `${...}` placeholder substitution in header values and body string leaves
@@ -32,6 +34,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Bumped pinned third-party GitHub Actions to Node 24-compatible releases to clear GitHub's Node 20 deprecation warnings: `actions/checkout` → v6.0.2, `actions/upload-artifact` → v7.0.1, `astral-sh/setup-uv` → v8.1.0, `docker/setup-buildx-action` → v4.1.0, `docker/build-push-action` → v7.2.0. All pins remain full-SHA with the version tag in a trailing comment.
 - Enforced Google-style docstrings via ruff pydocstyle and backfilled the `conformance/` package
 - Manifest v0 `followUp` is now internally desugared to v1 sequential steps at execution time (no external behaviour change for v0 consumers)
 - Manifest v0 test IDs now enforce `[A-Za-z0-9][A-Za-z0-9_-]*` validation (dots are rejected) to keep placeholder step-path parsing unambiguous

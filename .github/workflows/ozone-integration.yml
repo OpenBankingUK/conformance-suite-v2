@@ -1,0 +1,176 @@
+name: Ozone Integration
+
+# Live-network conformance checks against the real Ozone model bank.
+#
+# Scope: tier 1 today (OpenID discovery via the v1 manifest engine).
+#   See ai/plans/2026-05-28-ozone-integration-tiers.md for higher tiers.
+#
+# Trigger model (per the plan §"CI policy"):
+#   - pull_request:      every PR into develop/main/release/**/hotfix/** so
+#                        reviewers see the tier-1 result alongside CI. This job
+#                        is non-blocking for merges: it is NOT in the
+#                        required-status-checks list, matching the
+#                        admin-override allowance in docs/CICD_STRATEGY.md for
+#                        Ozone misbehaviour. When the OZONE_DISCOVERY_URL
+#                        repository variable is not available on a fork PR
+#                        (forks cannot read repo variables), the job skips
+#                        with a notice rather than failing. Same-repo PRs with
+#                        the variable missing fail loudly so a misconfiguration
+#                        is visible.
+#   - workflow_dispatch: on-demand from the Actions UI.
+#   - schedule:          nightly at 03:17 UTC so failures surface daily
+#                        independently of PR activity.
+#
+# Non-blocking by design: this workflow is NOT listed in the required PR status
+# checks. If Ozone misbehaves, PRs into develop/main continue to merge via the
+# existing CI job.
+#
+# Secrets / variables:
+#   vars.OZONE_DISCOVERY_URL — the absolute HTTPS discovery URL for the
+#     target Ozone environment. Stored as a repository-level **variable**
+#     (not a secret) because the discovery URL is publishable to ASPSPs and
+#     we benefit from it appearing unmasked in logs. Higher tiers (mTLS keys,
+#     signing keys) will be added later as secrets — promote this workflow
+#     back to a scoped GitHub Environment when that happens.
+
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - "release/**"
+      - "hotfix/**"
+  workflow_dispatch:
+    inputs:
+      discovery_url_override:
+        description: "Override OZONE_DISCOVERY_URL for this run (leave blank to use the repository variable)"
+        required: false
+        default: ""
+        type: string
+  schedule:
+    # Nightly at 03:17 UTC. Non-round minute avoids the top-of-hour scheduling
+    # spike on shared GitHub Actions infrastructure.
+    - cron: "17 3 * * *"
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ozone-integration:
+    name: Ozone Tier 1 Integration
+    runs-on: ubuntu-latest
+    # Repository-level configuration. Configure the OZONE_DISCOVERY_URL
+    # variable under repo settings → Secrets and variables → Actions →
+    # Variables. When tier 2 introduces mTLS material, move OZONE_DISCOVERY_URL
+    # and the new secrets into a scoped GitHub Environment.
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+
+      - name: Set up uv
+        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
+        with:
+          enable-cache: true
+
+      - name: Install dependencies
+        # --no-install-project: this is a container-deployed app, not a package.
+        run: uv sync --frozen --no-install-project
+
+      - name: Resolve discovery URL
+        id: resolve
+        env:
+          # Values are surfaced through env so they never appear on a command
+          # line (where they could leak via set -x or process listings), even
+          # though the discovery URL is non-sensitive today.
+          OVERRIDE_URL: ${{ inputs.discovery_url_override }}
+          ENV_URL: ${{ vars.OZONE_DISCOVERY_URL }}
+          EVENT_NAME: ${{ github.event_name }}
+          # Authoritative fork signal from the event payload. Empty string on
+          # non-pull_request events. We key the skip on this rather than on
+          # EVENT_NAME alone so a same-repo PR with the variable missing fails
+          # loudly instead of being silently treated as a fork.
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
+        run: |
+          if [[ -n "${OVERRIDE_URL}" ]]; then
+            echo "source=workflow_dispatch input" >> "$GITHUB_OUTPUT"
+            # Mask the override so it does not appear in subsequent logs.
+            echo "::add-mask::${OVERRIDE_URL}"
+            printf 'discovery_url<<EOF\n%s\nEOF\n' "${OVERRIDE_URL}" >> "$GITHUB_OUTPUT"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [[ -n "${ENV_URL}" ]]; then
+            echo "source=repository variable" >> "$GITHUB_OUTPUT"
+            printf 'discovery_url<<EOF\n%s\nEOF\n' "${ENV_URL}" >> "$GITHUB_OUTPUT"
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [[ "${EVENT_NAME}" == "pull_request" && "${IS_FORK}" == "true" ]]; then
+            # PRs from forks cannot read repository variables. Skip gracefully
+            # so the check stays green and surfaces a clear notice rather
+            # than blocking the PR.
+            echo "::notice::OZONE_DISCOVERY_URL is not available for this fork PR. Skipping tier 1 integration tests; the nightly run will exercise them against the trusted environment."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::OZONE_DISCOVERY_URL is not set and no override was provided. Configure the repository-level variable under Settings → Secrets and variables → Actions → Variables, or supply discovery_url_override via workflow_dispatch."
+            exit 1
+          fi
+
+      - name: Run Ozone tier 1 integration tests
+        if: steps.resolve.outputs.available == 'true'
+        env:
+          # The discovery URL is masked above only when supplied via the
+          # workflow_dispatch override. When sourced from
+          # `vars.OZONE_DISCOVERY_URL` it is intentionally NOT masked: it is a
+          # publishable repository variable (see the file-header rationale
+          # block), not a secret.
+          OZONE_DISCOVERY_URL: ${{ steps.resolve.outputs.discovery_url }}
+        run: |
+          set -euo pipefail
+          uv run pytest \
+            -m ozone \
+            --json-report \
+            --json-report-file=ozone-integration-results.json \
+            -v \
+            tests/integration | tee pytest-output.log
+
+      - name: Publish summary to PR check
+        # Renders a short summary on the workflow run page (visible from the PR
+        # "Checks" tab) so reviewers do not have to download an artefact to see
+        # which tier 1 tests passed or failed.
+        if: always() && steps.resolve.outputs.available == 'true'
+        env:
+          DISCOVERY_SOURCE: ${{ steps.resolve.outputs.source }}
+        run: |
+          {
+            echo "## Ozone Tier 1 Integration"
+            echo ""
+            echo "- Discovery URL source: \`${DISCOVERY_SOURCE}\`"
+            echo "- Result file: \`ozone-integration-results.json\` (uploaded as an artefact)"
+            echo ""
+            if [[ -f pytest-output.log ]]; then
+              echo "<details><summary>pytest output</summary>"
+              echo ""
+              echo '```'
+              tail -n 100 pytest-output.log
+              echo '```'
+              echo ""
+              echo "</details>"
+            fi
+            if [[ -f ozone-integration-results.json ]]; then
+              echo "Structured results uploaded as artefact \`ozone-integration-results-${GITHUB_RUN_ID}\`."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload integration test results
+        # Upload even on failure so authors can inspect what broke against the
+        # live Ozone environment. Per the plan §"Open Questions", raw response
+        # bodies are NOT uploaded until the masking milestone lands —
+        # pytest-json-report captures only test metadata, not response bodies.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always()
+        with:
+          name: ozone-integration-results-${{ github.run_id }}
+          path: ozone-integration-results.json
+          if-no-files-found: ignore

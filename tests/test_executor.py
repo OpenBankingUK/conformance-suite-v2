@@ -211,6 +211,23 @@ def test_run_manifest_reports_invalid_json_response() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_preserves_status_code_when_body_is_not_json() -> None:
+    """DL-0011: a 4xx with a non-JSON body must surface the HTTP status on the StepResult."""
+    manifest = parse_manifest(manifest_config())
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(404, text="<html>Not Found</html>"))
+    ) as client:
+        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+
+    assert result.status == "failed"
+    assert len(result.steps) == 1
+    step = result.steps[0]
+    assert step.status == "failed"
+    assert step.status_code == 404
+    assert "was not valid JSON" in step.message
+
+
+@pytest.mark.unit
 def test_run_manifest_rejects_unsafe_primary_url() -> None:
     raw_manifest = manifest_config()
     first_test(raw_manifest)["request"] = {"method": "GET", "url": "http://modelbank.example.com/unsafe"}
