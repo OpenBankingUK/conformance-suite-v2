@@ -25,3 +25,5 @@ out/
 htmlcov/
 dist/
 *.egg-info/
+# Local AI agent workspace (project context, decision log, plans, handover, dev log)
+ai/
