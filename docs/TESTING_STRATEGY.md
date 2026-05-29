@@ -105,6 +105,7 @@ Define custom markers in `pyproject.toml` to separate test tiers:
 markers = [
     "unit: fast, isolated unit tests",
     "integration: tests requiring the Django test client or DB",
+    "ozone: live-network Ozone conformance tier tests (gated on tier env vars; require network access)",
     "e2e: full end-to-end tests requiring Docker and a model bank",
 ]
 ```
@@ -114,8 +115,8 @@ Run selectively:
 # Unit only (fast, no DB)
 uv run pytest -m unit
 
-# All except E2E (CI default)
-uv run pytest -m "not e2e"
+# All except E2E and live-network Ozone tiers (CI default; matches `make test`)
+uv run pytest -m "not e2e and not ozone"
 
 # E2E only (requires model bank config — see .github/workflows/e2e.yml)
 uv run pytest -p no:django -m e2e
