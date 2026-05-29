@@ -261,9 +261,11 @@ class TestSendJsonNoContentResponses:
             """Return a 404 with an HTML body (typical reverse-proxy error page)."""
             return httpx.Response(404, text="<html>Not Found</html>")
 
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            with pytest.raises(JsonHttpClientError, match="was not valid JSON") as excinfo:
-                send_json(client, "GET", "https://example.com/missing")
+        with (
+            httpx.Client(transport=httpx.MockTransport(handler)) as client,
+            pytest.raises(JsonHttpClientError, match="was not valid JSON") as excinfo,
+        ):
+            send_json(client, "GET", "https://example.com/missing")
 
         assert excinfo.value.status_code == 404
 
@@ -274,9 +276,11 @@ class TestSendJsonNoContentResponses:
             """Return a 422 with a JSON array body."""
             return httpx.Response(422, json=["error1", "error2"])
 
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            with pytest.raises(JsonHttpClientError, match="must be a JSON object") as excinfo:
-                send_json(client, "GET", "https://example.com/resource")
+        with (
+            httpx.Client(transport=httpx.MockTransport(handler)) as client,
+            pytest.raises(JsonHttpClientError, match="must be a JSON object") as excinfo,
+        ):
+            send_json(client, "GET", "https://example.com/resource")
 
         assert excinfo.value.status_code == 422
 
@@ -287,9 +291,11 @@ class TestSendJsonNoContentResponses:
             """Simulate a connection error before any response is received."""
             raise httpx.ConnectError("connection refused")
 
-        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-            with pytest.raises(JsonHttpClientError, match="Request failed") as excinfo:
-                send_json(client, "GET", "https://example.com/resource")
+        with (
+            httpx.Client(transport=httpx.MockTransport(handler)) as client,
+            pytest.raises(JsonHttpClientError, match="Request failed") as excinfo,
+        ):
+            send_json(client, "GET", "https://example.com/resource")
 
         assert excinfo.value.status_code is None
 
