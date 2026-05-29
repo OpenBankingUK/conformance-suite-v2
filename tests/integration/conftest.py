@@ -1,10 +1,11 @@
 """Shared fixtures for live-network Ozone integration tests.
 
 Test modules here run against real Ozone infrastructure and are gated behind
-tier-specific environment variables via ``tests/_ozone.py``. The fixtures in
-this module only expose validated env-var values to tests; the skip decision
-itself is owned by the ``requires_ozone`` marker so the skip reason stays
-visible in pytest output.
+tier-specific environment variables via ``tests/_ozone.py``. Presence and
+well-formedness checks for those variables live in the ``requires_ozone``
+marker, which both decides whether to skip and surfaces the reason in pytest
+output. The fixtures in this module are deliberately thin env-var readers
+that assume the marker has already gated the test; they do not re-validate.
 """
 
 from __future__ import annotations
