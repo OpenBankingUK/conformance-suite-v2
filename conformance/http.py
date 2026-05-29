@@ -25,13 +25,12 @@ _NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
 class JsonHttpClientError(RuntimeError):
     """Raised when a JSON HTTP request or response is invalid.
 
-    Attributes:
-        status_code: HTTP status code returned by the endpoint, when the
-            failure occurred after a response was received (e.g. non-JSON
-            body). ``None`` when no response was obtained (e.g. connection
-            failure). Preserving the status here lets the executor populate
-            ``StepResult.status_code`` for DL-0011 client-error reporting
-            even when the body could not be parsed.
+    The optional ``status_code`` attribute (set via ``__init__``) carries the
+    HTTP status from the response when the failure occurred after a response
+    was received (e.g. non-JSON body); it is ``None`` when no response was
+    obtained (e.g. connection failure). Preserving the status here lets the
+    executor populate ``StepResult.status_code`` for DL-0011 client-error
+    reporting even when the body could not be parsed.
     """
 
     def __init__(self, message: str, *, status_code: int | None = None) -> None:
