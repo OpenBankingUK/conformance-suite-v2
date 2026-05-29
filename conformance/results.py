@@ -155,9 +155,12 @@ def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
         * ``failed`` and ``skipped`` on a mandatory step block eligibility.
           ``skipped`` always implies an earlier failure, so it is treated as
           blocking by definition.
-        * A manifest with no mandatory steps cannot certify — the PRD
+        * A run with no mandatory steps cannot certify — the PRD
           requires *"all mandatory tests were included in the run"*, so
-          declaring zero is treated as "not a certification candidate".
+          zero mandatory steps is treated as "not a certification
+          candidate". This applies equally to manifest runs that declare
+          no mandatory steps and to non-manifest smoke checks (which have
+          no mandatory concept at all).
 
     The block intentionally does *not* yet check "FCS version is an approved
     release". That criterion is the CertificationValidator's job (OBL-side,
@@ -188,7 +191,7 @@ def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
 
     reason: str | None
     if not mandatory_steps:
-        reason = "No mandatory steps declared in the manifest"
+        reason = "No mandatory steps declared"
     elif mandatory_failed:
         reason = f"{mandatory_failed} mandatory step(s) failed"
     elif mandatory_skipped:
