@@ -115,7 +115,10 @@ Run selectively:
 # Unit only (fast, no DB)
 uv run pytest -m unit
 
-# All except E2E and live-network Ozone tiers (CI default; matches `make test`)
+# All except E2E and live-network Ozone tiers (matches `make test`;
+# the CI `test` job uses `-m "not e2e"` and relies on the
+# `requires_ozone()` skipif gates to keep the ozone tier dormant when
+# its environment variables are absent).
 uv run pytest -m "not e2e and not ozone"
 
 # E2E only (requires model bank config — see .github/workflows/e2e.yml)
