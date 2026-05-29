@@ -11,8 +11,14 @@ from typing import Literal
 
 from conformance.json_types import JsonObject, JsonValue
 
-CheckStatus = Literal["passed", "failed"]
-"""Outcome values currently emitted by smoke-check steps and summaries."""
+CheckStatus = Literal["passed", "failed", "skipped"]
+"""Outcome values currently emitted by smoke-check steps and summaries.
+
+PRD ultimately requires PASS, FAIL, WARN, SKIPPED. ``warn`` is reserved
+for a future feature (per-test deprecation signals) and is not yet
+emitted by the engine; ``skipped`` is emitted when a v1 step cannot run
+because a prerequisite step produced no response.
+"""
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,7 @@ class SmokeCheckResult:
                 "total": len(self.steps),
                 "passed": sum(1 for step in self.steps if step.status == "passed"),
                 "failed": sum(1 for step in self.steps if step.status == "failed"),
+                "skipped": sum(1 for step in self.steps if step.status == "skipped"),
             },
             "steps": [step.to_json_object() for step in self.steps],
         }

@@ -2,6 +2,7 @@ import pytest
 
 from conformance.context import (
     ExecutionContext,
+    MissingPredecessorResponseError,
     PlaceholderResolutionError,
     RequestRecord,
     ResponseRecord,
@@ -247,8 +248,11 @@ class TestResolvePlaceholdersErrors:
                 )
             }
         )
-        with pytest.raises(PlaceholderResolutionError, match="has no response"):
+        # The narrower subclass lets the executor branch to a SKIPPED outcome.
+        with pytest.raises(MissingPredecessorResponseError, match="has no response"):
             resolve_placeholders("${steps.failed.response.body.x}", ctx)
+        # And the subclass relationship is preserved for callers catching the base.
+        assert issubclass(MissingPredecessorResponseError, PlaceholderResolutionError)
 
     def test_invalid_request_field(self) -> None:
         ctx = _discovery_context()
