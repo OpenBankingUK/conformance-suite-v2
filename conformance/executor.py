@@ -9,6 +9,7 @@ import httpx
 from conformance.assertions import AssertionResult, evaluate_assertion
 from conformance.context import (
     ExecutionContext,
+    MissingPredecessorResponseError,
     PlaceholderResolutionError,
     RequestRecord,
     ResponseRecord,
@@ -118,6 +119,14 @@ def _execute_v1_step(
     # Resolve placeholders in the URL
     try:
         resolved_url = resolve_placeholders(manifest_step.request.url, context)
+    except MissingPredecessorResponseError as error:
+        return _skipped_step(
+            manifest_step.id,
+            context=context,
+            method=method,
+            url=manifest_step.request.url,
+            error=error,
+        )
     except PlaceholderResolutionError as error:
         request_record = RequestRecord(method=method, url=manifest_step.request.url)
         new_context = record_step(context, manifest_step.id, request_record, None)
@@ -138,6 +147,14 @@ def _execute_v1_step(
             resolved_headers = {
                 name: resolve_placeholders(value, context) for name, value in manifest_step.request.headers.items()
             }
+        except MissingPredecessorResponseError as error:
+            return _skipped_step(
+                manifest_step.id,
+                context=context,
+                method=method,
+                url=resolved_url,
+                error=error,
+            )
         except PlaceholderResolutionError as error:
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
@@ -192,6 +209,14 @@ def _execute_v1_step(
                     field_name: resolve_placeholders(field_value, context)
                     for field_name, field_value in form_body.fields.items()
                 }
+        except MissingPredecessorResponseError as error:
+            return _skipped_step(
+                manifest_step.id,
+                context=context,
+                method=method,
+                url=resolved_url,
+                error=error,
+            )
         except PlaceholderResolutionError as error:
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
@@ -266,6 +291,46 @@ def _execute_v1_step(
         assertions=manifest_step.assertions,
     )
     return step_result, new_context
+
+
+def _skipped_step(
+    step_id: str,
+    *,
+    context: ExecutionContext,
+    method: str,
+    url: str,
+    error: MissingPredecessorResponseError,
+) -> tuple[StepResult, ExecutionContext]:
+    """Build a SKIPPED step result for a step whose prerequisite produced no response.
+
+    Emitted when a ``${steps.<id>.response...}`` placeholder cannot be resolved
+    because the referenced step never received a response (transport failure,
+    URL validation failure, or earlier placeholder error). Per the PRD,
+    SKIPPED — not FAILED — is the correct outcome: the test could not run
+    because a prerequisite setup step failed.
+
+    Args:
+        step_id: Identifier of the step being skipped.
+        context: Current execution context, recorded forward so downstream
+            steps that reference *this* step's response will also skip.
+        method: HTTP method of the (un-issued) request, recorded for trace.
+        url: URL template or partially-resolved URL of the (un-issued) request.
+        error: The underlying missing-response error, used for the message.
+
+    Returns:
+        A ``("skipped", ...)`` step result paired with the updated context.
+    """
+    request_record = RequestRecord(method=method, url=url)
+    new_context = record_step(context, step_id, request_record, None)
+    return (
+        StepResult(
+            name=step_id,
+            status="skipped",
+            message=f"Skipped: {error}",
+            url=url,
+        ),
+        new_context,
+    )
 
 
 def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:

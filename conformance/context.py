@@ -15,6 +15,17 @@ class PlaceholderResolutionError(ValueError):
     """Raised when a ``${...}`` placeholder cannot be resolved from the context."""
 
 
+class MissingPredecessorResponseError(PlaceholderResolutionError):
+    """Raised when a placeholder references a step whose request did not produce a response.
+
+    This narrower subclass lets the executor distinguish a *true* resolution
+    failure (malformed path, missing field, non-primitive value) from the
+    "prerequisite step failed before producing a response" case. The latter
+    should surface as a ``SKIPPED`` step result per the PRD, not as a
+    ``FAILED`` step.
+    """
+
+
 @dataclass(frozen=True)
 class StepRecord:
     """Captured request/response pair for one executed manifest step.
@@ -269,7 +280,7 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
         return _resolve_request_path(record.request, field_name, segments[4:], dot_path)
     if direction == "response":
         if record.response is None:
-            raise PlaceholderResolutionError(f"Step '{step_id}' has no response (request may have failed)")
+            raise MissingPredecessorResponseError(f"Step '{step_id}' has no response (request may have failed)")
         return _resolve_response_path(record.response, field_name, segments[4:], dot_path)
 
     raise PlaceholderResolutionError(f"Invalid placeholder path segment '{direction}': ${{{dot_path}}}")

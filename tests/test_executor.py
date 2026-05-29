@@ -71,7 +71,7 @@ def test_run_manifest_fetches_primary_request_and_follow_up() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "openid-discovery.followUp"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -498,7 +498,7 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "jwks-fetch"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -609,8 +609,12 @@ def test_run_manifest_v1_unresolvable_placeholder_fails_cleanly() -> None:
 
 
 @pytest.mark.unit
-def test_run_manifest_v1_failed_request_prevents_later_resolution() -> None:
-    """A step with no response (transport error) fails later steps that reference it."""
+def test_run_manifest_v1_failed_request_skips_dependent_step() -> None:
+    """A step with no response (transport error) marks dependent steps as SKIPPED.
+
+    Per the PRD: SKIPPED — not FAILED — is the correct outcome when a test
+    could not run because a prerequisite setup step failed.
+    """
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
         "name": "transport-fail",
@@ -633,6 +637,15 @@ def test_run_manifest_v1_failed_request_prevents_later_resolution() -> None:
                 },
                 "assertions": [{"type": "http_status", "expected": 200}],
             },
+            {
+                "id": "transitive",
+                "name": "Transitive step",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.dependent.response.body.next_url}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
         ],
     }
 
@@ -643,11 +656,145 @@ def test_run_manifest_v1_failed_request_prevents_later_resolution() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(manifest, environment="test", client=client)
 
+    # Aggregate failed because the first step failed.
     assert result.status == "failed"
-    assert len(result.steps) == 2
+    assert len(result.steps) == 3
     assert result.steps[0].status == "failed"
-    assert result.steps[1].status == "failed"
+    assert result.steps[1].status == "skipped"
+    assert result.steps[2].status == "skipped"
     assert "has no response" in result.steps[1].message
+    assert result.steps[1].message.startswith("Skipped:")
+    # Transitive skip: the skipped step is itself recorded with no response,
+    # so steps referencing it also skip rather than fail.
+    assert "has no response" in result.steps[2].message
+    assert result.to_json_object()["summary"] == {
+        "total": 3,
+        "passed": 0,
+        "failed": 1,
+        "skipped": 2,
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_skipped_step_triggered_by_header_placeholder() -> None:
+    """A header placeholder referencing a no-response step yields SKIPPED, not FAILED."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "header-ref",
+        "steps": [
+            {
+                "id": "broken",
+                "name": "Broken endpoint",
+                "request": {"method": "GET", "url": "https://example.com/broken"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "dependent",
+                "name": "Dependent step",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/ok",
+                    "headers": {"X-Token": "${steps.broken.response.body.token}"},
+                    "body": {"hello": "world"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "broken" in str(request.url):
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].status == "failed"
+    assert result.steps[1].status == "skipped"
+    assert "has no response" in result.steps[1].message
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_skipped_step_triggered_by_body_placeholder() -> None:
+    """A body placeholder referencing a no-response step yields SKIPPED, not FAILED."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "body-ref",
+        "steps": [
+            {
+                "id": "broken",
+                "name": "Broken endpoint",
+                "request": {"method": "GET", "url": "https://example.com/broken"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "dependent",
+                "name": "Dependent step",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/ok",
+                    "body": {"token": "${steps.broken.response.body.token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if "broken" in str(request.url):
+            raise httpx.ConnectError("connection refused", request=request)
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].status == "failed"
+    assert result.steps[1].status == "skipped"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_unresolvable_field_still_fails_not_skips() -> None:
+    """Missing JSON field on a *successful* predecessor is FAILED, not SKIPPED.
+
+    SKIPPED is reserved for the "prerequisite produced no response" case.
+    A malformed path or missing field on an otherwise-successful step is a
+    genuine resolution failure and must continue to be FAILED.
+    """
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "missing-field",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {"method": "GET", "url": "https://example.com/d"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "dependent",
+                "name": "Dependent",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.discovery.response.body.absent_field}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"issuer": "https://example.com"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].status == "passed"
+    assert result.steps[1].status == "failed"
+    assert "Placeholder resolution failed" in result.steps[1].message
 
 
 @pytest.mark.unit
