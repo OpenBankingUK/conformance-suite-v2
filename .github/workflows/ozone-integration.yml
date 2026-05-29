@@ -6,16 +6,17 @@ name: Ozone Integration
 #   See ai/plans/2026-05-28-ozone-integration-tiers.md for higher tiers.
 #
 # Trigger model (per the plan §"CI policy"):
-#   - pull_request:      every PR into develop/main/release-* so reviewers see
-#                        the tier-1 result alongside CI. This job is non-blocking
-#                        for merges: it is NOT in the required-status-checks
-#                        list, matching the admin-override allowance in
-#                        docs/CICD_STRATEGY.md for Ozone misbehaviour. When the
-#                        OZONE_DISCOVERY_URL repository variable is not
-#                        available on a fork PR (forks cannot read repo
-#                        variables), the job skips with a notice rather than
-#                        failing. Same-repo PRs with the variable missing
-#                        fail loudly so a misconfiguration is visible.
+#   - pull_request:      every PR into develop/main/release/**/hotfix/** so
+#                        reviewers see the tier-1 result alongside CI. This job
+#                        is non-blocking for merges: it is NOT in the
+#                        required-status-checks list, matching the
+#                        admin-override allowance in docs/CICD_STRATEGY.md for
+#                        Ozone misbehaviour. When the OZONE_DISCOVERY_URL
+#                        repository variable is not available on a fork PR
+#                        (forks cannot read repo variables), the job skips
+#                        with a notice rather than failing. Same-repo PRs with
+#                        the variable missing fail loudly so a misconfiguration
+#                        is visible.
 #   - workflow_dispatch: on-demand from the Actions UI.
 #   - schedule:          nightly at 03:17 UTC so failures surface daily
 #                        independently of PR activity.
