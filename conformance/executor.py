@@ -233,6 +233,11 @@ def _execute_v1_step(
             form_body=resolved_form_body,
         )
     except JsonHttpClientError as error:
+        # Preserve the response status code on the StepResult when the
+        # failure occurred after a response was received (e.g. non-JSON
+        # 4xx body). DL-0011 requires client-error statuses to surface in
+        # the structured result so callers can distinguish a 404 from a
+        # connection failure.
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             StepResult(
@@ -240,6 +245,7 @@ def _execute_v1_step(
                 status="failed",
                 message=str(error),
                 url=resolved_url,
+                status_code=error.status_code,
             ),
             new_context,
         )

@@ -254,6 +254,45 @@ class TestSendJsonNoContentResponses:
         ):
             send_json(client, "GET", "https://example.com/resource")
 
+    def test_invalid_json_body_preserves_status_code_on_error(self) -> None:
+        """A non-JSON 4xx body must expose the HTTP status on the raised error (DL-0011)."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Return a 404 with an HTML body (typical reverse-proxy error page)."""
+            return httpx.Response(404, text="<html>Not Found</html>")
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(JsonHttpClientError, match="was not valid JSON") as excinfo:
+                send_json(client, "GET", "https://example.com/missing")
+
+        assert excinfo.value.status_code == 404
+
+    def test_non_object_json_body_preserves_status_code_on_error(self) -> None:
+        """A JSON array 4xx body must still expose the HTTP status on the raised error."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Return a 422 with a JSON array body."""
+            return httpx.Response(422, json=["error1", "error2"])
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(JsonHttpClientError, match="must be a JSON object") as excinfo:
+                send_json(client, "GET", "https://example.com/resource")
+
+        assert excinfo.value.status_code == 422
+
+    def test_connection_failure_has_no_status_code(self) -> None:
+        """A transport-level failure raises with status_code=None (no response received)."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Simulate a connection error before any response is received."""
+            raise httpx.ConnectError("connection refused")
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            with pytest.raises(JsonHttpClientError, match="Request failed") as excinfo:
+                send_json(client, "GET", "https://example.com/resource")
+
+        assert excinfo.value.status_code is None
+
 
 @pytest.mark.unit
 class TestSendJsonFormBody:

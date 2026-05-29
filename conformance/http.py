@@ -23,7 +23,27 @@ _NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
 
 
 class JsonHttpClientError(RuntimeError):
-    """Raised when a JSON HTTP request or response is invalid."""
+    """Raised when a JSON HTTP request or response is invalid.
+
+    Attributes:
+        status_code: HTTP status code returned by the endpoint, when the
+            failure occurred after a response was received (e.g. non-JSON
+            body). ``None`` when no response was obtained (e.g. connection
+            failure). Preserving the status here lets the executor populate
+            ``StepResult.status_code`` for DL-0011 client-error reporting
+            even when the body could not be parsed.
+    """
+
+    def __init__(self, message: str, *, status_code: int | None = None) -> None:
+        """Initialise the error with a message and optional HTTP status code.
+
+        Args:
+            message: Human-readable failure description.
+            status_code: HTTP status code from the response, if one was
+                received before the failure was detected.
+        """
+        super().__init__(message)
+        self.status_code = status_code
 
 
 @dataclass(frozen=True)
@@ -166,10 +186,16 @@ def send_json(
     try:
         response_body: object = response.json()
     except ValueError as error:
-        raise JsonHttpClientError(f"Response from {url} was not valid JSON") from error
+        raise JsonHttpClientError(
+            f"Response from {url} was not valid JSON",
+            status_code=response.status_code,
+        ) from error
 
     if not isinstance(response_body, dict):
-        raise JsonHttpClientError(f"Response from {url} must be a JSON object")
+        raise JsonHttpClientError(
+            f"Response from {url} must be a JSON object",
+            status_code=response.status_code,
+        )
 
     json_body_parsed = cast(dict[str, JsonValue], response_body)
     return JsonHttpResponse(url=str(response.url), status_code=response.status_code, body=json_body_parsed)
