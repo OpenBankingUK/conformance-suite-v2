@@ -21,7 +21,7 @@ Define a tiered, low-risk ramp for exercising the conformance engine against the
 - `docs/FCS Rebuild - PRD v3 [DRAFT].md` §"Testing Approach" ("Integration tests will be run against the Ozone model bank."), §"Spec Version Support" (Ozone dependency), §"Critical Path Blockers" (Ozone contract).
 - `ai/PROJECT_CONTEXT.md` — Ozone integration should be used early; M5 names "first Ozone end-to-end test".
 - `ai/DECISION_LOG.md` — DL-0003 (hello-world is scaffolding, not final), DL-0011 (HTTP fetches are status-agnostic — important for negative-conformance Ozone responses).
-- `ai/plans/2026-05-28-form-urlencoded-body.md` — Tier 2 depends on this slice landing.
+- `ai/DECISION_LOG.md` DL-0014 — form-urlencoded body slice (shipped); Tier 2 builds on it.
 - `conformance/ozone_client.py`, `conformance/runner.py`, `tests/test_ozone_runner.py` — current Ozone touchpoints.
 - `docs/CICD_STRATEGY.md` — admin override pattern when Ozone misbehaves.
 

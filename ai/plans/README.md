@@ -23,4 +23,4 @@ Each plan should include:
 - Rollout or migration notes.
 - Open questions.
 
-Use the plan as working context for agents. When the work is complete, summarise the outcome in `../DEVELOPMENT_LOG.md` and promote durable choices to `../DECISION_LOG.md`.
+Use the plan as working context for agents. When the work is complete, summarise the outcome in `../scratch/DEVELOPMENT_LOG.md` (local, gitignored) and promote durable choices to `../DECISION_LOG.md`. Delete the plan file once shipped and decision-logged.

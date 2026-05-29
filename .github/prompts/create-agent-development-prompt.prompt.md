@@ -16,7 +16,7 @@ Before writing the development prompt, infer:
 - The relevant project context files and likely code/test files to inspect.
 - What should be explicitly out of scope.
 - The acceptance criteria and verification commands.
-- Whether the work may require updates to `CHANGELOG.md`, `ai/HANDOVER.md`, `ai/DEVELOPMENT_LOG.md`, or `ai/DECISION_LOG.md`.
+- Whether the work may require updates to `CHANGELOG.md`, `ai/scratch/HANDOVER.md`, `ai/scratch/DEVELOPMENT_LOG.md`, or `ai/DECISION_LOG.md`.
 
 If the pasted recommendation is too vague to produce an actionable prompt, ask up to three concise clarification questions. Otherwise, produce a complete prompt using this structure:
 
@@ -43,7 +43,7 @@ Read these before changing code:
 - `ai/README.md`
 - `ai/PROJECT_CONTEXT.md`
 - `ai/DECISION_LOG.md`
-- `ai/HANDOVER.md`
+- `ai/scratch/HANDOVER.md` if it exists (local-only, gitignored)
 - <specific files likely relevant to the task>
 
 # Scope
@@ -72,7 +72,7 @@ Do not:
 - Add or update docstrings on any new or modified public module, class, function, or method.
 - Add tests for meaningful business logic using the correct pytest markers.
 - Update `ai/DECISION_LOG.md` if the work makes a durable architecture, schema, API, security, certification, or migration decision.
-- Update `ai/HANDOVER.md` if useful context remains for the next session.
+- Update `ai/scratch/HANDOVER.md` if useful context remains for the next session.
 
 # Acceptance Criteria
 

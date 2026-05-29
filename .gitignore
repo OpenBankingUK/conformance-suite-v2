@@ -25,3 +25,5 @@ out/
 htmlcov/
 dist/
 *.egg-info/
+# Local AI agent scratch space (volatile notes, handover, dev log)
+ai/scratch/

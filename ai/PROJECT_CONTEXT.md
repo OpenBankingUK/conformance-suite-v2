@@ -71,5 +71,5 @@ Decision logs are expected review-gate artefacts, especially by the July and Oct
 2. `ai/README.md`
 3. `ai/PROJECT_CONTEXT.md`
 4. `ai/DECISION_LOG.md`
-5. `ai/HANDOVER.md`
+5. `ai/scratch/HANDOVER.md` if it exists (gitignored; local handover surface)
 6. The code and tests directly affected by the task
