@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
@@ -30,8 +31,50 @@ from conformance.manifest import (
     ManifestTest,
     validate_header_value,
 )
+from conformance.masking import mask_form_fields, mask_headers, mask_json_value
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
+
+
+def _attach_evidence(
+    step: StepResult,
+    *,
+    request_evidence: dict[str, JsonValue],
+    response_evidence: dict[str, JsonValue] | None,
+) -> StepResult:
+    """Attach masked request/response evidence to a non-PASS step result.
+
+    Implements the PRD outcome rule: *"Full request and response captured on
+    FAIL, WARN, and SKIPPED. Summary only on PASS."* Sensitive credential
+    fields and headers are masked via :mod:`conformance.masking` before being
+    embedded so reports remain safe to share with OBL.
+
+    PASS steps are returned unchanged: the spec keeps successful runs lean,
+    and exposing full payloads on every passing API call would bloat reports
+    and expand the surface area for accidental disclosure.
+
+    Args:
+        step: The step result to enrich.
+        request_evidence: Best-effort, already-masked request metadata
+            collected up to the point of return (always at minimum
+            ``method`` and ``url``; may include ``headers``, ``body``,
+            ``form``).
+        response_evidence: Already-masked response metadata, or ``None`` when
+            no response was received (transport failure, skipped step, or a
+            pre-request validation error).
+
+    Returns:
+        A new :class:`StepResult` with ``details["request"]`` and, when
+        available, ``details["response"]`` populated. PASS results are
+        returned unchanged.
+    """
+    if step.status == "passed":
+        return step
+    new_details: dict[str, JsonValue] = dict(step.details)
+    new_details["request"] = dict(request_evidence)
+    if response_evidence is not None:
+        new_details["response"] = dict(response_evidence)
+    return replace(step, details=new_details)
 
 
 def run_manifest(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:
@@ -101,17 +144,30 @@ def _execute_v1_step(
     """
     method = manifest_step.request.method
 
+    # Build up masked request evidence as we resolve each piece, so we can
+    # attach the best-available trace to every non-PASS return below. Per
+    # the PRD ("masked by default"), tokens/credentials/headers are masked
+    # in evidence — only PASS results omit evidence entirely.
+    request_evidence: dict[str, JsonValue] = {
+        "method": method,
+        "url": manifest_step.request.url,
+    }
+
     # Defence-in-depth: reject methods outside the supported set
     _supported_methods = {"GET", "POST", "PUT", "PATCH", "DELETE"}
     if method not in _supported_methods:
         request_record = RequestRecord(method=method, url=manifest_step.request.url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=f"Unsupported request method: {method}",
-                url=manifest_step.request.url,
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unsupported request method: {method}",
+                    url=manifest_step.request.url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
             ),
             new_context,
         )
@@ -126,19 +182,25 @@ def _execute_v1_step(
             method=method,
             url=manifest_step.request.url,
             error=error,
+            request_evidence=request_evidence,
         )
     except PlaceholderResolutionError as error:
         request_record = RequestRecord(method=method, url=manifest_step.request.url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=f"Placeholder resolution failed: {error}",
-                url=manifest_step.request.url,
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=manifest_step.request.url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
             ),
             new_context,
         )
+    request_evidence["url"] = resolved_url
 
     # Resolve placeholders in headers
     resolved_headers: dict[str, str] | None = None
@@ -154,22 +216,28 @@ def _execute_v1_step(
                 method=method,
                 url=resolved_url,
                 error=error,
+                request_evidence=request_evidence,
             )
         except PlaceholderResolutionError as error:
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
             return (
-                StepResult(
-                    name=manifest_step.id,
-                    status="failed",
-                    message=f"Placeholder resolution failed: {error}",
-                    url=resolved_url,
+                _attach_evidence(
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Placeholder resolution failed: {error}",
+                        url=resolved_url,
+                    ),
+                    request_evidence=request_evidence,
+                    response_evidence=None,
                 ),
                 new_context,
             )
 
     # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
+        request_evidence["headers"] = dict(mask_headers(resolved_headers))
         for header_name, header_value in resolved_headers.items():
             try:
                 validate_header_value(
@@ -180,20 +248,24 @@ def _execute_v1_step(
                 request_record = RequestRecord(method=method, url=resolved_url)
                 new_context = record_step(context, manifest_step.id, request_record, None)
                 return (
-                    StepResult(
-                        name=manifest_step.id,
-                        status="failed",
-                        message=f"Resolved header validation failed: {error}",
-                        url=resolved_url,
+                    _attach_evidence(
+                        StepResult(
+                            name=manifest_step.id,
+                            status="failed",
+                            message=f"Resolved header validation failed: {error}",
+                            url=resolved_url,
+                        ),
+                        request_evidence=request_evidence,
+                        response_evidence=None,
                     ),
                     new_context,
                 )
 
     # Resolve placeholders in body. JsonBody walks the structure recursively;
-    # FormBody resolves each field value. Form fields are intentionally NOT
-    # recorded into the step record yet — masking secrets in step evidence is
-    # still deferred (DL-0013), and OAuth2 token-exchange field values
-    # frequently carry secrets (authorization codes, client secrets).
+    # FormBody resolves each field value. Bodies are masked in evidence via
+    # ``mask_json_value`` / ``mask_form_fields`` before being attached to the
+    # step result so OAuth 2.0 token-exchange credentials (authorization
+    # codes, client secrets) never appear in shared reports.
     resolved_json_body: JsonValue | None = None
     resolved_form_body: dict[str, str] | None = None
     if manifest_step.request.body is not None:
@@ -216,19 +288,28 @@ def _execute_v1_step(
                 method=method,
                 url=resolved_url,
                 error=error,
+                request_evidence=request_evidence,
             )
         except PlaceholderResolutionError as error:
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
             return (
-                StepResult(
-                    name=manifest_step.id,
-                    status="failed",
-                    message=f"Placeholder resolution failed: {error}",
-                    url=resolved_url,
+                _attach_evidence(
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message=f"Placeholder resolution failed: {error}",
+                        url=resolved_url,
+                    ),
+                    request_evidence=request_evidence,
+                    response_evidence=None,
                 ),
                 new_context,
             )
+    if resolved_json_body is not None:
+        request_evidence["body"] = mask_json_value(resolved_json_body)
+    elif resolved_form_body is not None:
+        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
 
     # Validate resolved URL is HTTPS
     try:
@@ -237,11 +318,15 @@ def _execute_v1_step(
         request_record = RequestRecord(method=method, url=resolved_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=str(error),
-                url=resolved_url,
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=str(error),
+                    url=resolved_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
             ),
             new_context,
         )
@@ -264,13 +349,23 @@ def _execute_v1_step(
         # the structured result so callers can distinguish a 404 from a
         # connection failure.
         new_context = record_step(context, manifest_step.id, request_record, None)
+        # When the failure included a response (non-JSON body), include the
+        # status code in evidence; the body is unavailable because it failed
+        # JSON parsing.
+        transport_response_evidence: dict[str, JsonValue] | None = None
+        if error.status_code is not None:
+            transport_response_evidence = {"statusCode": error.status_code}
         return (
-            StepResult(
-                name=manifest_step.id,
-                status="failed",
-                message=str(error),
-                url=resolved_url,
-                status_code=error.status_code,
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=str(error),
+                    url=resolved_url,
+                    status_code=error.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=transport_response_evidence,
             ),
             new_context,
         )
@@ -282,6 +377,14 @@ def _execute_v1_step(
     )
     new_context = record_step(context, manifest_step.id, request_record, response_record)
 
+    # Build masked response evidence — attached to non-PASS step results so
+    # participants can debug failed assertions without OBL assistance while
+    # tokens/credentials in the body remain redacted.
+    response_evidence: dict[str, JsonValue] = {
+        "statusCode": response.status_code,
+        "body": mask_json_value(dict(response.body)),
+    }
+
     # Evaluate assertions
     step_result = _build_assertion_step(
         name=manifest_step.id,
@@ -291,7 +394,10 @@ def _execute_v1_step(
         assertions=manifest_step.assertions,
         warning=manifest_step.warning,
     )
-    return step_result, new_context
+    return (
+        _attach_evidence(step_result, request_evidence=request_evidence, response_evidence=response_evidence),
+        new_context,
+    )
 
 
 def _skipped_step(
@@ -301,6 +407,7 @@ def _skipped_step(
     method: str,
     url: str,
     error: MissingPredecessorResponseError,
+    request_evidence: dict[str, JsonValue] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Build a SKIPPED step result for a step whose prerequisite produced no response.
 
@@ -317,18 +424,28 @@ def _skipped_step(
         method: HTTP method of the (un-issued) request, recorded for trace.
         url: URL template or partially-resolved URL of the (un-issued) request.
         error: The underlying missing-response error, used for the message.
+        request_evidence: Best-effort masked request metadata collected so
+            far by the caller. When omitted, a minimal ``{method, url}``
+            evidence record is constructed from the arguments.
 
     Returns:
         A ``("skipped", ...)`` step result paired with the updated context.
     """
     request_record = RequestRecord(method=method, url=url)
     new_context = record_step(context, step_id, request_record, None)
+    evidence: dict[str, JsonValue] = (
+        request_evidence if request_evidence is not None else {"method": method, "url": url}
+    )
     return (
-        StepResult(
-            name=step_id,
-            status="skipped",
-            message=f"Skipped: {error}",
-            url=url,
+        _attach_evidence(
+            StepResult(
+                name=step_id,
+                status="skipped",
+                message=f"Skipped: {error}",
+                url=url,
+            ),
+            request_evidence=evidence,
+            response_evidence=None,
         ),
         new_context,
     )
@@ -363,12 +480,17 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
         if test.request.method != "GET":
             request_record = RequestRecord(method=test.request.method, url=test.request.url)
             context = record_step(context, test.id, request_record, None)
+            v0_method_evidence: dict[str, JsonValue] = {"method": test.request.method, "url": test.request.url}
             steps.append(
-                StepResult(
-                    name=test.id,
-                    status="failed",
-                    message=f"v0 manifest primary requests must use GET, got: {test.request.method}",
-                    url=test.request.url,
+                _attach_evidence(
+                    StepResult(
+                        name=test.id,
+                        status="failed",
+                        message=f"v0 manifest primary requests must use GET, got: {test.request.method}",
+                        url=test.request.url,
+                    ),
+                    request_evidence=v0_method_evidence,
+                    response_evidence=None,
                 )
             )
             continue
@@ -396,12 +518,20 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
                     RequestRecord(method=test.follow_up.request.method, url=primary_url),
                     None,
                 )
+                followup_evidence: dict[str, JsonValue] = {
+                    "method": test.follow_up.request.method,
+                    "url": primary_url,
+                }
                 steps.append(
-                    StepResult(
-                        name=follow_up_id,
-                        status="failed",
-                        message=f"Unable to resolve follow-up URL from {test.follow_up.url_source}",
-                        url=primary_url,
+                    _attach_evidence(
+                        StepResult(
+                            name=follow_up_id,
+                            status="failed",
+                            message=f"Unable to resolve follow-up URL from {test.follow_up.url_source}",
+                            url=primary_url,
+                        ),
+                        request_evidence=followup_evidence,
+                        response_evidence=None,
                     )
                 )
             else:
