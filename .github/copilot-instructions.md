@@ -26,7 +26,6 @@ This repository is the **Open Banking UK Conformance Test Tool**, distributed as
 - New business logic must have tests.
 - Tests must use pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`, or `@pytest.mark.e2e`.
 - Test behaviour through public interfaces. Mock at external boundaries only (HTTP, file system, external services).
-- Use `factory_boy` factories, not hardcoded fixtures.
 - Coverage must not drop below 80%.
 - E2E tests must assert on the structured result file, not on side effects.
 
