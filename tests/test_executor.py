@@ -71,7 +71,7 @@ def test_run_manifest_fetches_primary_request_and_follow_up() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "openid-discovery.followUp"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -94,8 +94,10 @@ def test_run_manifest_skips_follow_up_when_primary_assertion_fails() -> None:
 
     assert result.status == "failed"
     assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]
-    assert len(result.steps) == 1
-    assert result.steps[0].status == "failed"
+    assert [step.status for step in result.steps] == ["failed", "skipped"]
+    assert result.steps[1].name == "openid-discovery.followUp"
+    assert result.steps[1].message == "Skipped because primary step 'openid-discovery' failed"
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 0, "failed": 1, "skipped": 1}
 
 
 @pytest.mark.unit
@@ -192,10 +194,10 @@ def test_run_manifest_reports_request_error() -> None:
         result = run_manifest(manifest, environment="ozone-model-bank", client=client)
 
     assert result.status == "failed"
-    assert len(result.steps) == 1
+    assert [step.status for step in result.steps] == ["failed", "skipped"]
     assert result.steps[0].name == "openid-discovery"
-    assert result.steps[0].status == "failed"
     assert result.steps[0].message.startswith("Request failed for https://modelbank.example.com")
+    assert result.steps[1].name == "openid-discovery.followUp"
 
 
 @pytest.mark.unit
@@ -220,11 +222,11 @@ def test_run_manifest_preserves_status_code_when_body_is_not_json() -> None:
         result = run_manifest(manifest, environment="ozone-model-bank", client=client)
 
     assert result.status == "failed"
-    assert len(result.steps) == 1
+    assert [step.status for step in result.steps] == ["failed", "skipped"]
     step = result.steps[0]
-    assert step.status == "failed"
     assert step.status_code == 404
     assert "was not valid JSON" in step.message
+    assert result.steps[1].name == "openid-discovery.followUp"
 
 
 @pytest.mark.unit
@@ -498,7 +500,7 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "jwks-fetch"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit

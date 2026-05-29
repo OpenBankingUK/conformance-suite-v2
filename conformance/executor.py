@@ -317,6 +317,29 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
         step_result, context = _execute_v1_step(primary_step, context=context, client=client)
         steps.append(step_result)
 
+        # When the primary step failed and a follow-up is configured, emit the
+        # follow-up as ``skipped`` so the report stays complete. This matches
+        # the PRD outcome model: "SKIPPED: test could not run because a
+        # prerequisite setup step failed."
+        if step_result.status == "failed" and test.follow_up is not None:
+            follow_up_id = f"{test.id}.followUp"
+            primary_url = context.steps[test.id].request.url
+            context = record_step(
+                context,
+                follow_up_id,
+                RequestRecord(method=test.follow_up.request.method, url=primary_url),
+                None,
+            )
+            steps.append(
+                StepResult(
+                    name=follow_up_id,
+                    status="skipped",
+                    message=f"Skipped because primary step '{test.id}' failed",
+                    url=primary_url,
+                )
+            )
+            continue
+
         # Follow-up: only execute if primary passed (v0 semantics)
         if step_result.status == "passed" and test.follow_up is not None:
             follow_up_id = f"{test.id}.followUp"

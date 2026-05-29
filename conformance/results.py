@@ -11,8 +11,14 @@ from typing import Literal
 
 from conformance.json_types import JsonObject, JsonValue
 
-CheckStatus = Literal["passed", "failed"]
-"""Outcome values currently emitted by smoke-check steps and summaries."""
+CheckStatus = Literal["passed", "failed", "skipped"]
+"""Outcome values currently emitted by smoke-check steps and summaries.
+
+A ``skipped`` step is one whose prerequisite setup step failed, so the step
+could not run. ``skipped`` is informational; it does not on its own cause the
+aggregate ``SmokeCheckResult.status`` to be ``failed`` (the upstream failure
+already does that). See PRD "Result Outcomes".
+"""
 
 
 @dataclass(frozen=True)
@@ -92,6 +98,7 @@ class SmokeCheckResult:
                 "total": len(self.steps),
                 "passed": sum(1 for step in self.steps if step.status == "passed"),
                 "failed": sum(1 for step in self.steps if step.status == "failed"),
+                "skipped": sum(1 for step in self.steps if step.status == "skipped"),
             },
             "steps": [step.to_json_object() for step in self.steps],
         }
@@ -109,7 +116,10 @@ def build_smoke_check_result(environment: str, steps: list[StepResult], *, start
         Immutable smoke-check result with finished timestamp and aggregate status.
     """
     finished_at = datetime.now(UTC)
-    status: CheckStatus = "passed" if all(step.status == "passed" for step in steps) else "failed"
+    # ``skipped`` steps do not on their own fail the aggregate: a skip implies an
+    # upstream ``failed`` step that already drives the aggregate to ``failed``.
+    # Aggregate is ``failed`` iff at least one step failed; otherwise ``passed``.
+    status: CheckStatus = "failed" if any(step.status == "failed" for step in steps) else "passed"
     return SmokeCheckResult(
         environment=environment,
         status=status,

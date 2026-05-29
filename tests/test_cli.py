@@ -49,7 +49,7 @@ def test_cli_writes_result_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     assert exit_code == 0
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["status"] == "passed"
-    assert result["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -82,7 +82,7 @@ def test_cli_runs_committed_example_config(monkeypatch: pytest.MonkeyPatch, tmp_
     assert result_path.parent.is_dir()
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["status"] == "passed"
-    assert result["summary"] == {"total": 1, "passed": 1, "failed": 0}
+    assert result["summary"] == {"total": 1, "passed": 1, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -118,7 +118,7 @@ def test_cli_runs_manifest_from_committed_example_config(monkeypatch: pytest.Mon
     ]
     result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
     assert result["status"] == "passed"
-    assert result["summary"] == {"total": 2, "passed": 2, "failed": 0}
+    assert result["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -148,7 +148,7 @@ def test_cli_returns_failure_when_model_bank_check_fails(monkeypatch: pytest.Mon
     assert exit_code == 1
     result = json.loads(result_path.read_text(encoding="utf-8"))
     assert result["status"] == "failed"
-    assert result["summary"] == {"total": 1, "passed": 0, "failed": 1}
+    assert result["summary"] == {"total": 1, "passed": 0, "failed": 1, "skipped": 0}
 
 
 @pytest.mark.unit
