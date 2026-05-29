@@ -1,133 +1,65 @@
-# GitHub Copilot Instructions
+# Copilot PR Review Instructions
 
-## Project Context
+This file guides the GitHub Copilot PR reviewer when commenting on pull requests in this repository. It is not a general engineering handbook — it is a review rubric.
 
-This repository contains the **Open Banking UK Conformance Test Tool** — a standards testing application distributed as a Docker container to participants of the Open Banking UK ecosystem. Participants run the container against their own implementations to verify conformance with Open Banking UK API standards.
+## Project Framing
 
-**This project operates in a regulated financial services context. Security, correctness, and reliability are non-negotiable.**
-
-### AI Agent Operating Context
-
-When a task touches architecture, security, public interfaces, or a previously-recorded decision, consult `ai/PROJECT_CONTEXT.md` and `ai/DECISION_LOG.md`. Active implementation plans live in `ai/plans/`. See `ai/README.md` for the full four-tier workspace strategy.
-
-The generated documents in `docs/` are useful reference material, but they are not the adaptive source of truth for agent decisions unless a human explicitly promotes a detail into the `ai/` workspace or this instruction file. Favour the original FCS design documents, sprint plan, explicit user direction, and the `ai/` workspace over incidental choices made in generated documentation.
-
-### Technology Stack
-
-- **Language**: Python 3.14.x (>=3.14.4)
-- **Web framework**: Django (with HTMX for frontend interactions)
-- **Package manager**: `uv` (lockfile-based, reproducible installs)
-- **Container**: Docker (non-root, minimal base image)
-- **Test framework**: pytest + pytest-django
-- **Linting / formatting**: ruff
-- **Type checking**: mypy (strict mode)
-- **CI/CD**: GitHub Actions
-- **Security scanning**: Snyk (linked via Snyk portal — runs automatically on PRs as a GitHub status check)
+This repository is the **Open Banking UK Conformance Test Tool**, distributed as a Docker container to participants of the Open Banking UK ecosystem. It operates in a regulated financial services context. Security, correctness, and reliability are non-negotiable. Apply the rules below rigorously.
 
 ---
 
-## Table of Contents
+## 1. Security — Highest Priority
 
-- [Project Context](#project-context)
-- [Code Review Instructions](#code-review-instructions)
-  - [1. Security — Highest Priority](#1-security--highest-priority)
-  - [2. Testing Standards](#2-testing-standards)
-  - [3. Django-Specific Standards](#3-django-specific-standards)
-  - [4. Type Annotations](#4-type-annotations)
-  - [5. Code Quality Standards](#5-code-quality-standards)
-  - [6. Code Documentation Standards](#6-code-documentation-standards)
-  - [7. Git Flow & PR Hygiene](#7-git-flow--pr-hygiene)
-  - [8. Docker & Container Standards](#8-docker--container-standards)
-  - [9. Open Banking Domain Standards](#9-open-banking-domain-standards)
-  - [10. What to Always Approve](#10-what-to-always-approve)
-  - [11. What to Always Block](#11-what-to-always-block)
-- [General Coding Preferences](#general-coding-preferences)
+- **Injection** (OWASP A03): No raw SQL. Use Django ORM. No `str.format()` or f-strings building SQL, shell commands, or file paths from user input.
+- **Broken Authentication** (OWASP A07): Auth-required views must have `@login_required` or `LoginRequiredMixin`.
+- **Sensitive Data Exposure** (OWASP A02): No secrets, API keys, tokens, or credentials in code or config. `.env` files must never be committed. Result files must not include internal system details.
+- **Security Misconfiguration** (OWASP A05): `DEBUG = False` in production settings. `ALLOWED_HOSTS` explicitly set. `SECRET_KEY` from environment.
+- **CSRF**: POST views must use `{% csrf_token %}`; HTMX POSTs must include CSRF headers. `@csrf_exempt` requires strong, documented justification.
+- **Open Redirect**: `HttpResponseRedirect` must only target validated internal paths.
+- **Path Traversal**: File paths derived from user input must be validated against an allowed root using `pathlib.Path.resolve()`.
+- **Hardcoded secrets**: Flag any string literals that look like tokens, keys, or passwords.
+- **Dependencies**: New entries in `pyproject.toml` must be accompanied by a regenerated `uv.lock`. Flag unmaintained packages, known CVEs, or overly broad dependencies. Snyk runs on PRs; `high` or `critical` findings must not be merged.
+- **Docker**: `Dockerfile` must use a non-root `USER`, pin the base image to a specific version tag, and avoid `COPY . .` without a comprehensive `.dockerignore`. No secrets in `ENV`.
 
----
+## 2. Testing
 
-## Code Review Instructions
+- New business logic must have tests.
+- Tests must use pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`, or `@pytest.mark.e2e`.
+- Test behaviour through public interfaces. Mock at external boundaries only (HTTP, file system, external services).
+- Use `factory_boy` factories, not hardcoded fixtures.
+- Coverage must not drop below 80%.
+- E2E tests must assert on the structured result file, not on side effects.
 
-When reviewing pull requests in this repository, apply the following standards rigorously.
+## 3. Django
 
----
+- Django ORM only. Raw queries require explicit justification.
+- Development, test, and production settings must remain separated.
+- Model changes must include migrations.
+- User input must flow through a Django `Form` or DRF `Serializer` — no direct `request.POST` / `request.GET` access.
+- Templates rely on auto-escaping. `mark_safe()` must never wrap user-supplied content.
 
-### 1. Security — Highest Priority
+## 4. Type Annotations
 
-This project is used by financial services participants. Security flaws can have serious downstream consequences.
+- Public functions, methods, and class attributes must have complete type annotations.
+- `Any` requires explicit justification.
+- Code must pass mypy strict.
 
-**Always check for:**
+## 5. Code Quality
 
-- **Injection vulnerabilities** (OWASP A03): No raw SQL queries. Use Django ORM exclusively. No `str.format()` or f-strings constructing SQL, shell commands, or file paths from user input.
-- **Broken Authentication** (OWASP A07): Verify that any authentication-required views have `@login_required` or equivalent. Check for missing `LoginRequiredMixin`.
-- **Sensitive Data Exposure** (OWASP A02): No secrets, API keys, tokens, or credentials in code or config files. `.env` files must never be committed. Check that any data written to the result file does not include internal system details.
-- **Security Misconfiguration** (OWASP A05): `DEBUG = False` in production settings. `ALLOWED_HOSTS` must be explicitly set. `SECRET_KEY` must come from environment variables.
-- **CSRF** (OWASP A01 / Django specific): All POST views must use `{% csrf_token %}`. HTMX POSTs must include CSRF headers. `@csrf_exempt` must never be used without strong justification and a comment.
-- **Open Redirect**: `HttpResponseRedirect` must only redirect to safe internal paths. Never redirect to user-supplied URLs without validation.
-- **Path Traversal**: Any file path derived from user input must be validated and restricted to an allowed directory. Use `pathlib.Path.resolve()` and verify it is within the expected root.
-- **Hardcoded secrets**: Flag any string literals that look like tokens, keys, or passwords. `SECRET_KEY` and similar values must come from environment variables or GitHub Secrets.
-- **Dependency concerns**: If new packages are added to `pyproject.toml`, check that the `uv.lock` file has been regenerated and committed. Flag any packages that are unmaintained, have known CVEs, or are overly broad in scope. Note that Snyk will automatically flag dependency vulnerabilities on the PR via the Snyk portal integration — code with `high` or `critical` findings must not be merged. If uncertain how to resolve a security issue, consult the Security team.
-- **Docker security**: The `Dockerfile` must use a non-root `USER`. No `COPY . .` without a comprehensive `.dockerignore`. No secrets in `ENV` instructions. Pin the base image to a specific digest or version tag.
+- Code must comply with the project's `ruff` config. `# noqa:` requires an inline justification.
+- Functions over ~50 lines or nesting deeper than 3 levels are red flags — suggest decomposition or early returns.
+- Naming follows PEP 8. Domain terms must match the Open Banking UK glossary (endpoint names, claim names, grant types).
+- No dead code: flag unused imports/variables/functions and commented-out code.
 
----
+## 6. Documentation
 
-### 2. Testing Standards
+- Every non-test Python module must have a docstring explaining its role.
+- Every public class, dataclass, function, method, and module-level type alias must have a Google-style docstring (`Args:`, `Returns:`, `Raises:` where useful).
+- Every private (`_`-prefixed) module-level function and method must also have a full Google-style docstring. No carve-out for "trivial" helpers. CI runs `interrogate` at 100% (`ignore-private = false`); missing docstrings fail the build.
+- Code implementing Open Banking, OAuth 2.0, OIDC, FAPI, JWKS, JWS, report, certification, or masking behaviour should name the relevant standard concept in the docstring or an adjacent comment.
+- Inline comments should explain security, compliance, or non-obvious design intent. Don't restate the next line of code.
 
-- Every new function, view, or method with meaningful business logic **must** have accompanying tests.
-- Tests must use appropriate pytest markers: `@pytest.mark.unit`, `@pytest.mark.integration`, or `@pytest.mark.e2e`.
-- Tests must exercise behaviour through public interfaces, not internal implementation details.
-- Avoid mocking internal collaborators; mock at external boundaries (HTTP, file system, DB calls to external services).
-- Test data must use `factory_boy` factories, not hardcoded fixtures.
-- Coverage must not drop below 80%. Flag any PR that reduces coverage without justification.
-- E2E tests must assert on the structured result file produced by the tool, not on side effects.
-
----
-
-### 3. Django-Specific Standards
-
-- **ORM over raw SQL**: Always use Django ORM query methods. Raw queries require explicit justification.
-- **Settings split**: Development, test, and production settings must remain separated. Never merge production settings into development.
-- **Migrations**: Model changes must include accompanying migrations. Check that migrations are reviewed for correctness and don't cause data loss.
-- **Forms and serialisers**: All user input must pass through a Django `Form` or DRF `Serializer` before processing. No direct access to `request.POST` or `request.GET` without validation.
-- **Template safety**: Templates should use Django's auto-escaping. `mark_safe()` must never be used with user-supplied content.
-
----
-
-### 4. Type Annotations
-
-- All public functions, methods, and class attributes **must** have complete type annotations.
-- No `Any` type unless unavoidable and explicitly justified with a `# type: ignore[type-arg]` comment.
-- Ensure mypy would pass with `strict = true` on any new code.
-
----
-
-### 5. Code Quality Standards
-
-- **ruff**: Code must comply with the project's `ruff` configuration. Flag any disabled rules (`# noqa:`) that don't have a clear inline justification.
-- **Function length**: Functions over ~50 lines are a red flag — suggest decomposition.
-- **Deep nesting**: More than 3 levels of nesting is a red flag — suggest early returns or extraction.
-- **Naming**: Follow Python conventions (PEP 8). Domain terms must match the Open Banking UK glossary (endpoint names, claim names, grant types, etc.).
-- **No dead code**: Flag unused imports, variables, functions, and commented-out code.
-
----
-
-### 6. Code Documentation Standards
-
-Code in this repository must be understandable to a human reviewer without requiring chat history or generated documentation.
-
-**Always check for:**
-
-- **Module docstrings**: Every non-test Python module and package must explain its purpose and role in the conformance tool.
-- **Public API docstrings**: Every public class, dataclass, function, method, and module-level type alias with project meaning must have a Google-style docstring. Include `Args:`, `Returns:`, and `Raises:` sections when they add useful information.
-- **Private function and method docstrings**: Every private (`_`-prefixed) module-level function and method must carry a full Google-style docstring — a one-line summary plus `Args:` and `Returns:` sections whenever the signature has parameters or a non-`None` return type, and a `Raises:` section whenever the helper raises an exception directly. There is no carve-out for "trivial" helpers: every `_`-prefixed function must be documented, regardless of length. Note: ruff's Google pydocstyle convention does not enforce `D1xx` on private names. This repository therefore runs `interrogate` (configured in `pyproject.toml` with `fail-under = 100`, `ignore-private = false`, `ignore-semiprivate = false`) as a required CI step that fails the build if any function, method, class, or nested definition — public or private — is missing a docstring.
-- **Domain intent**: Code implementing Open Banking, OAuth 2.0, OIDC, FAPI, JWKS, JWS, report, certification, or masking behaviour should name the relevant standard concept in the docstring or an adjacent comment.
-- **Why comments**: Inline comments should explain security, compliance, domain, or non-obvious design intent. Do not add comments that merely restate the next line of code.
-- **Generated or framework boilerplate**: Keep Django-generated entry points lightweight. Prefer a concise module docstring or a targeted `ruff` per-file ignore over ceremonial comments.
-
-Docstrings must follow Google style and pass `ruff` pydocstyle checks. If a public symbol intentionally has no docstring, the exception must be local, narrow, and justified.
-
-**Attribute docstrings for type aliases and module-level constants:**
-
-Module-level `type` statements (PEP 695), `Literal` assignments, `TypeAlias` assignments, and `Final` constants **must** be documented using the attribute-docstring convention — a bare `"""..."""` string literal placed on the line immediately following the assignment. This is a project-local convention: PEP 695 `type` statements cannot carry a function-style docstring, so the attribute-docstring form is the only way to satisfy this repository's requirement that module-level type aliases be documented. The Google Python Style Guide is silent on type aliases; this is an explicit project extension of Google style. Example:
+**Attribute docstrings for type aliases and module-level constants** are required and B018-exempt:
 
 ```python
 type JsonValue = str | int | float | bool | None | list[JsonValue] | dict[str, JsonValue]
@@ -137,73 +69,52 @@ CheckStatus = Literal["passed", "failed"]
 """Outcome values emitted by smoke-check steps and summaries."""
 ```
 
-These are **not** useless expressions. Ruff B018 explicitly exempts string-literal statements that immediately follow an assignment. Do not flag them as B018 violations, do not request they be converted to `#` comments, and do not request their removal.
+Do not flag these as B018 violations or request their removal.
 
----
+## 7. Git Flow & PR Hygiene
 
-### 7. Git Flow & PR Hygiene
+- Source branch must use `feature/`, `bugfix/`, `release/`, or `hotfix/` prefix.
+- PRs touching more than ~500 lines across unrelated concerns should be questioned.
+- PR title should reference the issue number (e.g. `feat(tests): add OAuth2 PKCE conformance tests (#42)`).
+- Flag any direct push to `main` or `develop`.
+- `feat`, `fix`, `hotfix`, or `security` PRs must update `CHANGELOG.md` under `[Unreleased]` following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/). `docs`, `ci`, `test`, `chore` PRs are exempt unless behaviour changes.
 
-- **Branch naming**: Verify the source branch follows the naming convention: `feature/`, `bugfix/`, `release/`, or `hotfix/` prefixes. Flag non-conforming branch names.
-- **PR scope**: PRs should be focused. A PR that touches more than 500 lines across unrelated concerns should be questioned.
-- **PR title**: Should be clear and reference the issue number (e.g. `feat(tests): add OAuth2 PKCE conformance tests (#42)`).
-- **No direct pushes to main or develop**: If the PR bypassed the normal flow, flag it.
-- **Changelog**: Every PR that introduces a `feat`, `fix`, `hotfix`, or `security` change **must** include an entry in `CHANGELOG.md` under the `[Unreleased]` section, in the appropriate subsection (`Added`, `Changed`, `Fixed`, `Security`, etc.), following [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) format. `docs`, `ci`, `test`, and `chore` PRs are exempt unless they change observable behaviour. Flag any PR of type `feat` or `fix` that does not update `CHANGELOG.md`.
+## 8. Docker
 
----
+- Base image pinned to a specific version tag (e.g. `python:3.14.4-slim-bookworm`).
+- Prefer multi-stage builds.
+- Application runs as non-root.
+- `COPY` ordered to maximise layer cache (dependency files before source).
+- Healthchecks recommended for interactive use.
 
-### 8. Docker & Container Standards
-
-- Base image must be pinned to a specific version tag (e.g. `python:3.14.4-slim-bookworm`, not `python:latest`).
-- Multi-stage builds are preferred to keep the final image minimal.
-- The application process must run as a non-root user.
-- `COPY` instructions should be ordered to maximise layer cache efficiency (copy dependency files first, then source code).
-- Healthcheck instructions are recommended for interactive container use.
-
----
-
-### 9. Open Banking Domain Standards
-
-When reviewing code that implements or tests Open Banking standards:
+## 9. Open Banking Domain
 
 - Endpoint paths must match the Open Banking UK API specification exactly (case-sensitive).
 - HTTP status codes in test assertions must match the specification's expected responses.
-- OAuth 2.0 and OIDC flows must not deviate from the specification — flag any shortcuts.
-- Claim names in JWT handling must use the exact names from the specification.
-- Any hardcoded timeout values, retry counts, or date ranges that affect conformance judgement must be clearly documented.
+- OAuth 2.0 and OIDC flows must not deviate from the specification — flag shortcuts.
+- JWT claim names must use the exact names from the specification.
+- Hardcoded timeouts, retry counts, or date ranges affecting conformance judgement must be clearly documented.
 
 ---
 
-### 10. What to Always Approve
+## Always Approve
 
 - Well-structured tests with clear assertions
-- Smaller, focused PRs that do one thing well
-- Dependency updates that have passed Snyk scanning
+- Smaller, focused PRs
+- Dependency updates that have passed Snyk
 - Documentation improvements
-- Attribute docstrings (`"""..."""` immediately following a module-level assignment or `type` statement) used to document type aliases, `Literal` types, and module-level constants — these are B018-exempt and recognised by tooling
+- Attribute docstrings (`"""..."""`) immediately following a module-level assignment or `type` statement
 
----
+## Always Block
 
-### 11. What to Always Block
-
-- Any `DEBUG = True` outside of development settings
-- Any hardcoded secret, token, or credential
-- `# noqa` or `# type: ignore` without an inline justification comment
-- Raw SQL string construction from user input
-- `@csrf_exempt` without a documented security rationale
+- `DEBUG = True` outside development settings
+- Hardcoded secrets, tokens, or credentials
+- `# noqa` or `# type: ignore` without inline justification
+- Raw SQL constructed from user input
+- `@csrf_exempt` without documented rationale
 - Docker images running as root
-- New or modified Python modules, classes, functions, or methods — public **or private** (`_`-prefixed) — without a clear Google-style docstring. This is mechanically enforced by `interrogate` in CI (100% threshold, private names included); do not rely on code review alone to catch missing docstrings
+- New or modified Python modules, classes, functions, or methods — public or private — without a Google-style docstring
 - PRs that reduce test coverage below 80% without justification
 - New dependencies not present in `uv.lock`
-- Merges to `main` without a passing E2E test run
-- `feat` or `fix` PRs with no entry added to `CHANGELOG.md` under `[Unreleased]`
-
----
-
-## General Coding Preferences
-
-- Prefer `pathlib.Path` over `os.path` for file operations.
-- Prefer `httpx` over `requests` for HTTP calls (async-compatible).
-- Use `dataclasses` or `pydantic` for data transfer objects; avoid untyped dictionaries for structured data.
-- Configuration should flow through environment variables or a config file; never through default mutable arguments.
-- Follow the principle of least privilege: functions should receive only what they need.
-- Prefer explicit over implicit. Side effects should be obvious from function signatures.
+- Merges to `main` without a passing E2E run
+- `feat` or `fix` PRs with no `CHANGELOG.md` entry under `[Unreleased]`
