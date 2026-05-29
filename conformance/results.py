@@ -33,6 +33,10 @@ class StepResult:
         url: Optional endpoint URL involved in the step.
         status_code: Optional HTTP status code returned by the endpoint.
         details: Optional structured data safe to include in the result file.
+        mandatory: Whether this step was declared mandatory in the manifest.
+            Used by the aggregate ``certificationEligibility`` block; not
+            serialised on the individual step entry to keep the per-step
+            shape stable.
     """
 
     name: str
@@ -41,6 +45,7 @@ class StepResult:
     url: str | None = None
     status_code: int | None = None
     details: Mapping[str, JsonValue] = field(default_factory=dict)
+    mandatory: bool = False
 
     def __post_init__(self) -> None:
         """Freeze nested details so result objects stay immutable after creation."""
@@ -102,6 +107,7 @@ class SmokeCheckResult:
                 "warn": sum(1 for step in self.steps if step.status == "warn"),
                 "skipped": sum(1 for step in self.steps if step.status == "skipped"),
             },
+            "certificationEligibility": _build_eligibility(self.steps),
             "steps": [step.to_json_object() for step in self.steps],
         }
 
@@ -130,3 +136,67 @@ def build_smoke_check_result(environment: str, steps: list[StepResult], *, start
         finished_at=finished_at,
         steps=tuple(steps),
     )
+
+
+def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
+    """Build the ``certificationEligibility`` block for the result file.
+
+    Implements the PRD's Certification Eligibility Assessment for Phase 1: a
+    self-service check that a run is suitable for submission to OBL for
+    formal certification. The criteria are driven by which steps were
+    declared ``mandatory`` in the manifest — *not* hardcoded — so OBL
+    Standards can adjust mandatory coverage by editing configuration.
+
+    Eligibility rules:
+        * A run is eligible only when at least one mandatory step ran *and*
+          every mandatory step finished as ``passed`` or ``warn``.
+        * ``warn`` is non-blocking (PRD: warnings *"do not block
+          certification"*).
+        * ``failed`` and ``skipped`` on a mandatory step block eligibility.
+          ``skipped`` always implies an earlier failure, so it is treated as
+          blocking by definition.
+        * A manifest with no mandatory steps cannot certify — the PRD
+          requires *"all mandatory tests were included in the run"*, so
+          declaring zero is treated as "not a certification candidate".
+
+    The block intentionally does *not* yet check "FCS version is an approved
+    release". That criterion is the CertificationValidator's job (OBL-side,
+    not participant-side) and the approved-release list is not yet wired
+    through to the engine.
+
+    Args:
+        steps: Ordered step results from the smoke-check run.
+
+    Returns:
+        JSON object containing the boolean ``eligible`` flag, per-status
+        mandatory counts, and a ``reason`` string when not eligible (omitted
+        when eligible).
+    """
+    mandatory_steps = [step for step in steps if step.mandatory]
+    mandatory_passed = sum(1 for step in mandatory_steps if step.status == "passed")
+    mandatory_failed = sum(1 for step in mandatory_steps if step.status == "failed")
+    mandatory_warn = sum(1 for step in mandatory_steps if step.status == "warn")
+    mandatory_skipped = sum(1 for step in mandatory_steps if step.status == "skipped")
+
+    counts: JsonObject = {
+        "mandatoryTotal": len(mandatory_steps),
+        "mandatoryPassed": mandatory_passed,
+        "mandatoryFailed": mandatory_failed,
+        "mandatoryWarn": mandatory_warn,
+        "mandatorySkipped": mandatory_skipped,
+    }
+
+    reason: str | None
+    if not mandatory_steps:
+        reason = "No mandatory steps declared in the manifest"
+    elif mandatory_failed:
+        reason = f"{mandatory_failed} mandatory step(s) failed"
+    elif mandatory_skipped:
+        reason = f"{mandatory_skipped} mandatory step(s) skipped due to earlier failures"
+    else:
+        reason = None
+
+    block: JsonObject = {"eligible": reason is None, **counts}
+    if reason is not None:
+        block["reason"] = reason
+    return block

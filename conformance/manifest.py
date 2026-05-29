@@ -193,6 +193,14 @@ class ManifestStep:
             would otherwise pass, the executor emits a ``warn`` outcome instead
             of ``passed`` and surfaces this message in the step result. Per the
             PRD, ``warn`` does not block certification.
+        mandatory: Whether this step is required for certification eligibility.
+            Defaults to ``False``. Per the PRD's Certification Eligibility
+            Assessment, a run is eligible for certification submission only
+            when every mandatory step passed (``warn`` is non-blocking, but
+            ``failed`` and ``skipped`` are blocking). Mandatory status is
+            defined per spec version and standard in manifest configuration —
+            never hardcoded — so OBL Standards can adjust mandatory coverage
+            without an engine release.
     """
 
     id: str
@@ -200,6 +208,7 @@ class ManifestStep:
     request: ManifestRequest
     assertions: tuple[ManifestAssertion, ...]
     warning: str | None = None
+    mandatory: bool = False
 
 
 @dataclass(frozen=True)
@@ -407,7 +416,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     location = f"steps[{index}]"
     _reject_unknown_keys(
         raw_step,
-        allowed_keys={"id", "name", "request", "assertions", "warning"},
+        allowed_keys={"id", "name", "request", "assertions", "warning", "mandatory"},
         location=location,
     )
 
@@ -424,6 +433,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     )
     assertions = _required_object_array(raw_step, "assertions", location=location)
     warning = _parse_optional_warning(raw_step, location=location)
+    mandatory = _parse_optional_mandatory(raw_step, location=location)
 
     return ManifestStep(
         id=step_id,
@@ -434,6 +444,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
             for assertion_index, raw_assertion in enumerate(assertions)
         ),
         warning=warning,
+        mandatory=mandatory,
     )
 
 
@@ -993,6 +1004,36 @@ def _parse_optional_warning(raw_step: dict[str, JsonValue], *, location: str) ->
     if not isinstance(value, str) or not value.strip():
         raise ManifestError(f"{location}.warning must be a non-empty string when present")
     return value.strip()
+
+
+def _parse_optional_mandatory(raw_step: dict[str, JsonValue], *, location: str) -> bool:
+    """Extract the optional ``mandatory`` flag from a v1 step.
+
+    The ``mandatory`` field is optional. When absent, ``False`` is returned
+    (steps are opt-in to mandatory coverage). When present it must be a JSON
+    boolean. Truthy/falsy coercion is intentionally rejected so that integer,
+    string, or ``null`` values fail fast at parse time rather than silently
+    flip certification eligibility on a misauthored manifest.
+
+    Args:
+        raw_step: Raw JSON object for the step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        ``True`` if the step is mandatory for certification, ``False`` otherwise.
+
+    Raises:
+        ManifestError: If ``mandatory`` is present but is not a JSON boolean.
+    """
+    if "mandatory" not in raw_step:
+        return False
+    value = raw_step["mandatory"]
+    # ``isinstance(value, bool)`` is required: in Python ``bool`` is a
+    # subclass of ``int``, so a bare ``isinstance(value, int)`` would also
+    # admit integers. We want to reject ``1``/``0`` and other truthy values.
+    if not isinstance(value, bool):
+        raise ManifestError(f"{location}.mandatory must be a JSON boolean when present")
+    return value
 
 
 def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:

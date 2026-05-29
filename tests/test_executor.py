@@ -1690,3 +1690,70 @@ def test_run_manifest_v1_skipped_step_includes_request_evidence_without_response
     # URL still carries the unresolved placeholder because resolution failed.
     assert "${steps.broken.response.body.path}" in request["url"]
     assert "response" not in details
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility() -> None:
+    """Executor carries ``mandatory`` from manifest into StepResult and eligibility block."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "mandatory-mix",
+        "steps": [
+            {
+                "id": "core",
+                "name": "Mandatory core",
+                "request": {"method": "GET", "url": "https://example.com/core"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "mandatory": True,
+            },
+            {
+                "id": "extra",
+                "name": "Optional extra",
+                "request": {"method": "GET", "url": "https://example.com/extra"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].mandatory is True
+    assert result.steps[1].mandatory is False
+    block = result.to_json_object()["certificationEligibility"]
+    assert isinstance(block, dict)
+    assert block["eligible"] is True
+    assert block["mandatoryTotal"] == 1
+
+
+@pytest.mark.unit
+def test_run_manifest_v0_eligibility_block_reports_no_mandatory_steps() -> None:
+    """v0 manifests have no mandatory concept and so are never eligible."""
+    raw_manifest = manifest_config()
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        return httpx.Response(200, json={"keys": [{"kid": "k"}]})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+
+    block = result.to_json_object()["certificationEligibility"]
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["mandatoryTotal"] == 0
+    assert "No mandatory steps" in str(block["reason"])
