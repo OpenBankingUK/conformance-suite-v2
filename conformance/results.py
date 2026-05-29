@@ -11,13 +11,14 @@ from typing import Literal
 
 from conformance.json_types import JsonObject, JsonValue
 
-CheckStatus = Literal["passed", "failed", "skipped"]
-"""Outcome values currently emitted by smoke-check steps and summaries.
+CheckStatus = Literal["passed", "failed", "warn", "skipped"]
+"""Outcome values emitted by smoke-check steps and summaries.
 
-PRD ultimately requires PASS, FAIL, WARN, SKIPPED. ``warn`` is reserved
-for a future feature (per-test deprecation signals) and is not yet
-emitted by the engine; ``skipped`` is emitted when a v1 step cannot run
-because a prerequisite step produced no response.
+Matches the four-state PRD outcome model: PASS, FAIL, WARN, SKIPPED.
+``warn`` is emitted when an otherwise-passing v1 step declares a
+``warning`` message in the manifest (signalling a deprecation or risk
+that does not block certification). ``skipped`` is emitted when a v1
+step cannot run because a prerequisite step produced no response.
 """
 
 
@@ -98,6 +99,7 @@ class SmokeCheckResult:
                 "total": len(self.steps),
                 "passed": sum(1 for step in self.steps if step.status == "passed"),
                 "failed": sum(1 for step in self.steps if step.status == "failed"),
+                "warn": sum(1 for step in self.steps if step.status == "warn"),
                 "skipped": sum(1 for step in self.steps if step.status == "skipped"),
             },
             "steps": [step.to_json_object() for step in self.steps],
@@ -116,7 +118,11 @@ def build_smoke_check_result(environment: str, steps: list[StepResult], *, start
         Immutable smoke-check result with finished timestamp and aggregate status.
     """
     finished_at = datetime.now(UTC)
-    status: CheckStatus = "passed" if all(step.status == "passed" for step in steps) else "failed"
+    # WARN is a non-blocking signal (PRD: "does not block certification"), so
+    # a step with status=="warn" must not flip the aggregate run to "failed".
+    # Only FAILED and SKIPPED (which always implies an earlier failure) fail
+    # the run.
+    status: CheckStatus = "passed" if all(step.status in {"passed", "warn"} for step in steps) else "failed"
     return SmokeCheckResult(
         environment=environment,
         status=status,

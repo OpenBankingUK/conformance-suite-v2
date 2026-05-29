@@ -71,7 +71,7 @@ def test_run_manifest_fetches_primary_request_and_follow_up() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "openid-discovery.followUp"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -498,7 +498,7 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
         "https://modelbank.example.com/jwks",
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "jwks-fetch"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
 
 
 @pytest.mark.unit
@@ -671,6 +671,7 @@ def test_run_manifest_v1_failed_request_skips_dependent_step() -> None:
         "total": 3,
         "passed": 0,
         "failed": 1,
+        "warn": 0,
         "skipped": 2,
     }
 
@@ -1355,3 +1356,119 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
     serialised = str(result.steps[0])
     assert "super-secret-value-shhh" not in serialised
     assert "client_secret" not in serialised
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_step_with_warning_emits_warn_when_assertions_pass() -> None:
+    """A step declaring a ``warning`` is promoted to WARN when assertions pass.
+
+    Implements the PRD outcome: ``WARN: test passed but a deprecation or
+    risk signal applies. Does not block certification.`` The warning
+    message is surfaced both in the step ``message`` and in ``details``.
+    """
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "warn-on-pass",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "OpenID discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": "Field 'foo' is deprecated and will be removed in v4.1",
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"issuer": "https://example.com"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    # Aggregate stays "passed" — WARN does not block certification (PRD).
+    assert result.status == "passed"
+    step = result.steps[0]
+    assert step.status == "warn"
+    assert "deprecated" in step.message
+    assert step.details["warning"] == "Field 'foo' is deprecated and will be removed in v4.1"
+    summary = result.to_json_object()["summary"]
+    assert summary == {"total": 1, "passed": 0, "failed": 0, "warn": 1, "skipped": 0}
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_step_with_warning_still_fails_when_assertion_fails() -> None:
+    """A failing assertion produces FAILED regardless of any declared ``warning``.
+
+    WARN is reserved for otherwise-passing steps; an assertion failure must
+    not be downgraded to a non-blocking warning.
+    """
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "warn-with-failure",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "OpenID discovery",
+                "request": {"method": "GET", "url": "https://example.com/discovery"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": "deprecation notice",
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(500, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert result.steps[0].status == "failed"
+    assert "warning" not in result.steps[0].details
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_warn_step_does_not_fail_aggregate_with_passed_step() -> None:
+    """A run containing only PASS and WARN steps aggregates to ``passed``."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "mixed-pass-warn",
+        "steps": [
+            {
+                "id": "plain",
+                "name": "Plain step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "warned",
+                "name": "Warned step",
+                "request": {"method": "GET", "url": "https://example.com/b"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": "soon-to-be-removed",
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert [step.status for step in result.steps] == ["passed", "warn"]
+    assert result.to_json_object()["summary"] == {
+        "total": 2,
+        "passed": 1,
+        "failed": 0,
+        "warn": 1,
+        "skipped": 0,
+    }
