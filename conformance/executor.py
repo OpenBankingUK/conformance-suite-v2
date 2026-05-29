@@ -289,6 +289,7 @@ def _execute_v1_step(
         failure_message=f"{manifest_step.name} failed",
         response=response,
         assertions=manifest_step.assertions,
+        warning=manifest_step.warning,
     )
     return step_result, new_context
 
@@ -451,8 +452,16 @@ def _build_assertion_step(
     failure_message: str,
     response: JsonHttpResponse,
     assertions: tuple[ManifestAssertion, ...],
+    warning: str | None = None,
 ) -> StepResult:
     """Build a step result by evaluating all assertions for a response.
+
+    When all assertions pass and the step declared a manifest-level
+    ``warning``, the result is promoted to a ``warn`` outcome with the
+    warning message surfaced in both the top-level ``message`` and the
+    structured ``details``. Per the PRD, ``warn`` signals a deprecation or
+    risk to the participant but does not block certification — failing
+    assertions still produce ``failed`` regardless of any warning.
 
     Args:
         name: The step name displayed in the conformance report.
@@ -460,22 +469,37 @@ def _build_assertion_step(
         failure_message: Message emitted when any assertion fails.
         response: The HTTP response to evaluate assertions against.
         assertions: The manifest assertions to apply to the response.
+        warning: Optional deprecation/risk message declared by the manifest
+            step. Only applied when all assertions pass.
 
     Returns:
-        A completed step result containing the overall pass/fail status
+        A completed step result containing the overall pass/fail/warn status
         and per-assertion details.
     """
     assertion_results = tuple(
         evaluate_assertion(assertion, status_code=response.status_code, body=response.body) for assertion in assertions
     )
     passed = all(assertion_result.passed for assertion_result in assertion_results)
+    details: dict[str, JsonValue] = {
+        "assertions": [_assertion_result_to_json(assertion_result) for assertion_result in assertion_results],
+    }
+    if passed and warning is not None:
+        details["warning"] = warning
+        return StepResult(
+            name=name,
+            status="warn",
+            message=f"{success_message} (warning: {warning})",
+            url=response.url,
+            status_code=response.status_code,
+            details=details,
+        )
     return StepResult(
         name=name,
         status="passed" if passed else "failed",
         message=success_message if passed else failure_message,
         url=response.url,
         status_code=response.status_code,
-        details={"assertions": [_assertion_result_to_json(assertion_result) for assertion_result in assertion_results]},
+        details=details,
     )
 
 

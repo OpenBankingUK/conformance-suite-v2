@@ -61,7 +61,7 @@ def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
         "https://modelbank.example.com/.well-known/openid-configuration",
         "https://modelbank.example.com/jwks",
     ]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "skipped": 0}
+    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
 
 
 @pytest.mark.unit

@@ -1447,3 +1447,63 @@ def test_parse_v1_manifest_form_body_is_immutable_after_parse() -> None:
     # this test is verifying.
     with pytest.raises(TypeError):
         cast(dict[str, str], parsed.fields)["k"] = "tampered"
+
+
+@pytest.mark.unit
+def test_parse_v1_step_accepts_optional_warning() -> None:
+    """A v1 step accepts an optional ``warning`` field carried into the dataclass."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "warn-aware",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": "Use endpoint /b instead (deprecated in v4.1)",
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].warning == "Use endpoint /b instead (deprecated in v4.1)"
+
+
+@pytest.mark.unit
+def test_parse_v1_step_warning_defaults_to_none() -> None:
+    """When ``warning`` is omitted the parsed step exposes ``warning is None``."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "no-warn",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].warning is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_warning", ["", "   ", 42, None, []])
+def test_parse_v1_step_warning_rejects_non_string_or_empty(bad_warning: JsonValue) -> None:
+    """A ``warning`` field that is not a non-empty string fails parse."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-warn",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": bad_warning,
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.warning must be a non-empty string"):
+        parse_manifest(raw_manifest)

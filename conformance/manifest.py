@@ -189,12 +189,17 @@ class ManifestStep:
         name: Human-readable step name.
         request: HTTP request to execute (may contain ``${...}`` placeholders).
         assertions: Assertions evaluated against the step response.
+        warning: Optional deprecation or risk message. When present and the step
+            would otherwise pass, the executor emits a ``warn`` outcome instead
+            of ``passed`` and surfaces this message in the step result. Per the
+            PRD, ``warn`` does not block certification.
     """
 
     id: str
     name: str
     request: ManifestRequest
     assertions: tuple[ManifestAssertion, ...]
+    warning: str | None = None
 
 
 @dataclass(frozen=True)
@@ -402,7 +407,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     location = f"steps[{index}]"
     _reject_unknown_keys(
         raw_step,
-        allowed_keys={"id", "name", "request", "assertions"},
+        allowed_keys={"id", "name", "request", "assertions", "warning"},
         location=location,
     )
 
@@ -418,6 +423,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
         seen_ids=seen_ids,
     )
     assertions = _required_object_array(raw_step, "assertions", location=location)
+    warning = _parse_optional_warning(raw_step, location=location)
 
     return ManifestStep(
         id=step_id,
@@ -427,6 +433,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
             _parse_assertion(raw_assertion, location=f"{location}.assertions[{assertion_index}]")
             for assertion_index, raw_assertion in enumerate(assertions)
         ),
+        warning=warning,
     )
 
 
@@ -959,6 +966,32 @@ def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: st
     value = raw_config.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ManifestError(f"{location}.{key} must be a non-empty string")
+    return value.strip()
+
+
+def _parse_optional_warning(raw_step: dict[str, JsonValue], *, location: str) -> str | None:
+    """Extract an optional ``warning`` message from a v1 step.
+
+    The ``warning`` field is optional. When absent, ``None`` is returned. When
+    present it must be a non-empty string (after stripping). An empty or
+    whitespace-only string is rejected to fail fast on misauthored manifests
+    rather than silently emit an empty warning at runtime.
+
+    Args:
+        raw_step: Raw JSON object for the step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The stripped warning message, or ``None`` if no ``warning`` key was set.
+
+    Raises:
+        ManifestError: If ``warning`` is present but is not a non-empty string.
+    """
+    if "warning" not in raw_step:
+        return None
+    value = raw_step["warning"]
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.warning must be a non-empty string when present")
     return value.strip()
 
 
