@@ -12,8 +12,10 @@ name: Ozone Integration
 #                        list, matching the admin-override allowance in
 #                        docs/CICD_STRATEGY.md for Ozone misbehaviour. When the
 #                        OZONE_DISCOVERY_URL repository variable is not
-#                        available (e.g. a fork PR), the job skips with a
-#                        notice rather than failing.
+#                        available on a fork PR (forks cannot read repo
+#                        variables), the job skips with a notice rather than
+#                        failing. Same-repo PRs with the variable missing
+#                        fail loudly so a misconfiguration is visible.
 #   - workflow_dispatch: on-demand from the Actions UI.
 #   - schedule:          nightly at 03:17 UTC so failures surface daily
 #                        independently of PR activity.
@@ -87,6 +89,11 @@ jobs:
           OVERRIDE_URL: ${{ inputs.discovery_url_override }}
           ENV_URL: ${{ vars.OZONE_DISCOVERY_URL }}
           EVENT_NAME: ${{ github.event_name }}
+          # Authoritative fork signal from the event payload. Empty string on
+          # non-pull_request events. We key the skip on this rather than on
+          # EVENT_NAME alone so a same-repo PR with the variable missing fails
+          # loudly instead of being silently treated as a fork.
+          IS_FORK: ${{ github.event.pull_request.head.repo.fork }}
         run: |
           if [[ -n "${OVERRIDE_URL}" ]]; then
             echo "source=workflow_dispatch input" >> "$GITHUB_OUTPUT"
@@ -98,11 +105,11 @@ jobs:
             echo "source=repository variable" >> "$GITHUB_OUTPUT"
             printf 'discovery_url<<EOF\n%s\nEOF\n' "${ENV_URL}" >> "$GITHUB_OUTPUT"
             echo "available=true" >> "$GITHUB_OUTPUT"
-          elif [[ "${EVENT_NAME}" == "pull_request" ]]; then
+          elif [[ "${EVENT_NAME}" == "pull_request" && "${IS_FORK}" == "true" ]]; then
             # PRs from forks cannot read repository variables. Skip gracefully
             # so the check stays green and surfaces a clear notice rather
             # than blocking the PR.
-            echo "::notice::OZONE_DISCOVERY_URL is not available for this PR (likely a fork). Skipping tier 1 integration tests; the nightly run will exercise them against the trusted environment."
+            echo "::notice::OZONE_DISCOVERY_URL is not available for this fork PR. Skipping tier 1 integration tests; the nightly run will exercise them against the trusted environment."
             echo "available=false" >> "$GITHUB_OUTPUT"
           else
             echo "::error::OZONE_DISCOVERY_URL is not set and no override was provided. Configure the repository-level variable under Settings → Secrets and variables → Actions → Variables, or supply discovery_url_override via workflow_dispatch."
