@@ -177,7 +177,15 @@ def test_run_manifest_reports_unexpected_http_error_status_as_assertion_failure(
     assert result.steps[0].status == "failed"
     assert result.steps[0].status_code == 404
     assert result.steps[0].details == {
-        "assertions": [{"status": "failed", "message": "Expected HTTP status 200, got 404"}]
+        "assertions": [{"status": "failed", "message": "Expected HTTP status 200, got 404"}],
+        "request": {
+            "method": "GET",
+            "url": "https://modelbank.example.com/.well-known/openid-configuration",
+        },
+        "response": {
+            "statusCode": 404,
+            "body": {"error": "missing"},
+        },
     }
 
 
@@ -1472,3 +1480,213 @@ def test_run_manifest_v1_warn_step_does_not_fail_aggregate_with_passed_step() ->
         "warn": 1,
         "skipped": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Request/response evidence capture with sensitive-data masking
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_omits_evidence_on_pass() -> None:
+    """PRD: passing steps include summary only — no request/response evidence.
+
+    Keeps reports lean and avoids broadening the surface area of accidental
+    disclosure for runs where everything went right.
+    """
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-pass",
+        "steps": [
+            {
+                "id": "ok",
+                "name": "OK",
+                "request": {"method": "GET", "url": "https://example.com/ok"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"access_token": "should-not-leak"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.steps[0].status == "passed"
+    details = dict(result.steps[0].details)
+    assert "request" not in details
+    assert "response" not in details
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_failed_step_includes_masked_request_and_response_evidence() -> None:
+    """FAIL step carries masked request body, headers, and response body.
+
+    PRD: *"Full request and response captured on FAIL, WARN, and SKIPPED."*
+    Sensitive credential fields and the Authorization header are masked.
+    """
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-fail",
+        "steps": [
+            {
+                "id": "token-exchange",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "headers": {
+                        "Authorization": "Bearer leaky-bearer",
+                        "Accept": "application/json",
+                    },
+                    "body": {"client_secret": "very-secret", "scope": "accounts"},  # pragma: allowlist secret
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(400, json={"error": "invalid_client", "access_token": "leaky"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "failed"
+    details = dict(step.details)
+    assert details["request"] == {
+        "method": "POST",
+        "url": "https://example.com/token",
+        "headers": {"Authorization": "***", "Accept": "application/json"},
+        "body": {"client_secret": "***", "scope": "accounts"},
+    }
+    assert details["response"] == {
+        "statusCode": 400,
+        "body": {"error": "invalid_client", "access_token": "***"},
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_failed_step_masks_form_body_credentials() -> None:
+    """FAIL step with a form body masks credential fields in evidence."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-form-fail",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code-secret",
+                            "client_secret": "shh",  # pragma: allowlist secret
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, json={"error": "invalid_grant"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "failed"
+    details = dict(step.details)
+    request = cast("dict[str, Any]", details["request"])
+    assert request["form"] == {
+        "grant_type": "authorization_code",
+        "code": "***",
+        "client_secret": "***",
+    }
+    assert "body" not in request
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_warn_step_includes_evidence() -> None:
+    """WARN step carries request/response evidence alongside the warning."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-warn",
+        "steps": [
+            {
+                "id": "deprecated",
+                "name": "Deprecated endpoint",
+                "request": {"method": "GET", "url": "https://example.com/v1/deprecated"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "warning": "Endpoint deprecated in v4",
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"ok": True, "access_token": "leaky"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "warn"
+    details = dict(step.details)
+    assert "request" in details
+    assert details["response"] == {
+        "statusCode": 200,
+        "body": {"ok": True, "access_token": "***"},
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_skipped_step_includes_request_evidence_without_response() -> None:
+    """SKIPPED step carries request evidence but no response (none was received)."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-skipped",
+        "steps": [
+            {
+                "id": "broken",
+                "name": "Broken",
+                "request": {"method": "GET", "url": "https://example.com/broken"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "dependent",
+                "name": "Dependent",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/${steps.broken.response.body.path}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection refused", request=request)
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    skipped = result.steps[1]
+    assert skipped.status == "skipped"
+    details = dict(skipped.details)
+    request = cast("dict[str, Any]", details["request"])
+    assert request["method"] == "GET"
+    # URL still carries the unresolved placeholder because resolution failed.
+    assert "${steps.broken.response.body.path}" in request["url"]
+    assert "response" not in details
