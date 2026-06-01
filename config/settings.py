@@ -53,8 +53,19 @@ if HEALTHCHECK_HOST not in ALLOWED_HOSTS:
 # this module to introspect types/symbols and have no business being
 # blocked by deployment guards — the guard's job is to refuse to *serve*
 # an insecure production process, not to refuse to type-check one.
+#
+# Detection matches both direct invocations (e.g. ``pytest …``) and
+# ``python -m <tool>`` invocations, where ``sys.argv[0]`` is set to the
+# tool's ``__main__.py`` path (e.g. ``.../pytest/__main__.py``) so the
+# basename alone is ``__main__.py``, not ``pytest``. Matching the full
+# argv string handles the directory component; checking ``sys.modules``
+# provides a second independent signal for tools that have already
+# imported their own package before settings are evaluated.
 _TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "interrogate", "pydoclint", "coverage")
-_is_tooling_run = any(tool in Path(sys.argv[0] if sys.argv else "").name for tool in _TOOLING_ENTRYPOINTS)
+_argv0 = sys.argv[0] if sys.argv else ""
+_is_tooling_run = any(tool in _argv0 for tool in _TOOLING_ENTRYPOINTS) or any(
+    tool in sys.modules for tool in _TOOLING_ENTRYPOINTS
+)
 _explicitly_configured = "DJANGO_SECRET_KEY" in os.environ
 if _explicitly_configured and not DEBUG and not _is_tooling_run:
     if not SECRET_KEY.strip():
