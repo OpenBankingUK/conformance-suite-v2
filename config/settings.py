@@ -1,6 +1,7 @@
 """Django settings for the local conformance suite runtime."""
 
 import os
+import sys
 from pathlib import Path
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
@@ -46,10 +47,16 @@ HEALTHCHECK_HOST = "healthcheck.local"
 if HEALTHCHECK_HOST not in ALLOWED_HOSTS:
     ALLOWED_HOSTS.append(HEALTHCHECK_HOST)
 
-# Production safety: only enforce requirements when explicitly configured
-# (i.e. not during mypy/pytest tooling runs where no env vars are set).
+# Production safety: enforce production-grade configuration when the
+# user has explicitly set DJANGO_SECRET_KEY and disabled DEBUG. Skipped
+# during tooling runs (mypy, pytest, ruff, etc.) because those import
+# this module to introspect types/symbols and have no business being
+# blocked by deployment guards — the guard's job is to refuse to *serve*
+# an insecure production process, not to refuse to type-check one.
+_TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "interrogate", "pydoclint", "coverage")
+_is_tooling_run = any(tool in Path(sys.argv[0] if sys.argv else "").name for tool in _TOOLING_ENTRYPOINTS)
 _explicitly_configured = "DJANGO_SECRET_KEY" in os.environ
-if _explicitly_configured and not DEBUG:
+if _explicitly_configured and not DEBUG and not _is_tooling_run:
     if not SECRET_KEY.strip():
         raise ValueError("DJANGO_SECRET_KEY must not be empty when DEBUG is disabled")
     if SECRET_KEY.startswith("django-insecure-"):
