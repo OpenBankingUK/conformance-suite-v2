@@ -116,9 +116,9 @@ def _require_loopback[**P](
     return wrapper
 
 
+@_require_loopback
 @csrf_exempt
 @require_POST
-@_require_loopback
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
@@ -195,8 +195,8 @@ def create_run(request: HttpRequest) -> JsonResponse:
     return JsonResponse(response_body, status=201)
 
 
-@require_GET
 @_require_loopback
+@require_GET
 def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
     """Return the current status of a conformance run.
 
@@ -213,8 +213,8 @@ def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
     return JsonResponse(record.to_status_json())
 
 
-@require_GET
 @_require_loopback
+@require_GET
 def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
     """Return the structured result of a completed conformance run.
 

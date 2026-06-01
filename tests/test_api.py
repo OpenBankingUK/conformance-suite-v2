@@ -392,3 +392,16 @@ class TestLoopbackGuard:
             client = Client(REMOTE_ADDR="10.0.0.5")
             response = client.get("/api/runs/missing/")
             assert response.status_code == 404  # guard bypassed, lookup misses
+
+    def test_non_loopback_method_mismatch_returns_403_not_405(self) -> None:
+        # Regression: loopback guard must run before method dispatch, so a
+        # non-loopback caller using the wrong HTTP method gets 403 (guard
+        # rejection), not 405 (method-not-allowed), avoiding endpoint/method
+        # disclosure to non-loopback clients.
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        # GET on the POST-only create endpoint.
+        response = client.get("/api/runs/")
+        assert response.status_code == 403
+        # POST on the GET-only status endpoint.
+        response = client.post("/api/runs/some-id/")
+        assert response.status_code == 403
