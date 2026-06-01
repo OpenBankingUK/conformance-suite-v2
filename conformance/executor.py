@@ -106,10 +106,14 @@ def run_manifest(
         "run-started",
         payload={"environment": environment, "schemaVersion": manifest.schema_version},
     )
-    if manifest.schema_version == "v1":
-        result = _run_manifest_v1(manifest, environment=environment, client=client, execution_logger=logger_sink)
-    else:
-        result = _run_manifest_v0(manifest, environment=environment, client=client, execution_logger=logger_sink)
+    try:
+        if manifest.schema_version == "v1":
+            result = _run_manifest_v1(manifest, environment=environment, client=client, execution_logger=logger_sink)
+        else:
+            result = _run_manifest_v0(manifest, environment=environment, client=client, execution_logger=logger_sink)
+    except Exception as error:
+        logger_sink.emit("application-error", payload={"message": str(error)})
+        raise
     logger_sink.emit(
         "run-completed",
         payload={

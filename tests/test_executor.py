@@ -1863,3 +1863,48 @@ def test_run_manifest_emits_placeholder_error_event() -> None:
 
     types = [event.type for event in execution_logger.events()]
     assert "placeholder-error" in types
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_application_error_on_unexpected_engine_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected engine exception emits application-error then re-raises.
+
+    If an exception escapes before any step completes (e.g. the inner
+    dispatch function raises unexpectedly), the log must still contain an
+    application-error event so the NDJSON log is always self-terminating on
+    crashes — run-started is always followed by a terminal event.
+    """
+    from conformance.execution_log import BufferedExecutionLogger
+    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestStep
+
+    expected_error = RuntimeError("unexpected engine failure")
+
+    def boom(*_args: object, **_kwargs: object) -> None:
+        raise expected_error
+
+    monkeypatch.setattr("conformance.executor._run_manifest_v1", boom)
+
+    v1_manifest = Manifest(
+        schema_version="v1",
+        name="boom",
+        steps=(
+            ManifestStep(
+                id="s1",
+                name="s1",
+                request=ManifestRequest(method="GET", url="https://example.com/"),
+                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+            ),
+        ),
+    )
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    mock_transport = httpx.MockTransport(lambda _r: httpx.Response(200, json={}))
+    with pytest.raises(RuntimeError) as exc_info, httpx.Client(transport=mock_transport) as client:
+        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+
+    assert exc_info.value is expected_error
+    types = [event.type for event in execution_logger.events()]
+    assert types[0] == "run-started"
+    assert types[-1] == "application-error"
