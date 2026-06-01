@@ -147,6 +147,13 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "valid JSON" in response.json()["error"]
 
+    def test_rejects_invalid_utf8_body(self) -> None:
+        """Malformed UTF-8 bytes must yield 400, not a 500 from UnicodeDecodeError."""
+        client = Client()
+        response = client.post("/api/runs/", data=b"\xff\xfe\x00", content_type="application/json")
+        assert response.status_code == 400
+        assert "valid JSON" in response.json()["error"]
+
     def test_rejects_non_object_body(self) -> None:
         client = Client()
         response = client.post("/api/runs/", data=json.dumps([1, 2, 3]), content_type="application/json")

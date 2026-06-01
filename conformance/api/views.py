@@ -143,7 +143,11 @@ def create_run(request: HttpRequest) -> JsonResponse:
     """
     try:
         body = json.loads(request.body)
-    except json.JSONDecodeError:
+    except json.JSONDecodeError, UnicodeDecodeError:
+        # UnicodeDecodeError covers request bodies whose bytes are not valid
+        # UTF-8; json.loads decodes bytes as UTF-8 internally and raises this
+        # before JSONDecodeError gets a chance. Both are caller-input errors
+        # at the parse boundary and warrant the same 400 response.
         return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
 
     if not isinstance(body, dict):
