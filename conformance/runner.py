@@ -48,6 +48,11 @@ def run_model_bank_smoke_check(
                 step_id="openid-discovery",
                 payload={"url": config.discovery_url},
             )
+            logger_sink.emit(
+                "request-sent",
+                step_id="openid-discovery",
+                payload={"method": "GET", "url": config.discovery_url},
+            )
             try:
                 discovery_document, discovery_response = model_bank_client.fetch_discovery_document(
                     config.discovery_url
@@ -98,6 +103,11 @@ def run_model_bank_smoke_check(
                 return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
 
             logger_sink.emit("step-started", step_id="jwks", payload={"url": discovery_document.jwks_uri})
+            logger_sink.emit(
+                "request-sent",
+                step_id="jwks",
+                payload={"method": "GET", "url": discovery_document.jwks_uri},
+            )
             try:
                 jwks_response = model_bank_client.fetch_jwks(discovery_document.jwks_uri)
             except OzoneClientError as error:
