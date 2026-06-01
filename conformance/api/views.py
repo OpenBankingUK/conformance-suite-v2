@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from django.conf import settings
-from django.http import HttpRequest, JsonResponse
+from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
@@ -57,8 +57,8 @@ def _is_loopback_address(remote_addr: str) -> bool:
 
 
 def _require_loopback[**P](
-    view_func: Callable[P, JsonResponse],
-) -> Callable[P, JsonResponse]:
+    view_func: Callable[P, HttpResponse],
+) -> Callable[P, HttpResponse]:
     """Reject non-loopback requests with HTTP 403 unless opt-out is set.
 
     Defence-in-depth backstop for the Phase 1 PRD assumption that the API
@@ -80,7 +80,7 @@ def _require_loopback[**P](
     """
 
     @functools.wraps(view_func)
-    def wrapper(*args: P.args, **kwargs: P.kwargs) -> JsonResponse:
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> HttpResponse:
         """Run the loopback check, then delegate to the wrapped view.
 
         Args:
@@ -90,7 +90,10 @@ def _require_loopback[**P](
 
         Returns:
             A 403 ``JsonResponse`` for non-loopback callers when the guard
-            is enabled, otherwise the view's own response.
+            is enabled, otherwise the wrapped view's own response. The
+            wrapped view may itself be decorated with ``@require_GET`` /
+            ``@require_POST``, which can return ``HttpResponseNotAllowed``;
+            hence the widened ``HttpResponse`` return type.
         """
         request = args[0]
         assert isinstance(request, HttpRequest)  # noqa: S101 — Django view contract
