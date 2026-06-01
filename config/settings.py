@@ -27,6 +27,15 @@ DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
 ALLOWED_HOSTS = _get_allowed_hosts()
 
+# Conformance REST API: defence-in-depth loopback guard. When False
+# (the default), API views reject any request whose REMOTE_ADDR is not
+# a loopback address (127.0.0.0/8 or ::1). Set
+# CONFORMANCE_API_ALLOW_NON_LOCAL=true to disable the guard — only do
+# this when the API is fronted by an authenticated reverse proxy that
+# you control. The primary control remains binding the published
+# Docker port to 127.0.0.1; this setting backstops misconfiguration.
+API_ALLOW_NON_LOCAL = os.environ.get("CONFORMANCE_API_ALLOW_NON_LOCAL", "false").lower() == "true"
+
 # Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
 # The healthcheck runs inside the container against ``http://localhost:8000/``
 # but sends an explicit ``Host: healthcheck.local`` header so the probe does

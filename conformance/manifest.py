@@ -254,6 +254,26 @@ def load_manifest(manifest_path: Path) -> Manifest:
     return parse_manifest(raw_manifest)
 
 
+def load_manifest_from_object(raw_manifest: object) -> Manifest:
+    """Validate and parse a manifest from an already-decoded JSON object.
+
+    Intended for API callers that provide the manifest inline in a request
+    body rather than as a file path.
+
+    Args:
+        raw_manifest: Decoded JSON value expected to be a JSON object.
+
+    Returns:
+        Parsed and validated conformance manifest.
+
+    Raises:
+        ManifestError: If the value is not a JSON object or validation fails.
+    """
+    if not isinstance(raw_manifest, dict):
+        raise ManifestError("Manifest root must be a JSON object")
+    return parse_manifest(cast(dict[str, JsonValue], raw_manifest))
+
+
 def parse_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     """Parse a raw JSON object into a validated manifest (v0 or v1).
 
