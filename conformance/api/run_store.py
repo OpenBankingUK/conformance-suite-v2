@@ -148,7 +148,8 @@ class RunStore:
             record = self._runs.get(run_id)
             if record is None or record.execution_logger is None:
                 return None
-            return record.execution_logger.to_ndjson_bytes()
+            execution_logger = record.execution_logger
+        return execution_logger.to_ndjson_bytes()
 
     def mark_running(self, run_id: str) -> None:
         """Transition a pending run to running state.
