@@ -125,7 +125,8 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
 
     Returns:
         200 with the full result JSON on success, 404 if the run ID is
-        unknown, or 409 if the run has not yet completed.
+        unknown, 409 if the run has not yet completed, or 500 if the run
+        failed internally.
     """
     record = run_store.get_run(run_id)
     if record is None:
@@ -136,10 +137,7 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
             status=409,
         )
     if record.status == "failed":
-        return JsonResponse(
-            {"error": "Run failed internally", "detail": record.error},
-            status=500,
-        )
+        return JsonResponse({"error": "Run failed internally"}, status=500)
     return JsonResponse(record.result)
 
 
@@ -170,6 +168,6 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Any) -> None:
                 http_client.close()
 
         run_store.mark_completed(run_id, result=result.to_json_object())
-    except Exception as exc:
+    except Exception:
         logger.exception("Run %s failed with an internal error", run_id)
-        run_store.mark_failed(run_id, error=str(exc))
+        run_store.mark_failed(run_id, error="An internal error occurred")

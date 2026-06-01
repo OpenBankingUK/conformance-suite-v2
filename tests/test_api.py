@@ -95,6 +95,15 @@ class TestRunStore:
         assert "startedAt" in status_json
         assert "finishedAt" in status_json
 
+    def test_get_run_returns_snapshot_not_live_reference(self) -> None:
+        store = RunStore()
+        record = store.create_run()
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        store.mark_running(record.run_id)
+        # Snapshot captured before mark_running — must still read "pending"
+        assert snapshot.status == "pending"
+
 
 # ─── API endpoint integration tests ─────────────────────────────────────────
 
@@ -125,8 +134,9 @@ VALID_MANIFEST = {
 @pytest.fixture(autouse=True)
 def _reset_run_store() -> None:
     """Reset the global run store between tests to avoid cross-contamination."""
-    run_store._runs.clear()
-    run_store._active_run_id = None
+    with run_store._lock:
+        run_store._runs.clear()
+        run_store._active_run_id = None
 
 
 @pytest.mark.integration
@@ -265,3 +275,4 @@ class TestGetRunResultEndpoint:
         response = client.get("/api/runs/test-failed/result/")
         assert response.status_code == 500
         assert "failed internally" in response.json()["error"]
+        assert "detail" not in response.json()

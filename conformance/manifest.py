@@ -271,7 +271,7 @@ def load_manifest_from_object(raw_manifest: object) -> Manifest:
     """
     if not isinstance(raw_manifest, dict):
         raise ManifestError("Manifest root must be a JSON object")
-    return parse_manifest(raw_manifest)
+    return parse_manifest(cast(dict[str, JsonValue], raw_manifest))
 
 
 def parse_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:

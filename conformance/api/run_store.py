@@ -7,6 +7,7 @@ all run state is lost (fire-and-forget per the PRD).
 
 from __future__ import annotations
 
+import dataclasses
 import threading
 import uuid
 from dataclasses import dataclass
@@ -108,7 +109,8 @@ class RunStore:
             The run record, or None if not found.
         """
         with self._lock:
-            return self._runs.get(run_id)
+            record = self._runs.get(run_id)
+            return dataclasses.replace(record) if record is not None else None
 
     def mark_running(self, run_id: str) -> None:
         """Transition a pending run to running state.
