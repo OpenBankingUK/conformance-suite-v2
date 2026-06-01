@@ -1,5 +1,21 @@
 # ─── Build stage ──────────────────────────────────────────────────────────────
-FROM python:3.14.4-slim-bookworm AS builder
+# Alpine base (musl libc) chosen over Debian slim to eliminate the bulk of
+# upstream OS-package CVEs that Snyk flags on the Debian image. Pinned to
+# Alpine 3.22 + the stable Python 3.14 line (matches `requires-python` in
+# pyproject.toml — no release-candidate interpreters in regulated builds).
+# Pinned to the 3.14.4 patch so the image is reproducible (the `3.14` minor
+# tag re-points to whichever 3.14.x is current on Docker Hub).
+FROM python:3.14.4-alpine3.22 AS builder
+
+# Build toolchain for C/Rust extensions pulled in by uvicorn[standard]
+# (httptools, uvloop, watchfiles). musl wheels exist for most of these on
+# recent releases, but installing build deps here is the belt-and-braces
+# guarantee — everything stays in the discarded builder layer.
+RUN apk add --no-cache \
+        build-base \
+        libffi-dev \
+        cargo \
+        rust
 
 # Install uv for fast, reproducible dependency resolution
 COPY --from=ghcr.io/astral-sh/uv:0.10.4@sha256:4cac394b6b72846f8a85a7a0e577c6d61d4e17fe2ccee65d9451a8b3c9efb4ac /uv /usr/local/bin/uv
@@ -17,13 +33,16 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM python:3.14.4-slim-bookworm AS runtime
+FROM python:3.14.4-alpine3.22 AS runtime
 
 WORKDIR /app
 
-# Create non-root user
-RUN groupadd --gid 1000 appuser && \
-    useradd --uid 1000 --gid 1000 --shell /bin/bash appuser
+# Create non-root user. Alpine ships BusyBox addgroup/adduser rather than
+# groupadd/useradd; flags differ from the shadow-utils equivalents used on
+# Debian. `-D` disables the password, `-S` would create a system user (we
+# want a regular UID 1000 so file ownership is predictable on bind mounts).
+RUN addgroup -g 1000 appuser && \
+    adduser -u 1000 -G appuser -s /bin/sh -D appuser
 
 # Copy virtual environment and application from builder (with correct ownership)
 COPY --from=builder --chown=appuser:appuser /app /app
