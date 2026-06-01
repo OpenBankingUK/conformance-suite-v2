@@ -50,6 +50,10 @@ class ModelBankConfig:
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
         tls: Transport TLS settings for the HTTP client.
         result_output_path: Path where the structured JSON result should be written.
+        execution_log_path: Path where the NDJSON execution log should be
+            written. Defaults to ``out/execution-log.ndjson`` resolved under
+            the output base directory (typically the process CWD),
+            independently of ``result_output_path``.
     """
 
     environment: str
@@ -58,6 +62,7 @@ class ModelBankConfig:
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
     result_output_path: Path = Path("out/test-results.json")
+    execution_log_path: Path = Path("out/execution-log.ndjson")
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -119,6 +124,7 @@ def parse_model_bank_config(
             "followUp",
             "tls",
             "resultOutputPath",
+            "executionLogPath",
         },
         location="config",
     )
@@ -134,6 +140,12 @@ def parse_model_bank_config(
         base_dir=output_base_dir or Path.cwd(),
         default=Path("out/test-results.json"),
     )
+    execution_log_path = _optional_path(
+        raw_config,
+        "executionLogPath",
+        base_dir=output_base_dir or Path.cwd(),
+        default=Path("out/execution-log.ndjson"),
+    )
 
     return ModelBankConfig(
         environment=environment,
@@ -142,6 +154,7 @@ def parse_model_bank_config(
         follow_up_mode=follow_up_mode,
         tls=tls,
         result_output_path=result_output_path,
+        execution_log_path=execution_log_path,
     )
 
 

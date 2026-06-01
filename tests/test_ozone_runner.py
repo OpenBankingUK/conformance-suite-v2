@@ -286,3 +286,102 @@ def test_run_model_bank_smoke_check_rejects_ip_literal_and_malformed_hostname(
     assert result.steps[0].name == "openid-discovery"
     assert result.steps[0].status == "failed"
     assert result.steps[0].message == expected_message
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_event_sequence_on_success() -> None:
+    """Successful run emits run-started, step-started/response/step-completed pairs, then run-completed."""
+    from conformance.execution_log import BufferedExecutionLogger
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("openid-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        return httpx.Response(200, json={"keys": [{"kid": "k"}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="env",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("r.json"),
+        )
+        execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+        run_model_bank_smoke_check(config, client=client, execution_logger=execution_logger)
+
+    events = list(execution_logger.events())
+    types = [event.type for event in events]
+    assert types[0] == "run-started"
+    assert types[-1] == "run-completed"
+    assert types.count("step-started") == 2
+    assert types.count("step-completed") == 2
+    assert types.count("response-received") == 2
+    # Each outbound HTTP call must emit `request-sent` per the documented event
+    # taxonomy (README / DEVELOPER_GUIDE), and each `request-sent` must precede
+    # the matching `response-received` for the same step.
+    assert types.count("request-sent") == 2
+    for step_id in ("openid-discovery", "jwks"):
+        step_event_types = [event.type for event in events if event.step_id == step_id]
+        assert step_event_types.index("request-sent") < step_event_types.index("response-received"), (
+            f"request-sent must precede response-received for step {step_id!r}; got {step_event_types}"
+        )
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_application_error_on_discovery_failure() -> None:
+    """Discovery transport failure emits an application-error event."""
+    from conformance.execution_log import BufferedExecutionLogger
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(500))) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="env",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("r.json"),
+        )
+        execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+        run_model_bank_smoke_check(config, client=client, execution_logger=execution_logger)
+
+    types = [event.type for event in execution_logger.events()]
+    assert "application-error" in types
+    assert types[-1] == "run-completed"
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_application_error_on_engine_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected engine exception emits application-error then re-raises.
+
+    If an exception escapes before any step starts (e.g. from_config raises),
+    the log must still contain an application-error event so the log contract
+    introduced by PR #22 is upheld: run-started is always followed by a
+    terminal event.
+    """
+    from conformance.execution_log import BufferedExecutionLogger
+
+    expected_error = RuntimeError("unexpected engine failure")
+
+    def raise_from_config(_config: ModelBankConfig) -> OzoneModelBankClient:
+        raise expected_error
+
+    monkeypatch.setattr(OzoneModelBankClient, "from_config", raise_from_config)
+    config = ModelBankConfig(
+        environment="ozone-model-bank",
+        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+        result_output_path=Path("results.json"),
+    )
+    execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_model_bank_smoke_check(config, execution_logger=execution_logger)
+
+    assert exc_info.value is expected_error
+    types = [event.type for event in execution_logger.events()]
+    assert types[0] == "run-started"
+    assert types[-1] == "application-error"

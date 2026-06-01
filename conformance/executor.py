@@ -18,6 +18,7 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
+from conformance.execution_log import ExecutionLogger, NullExecutionLogger
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -77,7 +78,13 @@ def _attach_evidence(
     return replace(step, details=new_details)
 
 
-def run_manifest(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:
+def run_manifest(
+    manifest: Manifest,
+    *,
+    environment: str,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger | None = None,
+) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
     Dispatches to the v0 or v1 execution path based on schema version.
@@ -87,16 +94,49 @@ def run_manifest(manifest: Manifest, *, environment: str, client: httpx.Client) 
         manifest: Parsed and validated manifest to execute.
         environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
+        execution_logger: Optional structured execution-log sink. Defaults to
+            a :class:`NullExecutionLogger` for backwards-compatible callers
+            that do not want a log.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
     """
-    if manifest.schema_version == "v1":
-        return _run_manifest_v1(manifest, environment=environment, client=client)
-    return _run_manifest_v0(manifest, environment=environment, client=client)
+    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    logger_sink.emit(
+        "run-started",
+        payload={"environment": environment, "schemaVersion": manifest.schema_version},
+    )
+    try:
+        if manifest.schema_version == "v1":
+            result = _run_manifest_v1(manifest, environment=environment, client=client, execution_logger=logger_sink)
+        else:
+            result = _run_manifest_v0(manifest, environment=environment, client=client, execution_logger=logger_sink)
+    except Exception as error:
+        logger_sink.emit("application-error", payload={"message": str(error)})
+        raise
+    logger_sink.emit(
+        "run-completed",
+        payload={
+            "status": result.status,
+            "summary": {
+                "total": len(result.steps),
+                "passed": sum(1 for step in result.steps if step.status == "passed"),
+                "failed": sum(1 for step in result.steps if step.status == "failed"),
+                "warn": sum(1 for step in result.steps if step.status == "warn"),
+                "skipped": sum(1 for step in result.steps if step.status == "skipped"),
+            },
+        },
+    )
+    return result
 
 
-def _run_manifest_v1(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:
+def _run_manifest_v1(
+    manifest: Manifest,
+    *,
+    environment: str,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
     Each step resolves ``${...}`` placeholders from earlier step responses,
@@ -107,6 +147,7 @@ def _run_manifest_v1(manifest: Manifest, *, environment: str, client: httpx.Clie
         manifest: Parsed v1 manifest containing sequential steps.
         environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink.
 
     Returns:
         Smoke-check result with one entry per step.
@@ -116,7 +157,9 @@ def _run_manifest_v1(manifest: Manifest, *, environment: str, client: httpx.Clie
     context = ExecutionContext()
 
     for manifest_step in manifest.steps:
-        step_result, context = _execute_v1_step(manifest_step, context=context, client=client)
+        step_result, context = _execute_v1_step(
+            manifest_step, context=context, client=client, execution_logger=execution_logger
+        )
         # Carry the manifest's mandatory flag onto the step result so the
         # aggregate certificationEligibility block can reason about it
         # without re-walking the manifest. Done here (rather than inside
@@ -134,6 +177,7 @@ def _execute_v1_step(
     *,
     context: ExecutionContext,
     client: httpx.Client,
+    execution_logger: ExecutionLogger,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -145,6 +189,48 @@ def _execute_v1_step(
         manifest_step: The v1 step to execute.
         context: Current execution context with earlier step records.
         client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink. Receives
+            ``step-started``, ``request-sent``, ``response-received``,
+            ``assertion-evaluated``, ``placeholder-error`` and
+            ``step-completed`` events as the step progresses.
+
+    Returns:
+        A tuple of the step result and the updated execution context.
+    """
+    execution_logger.emit("step-started", step_id=manifest_step.id)
+    step_result, new_context = _execute_v1_step_inner(
+        manifest_step, context=context, client=client, execution_logger=execution_logger
+    )
+    execution_logger.emit(
+        "step-completed",
+        step_id=manifest_step.id,
+        payload={
+            "status": step_result.status,
+            "message": step_result.message,
+            **({"statusCode": step_result.status_code} if step_result.status_code is not None else {}),
+        },
+    )
+    return step_result, new_context
+
+
+def _execute_v1_step_inner(
+    manifest_step: ManifestStep,
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+) -> tuple[StepResult, ExecutionContext]:
+    """Inner step executor that emits per-stage events.
+
+    Split from :func:`_execute_v1_step` purely so the outer wrapper can emit
+    matched ``step-started`` / ``step-completed`` events without duplicating
+    every early-return path.
+
+    Args:
+        manifest_step: The v1 step to execute.
+        context: Current execution context with earlier step records.
+        client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink for per-stage events.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -190,8 +276,14 @@ def _execute_v1_step(
             url=manifest_step.request.url,
             error=error,
             request_evidence=request_evidence,
+            execution_logger=execution_logger,
         )
     except PlaceholderResolutionError as error:
+        execution_logger.emit(
+            "placeholder-error",
+            step_id=manifest_step.id,
+            payload={"location": "url", "message": str(error)},
+        )
         request_record = RequestRecord(method=method, url=manifest_step.request.url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
@@ -224,8 +316,14 @@ def _execute_v1_step(
                 url=resolved_url,
                 error=error,
                 request_evidence=request_evidence,
+                execution_logger=execution_logger,
             )
         except PlaceholderResolutionError as error:
+            execution_logger.emit(
+                "placeholder-error",
+                step_id=manifest_step.id,
+                payload={"location": "headers", "message": str(error)},
+            )
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
             return (
@@ -296,8 +394,14 @@ def _execute_v1_step(
                 url=resolved_url,
                 error=error,
                 request_evidence=request_evidence,
+                execution_logger=execution_logger,
             )
         except PlaceholderResolutionError as error:
+            execution_logger.emit(
+                "placeholder-error",
+                step_id=manifest_step.id,
+                payload={"location": "body", "message": str(error)},
+            )
             request_record = RequestRecord(method=method, url=resolved_url)
             new_context = record_step(context, manifest_step.id, request_record, None)
             return (
@@ -340,6 +444,11 @@ def _execute_v1_step(
 
     # Execute HTTP request
     request_record = RequestRecord(method=method, url=resolved_url)
+    execution_logger.emit(
+        "request-sent",
+        step_id=manifest_step.id,
+        payload=dict(request_evidence),
+    )
     try:
         response = send_json(
             client,
@@ -362,6 +471,14 @@ def _execute_v1_step(
         transport_response_evidence: dict[str, JsonValue] | None = None
         if error.status_code is not None:
             transport_response_evidence = {"statusCode": error.status_code}
+        execution_logger.emit(
+            "application-error",
+            step_id=manifest_step.id,
+            payload={
+                "message": str(error),
+                **({"statusCode": error.status_code} if error.status_code is not None else {}),
+            },
+        )
         return (
             _attach_evidence(
                 StepResult(
@@ -391,6 +508,15 @@ def _execute_v1_step(
         "statusCode": response.status_code,
         "body": mask_json_value(dict(response.body)),
     }
+    # Per PRD: response bodies are NOT duplicated into the execution log —
+    # they already live in the result-file evidence for non-PASS outcomes.
+    # The log records only the status code + URL so the timeline is complete
+    # without inflating disk usage.
+    execution_logger.emit(
+        "response-received",
+        step_id=manifest_step.id,
+        payload={"statusCode": response.status_code, "url": response.url},
+    )
 
     # Evaluate assertions
     step_result = _build_assertion_step(
@@ -401,6 +527,17 @@ def _execute_v1_step(
         assertions=manifest_step.assertions,
         warning=manifest_step.warning,
     )
+    # Emit one assertion-evaluated event per assertion, using the structured
+    # results already attached to step_result.details to avoid re-evaluating.
+    assertion_entries = step_result.details.get("assertions", [])
+    if isinstance(assertion_entries, list):
+        for assertion_index, assertion_entry in enumerate(assertion_entries):
+            if isinstance(assertion_entry, dict):
+                execution_logger.emit(
+                    "assertion-evaluated",
+                    step_id=manifest_step.id,
+                    payload={"index": assertion_index, **assertion_entry},
+                )
     return (
         _attach_evidence(step_result, request_evidence=request_evidence, response_evidence=response_evidence),
         new_context,
@@ -415,6 +552,7 @@ def _skipped_step(
     url: str,
     error: MissingPredecessorResponseError,
     request_evidence: dict[str, JsonValue] | None = None,
+    execution_logger: ExecutionLogger | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Build a SKIPPED step result for a step whose prerequisite produced no response.
 
@@ -434,10 +572,18 @@ def _skipped_step(
         request_evidence: Best-effort masked request metadata collected so
             far by the caller. When omitted, a minimal ``{method, url}``
             evidence record is constructed from the arguments.
+        execution_logger: Optional sink for a ``placeholder-error`` event
+            describing the missing-predecessor failure.
 
     Returns:
         A ``("skipped", ...)`` step result paired with the updated context.
     """
+    if execution_logger is not None:
+        execution_logger.emit(
+            "placeholder-error",
+            step_id=step_id,
+            payload={"reason": "missing-predecessor-response", "message": str(error)},
+        )
     request_record = RequestRecord(method=method, url=url)
     new_context = record_step(context, step_id, request_record, None)
     evidence: dict[str, JsonValue] = (
@@ -458,7 +604,13 @@ def _skipped_step(
     )
 
 
-def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Client) -> SmokeCheckResult:
+def _run_manifest_v0(
+    manifest: Manifest,
+    *,
+    environment: str,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
     In v0, follow-up steps are only executed when the primary step passes.
@@ -470,6 +622,8 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
         manifest: Parsed v0 manifest containing tests with optional followUp.
         environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink threaded through to
+            each desugared v1 step.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -509,7 +663,9 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
             request=test.request,
             assertions=test.assertions,
         )
-        step_result, context = _execute_v1_step(primary_step, context=context, client=client)
+        step_result, context = _execute_v1_step(
+            primary_step, context=context, client=client, execution_logger=execution_logger
+        )
         steps.append(step_result)
 
         # Follow-up: only execute if primary passed (v0 semantics)
@@ -548,7 +704,9 @@ def _run_manifest_v0(manifest: Manifest, *, environment: str, client: httpx.Clie
                     request=ManifestRequest(method=test.follow_up.request.method, url=follow_up_url),
                     assertions=test.follow_up.assertions,
                 )
-                follow_up_result, context = _execute_v1_step(follow_up_step, context=context, client=client)
+                follow_up_result, context = _execute_v1_step(
+                    follow_up_step, context=context, client=client, execution_logger=execution_logger
+                )
                 steps.append(follow_up_result)
 
     return build_smoke_check_result(environment, steps, started_at=started_at)

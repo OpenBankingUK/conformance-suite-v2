@@ -27,6 +27,7 @@ from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
 from conformance.api.run_store import RunConflictError, run_store
+from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest_from_object
@@ -191,6 +192,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     # Execute in background thread (Phase 1: single-threaded engine, one run
     # at a time, but we don't block the HTTP response).
+    warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
         args=(record.run_id, config, manifest),
@@ -250,6 +252,37 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
     return JsonResponse(record.result)
 
 
+@_require_loopback
+@require_GET
+def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
+    """Return the structured NDJSON execution log for a run.
+
+    Returns the log snapshot taken at request time. For runs that are
+    still in-flight the response contains a partial log (one JSON object
+    per line) — the client can re-poll to receive newer events. Masking
+    is applied at append time inside the engine, so callers receive the
+    same bytes that the CLI writes to disk.
+
+    Args:
+        request: The incoming HTTP GET request.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        200 with ``application/x-ndjson`` body on success, or 404 if the
+        run ID is unknown, or 500 if the run exists but its execution log is
+        unavailable.
+    """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return JsonResponse({"error": "Run not found"}, status=404)
+    # Use the execution_logger reference from the single lookup rather than
+    # calling get_run_log_bytes() separately.  A second lookup risks a 500
+    # instead of the correct 404 when the run is pruned between the two calls.
+    if record.execution_logger is None:
+        return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
+    return HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
+
+
 def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None) -> None:
     """Execute a conformance run in a background thread.
 
@@ -262,8 +295,13 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None
     """
     run_store.mark_running(run_id)
     try:
+        run_record = run_store.get_run(run_id)
+        # ``get_run`` returns a shallow copy whose ``execution_logger``
+        # reference points at the same live buffer the API exposes; either
+        # accessing the live record or the copy yields the same logger.
+        logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
         if manifest is None:
-            result = run_model_bank_smoke_check(config)
+            result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
         else:
             http_client = build_json_http_client(
                 timeout_seconds=config.timeout_seconds,
@@ -272,7 +310,12 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None
                 client_private_key_path=config.tls.client_private_key_path,
             )
             try:
-                result = run_manifest(manifest, environment=config.environment, client=http_client)
+                result = run_manifest(
+                    manifest,
+                    environment=config.environment,
+                    client=http_client,
+                    execution_logger=logger_sink,
+                )
             finally:
                 http_client.close()
 
