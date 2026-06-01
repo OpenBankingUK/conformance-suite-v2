@@ -346,8 +346,9 @@ def warn_if_developer_mode() -> None:
     """Log a prominent WARN line when developer mode is active.
 
     Called from CLI startup and from the REST API's ``create_run`` view.
-    Safe to call repeatedly — the underlying logger handles deduplication
-    via its handlers.
+    Each call emits one WARN line; the logging stack does not deduplicate
+    repeated invocations. Both call-sites invoke this at most once per
+    run, so repeated emission is not a concern in practice.
     """
     if is_developer_mode_enabled():
         logger.warning(
