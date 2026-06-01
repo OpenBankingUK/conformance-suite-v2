@@ -28,7 +28,7 @@ class StepResult:
 
     Attributes:
         name: Stable step identifier for consumers of the result JSON.
-        status: Pass/fail outcome for this step.
+        status: Outcome for this step (one of the ``CheckStatus`` values).
         message: Human-readable summary of the step outcome.
         url: Optional endpoint URL involved in the step.
         status_code: Optional HTTP status code returned by the endpoint.
