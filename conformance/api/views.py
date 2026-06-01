@@ -129,8 +129,10 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     CSRF is exempt because this is an unauthenticated API designed for
     programmatic/CI access (PRD Phase 1). No browser session is involved.
-    Localhost access restriction is a deployment requirement (Docker port
-    publishing to 127.0.0.1), not enforced at the application level.
+    Localhost access is primarily controlled by Docker port publishing to
+    127.0.0.1; the ``_require_loopback`` decorator provides an
+    application-level defence-in-depth guard that can be disabled via
+    ``CONFORMANCE_API_ALLOW_NON_LOCAL`` for trusted-network deployments.
 
     Args:
         request: The incoming HTTP POST request with JSON body.
@@ -142,9 +144,6 @@ def create_run(request: HttpRequest) -> JsonResponse:
     try:
         body = json.loads(request.body)
     except json.JSONDecodeError:
-        # JSONDecodeError already subclasses ValueError, so a single
-        # except clause covers both decode failures and any value-level
-        # errors raised by json.loads on malformed input.
         return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
 
     if not isinstance(body, dict):
