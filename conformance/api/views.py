@@ -1,7 +1,9 @@
 """Django views for the conformance run REST API.
 
 Implements the Phase 1 local REST API (PRD: OBL Engineering Story #5):
-unauthenticated, localhost-bound, supports starting a run, polling run
+unauthenticated, designed for local Docker deployment. Localhost access
+restriction is a deployment concern (Docker port publishing to 127.0.0.1),
+not an application-level guarantee. Supports starting a run, polling run
 status, and retrieving the report.
 """
 
@@ -37,9 +39,10 @@ def create_run(request: HttpRequest) -> JsonResponse:
     manifest object). The run executes asynchronously in a background
     thread; the response returns immediately with the run ID and status.
 
-    CSRF is exempt because this is a localhost-only, unauthenticated API
-    designed for programmatic/CI access (PRD Phase 1). No browser session
-    is involved.
+    CSRF is exempt because this is an unauthenticated API designed for
+    programmatic/CI access (PRD Phase 1). No browser session is involved.
+    Localhost access restriction is a deployment requirement (Docker port
+    publishing to 127.0.0.1), not enforced at the application level.
 
     Args:
         request: The incoming HTTP POST request with JSON body.
@@ -93,9 +96,13 @@ def create_run(request: HttpRequest) -> JsonResponse:
         args=(record.run_id, config, manifest),
         daemon=True,
     )
+    # Snapshot the pending state before starting the thread to avoid a
+    # race where the background thread calls mark_running() before the
+    # response is serialised.
+    response_body = record.to_status_json()
     thread.start()
 
-    return JsonResponse(record.to_status_json(), status=201)
+    return JsonResponse(response_body, status=201)
 
 
 @require_GET

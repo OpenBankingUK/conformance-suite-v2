@@ -185,6 +185,16 @@ class TestCreateRunEndpoint:
         assert "createdAt" in data
 
     @patch("conformance.api.views._execute_run")
+    def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
+        client = Client()
+        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "pending"
+        assert "id" in data
+
+    @patch("conformance.api.views._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}
