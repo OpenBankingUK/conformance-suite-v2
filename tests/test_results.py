@@ -135,3 +135,115 @@ def test_eligibility_block_no_mandatory_means_not_eligible() -> None:
     assert block["eligible"] is False
     assert block["mandatoryTotal"] == 0
     assert "No mandatory steps" in str(block["reason"])
+
+
+# ─── TestPlan deselection eligibility precedence ─────────────────────────────
+
+
+@pytest.mark.unit
+def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None:
+    """Deselecting a mandatory step blocks eligibility with the dedicated reason."""
+    from datetime import UTC, datetime
+
+    from conformance.manifest import parse_manifest
+    from conformance.results import build_smoke_check_result
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "elig",
+            "steps": [
+                {
+                    "id": "m",
+                    "name": "M",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/m"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["m"])
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result("env", [], started_at=started, plan=plan).to_json_object()[
+        "certificationEligibility"
+    ]
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Mandatory steps were deselected from the plan"
+    assert block["mandatoryDeselected"] == 1
+    assert block["mandatoryDeselectedStepIds"] == ["m"]
+
+
+@pytest.mark.unit
+def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None:
+    """Deselected-mandatory reason takes precedence over ``no mandatory declared``."""
+    from datetime import UTC, datetime
+
+    from conformance.results import StepResult, build_smoke_check_result
+    from conformance.test_plan import TestPlan, TestPlanEntry
+
+    # Hand-build a plan with one deselected-mandatory and no other entries,
+    # so the executed-step list is empty (zero mandatory ran).
+    plan = TestPlan(entries=(TestPlanEntry(step_id="m", mandatory=True, optional=False, selected=False),))
+    started = datetime.now(UTC)
+
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="opt", status="passed", message="ok")],
+        started_at=started,
+        plan=plan,
+    ).to_json_object()
+    block = rendered["certificationEligibility"]
+    assert isinstance(block, dict)
+    assert block["reason"] == "Mandatory steps were deselected from the plan"
+
+
+@pytest.mark.unit
+def test_plan_block_shape_stable() -> None:
+    """The top-level ``plan`` block exposes exactly the documented counts."""
+    from datetime import UTC, datetime
+
+    from conformance.results import StepResult, build_smoke_check_result
+    from conformance.test_plan import TestPlan, TestPlanEntry
+
+    plan = TestPlan(
+        entries=(
+            TestPlanEntry(step_id="a", mandatory=True, optional=False, selected=True),
+            TestPlanEntry(step_id="b", mandatory=False, optional=True, selected=False),
+            TestPlanEntry(step_id="c", mandatory=False, optional=False, selected=True),
+        )
+    )
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="a", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        plan=plan,
+    ).to_json_object()
+
+    assert rendered["plan"] == {
+        "totalSteps": 3,
+        "selectedSteps": 2,
+        "deselectedSteps": 1,
+        "mandatorySelected": 1,
+        "mandatoryDeselected": 0,
+    }
+
+
+@pytest.mark.unit
+def test_plan_block_absent_when_no_plan_supplied() -> None:
+    """Smoke checks and v0 runs (no plan) omit the ``plan`` block."""
+    from datetime import UTC, datetime
+
+    from conformance.results import StepResult, build_smoke_check_result
+
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+    ).to_json_object()
+    assert "plan" not in rendered

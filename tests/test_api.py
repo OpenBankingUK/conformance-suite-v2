@@ -199,6 +199,58 @@ class TestCreateRunEndpoint:
         assert "id" in data
 
     @patch("conformance.api.views._execute_run")
+    def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
+        """A valid ``deselectStepIds`` against a v1 manifest is accepted."""
+        client = Client()
+        v1_manifest = {
+            "schemaVersion": "v1",
+            "name": "plan-api",
+            "steps": [
+                {
+                    "id": "a",
+                    "name": "A",
+                    "request": {"method": "GET", "url": "https://example.com/a"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "b",
+                    "name": "B",
+                    "optional": True,
+                    "request": {"method": "GET", "url": "https://example.com/b"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+        body = {"config": VALID_CONFIG, "manifest": v1_manifest, "deselectStepIds": ["a"]}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 201
+
+    @patch("conformance.api.views._execute_run")
+    def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
+        """An unknown step id in ``deselectStepIds`` returns 400."""
+        client = Client()
+        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": ["ghost"]}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 400
+        assert "Plan validation failed" in response.json()["error"]
+
+    def test_rejects_deselect_without_manifest(self) -> None:
+        """``deselectStepIds`` requires ``manifest``; returns 400 otherwise."""
+        client = Client()
+        body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 400
+        assert "deselectStepIds" in response.json()["error"]
+
+    def test_rejects_deselect_not_array_of_strings(self) -> None:
+        """``deselectStepIds`` must be an array of strings; otherwise 400."""
+        client = Client()
+        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": [1, 2]}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 400
+        assert "array of strings" in response.json()["error"]
+
+    @patch("conformance.api.views._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}

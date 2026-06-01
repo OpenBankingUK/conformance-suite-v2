@@ -371,3 +371,105 @@ def test_cli_returns_exit_code_3_when_execution_log_cannot_be_written(
 
     exit_code = cli.run([str(config_path)])
     assert exit_code == 3
+
+
+# ─── --deselect flag ─────────────────────────────────────────────────────────
+
+
+def _write_plan_config_and_manifest(tmp_path: Path) -> tuple[Path, Path]:
+    """Write a config and v1 manifest with one mandatory step and one optional step.
+
+    Args:
+        tmp_path: Pytest-managed temp directory used for both files and the
+            engine's output paths.
+
+    Returns:
+        ``(config_path, manifest_path)`` for ``cli.run``.
+    """
+    config_path = tmp_path / "config.json"
+    manifest_path = tmp_path / "manifest.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "test",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "executionLogPath": str(tmp_path / "log.ndjson"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "v1",
+                "name": "plan-cli",
+                "steps": [
+                    {
+                        "id": "mandatory-step",
+                        "name": "Mandatory step",
+                        "mandatory": True,
+                        "request": {"method": "GET", "url": "https://example.com/a"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                    {
+                        "id": "optional-step",
+                        "name": "Optional step",
+                        "request": {"method": "GET", "url": "https://example.com/b"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path, manifest_path
+
+
+@pytest.mark.unit
+def test_cli_deselect_repeated_excludes_each_step_from_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``--deselect`` can be repeated; each id is excluded from the result file."""
+    config_path, manifest_path = _write_plan_config_and_manifest(tmp_path)
+    original_client = httpx.Client
+
+    def mock_client(*, timeout: float, verify: bool | str, cert: tuple[str, str] | None) -> httpx.Client:
+        return original_client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={})))
+
+    monkeypatch.setattr(httpx, "Client", mock_client)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.run([str(config_path), "--manifest", str(manifest_path), "--deselect", "optional-step"])
+
+    # Only an optional step is deselected and the mandatory step passes,
+    # so the run as a whole passes → exit code 0.
+    assert exit_code == 0
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert result["status"] == "passed"
+    assert [step["name"] for step in result["steps"]] == ["mandatory-step"]
+    assert result["plan"] == {
+        "totalSteps": 2,
+        "selectedSteps": 1,
+        "deselectedSteps": 1,
+        "mandatorySelected": 1,
+        "mandatoryDeselected": 0,
+    }
+
+
+@pytest.mark.unit
+def test_cli_deselect_unknown_id_returns_exit_code_2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """An unknown ``--deselect`` id exits with code 2 (invalid input)."""
+    config_path, manifest_path = _write_plan_config_and_manifest(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.run([str(config_path), "--manifest", str(manifest_path), "--deselect", "ghost-step"])
+    assert exit_code == 2
+
+
+@pytest.mark.unit
+def test_cli_deselect_without_manifest_returns_exit_code_2(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``--deselect`` without ``--manifest`` is rejected with exit code 2."""
+    config_path, _ = _write_plan_config_and_manifest(tmp_path)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.run([str(config_path), "--deselect", "any"])
+    assert exit_code == 2
