@@ -269,11 +269,15 @@ def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
 
     Returns:
         200 with ``application/x-ndjson`` body on success, or 404 if the
-        run ID is unknown.
+        run ID is unknown, or 500 if the run exists but its execution log is
+        unavailable.
     """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return JsonResponse({"error": "Run not found"}, status=404)
     log_bytes = run_store.get_run_log_bytes(run_id)
     if log_bytes is None:
-        return JsonResponse({"error": "Run not found"}, status=404)
+        return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
     return HttpResponse(log_bytes, content_type="application/x-ndjson")
 
 
@@ -289,13 +293,11 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None
     """
     run_store.mark_running(run_id)
     try:
-        execution_logger = run_store.get_run(run_id)
+        run_record = run_store.get_run(run_id)
         # ``get_run`` returns a shallow copy whose ``execution_logger``
         # reference points at the same live buffer the API exposes; either
         # accessing the live record or the copy yields the same logger.
-        logger_sink = (
-            execution_logger.execution_logger if execution_logger is not None else None
-        ) or NullExecutionLogger()
+        logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
         if manifest is None:
             result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
         else:
