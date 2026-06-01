@@ -3,7 +3,9 @@
 # upstream OS-package CVEs that Snyk flags on the Debian image. Pinned to
 # Alpine 3.22 + the stable Python 3.14 line (matches `requires-python` in
 # pyproject.toml — no release-candidate interpreters in regulated builds).
-FROM python:3.14-alpine3.22 AS builder
+# Pinned to the 3.14.4 patch so the image is reproducible (the `3.14` minor
+# tag re-points to whichever 3.14.x is current on Docker Hub).
+FROM python:3.14.4-alpine3.22 AS builder
 
 # Build toolchain for C/Rust extensions pulled in by uvicorn[standard]
 # (httptools, uvloop, watchfiles). musl wheels exist for most of these on
@@ -31,7 +33,7 @@ RUN uv sync --frozen --no-dev --no-install-project
 COPY . .
 
 # ─── Runtime stage ────────────────────────────────────────────────────────────
-FROM python:3.14-alpine3.22 AS runtime
+FROM python:3.14.4-alpine3.22 AS runtime
 
 WORKDIR /app
 

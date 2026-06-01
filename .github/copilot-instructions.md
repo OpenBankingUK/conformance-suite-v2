@@ -80,7 +80,7 @@ Do not flag these as B018 violations or request their removal.
 
 ## 8. Docker
 
-- Base image pinned to a specific version tag (e.g. `python:3.14-alpine3.22`).
+- Base image pinned to a specific version tag (e.g. `python:3.14.4-alpine3.22`).
 - Prefer multi-stage builds.
 - Application runs as non-root.
 - `COPY` ordered to maximise layer cache (dependency files before source).
