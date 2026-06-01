@@ -32,7 +32,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
-    parser.add_argument("--manifest", type=Path, help="Optional manifest v0 JSON file to execute")
+    parser.add_argument("--manifest", type=Path, help="Optional manifest JSON file (v0 or v1) to execute")
     parser.add_argument(
         "--deselect",
         action="append",

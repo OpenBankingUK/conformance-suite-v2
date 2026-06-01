@@ -1914,7 +1914,7 @@ def test_run_manifest_emits_application_error_on_unexpected_engine_exception(
 
 
 def _plan_v1_manifest() -> dict[str, JsonValue]:
-    """Return a small v1 manifest with one mandatory and one optional step."""
+    """Return a small v1 manifest with one mandatory and one non-mandatory step."""
     return cast(
         "dict[str, JsonValue]",
         {

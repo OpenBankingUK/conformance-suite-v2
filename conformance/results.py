@@ -248,12 +248,12 @@ def _build_eligibility(
     # then skipped, then "no mandatory declared".
     if mandatory_deselected:
         reason = "Mandatory steps were deselected from the plan"
-    elif not mandatory_steps:
-        reason = "No mandatory steps declared"
     elif mandatory_failed:
         reason = f"{mandatory_failed} mandatory step(s) failed"
     elif mandatory_skipped:
         reason = f"{mandatory_skipped} mandatory step(s) skipped due to earlier failures"
+    elif not mandatory_steps:
+        reason = "No mandatory steps declared"
     else:
         reason = None
 
