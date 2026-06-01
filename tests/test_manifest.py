@@ -1507,3 +1507,63 @@ def test_parse_v1_step_warning_rejects_non_string_or_empty(bad_warning: JsonValu
     }
     with pytest.raises(ManifestError, match=r"steps\[0\]\.warning must be a non-empty string"):
         parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_step_accepts_mandatory_true() -> None:
+    """A v1 step accepts an optional ``mandatory: true`` flag."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "with-mandatory",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "mandatory": True,
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].mandatory is True
+
+
+@pytest.mark.unit
+def test_parse_v1_step_mandatory_defaults_to_false() -> None:
+    """When ``mandatory`` is omitted, the parsed step defaults to ``False``."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "no-mandatory",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert manifest.steps[0].mandatory is False
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_value", [1, 0, "true", "false", None, []])
+def test_parse_v1_step_mandatory_rejects_non_boolean(bad_value: JsonValue) -> None:
+    """``mandatory`` must be a JSON boolean; truthy coercion is rejected."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-mandatory",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "mandatory": bad_value,
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.mandatory must be a JSON boolean"):
+        parse_manifest(raw_manifest)

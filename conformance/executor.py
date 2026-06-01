@@ -117,6 +117,13 @@ def _run_manifest_v1(manifest: Manifest, *, environment: str, client: httpx.Clie
 
     for manifest_step in manifest.steps:
         step_result, context = _execute_v1_step(manifest_step, context=context, client=client)
+        # Carry the manifest's mandatory flag onto the step result so the
+        # aggregate certificationEligibility block can reason about it
+        # without re-walking the manifest. Done here (rather than inside
+        # _execute_v1_step) so the executor's many StepResult creation
+        # sites stay focused on outcome semantics.
+        if manifest_step.mandatory:
+            step_result = replace(step_result, mandatory=True)
         steps.append(step_result)
 
     return build_smoke_check_result(environment, steps, started_at=started_at)
