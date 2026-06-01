@@ -286,3 +286,109 @@ class TestGetRunResultEndpoint:
         assert response.status_code == 500
         assert "failed internally" in response.json()["error"]
         assert "detail" not in response.json()
+
+
+# ─── Bounded run-store history ──────────────────────────────────────────────
+
+
+@pytest.mark.unit
+class TestRunStoreBoundedHistory:
+    def test_terminal_records_capped_at_maximum(self) -> None:
+        from conformance.api.run_store import MAX_TERMINAL_RECORDS
+
+        store = RunStore()
+        # Create MAX + 5 fully-completed runs so each create_run triggers prune.
+        for i in range(MAX_TERMINAL_RECORDS + 5):
+            record = store.create_run()
+            store.mark_running(record.run_id)
+            store.mark_completed(record.run_id, result={"i": i})
+        # Plus one more pending run to confirm active is preserved.
+        active = store.create_run()
+        assert len(store._runs) == MAX_TERMINAL_RECORDS + 1
+        assert active.run_id in store._runs
+
+    def test_pending_or_running_records_are_never_pruned(self) -> None:
+        from conformance.api.run_store import MAX_TERMINAL_RECORDS
+
+        store = RunStore()
+        # Fill with terminal records.
+        for _ in range(MAX_TERMINAL_RECORDS + 3):
+            record = store.create_run()
+            store.mark_running(record.run_id)
+            store.mark_completed(record.run_id, result={})
+        active = store.create_run()  # pending; prune should retain it
+        store.mark_running(active.run_id)
+        # Force a prune-eligible event by completing then creating again.
+        store.mark_completed(active.run_id, result={})
+        new_active = store.create_run()
+        assert new_active.run_id in store._runs
+        assert store.get_run(new_active.run_id) is not None
+
+    def test_oldest_terminal_records_evicted_first(self) -> None:
+        from conformance.api.run_store import MAX_TERMINAL_RECORDS
+
+        store = RunStore()
+        first_ids = []
+        for _ in range(MAX_TERMINAL_RECORDS):
+            record = store.create_run()
+            store.mark_running(record.run_id)
+            store.mark_completed(record.run_id, result={})
+            first_ids.append(record.run_id)
+        # Add one more terminal record; the very first one should be evicted.
+        extra = store.create_run()
+        store.mark_running(extra.run_id)
+        store.mark_completed(extra.run_id, result={})
+        # Trigger prune via a new create_run.
+        store.create_run()
+        assert first_ids[0] not in store._runs
+        assert first_ids[-1] in store._runs
+        assert extra.run_id in store._runs
+
+
+# ─── Loopback guard ─────────────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestLoopbackGuard:
+    def test_loopback_request_is_allowed_by_default(self) -> None:
+        # Django test client uses REMOTE_ADDR=127.0.0.1 by default.
+        client = Client()
+        body = {"config": VALID_CONFIG}
+        with patch("conformance.api.views._execute_run"):
+            response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 201
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        body = {"config": VALID_CONFIG}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 403
+        assert "loopback" in response.json()["error"].lower()
+
+    def test_non_loopback_request_is_rejected_on_status_endpoint(self) -> None:
+        client = Client(REMOTE_ADDR="192.168.1.10")
+        response = client.get("/api/runs/some-id/")
+        assert response.status_code == 403
+
+    def test_non_loopback_request_is_rejected_on_result_endpoint(self) -> None:
+        client = Client(REMOTE_ADDR="2001:db8::1")
+        response = client.get("/api/runs/some-id/result/")
+        assert response.status_code == 403
+
+    def test_ipv6_loopback_is_allowed(self) -> None:
+        client = Client(REMOTE_ADDR="::1")
+        response = client.get("/api/runs/nonexistent/")
+        assert response.status_code == 404  # passes guard, fails lookup
+
+    def test_malformed_remote_addr_is_rejected(self) -> None:
+        client = Client(REMOTE_ADDR="not-an-ip")
+        response = client.get("/api/runs/anything/")
+        assert response.status_code == 403
+
+    def test_opt_out_setting_allows_non_loopback(self) -> None:
+        from django.test import override_settings
+
+        with override_settings(API_ALLOW_NON_LOCAL=True):
+            client = Client(REMOTE_ADDR="10.0.0.5")
+            response = client.get("/api/runs/missing/")
+            assert response.status_code == 404  # guard bypassed, lookup misses

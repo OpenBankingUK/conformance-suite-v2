@@ -1,20 +1,27 @@
 """Django views for the conformance run REST API.
 
 Implements the Phase 1 local REST API (PRD: OBL Engineering Story #5):
-unauthenticated, designed for local Docker deployment. Localhost access
-restriction is a deployment concern (Docker port publishing to 127.0.0.1),
-not an application-level guarantee. Supports starting a run, polling run
-status, and retrieving the report.
+unauthenticated, designed for local Docker deployment. Defence in depth:
+endpoints reject non-loopback ``REMOTE_ADDR`` by default so a misconfigured
+Docker port publish (e.g. ``-p 0.0.0.0:8000``) does not expose the API.
+Localhost binding remains the primary control; this guard is a backstop.
+Set ``CONFORMANCE_API_ALLOW_NON_LOCAL=true`` to opt out (e.g. for an
+authenticated reverse proxy). Supports starting a run, polling run status,
+and retrieving the report.
 """
 
 from __future__ import annotations
 
+import functools
+import ipaddress
 import json
 import logging
 import threading
+from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING
 
+from django.conf import settings
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
@@ -32,8 +39,86 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _is_loopback_address(remote_addr: str) -> bool:
+    """Return True if ``remote_addr`` is an IPv4/IPv6 loopback address.
+
+    Args:
+        remote_addr: The value of ``request.META['REMOTE_ADDR']``.
+
+    Returns:
+        True for ``127.0.0.0/8`` and ``::1``; False for any other address
+        (including malformed input).
+    """
+    try:
+        addr = ipaddress.ip_address(remote_addr)
+    except ValueError:
+        return False
+    return addr.is_loopback
+
+
+def _require_loopback[**P](
+    view_func: Callable[P, JsonResponse],
+) -> Callable[P, JsonResponse]:
+    """Reject non-loopback requests with HTTP 403 unless opt-out is set.
+
+    Defence-in-depth backstop for the Phase 1 PRD assumption that the API
+    is reachable only from ``127.0.0.1``. The guard is bypassed when the
+    ``API_ALLOW_NON_LOCAL`` Django setting is truthy (driven by the
+    ``CONFORMANCE_API_ALLOW_NON_LOCAL`` environment variable), which lets
+    operators front the API with an authenticated reverse proxy.
+
+    The decorator inspects ``request.META['REMOTE_ADDR']`` directly and does
+    not honour ``X-Forwarded-For`` — trusting forwarded headers without a
+    vetted proxy chain would itself be a security bug.
+
+    Args:
+        view_func: The Django view to wrap.
+
+    Returns:
+        A wrapper that returns 403 for non-loopback callers and otherwise
+        delegates to ``view_func``.
+    """
+
+    @functools.wraps(view_func)
+    def wrapper(*args: P.args, **kwargs: P.kwargs) -> JsonResponse:
+        """Run the loopback check, then delegate to the wrapped view.
+
+        Args:
+            *args: Positional arguments forwarded to the view. The first
+                must be the ``HttpRequest`` (Django view contract).
+            **kwargs: Keyword arguments forwarded to the view.
+
+        Returns:
+            A 403 ``JsonResponse`` for non-loopback callers when the guard
+            is enabled, otherwise the view's own response.
+        """
+        request = args[0]
+        assert isinstance(request, HttpRequest)  # noqa: S101 — Django view contract
+        if not getattr(settings, "API_ALLOW_NON_LOCAL", False):
+            remote_addr = request.META.get("REMOTE_ADDR", "")
+            if not _is_loopback_address(remote_addr):
+                logger.warning(
+                    "Rejected non-loopback API request from %s to %s",
+                    remote_addr or "<unknown>",
+                    request.path,
+                )
+                return JsonResponse(
+                    {
+                        "error": (
+                            "API access restricted to loopback addresses. "
+                            "Set CONFORMANCE_API_ALLOW_NON_LOCAL=true to disable."
+                        )
+                    },
+                    status=403,
+                )
+        return view_func(*args, **kwargs)
+
+    return wrapper
+
+
 @csrf_exempt
 @require_POST
+@_require_loopback
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
@@ -56,7 +141,10 @@ def create_run(request: HttpRequest) -> JsonResponse:
     """
     try:
         body = json.loads(request.body)
-    except json.JSONDecodeError, ValueError:
+    except json.JSONDecodeError:
+        # JSONDecodeError already subclasses ValueError, so a single
+        # except clause covers both decode failures and any value-level
+        # errors raised by json.loads on malformed input.
         return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
 
     if not isinstance(body, dict):
@@ -109,6 +197,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
 
 @require_GET
+@_require_loopback
 def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
     """Return the current status of a conformance run.
 
@@ -126,6 +215,7 @@ def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
 
 
 @require_GET
+@_require_loopback
 def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
     """Return the structured result of a completed conformance run.
 

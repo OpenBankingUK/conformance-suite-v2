@@ -19,6 +19,19 @@ from conformance.json_types import JsonObject
 RunStatus = Literal["pending", "running", "completed", "failed"]
 """Lifecycle states for a conformance run."""
 
+_TERMINAL_STATUSES: tuple[RunStatus, ...] = ("completed", "failed")
+"""Lifecycle states beyond which a run will not transition again."""
+
+MAX_TERMINAL_RECORDS = 10
+"""Cap on completed/failed records retained in memory.
+
+Phase 1 fire-and-forget deployments typically run one container per run,
+but long-lived dev containers or repeated invocations against a persistent
+process would otherwise grow ``RunStore._runs`` without bound. When a new
+run is created, the oldest terminal records beyond this cap are dropped.
+Active (pending/running) records are never pruned.
+"""
+
 
 @dataclass
 class RunRecord:
@@ -97,6 +110,7 @@ class RunStore:
             )
             self._runs[run_id] = record
             self._active_run_id = run_id
+            self._prune_terminal_records_locked()
             return record
 
     def get_run(self, run_id: str) -> RunRecord | None:
@@ -148,6 +162,28 @@ class RunStore:
             record.status = "failed"
             record.finished_at = datetime.now(UTC)
             record.error = error
+
+    def _prune_terminal_records_locked(self) -> None:
+        """Drop oldest terminal records beyond ``MAX_TERMINAL_RECORDS``.
+
+        Bounds memory growth in long-lived processes that handle many
+        runs over time. The caller MUST hold ``self._lock``. Only
+        terminal (``completed`` / ``failed``) records are eligible for
+        eviction; the currently active run (``pending`` / ``running``)
+        is never dropped. Records without a ``finished_at`` are treated
+        as the oldest — they should not exist in a terminal state, but
+        evicting them first keeps the invariant safe.
+        """
+        terminal_ids = [run_id for run_id, record in self._runs.items() if record.status in _TERMINAL_STATUSES]
+        if len(terminal_ids) <= MAX_TERMINAL_RECORDS:
+            return
+        # Sort oldest-first; missing finished_at sorts before any real timestamp.
+        terminal_ids.sort(
+            key=lambda run_id: self._runs[run_id].finished_at or datetime.min.replace(tzinfo=UTC),
+        )
+        evict_count = len(terminal_ids) - MAX_TERMINAL_RECORDS
+        for run_id in terminal_ids[:evict_count]:
+            del self._runs[run_id]
 
 
 class RunConflictError(Exception):
