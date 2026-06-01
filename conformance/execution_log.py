@@ -285,7 +285,13 @@ class BufferedExecutionLogger(ExecutionLogger):
             for event in self.events():
                 tmp.write(json.dumps(event.to_json_object(), sort_keys=True))
                 tmp.write("\n")
-        tmp_path.replace(path)
+        try:
+            tmp_path.replace(path)
+        except Exception:
+            # Remove the temp file so a failed rename never leaves a
+            # potentially unmasked (developer-mode) artifact on disk.
+            tmp_path.unlink(missing_ok=True)
+            raise
 
     def to_ndjson_bytes(self) -> bytes:
         """Serialise the buffered events to NDJSON bytes.

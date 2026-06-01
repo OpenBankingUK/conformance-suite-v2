@@ -273,3 +273,29 @@ def test_concurrent_emit_and_snapshot() -> None:
     assert errors == [], f"Snapshot parse errors: {errors}"
     final_events = execution_logger.events()
     assert len(final_events) == n_emitters * events_per_emitter
+
+
+@pytest.mark.unit
+def test_flush_to_path_cleans_up_temp_file_on_rename_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Temp file is removed when the atomic rename fails.
+
+    Guards against a left-behind ``.tmp`` artifact that, in developer mode,
+    could contain unmasked credentials.
+
+    Args:
+        tmp_path: pytest temporary directory fixture.
+        monkeypatch: pytest monkeypatch fixture.
+    """
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit("run-started")
+
+    def _raise_oserror(self: Path, _target: Path) -> None:  # noqa: ANN001
+        raise OSError("rename failed")
+
+    monkeypatch.setattr(Path, "replace", _raise_oserror)
+
+    with pytest.raises(OSError, match="rename failed"):
+        logger.flush_to_path(tmp_path / "log.ndjson")
+
+    leftovers = list(tmp_path.glob("*.tmp"))
+    assert leftovers == [], f"Unexpected temp files: {leftovers}"
