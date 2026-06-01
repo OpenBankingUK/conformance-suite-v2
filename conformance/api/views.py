@@ -13,7 +13,7 @@ import json
 import logging
 import threading
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING
 
 from django.http import HttpRequest, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
@@ -25,6 +25,9 @@ from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
+
+if TYPE_CHECKING:
+    from conformance.manifest import Manifest
 
 logger = logging.getLogger(__name__)
 
@@ -148,7 +151,7 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
     return JsonResponse(record.result)
 
 
-def _execute_run(run_id: str, config: ModelBankConfig, manifest: Any) -> None:
+def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None) -> None:
     """Execute a conformance run in a background thread.
 
     Transitions the run record through running → completed/failed.
