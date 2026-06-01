@@ -1,11 +1,10 @@
 import json
-from datetime import UTC, datetime
 from unittest.mock import patch
 
 import pytest
 from django.test import Client
 
-from conformance.api.run_store import RunConflictError, RunRecord, RunStore, run_store
+from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -134,9 +133,7 @@ VALID_MANIFEST = {
 @pytest.fixture(autouse=True)
 def _reset_run_store() -> None:
     """Reset the global run store between tests to avoid cross-contamination."""
-    with run_store._lock:
-        run_store._runs.clear()
-        run_store._active_run_id = None
+    run_store.reset()
 
 
 @pytest.mark.integration
@@ -260,36 +257,23 @@ class TestGetRunResultEndpoint:
 
     def test_returns_result_when_completed(self) -> None:
         client = Client()
-        # Manually insert a completed run
-        record = RunRecord(
-            run_id="test-completed",
-            status="completed",
-            created_at=datetime.now(UTC),
-            started_at=datetime.now(UTC),
-            finished_at=datetime.now(UTC),
-            result={"environment": "test", "status": "passed"},
-        )
-        run_store._runs["test-completed"] = record
-        run_store._active_run_id = "test-completed"
+        # Drive a run through the public API to a completed terminal state
+        # rather than poking RunStore internals.
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"environment": "test", "status": "passed"})
 
-        response = client.get("/api/runs/test-completed/result/")
+        response = client.get(f"/api/runs/{record.run_id}/result/")
         assert response.status_code == 200
         assert response.json() == {"environment": "test", "status": "passed"}
 
     def test_returns_500_when_run_failed(self) -> None:
         client = Client()
-        record = RunRecord(
-            run_id="test-failed",
-            status="failed",
-            created_at=datetime.now(UTC),
-            started_at=datetime.now(UTC),
-            finished_at=datetime.now(UTC),
-            error="Internal engine error",
-        )
-        run_store._runs["test-failed"] = record
-        run_store._active_run_id = "test-failed"
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_failed(record.run_id, error="Internal engine error")
 
-        response = client.get("/api/runs/test-failed/result/")
+        response = client.get(f"/api/runs/{record.run_id}/result/")
         assert response.status_code == 500
         assert "failed internally" in response.json()["error"]
         assert "detail" not in response.json()
@@ -301,8 +285,6 @@ class TestGetRunResultEndpoint:
 @pytest.mark.unit
 class TestRunStoreBoundedHistory:
     def test_terminal_records_capped_at_maximum(self) -> None:
-        from conformance.api.run_store import MAX_TERMINAL_RECORDS
-
         store = RunStore()
         # Create MAX + 5 fully-completed runs so each create_run triggers prune.
         for i in range(MAX_TERMINAL_RECORDS + 5):
@@ -315,8 +297,6 @@ class TestRunStoreBoundedHistory:
         assert active.run_id in store._runs
 
     def test_pending_or_running_records_are_never_pruned(self) -> None:
-        from conformance.api.run_store import MAX_TERMINAL_RECORDS
-
         store = RunStore()
         # Fill with terminal records.
         for _ in range(MAX_TERMINAL_RECORDS + 3):
@@ -332,8 +312,6 @@ class TestRunStoreBoundedHistory:
         assert store.get_run(new_active.run_id) is not None
 
     def test_oldest_terminal_records_evicted_first(self) -> None:
-        from conformance.api.run_store import MAX_TERMINAL_RECORDS
-
         store = RunStore()
         first_ids = []
         for _ in range(MAX_TERMINAL_RECORDS):

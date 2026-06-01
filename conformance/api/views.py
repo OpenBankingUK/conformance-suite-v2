@@ -165,6 +165,9 @@ def create_run(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
 
     # Validate config eagerly so the caller gets immediate feedback.
+    # base_dir anchors relative TLS certificate paths in the request body to
+    # the Django process CWD (set by the Docker entrypoint). Path traversal
+    # is rejected by parse_model_bank_config itself.
     try:
         config = parse_model_bank_config(raw_config, base_dir=Path.cwd())
     except ConfigError as error:

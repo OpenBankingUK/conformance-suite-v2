@@ -99,9 +99,7 @@ class RunStore:
         """
         with self._lock:
             if self._active_run_id is not None:
-                active = self._runs[self._active_run_id]
-                if active.status in ("pending", "running"):
-                    raise RunConflictError(self._active_run_id)
+                raise RunConflictError(self._active_run_id)
             run_id = uuid.uuid4().hex
             record = RunRecord(
                 run_id=run_id,
@@ -140,6 +138,10 @@ class RunStore:
     def mark_completed(self, run_id: str, *, result: JsonObject) -> None:
         """Transition a running run to completed state with its result.
 
+        Clears ``_active_run_id`` so a subsequent ``create_run`` is allowed
+        — the data structure's invariant is that ``_active_run_id`` names the
+        currently active (pending/running) run, or is None.
+
         Args:
             run_id: The unique run identifier.
             result: The structured JSON result object from the engine.
@@ -149,9 +151,13 @@ class RunStore:
             record.status = "completed"
             record.finished_at = datetime.now(UTC)
             record.result = result
+            if self._active_run_id == run_id:
+                self._active_run_id = None
 
     def mark_failed(self, run_id: str, *, error: str) -> None:
         """Transition a run to failed state with an error message.
+
+        Clears ``_active_run_id`` so a subsequent ``create_run`` is allowed.
 
         Args:
             run_id: The unique run identifier.
@@ -162,6 +168,18 @@ class RunStore:
             record.status = "failed"
             record.finished_at = datetime.now(UTC)
             record.error = error
+            if self._active_run_id == run_id:
+                self._active_run_id = None
+
+    def reset(self) -> None:
+        """Wipe all run state. Intended for test fixtures only.
+
+        Production code must not call this — it discards in-flight runs
+        without coordinating with their background threads.
+        """
+        with self._lock:
+            self._runs.clear()
+            self._active_run_id = None
 
     def _prune_terminal_records_locked(self) -> None:
         """Drop oldest terminal records beyond ``MAX_TERMINAL_RECORDS``.
