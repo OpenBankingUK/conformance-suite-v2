@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 
 import pytest
@@ -54,7 +55,12 @@ def test_buffered_logger_masks_sensitive_json_keys_by_default() -> None:
     logger.emit(
         "request-sent",
         step_id="token",
-        payload={"body": {"client_secret": "super-secret", "grant_type": "client_credentials"}},  # pragma: allowlist secret
+        payload={
+            "body": {
+                "client_secret": "super-secret",  # pragma: allowlist secret
+                "grant_type": "client_credentials",
+            }
+        },
     )
     payload = logger.events()[0].payload
     body = payload["body"]
@@ -221,3 +227,49 @@ def test_buffered_logger_developer_mode_defaults_to_env(monkeypatch: pytest.Monk
     monkeypatch.delenv("CONFORMANCE_DEVELOPER_MODE", raising=False)
     other = BufferedExecutionLogger(run_id="r")
     assert other.developer_mode is False
+
+
+@pytest.mark.unit
+def test_concurrent_emit_and_snapshot() -> None:
+    """Regression: BufferedExecutionLogger must be thread-safe.
+
+    8 emitter threads each emit 100 events while a reader thread takes 50
+    ``to_ndjson_bytes()`` snapshots.  Every snapshot must parse as valid
+    NDJSON and, after all threads join, the final snapshot must contain
+    exactly 800 events.
+    """
+    n_emitters = 8
+    events_per_emitter = 100
+    n_snapshots = 50
+
+    execution_logger = BufferedExecutionLogger(run_id="concurrent-test", developer_mode=False)
+    errors: list[Exception] = []
+
+    def emitter() -> None:
+        for _ in range(events_per_emitter):
+            execution_logger.emit("step-completed", payload={"status": "passed"})
+
+    def reader() -> None:
+        for _ in range(n_snapshots):
+            data = execution_logger.to_ndjson_bytes()
+            if not data:
+                continue
+            try:
+                for line in data.decode("utf-8").rstrip("\n").split("\n"):
+                    json.loads(line)
+            except (json.JSONDecodeError, UnicodeDecodeError) as exc:
+                errors.append(exc)
+
+    emitter_threads = [threading.Thread(target=emitter) for _ in range(n_emitters)]
+    reader_thread = threading.Thread(target=reader)
+
+    reader_thread.start()
+    for t in emitter_threads:
+        t.start()
+    for t in emitter_threads:
+        t.join()
+    reader_thread.join()
+
+    assert errors == [], f"Snapshot parse errors: {errors}"
+    final_events = execution_logger.events()
+    assert len(final_events) == n_emitters * events_per_emitter

@@ -31,6 +31,7 @@ import json
 import logging
 import os
 import tempfile
+import threading
 import uuid
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -188,8 +189,10 @@ class BufferedExecutionLogger(ExecutionLogger):
     objects via :meth:`events`. The buffer is unbounded — callers are
     responsible for bounding run length (the PRD's per-run model).
 
-    Thread-safety: not thread-safe. The engine is single-threaded per run; the
-    REST API serialises runs through ``run_store``.
+    Thread-safety: :meth:`emit`, :meth:`events`, :meth:`to_ndjson_bytes`, and
+    :meth:`flush_to_path` are safe to call concurrently from multiple threads.
+    Events are appended atomically under a per-instance lock; snapshot reads
+    are consistent copies that release the lock before serialisation or I/O.
     """
 
     def __init__(self, *, run_id: str, developer_mode: bool | None = None) -> None:
@@ -204,6 +207,7 @@ class BufferedExecutionLogger(ExecutionLogger):
         self._run_id = run_id
         self._developer_mode = is_developer_mode_enabled() if developer_mode is None else developer_mode
         self._events: list[ExecutionEvent] = []
+        self._lock = threading.Lock()
 
     @property
     def run_id(self) -> str:
@@ -220,9 +224,10 @@ class BufferedExecutionLogger(ExecutionLogger):
 
         Returns:
             New list of events in emission order. Mutating the returned list
-            does not affect the buffer.
+            does not affect the buffer. Safe to call concurrently.
         """
-        return list(self._events)
+        with self._lock:
+            return list(self._events)
 
     def emit(
         self,
@@ -247,7 +252,8 @@ class BufferedExecutionLogger(ExecutionLogger):
             step_id=step_id,
             payload=masked_payload,
         )
-        self._events.append(event)
+        with self._lock:
+            self._events.append(event)
 
     def flush_to_path(self, path: Path) -> None:
         """Atomically write the buffered events to ``path`` as NDJSON.
@@ -275,7 +281,7 @@ class BufferedExecutionLogger(ExecutionLogger):
             delete=False,
         ) as tmp:
             tmp_path = Path(tmp.name)
-            for event in self._events:
+            for event in self.events():
                 tmp.write(json.dumps(event.to_json_object(), sort_keys=True))
                 tmp.write("\n")
         tmp_path.replace(path)
@@ -289,7 +295,7 @@ class BufferedExecutionLogger(ExecutionLogger):
         Returns:
             UTF-8 encoded NDJSON, one event per line, trailing newline.
         """
-        lines = [json.dumps(event.to_json_object(), sort_keys=True) for event in self._events]
+        lines = [json.dumps(event.to_json_object(), sort_keys=True) for event in self.events()]
         return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
 
     def _mask_payload(self, event_type: EventType, payload: Mapping[str, JsonValue]) -> JsonObject:
