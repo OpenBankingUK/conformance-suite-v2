@@ -440,3 +440,22 @@ class TestGetRunLogEndpoint:
         client = Client(REMOTE_ADDR="10.0.0.5")
         response = client.get("/api/runs/some-id/log/")
         assert response.status_code == 403
+
+    def test_returns_500_when_run_exists_but_logger_unattached(self) -> None:
+        """Run record present but no execution logger yields 500, not 404."""
+        from datetime import UTC, datetime
+
+        from conformance.api.run_store import RunRecord
+
+        record = RunRecord(
+            run_id="no-logger",
+            status="running",
+            created_at=datetime.now(UTC),
+            execution_logger=None,
+        )
+        run_store._runs["no-logger"] = record  # noqa: SLF001 — direct injection for invariant-violation test
+
+        client = Client()
+        response = client.get("/api/runs/no-logger/log/")
+        assert response.status_code == 500
+        assert response.json()["error"] == "Execution log unavailable for this run"
