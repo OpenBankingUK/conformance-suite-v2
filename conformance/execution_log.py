@@ -58,8 +58,9 @@ EventType = Literal[
 """Closed set of event types emitted by the engine.
 
 Closed by design: arbitrary string types would let callers silently drift
-the schema. New event types must be added here and to the masking dispatch
-in :func:`BufferedExecutionLogger._mask_payload`.
+the schema. New event types only require a masking change if they introduce
+a payload shape not handled by the shape-based dispatch in
+:func:`BufferedExecutionLogger._mask_payload`.
 """
 
 _DEVELOPER_MODE_ENV_VAR = "CONFORMANCE_DEVELOPER_MODE"
@@ -299,10 +300,16 @@ class BufferedExecutionLogger(ExecutionLogger):
         return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
 
     def _mask_payload(self, event_type: EventType, payload: Mapping[str, JsonValue]) -> JsonObject:
-        """Apply per-event-type masking to a raw payload.
+        """Apply shape-based masking to a raw payload.
+
+        ``headers`` mappings go through :func:`conformance.masking.mask_headers`;
+        all other values go through :func:`conformance.masking.mask_json_value`.
+        The ``event_type`` argument is accepted to allow future per-type rules
+        without a signature change.
 
         Args:
-            event_type: Event type whose masking rules to apply.
+            event_type: Accepted for future per-type dispatch; not used to
+                select masking rules in the current implementation.
             payload: Raw payload supplied by the caller. May contain sensitive
                 credentials, tokens, or header values.
 
@@ -332,8 +339,9 @@ class BufferedExecutionLogger(ExecutionLogger):
 def warn_if_developer_mode() -> None:
     """Log a prominent WARN line when developer mode is active.
 
-    Called once at process startup by the CLI. Safe to call repeatedly — the
-    underlying logger handles deduplication via its handlers.
+    Called from CLI startup and from the REST API's ``create_run`` view.
+    Safe to call repeatedly — the underlying logger handles deduplication
+    via its handlers.
     """
     if is_developer_mode_enabled():
         logger.warning(

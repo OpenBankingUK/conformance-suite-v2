@@ -51,8 +51,9 @@ class ModelBankConfig:
         tls: Transport TLS settings for the HTTP client.
         result_output_path: Path where the structured JSON result should be written.
         execution_log_path: Path where the NDJSON execution log should be
-            written. Defaults to ``out/execution-log.ndjson`` (sibling of
-            the result file).
+            written. Defaults to ``out/execution-log.ndjson`` resolved under
+            the output base directory (typically the process CWD),
+            independently of ``result_output_path``.
     """
 
     environment: str
