@@ -275,10 +275,12 @@ def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
     record = run_store.get_run(run_id)
     if record is None:
         return JsonResponse({"error": "Run not found"}, status=404)
-    log_bytes = run_store.get_run_log_bytes(run_id)
-    if log_bytes is None:
+    # Use the execution_logger reference from the single lookup rather than
+    # calling get_run_log_bytes() separately.  A second lookup risks a 500
+    # instead of the correct 404 when the run is pruned between the two calls.
+    if record.execution_logger is None:
         return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
-    return HttpResponse(log_bytes, content_type="application/x-ndjson")
+    return HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
 
 
 def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None) -> None:

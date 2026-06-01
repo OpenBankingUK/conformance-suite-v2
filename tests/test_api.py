@@ -459,3 +459,28 @@ class TestGetRunLogEndpoint:
         response = client.get("/api/runs/no-logger/log/")
         assert response.status_code == 500
         assert response.json()["error"] == "Execution log unavailable for this run"
+
+    def test_does_not_call_get_run_log_bytes_so_eviction_race_returns_200(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """View uses execution_logger from the first lookup, not a second store call.
+
+        If ``get_run_log_bytes`` were called it would return ``None`` here,
+        causing the view to return 500.  The fix reads from
+        ``record.execution_logger`` directly, so the view must return 200
+        even though ``get_run_log_bytes`` is patched to simulate eviction.
+
+        Args:
+            monkeypatch: pytest monkeypatch fixture.
+        """
+        monkeypatch.setattr(run_store, "get_run_log_bytes", lambda _run_id: None)
+        client = Client()
+        record = run_store.create_run()
+        assert record.execution_logger is not None
+        record.execution_logger.emit("run-started")
+
+        response = client.get(f"/api/runs/{record.run_id}/log/")
+
+        assert response.status_code == 200
+        lines = response.content.decode("utf-8").rstrip("\n").split("\n")
+        assert json.loads(lines[0])["type"] == "run-started"
