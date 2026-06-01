@@ -1,0 +1,172 @@
+"""In-memory run store for Phase 1 single-container deployment.
+
+Phase 1 supports one run at a time. This module holds the run state in
+memory — no database persistence is required. When the container restarts,
+all run state is lost (fire-and-forget per the PRD).
+"""
+
+from __future__ import annotations
+
+import threading
+import uuid
+from dataclasses import dataclass
+from datetime import UTC, datetime
+from typing import Literal
+
+from conformance.json_types import JsonObject
+
+RunStatus = Literal["pending", "running", "completed", "failed"]
+"""Lifecycle states for a conformance run."""
+
+
+@dataclass
+class RunRecord:
+    """Mutable state for a single conformance run.
+
+    Attributes:
+        run_id: Unique identifier for this run.
+        status: Current lifecycle state.
+        created_at: UTC timestamp when the run was queued.
+        started_at: UTC timestamp when execution began, or None.
+        finished_at: UTC timestamp when execution ended, or None.
+        result: Structured JSON result object, populated on completion.
+        error: Human-readable error message if the run failed internally.
+    """
+
+    run_id: str
+    status: RunStatus
+    created_at: datetime
+    started_at: datetime | None = None
+    finished_at: datetime | None = None
+    result: JsonObject | None = None
+    error: str | None = None
+
+    def to_status_json(self) -> JsonObject:
+        """Serialise the run record into the public status JSON shape.
+
+        Returns:
+            JSON object suitable for the GET /api/runs/<id>/ response.
+        """
+        obj: JsonObject = {
+            "id": self.run_id,
+            "status": self.status,
+            "createdAt": self.created_at.isoformat(),
+        }
+        if self.started_at is not None:
+            obj["startedAt"] = self.started_at.isoformat()
+        if self.finished_at is not None:
+            obj["finishedAt"] = self.finished_at.isoformat()
+        if self.error is not None:
+            obj["error"] = self.error
+        return obj
+
+
+class RunStore:
+    """Thread-safe in-memory store for conformance run records.
+
+    Phase 1 enforces a single concurrent run. Attempting to start a second
+    run while one is pending or running is rejected.
+    """
+
+    def __init__(self) -> None:
+        """Initialise an empty run store with a threading lock."""
+        self._lock = threading.Lock()
+        self._runs: dict[str, RunRecord] = {}
+        self._active_run_id: str | None = None
+
+    def create_run(self) -> RunRecord:
+        """Reserve a new run slot if no run is currently active.
+
+        Returns:
+            The newly created run record in ``pending`` state.
+
+        Raises:
+            RunConflictError: If a run is already pending or running.
+        """
+        with self._lock:
+            if self._active_run_id is not None:
+                active = self._runs[self._active_run_id]
+                if active.status in ("pending", "running"):
+                    raise RunConflictError(self._active_run_id)
+            run_id = uuid.uuid4().hex
+            record = RunRecord(
+                run_id=run_id,
+                status="pending",
+                created_at=datetime.now(UTC),
+            )
+            self._runs[run_id] = record
+            self._active_run_id = run_id
+            return record
+
+    def get_run(self, run_id: str) -> RunRecord | None:
+        """Look up a run record by ID.
+
+        Args:
+            run_id: The unique run identifier.
+
+        Returns:
+            The run record, or None if not found.
+        """
+        with self._lock:
+            return self._runs.get(run_id)
+
+    def mark_running(self, run_id: str) -> None:
+        """Transition a pending run to running state.
+
+        Args:
+            run_id: The unique run identifier.
+        """
+        with self._lock:
+            record = self._runs[run_id]
+            record.status = "running"
+            record.started_at = datetime.now(UTC)
+
+    def mark_completed(self, run_id: str, *, result: JsonObject) -> None:
+        """Transition a running run to completed state with its result.
+
+        Args:
+            run_id: The unique run identifier.
+            result: The structured JSON result object from the engine.
+        """
+        with self._lock:
+            record = self._runs[run_id]
+            record.status = "completed"
+            record.finished_at = datetime.now(UTC)
+            record.result = result
+
+    def mark_failed(self, run_id: str, *, error: str) -> None:
+        """Transition a run to failed state with an error message.
+
+        Args:
+            run_id: The unique run identifier.
+            error: Human-readable error description.
+        """
+        with self._lock:
+            record = self._runs[run_id]
+            record.status = "failed"
+            record.finished_at = datetime.now(UTC)
+            record.error = error
+
+
+class RunConflictError(Exception):
+    """Raised when a new run is requested while one is already active.
+
+    Attributes:
+        active_run_id: The ID of the currently active run blocking the request.
+    """
+
+    active_run_id: str
+
+    def __init__(self, active_run_id: str) -> None:
+        """Initialise with the blocking run's ID.
+
+        Args:
+            active_run_id: The ID of the run that is currently active.
+        """
+        super().__init__(f"Run {active_run_id} is already active")
+        self.active_run_id = active_run_id
+
+
+# Module-level singleton for the Phase 1 single-process deployment.
+run_store = RunStore()
+"""Global run store instance shared across the Django process."""
