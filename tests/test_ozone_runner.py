@@ -340,3 +340,38 @@ def test_run_model_bank_smoke_check_emits_application_error_on_discovery_failure
     types = [event.type for event in execution_logger.events()]
     assert "application-error" in types
     assert types[-1] == "run-completed"
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_application_error_on_engine_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Unexpected engine exception emits application-error then re-raises.
+
+    If an exception escapes before any step starts (e.g. from_config raises),
+    the log must still contain an application-error event so the log contract
+    introduced by PR #22 is upheld: run-started is always followed by a
+    terminal event.
+    """
+    from conformance.execution_log import BufferedExecutionLogger
+
+    expected_error = RuntimeError("unexpected engine failure")
+
+    def raise_from_config(_config: ModelBankConfig) -> OzoneModelBankClient:
+        raise expected_error
+
+    monkeypatch.setattr(OzoneModelBankClient, "from_config", raise_from_config)
+    config = ModelBankConfig(
+        environment="ozone-model-bank",
+        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+        result_output_path=Path("results.json"),
+    )
+    execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+
+    with pytest.raises(RuntimeError) as exc_info:
+        run_model_bank_smoke_check(config, execution_logger=execution_logger)
+
+    assert exc_info.value is expected_error
+    types = [event.type for event in execution_logger.events()]
+    assert types[0] == "run-started"
+    assert types[-1] == "application-error"

@@ -39,111 +39,117 @@ def run_model_bank_smoke_check(
     model_bank_client: OzoneModelBankClient | None = client
 
     try:
-        if model_bank_client is None:
-            model_bank_client = OzoneModelBankClient.from_config(config)
-
-        logger_sink.emit(
-            "step-started",
-            step_id="openid-discovery",
-            payload={"url": config.discovery_url},
-        )
         try:
-            discovery_document, discovery_response = model_bank_client.fetch_discovery_document(config.discovery_url)
-        except OzoneClientError as error:
+            if model_bank_client is None:
+                model_bank_client = OzoneModelBankClient.from_config(config)
+
             logger_sink.emit(
-                "application-error",
+                "step-started",
                 step_id="openid-discovery",
-                payload={"message": str(error)},
+                payload={"url": config.discovery_url},
+            )
+            try:
+                discovery_document, discovery_response = model_bank_client.fetch_discovery_document(
+                    config.discovery_url
+                )
+            except OzoneClientError as error:
+                logger_sink.emit(
+                    "application-error",
+                    step_id="openid-discovery",
+                    payload={"message": str(error)},
+                )
+                steps.append(
+                    StepResult(
+                        name="openid-discovery",
+                        status="failed",
+                        message=str(error),
+                        url=config.discovery_url,
+                    )
+                )
+                logger_sink.emit(
+                    "step-completed",
+                    step_id="openid-discovery",
+                    payload={"status": "failed", "message": str(error)},
+                )
+                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+
+            logger_sink.emit(
+                "response-received",
+                step_id="openid-discovery",
+                payload={"statusCode": discovery_response.status_code, "url": discovery_response.url},
             )
             steps.append(
                 StepResult(
                     name="openid-discovery",
-                    status="failed",
-                    message=str(error),
-                    url=config.discovery_url,
+                    status="passed",
+                    message="Fetched OpenID discovery document",
+                    url=discovery_response.url,
+                    status_code=discovery_response.status_code,
+                    details={"issuer": discovery_document.issuer, "jwksUri": discovery_document.jwks_uri},
                 )
             )
             logger_sink.emit(
                 "step-completed",
                 step_id="openid-discovery",
-                payload={"status": "failed", "message": str(error)},
+                payload={"status": "passed", "statusCode": discovery_response.status_code},
             )
-            return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
 
-        logger_sink.emit(
-            "response-received",
-            step_id="openid-discovery",
-            payload={"statusCode": discovery_response.status_code, "url": discovery_response.url},
-        )
-        steps.append(
-            StepResult(
-                name="openid-discovery",
-                status="passed",
-                message="Fetched OpenID discovery document",
-                url=discovery_response.url,
-                status_code=discovery_response.status_code,
-                details={"issuer": discovery_document.issuer, "jwksUri": discovery_document.jwks_uri},
-            )
-        )
-        logger_sink.emit(
-            "step-completed",
-            step_id="openid-discovery",
-            payload={"status": "passed", "statusCode": discovery_response.status_code},
-        )
+            if config.follow_up_mode == "discovery_only":
+                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
 
-        if config.follow_up_mode == "discovery_only":
-            return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+            logger_sink.emit("step-started", step_id="jwks", payload={"url": discovery_document.jwks_uri})
+            try:
+                jwks_response = model_bank_client.fetch_jwks(discovery_document.jwks_uri)
+            except OzoneClientError as error:
+                logger_sink.emit(
+                    "application-error",
+                    step_id="jwks",
+                    payload={"message": str(error)},
+                )
+                steps.append(
+                    StepResult(
+                        name="jwks",
+                        status="failed",
+                        message=str(error),
+                        url=discovery_document.jwks_uri,
+                    )
+                )
+                logger_sink.emit(
+                    "step-completed",
+                    step_id="jwks",
+                    payload={"status": "failed", "message": str(error)},
+                )
+                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
 
-        logger_sink.emit("step-started", step_id="jwks", payload={"url": discovery_document.jwks_uri})
-        try:
-            jwks_response = model_bank_client.fetch_jwks(discovery_document.jwks_uri)
-        except OzoneClientError as error:
+            keys = jwks_response.body.get("keys")
+            key_count = len(keys) if isinstance(keys, list) else 0
             logger_sink.emit(
-                "application-error",
+                "response-received",
                 step_id="jwks",
-                payload={"message": str(error)},
+                payload={"statusCode": jwks_response.status_code, "url": jwks_response.url},
             )
             steps.append(
                 StepResult(
                     name="jwks",
-                    status="failed",
-                    message=str(error),
-                    url=discovery_document.jwks_uri,
+                    status="passed",
+                    message="Fetched JWKS document",
+                    url=jwks_response.url,
+                    status_code=jwks_response.status_code,
+                    details={"keyCount": key_count},
                 )
             )
             logger_sink.emit(
                 "step-completed",
                 step_id="jwks",
-                payload={"status": "failed", "message": str(error)},
+                payload={"status": "passed", "statusCode": jwks_response.status_code, "keyCount": key_count},
             )
             return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
-
-        keys = jwks_response.body.get("keys")
-        key_count = len(keys) if isinstance(keys, list) else 0
-        logger_sink.emit(
-            "response-received",
-            step_id="jwks",
-            payload={"statusCode": jwks_response.status_code, "url": jwks_response.url},
-        )
-        steps.append(
-            StepResult(
-                name="jwks",
-                status="passed",
-                message="Fetched JWKS document",
-                url=jwks_response.url,
-                status_code=jwks_response.status_code,
-                details={"keyCount": key_count},
-            )
-        )
-        logger_sink.emit(
-            "step-completed",
-            step_id="jwks",
-            payload={"status": "passed", "statusCode": jwks_response.status_code, "keyCount": key_count},
-        )
-        return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
-    finally:
-        if owns_client and model_bank_client is not None:
-            model_bank_client.close()
+        finally:
+            if owns_client and model_bank_client is not None:
+                model_bank_client.close()
+    except Exception as error:
+        logger_sink.emit("application-error", payload={"message": str(error)})
+        raise
 
 
 def _finalise(
