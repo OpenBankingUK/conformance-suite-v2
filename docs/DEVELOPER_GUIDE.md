@@ -172,13 +172,13 @@ Every CLI and REST API run produces a structured **execution log** in [NDJSON](h
 | Type | Emitted when |
 | --- | --- |
 | `run-started` | First event of every run. |
-| `run-completed` | Last event; `payload.summary` carries the aggregate counts. |
+| `run-completed` | Last event of a normal run; `payload.summary` carries the aggregate counts. Not emitted when the engine crashes — see `application-error`. |
 | `step-started` / `step-completed` | Per-step bracket. |
 | `request-sent` | Before each outbound HTTP request, with the masked request evidence. |
 | `response-received` | After each HTTP response (status code + URL only; bodies are captured in the result file, not duplicated in the log). |
 | `assertion-evaluated` | One event per declared assertion (re-read from `details.assertions`; never re-evaluated). |
 | `placeholder-error` | Manifest placeholder could not be resolved (`payload.location` is `url` / `headers` / `body`, or `reason: "missing-predecessor-response"` for skipped steps). |
-| `application-error` | Transport failure or other engine-side exception. |
+| `application-error` | Transport failure or other engine-side exception. Step-scoped occurrences (with a `step_id`) are non-terminal — the run continues and `run-completed` is still emitted. A top-level occurrence (no `step_id`) is terminal: the engine re-raises immediately afterwards and `run-completed` will not appear. |
 
 **Masking:** every payload flows through `conformance.masking` before being buffered. Sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, `X-FAPI-Financial-Id`, …) and credential-bearing JSON/form keys (`access_token`, `id_token`, `client_secret`, `code`, `client_assertion`, `password`, `private_key`, …) are replaced with the literal `"***"`. Match is case-insensitive; key casing is preserved verbatim. Replacement length is constant by design — original lengths are not preserved to avoid leaking entropy.
 
