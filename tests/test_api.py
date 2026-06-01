@@ -390,3 +390,53 @@ class TestLoopbackGuard:
         # POST on the GET-only status endpoint.
         response = client.post("/api/runs/some-id/")
         assert response.status_code == 403
+
+
+# ─── Run-log endpoint ─────────────────────────────────────────────────────
+
+
+@pytest.mark.integration
+class TestGetRunLogEndpoint:
+    """``GET /api/runs/<id>/log/`` exposes the structured execution log."""
+
+    def test_returns_404_for_unknown_id(self) -> None:
+        """Unknown run IDs yield 404 with no log content."""
+        client = Client()
+        response = client.get("/api/runs/nonexistent/log/")
+        assert response.status_code == 404
+
+    def test_returns_ndjson_for_known_run(self) -> None:
+        """The endpoint streams ``application/x-ndjson`` with one JSON object per line."""
+        client = Client()
+        record = run_store.create_run()
+        # Emit a couple of events into the live buffer attached to the run.
+        assert record.execution_logger is not None
+        record.execution_logger.emit("run-started")
+        record.execution_logger.emit("run-completed", payload={"summary": {"total": 0}})
+
+        response = client.get(f"/api/runs/{record.run_id}/log/")
+        assert response.status_code == 200
+        assert response["Content-Type"] == "application/x-ndjson"
+        lines = response.content.decode("utf-8").rstrip("\n").split("\n")
+        parsed = [json.loads(line) for line in lines]
+        assert [event["type"] for event in parsed] == ["run-started", "run-completed"]
+        assert all(event["runId"] == record.run_id for event in parsed)
+
+    def test_returns_partial_log_for_in_progress_run(self) -> None:
+        """An in-flight run returns the events buffered so far (decision in plan)."""
+        client = Client()
+        record = run_store.create_run()
+        assert record.execution_logger is not None
+        record.execution_logger.emit("run-started")
+        # Do NOT mark the run completed; the log should still be readable.
+
+        response = client.get(f"/api/runs/{record.run_id}/log/")
+        assert response.status_code == 200
+        body = response.content.decode("utf-8").rstrip("\n")
+        assert len(body.split("\n")) == 1
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        """The loopback guard applies to the log endpoint too."""
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        response = client.get("/api/runs/some-id/log/")
+        assert response.status_code == 403

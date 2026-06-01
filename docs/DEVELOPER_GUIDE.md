@@ -157,3 +157,33 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 ```bash
 DJANGO_SECRET_KEY="my-local-key" DJANGO_ALLOWED_HOSTS="localhost" make docker  # pragma: allowlist secret
 ```
+
+## Structured Execution Log
+
+Every CLI and REST API run produces a structured **execution log** in [NDJSON](https://github.com/ndjson/ndjson-spec) format alongside the result file. One JSON object per line, streamable, tail-friendly, and partial-read safe — a truncated file is still parseable up to the last complete line.
+
+**Where it goes:**
+
+- CLI: `executionLogPath` in the model-bank config (default `out/execution-log.ndjson`, anchored at the same output base as `resultOutputPath`). Atomic write via `NamedTemporaryFile` + `os.replace` — a crash mid-flush leaves the prior log (or nothing) on disk, never a half-written file. Exit code `3` on write failure, same as the result file.
+- REST API: `GET /api/runs/<id>/log/` returns `application/x-ndjson`. Loopback-guarded like every other API endpoint. Safe to poll on an in-flight run — the response is a snapshot of the buffer at request time.
+
+**Event taxonomy** (`type` field, closed set):
+
+| Type | Emitted when |
+| --- | --- |
+| `run-started` | First event of every run. |
+| `run-completed` | Last event; `payload.summary` carries the aggregate counts. |
+| `step-started` / `step-completed` | Per-step bracket. |
+| `request-sent` | Before each outbound HTTP request, with the masked request evidence. |
+| `response-received` | After each HTTP response (status code + URL only; bodies are captured in the result file, not duplicated in the log). |
+| `assertion-evaluated` | One event per declared assertion (re-read from `details.assertions`; never re-evaluated). |
+| `placeholder-error` | Manifest placeholder could not be resolved (`payload.location` is `url` / `headers` / `body`, or `reason: "missing-predecessor-response"` for skipped steps). |
+| `application-error` | Transport failure or other engine-side exception. |
+
+**Masking:** every payload flows through `conformance.masking` before being buffered. Sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, `X-FAPI-Financial-Id`, …) and credential-bearing JSON/form keys (`access_token`, `id_token`, `client_secret`, `code`, `client_assertion`, `password`, `private_key`, …) are replaced with the literal `"***"`. Match is case-insensitive; key casing is preserved verbatim. Replacement length is constant by design — original lengths are not preserved to avoid leaking entropy.
+
+**Developer mode (`CONFORMANCE_DEVELOPER_MODE=true`):**
+
+- Disables masking so the buffered events round-trip unchanged.
+- Logs a prominent `WARN` line at startup: this is the **only** in-process protection — never set this in release builds, never set this on shared infrastructure, never set this when running against real Open Banking participant data.
+- Intended for local engineering debugging of the engine itself, not for participants diagnosing their own implementations.

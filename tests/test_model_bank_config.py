@@ -226,3 +226,47 @@ def test_parse_model_bank_config_rejects_malformed_hostname_discovery_url(discov
             {"environment": "ozone-model-bank", "discoveryUrl": discovery_url},
             base_dir=tmp_path,
         )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_defaults_execution_log_path(tmp_path: Path) -> None:
+    """``executionLogPath`` defaults to ``out/execution-log.ndjson`` under output_base_dir."""
+    config = parse_model_bank_config(
+        {
+            "environment": "env",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+        output_base_dir=tmp_path,
+    )
+    assert config.execution_log_path == tmp_path / "out" / "execution-log.ndjson"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_explicit_execution_log_path(tmp_path: Path) -> None:
+    """An explicit ``executionLogPath`` overrides the default."""
+    config = parse_model_bank_config(
+        {
+            "environment": "env",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "executionLogPath": "logs/run.ndjson",
+        },
+        base_dir=tmp_path,
+        output_base_dir=tmp_path,
+    )
+    assert config.execution_log_path == tmp_path / "logs" / "run.ndjson"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_unknown_top_level_key(tmp_path: Path) -> None:
+    """Unknown top-level keys are still rejected after adding executionLogPath."""
+    with pytest.raises(ConfigError, match="Unknown config field"):
+        parse_model_bank_config(
+            {
+                "environment": "env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "executionLog": "logs/run.ndjson",
+            },
+            base_dir=tmp_path,
+            output_base_dir=tmp_path,
+        )

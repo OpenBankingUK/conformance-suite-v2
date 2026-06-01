@@ -8,6 +8,7 @@ import logging
 from collections.abc import Sequence
 from pathlib import Path
 
+from conformance.execution_log import BufferedExecutionLogger, new_run_id, warn_if_developer_mode
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest
@@ -25,7 +26,8 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     Returns:
         Process-style exit code: 0 for pass, 1 for conformance failure, 2 for
-        invalid input, and 3 when the structured result cannot be written.
+        invalid input, and 3 when the structured result or execution log
+        cannot be written.
     """
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
@@ -35,14 +37,18 @@ def run(argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 2
 
+    warn_if_developer_mode()
+
     try:
         config = load_model_bank_config(args.config)
     except ConfigError as error:
         logger.error("Config error: %s", error)
         return 2
 
+    execution_logger = BufferedExecutionLogger(run_id=new_run_id())
+
     if args.manifest is None:
-        result = run_model_bank_smoke_check(config)
+        result = run_model_bank_smoke_check(config, execution_logger=execution_logger)
     else:
         try:
             manifest = load_manifest(args.manifest)
@@ -57,7 +63,12 @@ def run(argv: Sequence[str] | None = None) -> int:
             client_private_key_path=config.tls.client_private_key_path,
         )
         try:
-            result = run_manifest(manifest, environment=config.environment, client=http_client)
+            result = run_manifest(
+                manifest,
+                environment=config.environment,
+                client=http_client,
+                execution_logger=execution_logger,
+            )
         finally:
             http_client.close()
     try:
@@ -70,10 +81,26 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Unable to write result to %s: %s", config.result_output_path, error)
         return 3
 
+    try:
+        execution_logger.flush_to_path(config.execution_log_path)
+    except OSError as error:
+        logger.error("Unable to write execution log to %s: %s", config.execution_log_path, error)
+        return 3
+
     run_label = f"Manifest run ({args.manifest})" if args.manifest else "Model-bank smoke check"
     if result.status == "passed":
-        logger.info("%s passed; wrote %s", run_label, config.result_output_path)
+        logger.info(
+            "%s passed; wrote %s and %s",
+            run_label,
+            config.result_output_path,
+            config.execution_log_path,
+        )
         return 0
 
-    logger.error("%s failed; wrote %s", run_label, config.result_output_path)
+    logger.error(
+        "%s failed; wrote %s and %s",
+        run_label,
+        config.result_output_path,
+        config.execution_log_path,
+    )
     return 1

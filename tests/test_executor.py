@@ -1757,3 +1757,109 @@ def test_run_manifest_v0_eligibility_block_reports_no_mandatory_steps() -> None:
     assert block["eligible"] is False
     assert block["mandatoryTotal"] == 0
     assert "No mandatory steps" in str(block["reason"])
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
+    """v0 manifest run emits run-started, step events for primary + follow-up, then run-completed."""
+    from conformance.execution_log import BufferedExecutionLogger
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        return httpx.Response(200, json={"keys": [{"kid": "k"}]})
+
+    manifest = parse_manifest(manifest_config())
+    execution_logger = BufferedExecutionLogger(run_id="run-x", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger)
+
+    events = execution_logger.events()
+    types = [event.type for event in events]
+    assert types[0] == "run-started"
+    assert types[-1] == "run-completed"
+    assert "request-sent" in types
+    assert "response-received" in types
+    assert "assertion-evaluated" in types
+    assert types.count("step-started") == 2
+    assert types.count("step-completed") == 2
+
+
+@pytest.mark.unit
+def test_run_manifest_request_sent_masks_authorization_header() -> None:
+    """request-sent event masks Authorization header values by default."""
+    from conformance.execution_log import BufferedExecutionLogger
+    from conformance.manifest import parse_manifest as parse_v1
+
+    v1_manifest = parse_v1(
+        {
+            "schemaVersion": "v1",
+            "name": "auth-header",
+            "steps": [
+                {
+                    "id": "discovery",
+                    "name": "discovery",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://modelbank.example.com/x",
+                        "headers": {"Authorization": "Bearer super-secret"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+
+    request_events = [event for event in execution_logger.events() if event.type == "request-sent"]
+    assert len(request_events) == 1
+    headers = request_events[0].payload["headers"]
+    assert isinstance(headers, dict)
+    assert headers["Authorization"] == "***"
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_placeholder_error_event() -> None:
+    """Unresolvable placeholder produces a placeholder-error event for the failing step."""
+    from conformance.execution_log import BufferedExecutionLogger
+    from conformance.manifest import parse_manifest as parse_v1
+
+    v1_manifest = parse_v1(
+        {
+            "schemaVersion": "v1",
+            "name": "ph",
+            "steps": [
+                {
+                    "id": "discovery",
+                    "name": "discovery",
+                    "request": {"method": "GET", "url": "https://x.example.com/d"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "broken",
+                    "name": "broken",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://x.example.com/${steps.discovery.response.body.missing}",
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+    )
+
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+
+    types = [event.type for event in execution_logger.events()]
+    assert "placeholder-error" in types

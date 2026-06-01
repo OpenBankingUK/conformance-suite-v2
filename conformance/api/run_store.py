@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Literal
 
+from conformance.execution_log import BufferedExecutionLogger
 from conformance.json_types import JsonObject
 
 RunStatus = Literal["pending", "running", "completed", "failed"]
@@ -45,6 +46,10 @@ class RunRecord:
         finished_at: UTC timestamp when execution ended, or None.
         result: Structured JSON result object, populated on completion.
         error: Human-readable error message if the run failed internally.
+        execution_logger: Per-run structured execution log buffer. The
+            engine appends events here during the run; the API exposes
+            the buffer's bytes via the run-log endpoint. ``None`` only
+            for legacy fixtures that don't exercise the engine path.
     """
 
     run_id: str
@@ -54,6 +59,7 @@ class RunRecord:
     finished_at: datetime | None = None
     result: JsonObject | None = None
     error: str | None = None
+    execution_logger: BufferedExecutionLogger | None = None
 
     def to_status_json(self) -> JsonObject:
         """Serialise the run record into the public status JSON shape.
@@ -105,6 +111,7 @@ class RunStore:
                 run_id=run_id,
                 status="pending",
                 created_at=datetime.now(UTC),
+                execution_logger=BufferedExecutionLogger(run_id=run_id),
             )
             self._runs[run_id] = record
             self._active_run_id = run_id
@@ -123,6 +130,25 @@ class RunStore:
         with self._lock:
             record = self._runs.get(run_id)
             return dataclasses.replace(record) if record is not None else None
+
+    def get_run_log_bytes(self, run_id: str) -> bytes | None:
+        """Snapshot the run's execution log as NDJSON bytes.
+
+        Safe to call on in-progress runs; the returned snapshot reflects
+        all events buffered up to this call.
+
+        Args:
+            run_id: The unique run identifier.
+
+        Returns:
+            The NDJSON-encoded log bytes, or ``None`` if the run ID is
+            unknown or the record has no attached logger.
+        """
+        with self._lock:
+            record = self._runs.get(run_id)
+            if record is None or record.execution_logger is None:
+                return None
+            return record.execution_logger.to_ndjson_bytes()
 
     def mark_running(self, run_id: str) -> None:
         """Transition a pending run to running state.

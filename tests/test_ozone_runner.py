@@ -286,3 +286,57 @@ def test_run_model_bank_smoke_check_rejects_ip_literal_and_malformed_hostname(
     assert result.steps[0].name == "openid-discovery"
     assert result.steps[0].status == "failed"
     assert result.steps[0].message == expected_message
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_event_sequence_on_success() -> None:
+    """Successful run emits run-started, step-started/response/step-completed pairs, then run-completed."""
+    from conformance.execution_log import BufferedExecutionLogger
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url).endswith("openid-configuration"):
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        return httpx.Response(200, json={"keys": [{"kid": "k"}]})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="env",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("r.json"),
+        )
+        execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+        run_model_bank_smoke_check(config, client=client, execution_logger=execution_logger)
+
+    types = [event.type for event in execution_logger.events()]
+    assert types[0] == "run-started"
+    assert types[-1] == "run-completed"
+    assert types.count("step-started") == 2
+    assert types.count("step-completed") == 2
+    assert types.count("response-received") == 2
+
+
+@pytest.mark.unit
+def test_run_model_bank_smoke_check_emits_application_error_on_discovery_failure() -> None:
+    """Discovery transport failure emits an application-error event."""
+    from conformance.execution_log import BufferedExecutionLogger
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(500))) as http_client:
+        client = OzoneModelBankClient(http_client)
+        config = ModelBankConfig(
+            environment="env",
+            discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+            result_output_path=Path("r.json"),
+        )
+        execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+        run_model_bank_smoke_check(config, client=client, execution_logger=execution_logger)
+
+    types = [event.type for event in execution_logger.events()]
+    assert "application-error" in types
+    assert types[-1] == "run-completed"
