@@ -187,3 +187,49 @@ Every CLI and REST API run produces a structured **execution log** in [NDJSON](h
 - Disables masking so the buffered events round-trip unchanged.
 - Logs a prominent `WARN` line at startup: this is the **only** in-process protection — never set this in release builds, never set this on shared infrastructure, never set this when running against real Open Banking participant data.
 - Intended for local engineering debugging of the engine itself, not for participants diagnosing their own implementations.
+
+## Test Plans and Step Deselection
+
+Every v1 manifest run executes against a **test plan** — an ordered, immutable list of plan entries that pairs each manifest `step.id` with a `selected: bool`. Plans are first-class engine values (`conformance.test_plan.TestPlan`); the runner never inspects raw manifests for selection. (v0 manifests have no plan support and always run every step.)
+
+**Default plan.** Calling `TestPlan.default_plan_from_manifest(manifest)` returns a plan that selects every step the manifest declares as either `mandatory: true` *or* not `optional: true`. In other words, mandatory and "ordinary" steps are pre-selected; only steps explicitly tagged `"optional": true` are pre-deselected. This satisfies PRD Participant Story #4 (*"mandatory tests pre-populated by default, so I don't have to manually configure every run"*) and OBL Standards Story #3 (*"mandatory tests defined in configuration per spec version and standard, not hardcoded"*).
+
+**Deselection.** `plan.with_deselection([step_ids])` returns a new immutable plan with the named ids flipped to `selected=False`. Unknown ids raise `ValueError` at call time — invalid deselections never reach the executor. Deselected steps **do not run** and **do not produce a `StepResult`**; "deselected" is not the same as the `skipped` outcome (which means a prerequisite failed). A single `step-deselected` execution-log event is emitted per deselected entry before the first `step-started`, so a log consumer can derive the plan-vs-manifest delta without scanning the full run.
+
+**CLI:**
+
+```sh
+python -m conformance.cli config.json \
+    --manifest manifest.json \
+    --deselect step-id-a \
+    --deselect step-id-b
+```
+
+`--deselect` is repeatable, requires `--manifest`, and exits with code `2` for either condition (no manifest, or an unknown id).
+
+**REST API:**
+
+```jsonc
+POST /api/runs/
+{
+  "config":   { ... },
+  "manifest": { "schemaVersion": "v1", ... },
+  "deselectStepIds": ["step-id-a", "step-id-b"]   // optional
+}
+```
+
+`deselectStepIds` must be an array of strings, requires an inline `manifest`, and is rejected with HTTP 400 if any id is unknown.
+
+**Result file additions.** When a plan is supplied (CLI manifest mode and any REST run), the result JSON gains a top-level `plan` block:
+
+```json
+"plan": {
+  "totalSteps": 5,
+  "selectedSteps": 4,
+  "deselectedSteps": 1,
+  "mandatorySelected": 2,
+  "mandatoryDeselected": 1
+}
+```
+
+`certificationEligibility` gains two related fields: `mandatoryDeselected` (count) and `mandatoryDeselectedStepIds` (ordered list). Whenever `mandatoryDeselected > 0` the run is **not eligible** and the dedicated reason `"Mandatory steps were deselected from the plan"` takes precedence over every other failure reason — a mandatory step that never ran cannot demonstrate coverage, regardless of why.

@@ -29,6 +29,10 @@ dev = [
 [tool.pytest.ini_options]
 # Required: without this, pytest-django can't start Django and all tests crash.
 DJANGO_SETTINGS_MODULE = "config.settings"
+# Explicit testpaths so pytest does not collect ``conformance/test_plan.py``
+# (the first-class TestPlan model module — its filename starts with ``test_``
+# but it is production code, not a test module).
+testpaths = ["tests"]
 markers = [
     "unit: fast, isolated unit tests",
     "integration: tests requiring Django test client or DB",

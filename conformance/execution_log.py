@@ -19,7 +19,7 @@ release artefact's only protection).
 
 Event taxonomy (``type`` field):
     run-started, run-completed,
-    step-started, step-completed,
+    step-started, step-completed, step-deselected,
     request-sent, response-received,
     assertion-evaluated,
     placeholder-error, application-error.
@@ -49,6 +49,7 @@ EventType = Literal[
     "run-completed",
     "step-started",
     "step-completed",
+    "step-deselected",
     "request-sent",
     "response-received",
     "assertion-evaluated",

@@ -145,3 +145,13 @@ uv run pytest -p no:django -m e2e
 | Critical security paths | 100% (enforced via `# pragma: no cover` policy) |
 
 Coverage is enforced via `fail_under = 80` in `[tool.coverage.report]` in `pyproject.toml`. Reports are uploaded as CI artifacts.
+
+## TestPlan / Mandatory-Deselection Cases
+
+The `TestPlan` model (PRD Participant Story #4) introduces three behaviours that **must** stay covered by the unit suite:
+
+- **Default plan from a v1 manifest** — every mandatory or non-optional step is `selected=True`; explicitly optional steps are `selected=False`. v0 manifests yield an empty plan (no selection concept exists pre-v1). See `tests/test_test_plan.py`.
+- **Deselection semantics** — `with_deselection()` is idempotent, raises `ValueError` for unknown step ids, and never mutates the receiver. The executor must skip deselected steps without producing a `StepResult` and must emit exactly one `step-deselected` log event per deselected entry **before** any `step-started`. See `tests/test_executor.py` (`TestPlan deselection` section).
+- **Mandatory-deselection eligibility** — whenever the plan reports `mandatoryDeselected > 0`, `certificationEligibility.eligible` must be `false` with reason `"Mandatory steps were deselected from the plan"`, taking precedence over `"No mandatory steps declared"`, failed-step, and skipped-step reasons. The top-level `plan` block must surface stable counts (`totalSteps`, `selectedSteps`, `deselectedSteps`, `mandatorySelected`, `mandatoryDeselected`). See `tests/test_results.py`.
+
+The CLI and REST surfaces are covered by `tests/test_cli.py` (`--deselect` flag) and `tests/test_api.py` (`deselectStepIds` field) — both assert input validation (unknown ids, missing manifest) and a successful happy path.

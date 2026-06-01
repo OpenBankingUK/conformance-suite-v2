@@ -7,9 +7,12 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from conformance.json_types import JsonObject, JsonValue
+
+if TYPE_CHECKING:
+    from conformance.test_plan import TestPlan
 
 CheckStatus = Literal["passed", "failed", "warn", "skipped"]
 """Outcome values emitted by smoke-check steps and summaries.
@@ -81,6 +84,14 @@ class SmokeCheckResult:
         started_at: UTC timestamp when execution started.
         finished_at: UTC timestamp when execution finished.
         steps: Ordered step results that explain the aggregate outcome.
+        plan_summary: Optional summary of the :class:`TestPlan` that drove
+            this run. Embedded into the JSON report as the top-level
+            ``plan`` block. ``None`` for non-manifest smoke checks and v0
+            manifest runs, which have no plan model.
+        deselected_mandatory_step_ids: Step ids that were declared
+            ``mandatory`` in the manifest but deselected from the plan.
+            Surfaced verbatim in ``certificationEligibility`` so OBL can
+            see exactly which mandatory coverage the participant skipped.
     """
 
     environment: str
@@ -88,6 +99,8 @@ class SmokeCheckResult:
     started_at: datetime
     finished_at: datetime
     steps: tuple[StepResult, ...]
+    plan_summary: Mapping[str, int] | None = None
+    deselected_mandatory_step_ids: tuple[str, ...] = ()
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -95,7 +108,7 @@ class SmokeCheckResult:
         Returns:
             JSON object suitable for serialisation into the result file.
         """
-        return {
+        body: JsonObject = {
             "environment": self.environment,
             "status": self.status,
             "startedAt": self.started_at.isoformat(),
@@ -107,18 +120,35 @@ class SmokeCheckResult:
                 "warn": sum(1 for step in self.steps if step.status == "warn"),
                 "skipped": sum(1 for step in self.steps if step.status == "skipped"),
             },
-            "certificationEligibility": _build_eligibility(self.steps),
+            "certificationEligibility": _build_eligibility(
+                self.steps,
+                deselected_mandatory_step_ids=self.deselected_mandatory_step_ids,
+            ),
             "steps": [step.to_json_object() for step in self.steps],
         }
+        if self.plan_summary is not None:
+            body["plan"] = dict(self.plan_summary)
+        return body
 
 
-def build_smoke_check_result(environment: str, steps: list[StepResult], *, started_at: datetime) -> SmokeCheckResult:
+def build_smoke_check_result(
+    environment: str,
+    steps: list[StepResult],
+    *,
+    started_at: datetime,
+    plan: TestPlan | None = None,
+) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
     Args:
         environment: Environment name copied from the input config.
         steps: Ordered mutable list of step outcomes collected by the runner.
         started_at: UTC timestamp captured before execution began.
+        plan: Optional :class:`TestPlan` that drove this run. When supplied,
+            its summary is embedded as the report's top-level ``plan`` block
+            and its deselected-mandatory step ids feed into
+            ``certificationEligibility``. Omit for non-manifest smoke checks
+            and v0 manifest runs.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -129,16 +159,27 @@ def build_smoke_check_result(environment: str, steps: list[StepResult], *, start
     # Only FAILED and SKIPPED (which always implies an earlier failure) fail
     # the run.
     status: CheckStatus = "passed" if all(step.status in {"passed", "warn"} for step in steps) else "failed"
+    plan_summary: Mapping[str, int] | None = None
+    deselected_mandatory: tuple[str, ...] = ()
+    if plan is not None:
+        plan_summary = plan.summary()
+        deselected_mandatory = tuple(plan.deselected_mandatory_step_ids())
     return SmokeCheckResult(
         environment=environment,
         status=status,
         started_at=started_at,
         finished_at=finished_at,
         steps=tuple(steps),
+        plan_summary=plan_summary,
+        deselected_mandatory_step_ids=deselected_mandatory,
     )
 
 
-def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
+def _build_eligibility(
+    steps: tuple[StepResult, ...],
+    *,
+    deselected_mandatory_step_ids: tuple[str, ...] = (),
+) -> JsonObject:
     """Build the ``certificationEligibility`` block for the result file.
 
     Implements the PRD's Certification Eligibility Assessment for Phase 1: a
@@ -155,6 +196,10 @@ def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
         * ``failed`` and ``skipped`` on a mandatory step block eligibility.
           ``skipped`` always implies an earlier failure, so it is treated as
           blocking by definition.
+        * Deselecting a mandatory step from the test plan also blocks
+          eligibility and takes precedence over every other reason — a run
+          that never executed a mandatory step cannot demonstrate coverage
+          of it, regardless of why.
         * A run with no mandatory steps cannot certify — the PRD
           requires *"all mandatory tests were included in the run"*, so
           zero mandatory steps is treated as "not a certification
@@ -169,33 +214,46 @@ def _build_eligibility(steps: tuple[StepResult, ...]) -> JsonObject:
 
     Args:
         steps: Ordered step results from the smoke-check run.
+        deselected_mandatory_step_ids: Ids of manifest steps that were
+            declared mandatory but deselected from the plan. Sourced from
+            :meth:`TestPlan.deselected_mandatory_step_ids`. Empty when
+            no plan was supplied to :func:`build_smoke_check_result`.
 
     Returns:
         JSON object containing the boolean ``eligible`` flag, per-status
-        mandatory counts, and a ``reason`` string when not eligible (omitted
-        when eligible).
+        mandatory counts, ``mandatoryDeselected`` count and
+        ``mandatoryDeselectedStepIds`` list, and a ``reason`` string when
+        not eligible (omitted when eligible).
     """
     mandatory_steps = [step for step in steps if step.mandatory]
     mandatory_passed = sum(1 for step in mandatory_steps if step.status == "passed")
     mandatory_failed = sum(1 for step in mandatory_steps if step.status == "failed")
     mandatory_warn = sum(1 for step in mandatory_steps if step.status == "warn")
     mandatory_skipped = sum(1 for step in mandatory_steps if step.status == "skipped")
+    mandatory_deselected = len(deselected_mandatory_step_ids)
 
     counts: JsonObject = {
-        "mandatoryTotal": len(mandatory_steps),
+        "mandatoryTotal": len(mandatory_steps) + mandatory_deselected,
         "mandatoryPassed": mandatory_passed,
         "mandatoryFailed": mandatory_failed,
         "mandatoryWarn": mandatory_warn,
         "mandatorySkipped": mandatory_skipped,
+        "mandatoryDeselected": mandatory_deselected,
+        "mandatoryDeselectedStepIds": list(deselected_mandatory_step_ids),
     }
 
     reason: str | None
-    if not mandatory_steps:
-        reason = "No mandatory steps declared"
+    # Precedence: deselected-mandatory beats every other reason because the
+    # step never ran and therefore cannot demonstrate coverage. Then failed,
+    # then skipped, then "no mandatory declared".
+    if mandatory_deselected:
+        reason = "Mandatory steps were deselected from the plan"
     elif mandatory_failed:
         reason = f"{mandatory_failed} mandatory step(s) failed"
     elif mandatory_skipped:
         reason = f"{mandatory_skipped} mandatory step(s) skipped due to earlier failures"
+    elif not mandatory_steps:
+        reason = "No mandatory steps declared"
     else:
         reason = None
 

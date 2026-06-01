@@ -33,6 +33,7 @@ from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
+from conformance.test_plan import TestPlan
 
 if TYPE_CHECKING:
     from conformance.manifest import Manifest
@@ -128,8 +129,12 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     The request body must be a JSON object with a required ``config`` key
     (model-bank config object) and an optional ``manifest`` key (v0/v1
-    manifest object). The run executes asynchronously in a background
-    thread; the response returns immediately with the run ID and status.
+    manifest object). When ``manifest`` is supplied, an optional
+    ``deselectStepIds`` array of step ids may be supplied; each id is
+    validated against the manifest at request time and any unknown id
+    returns HTTP 400. ``deselectStepIds`` without ``manifest`` is rejected.
+    The run executes asynchronously in a background thread; the response
+    returns immediately with the run ID and status.
 
     CSRF is exempt because this is an unauthenticated API designed for
     programmatic/CI access (PRD Phase 1). No browser session is involved.
@@ -165,6 +170,19 @@ def create_run(request: HttpRequest) -> JsonResponse:
     if raw_manifest is not None and not isinstance(raw_manifest, dict):
         return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
 
+    raw_deselect = body.get("deselectStepIds")
+    if raw_deselect is not None:
+        if raw_manifest is None:
+            return JsonResponse(
+                {"error": '"deselectStepIds" is only valid alongside an inline "manifest"'},
+                status=400,
+            )
+        if not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect):
+            return JsonResponse(
+                {"error": '"deselectStepIds" must be an array of strings'},
+                status=400,
+            )
+
     # Validate config eagerly so the caller gets immediate feedback.
     # base_dir anchors relative TLS certificate paths in the request body to
     # the Django process CWD (set by the Docker entrypoint). Path traversal
@@ -176,11 +194,21 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     # Validate manifest eagerly if provided.
     manifest = None
+    plan: TestPlan | None = None
     if raw_manifest is not None:
         try:
             manifest = load_manifest_from_object(raw_manifest)
         except ManifestError as error:
             return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
+
+        # Build the default plan, then narrow via deselection. ValueError
+        # from with_deselection means the caller named an unknown step —
+        # surface as 400 so the participant can correct the request rather
+        # than discover the typo after the run starts.
+        try:
+            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(raw_deselect or [])
+        except ValueError as error:
+            return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
 
     try:
         record = run_store.create_run()
@@ -195,7 +223,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
-        args=(record.run_id, config, manifest),
+        args=(record.run_id, config, manifest, plan),
         daemon=True,
     )
     # Snapshot the pending state before starting the thread to avoid a
@@ -283,7 +311,12 @@ def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
     return HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
 
 
-def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None) -> None:
+def _execute_run(
+    run_id: str,
+    config: ModelBankConfig,
+    manifest: Manifest | None,
+    plan: TestPlan | None,
+) -> None:
     """Execute a conformance run in a background thread.
 
     Transitions the run record through running → completed/failed.
@@ -292,6 +325,9 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None
         run_id: The run identifier to update in the store.
         config: Validated model-bank configuration.
         manifest: Parsed manifest object, or None for a smoke-check run.
+        plan: Optional :class:`TestPlan` derived from ``manifest`` with any
+            caller-supplied deselections already applied. Must be ``None``
+            when ``manifest`` is ``None``.
     """
     run_store.mark_running(run_id)
     try:
@@ -315,6 +351,7 @@ def _execute_run(run_id: str, config: ModelBankConfig, manifest: Manifest | None
                     environment=config.environment,
                     client=http_client,
                     execution_logger=logger_sink,
+                    plan=plan,
                 )
             finally:
                 http_client.close()

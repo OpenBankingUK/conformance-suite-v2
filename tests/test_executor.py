@@ -1908,3 +1908,136 @@ def test_run_manifest_emits_application_error_on_unexpected_engine_exception(
     types = [event.type for event in execution_logger.events()]
     assert types[0] == "run-started"
     assert types[-1] == "application-error"
+
+
+# ─── TestPlan deselection ────────────────────────────────────────────────────
+
+
+def _plan_v1_manifest() -> dict[str, JsonValue]:
+    """Return a small v1 manifest with one mandatory and one non-mandatory step."""
+    return cast(
+        "dict[str, JsonValue]",
+        {
+            "schemaVersion": "v1",
+            "name": "plan-test",
+            "steps": [
+                {
+                    "id": "mandatory-step",
+                    "name": "Mandatory step",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/a"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "optional-step",
+                    "name": "Optional step",
+                    "request": {"method": "GET", "url": "https://example.com/b"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        },
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_deselected_step_does_not_run_or_produce_result() -> None:
+    """A deselected step is silently absent from results and never fetched."""
+    from conformance.test_plan import TestPlan
+
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(_plan_v1_manifest())
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["optional-step"])
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+
+    assert requested == ["https://example.com/a"]
+    assert [step.name for step in result.steps] == ["mandatory-step"]
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_step_deselected_before_step_started() -> None:
+    """One ``step-deselected`` event per deselected step, before any ``step-started``."""
+    from conformance.execution_log import BufferedExecutionLogger
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(_plan_v1_manifest())
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["optional-step"])
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger, plan=plan)
+
+    types = [event.type for event in execution_logger.events()]
+    assert types[0] == "run-started"
+    assert types[-1] == "run-completed"
+    deselected_index = types.index("step-deselected")
+    step_started_index = types.index("step-started")
+    assert deselected_index < step_started_index
+
+    deselected_events = [event for event in execution_logger.events() if event.type == "step-deselected"]
+    assert len(deselected_events) == 1
+    assert deselected_events[0].step_id == "optional-step"
+    assert deselected_events[0].payload == {"mandatory": False}
+
+
+@pytest.mark.unit
+def test_run_manifest_default_plan_when_none_passed_preserves_legacy_behaviour() -> None:
+    """Omitting ``plan`` runs every step (the default plan), unchanged from before."""
+    requested: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(_plan_v1_manifest())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert requested == ["https://example.com/a", "https://example.com/b"]
+    assert [step.name for step in result.steps] == ["mandatory-step", "optional-step"]
+
+
+@pytest.mark.unit
+def test_run_manifest_deselected_mandatory_flips_eligibility() -> None:
+    """Deselecting a mandatory step surfaces in certificationEligibility."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(_plan_v1_manifest())
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["mandatory-step"])
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+
+    eligibility = result.to_json_object()["certificationEligibility"]
+    assert isinstance(eligibility, dict)
+    assert eligibility["eligible"] is False
+    assert eligibility["reason"] == "Mandatory steps were deselected from the plan"
+    assert eligibility["mandatoryDeselected"] == 1
+    assert eligibility["mandatoryDeselectedStepIds"] == ["mandatory-step"]
+
+
+@pytest.mark.unit
+def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
+    """The result file gains a top-level ``plan`` block when a plan ran."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(_plan_v1_manifest())
+    plan = TestPlan.default_plan_from_manifest(manifest)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+
+    rendered = result.to_json_object()
+    assert rendered["plan"] == {
+        "totalSteps": 2,
+        "selectedSteps": 2,
+        "deselectedSteps": 0,
+        "mandatorySelected": 1,
+        "mandatoryDeselected": 0,
+    }

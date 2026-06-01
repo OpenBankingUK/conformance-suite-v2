@@ -201,6 +201,13 @@ class ManifestStep:
             defined per spec version and standard in manifest configuration —
             never hardcoded — so OBL Standards can adjust mandatory coverage
             without an engine release.
+        optional: Whether this step is opt-in for the default test plan.
+            Defaults to ``False`` (the step is part of default coverage).
+            When ``True`` the step is present in the
+            :class:`conformance.test_plan.TestPlan` but starts deselected;
+            participants opt into running it deliberately. Mutually
+            exclusive with ``mandatory`` (enforced at parse time so the
+            plan precedence rule stays unambiguous).
     """
 
     id: str
@@ -209,6 +216,7 @@ class ManifestStep:
     assertions: tuple[ManifestAssertion, ...]
     warning: str | None = None
     mandatory: bool = False
+    optional: bool = False
 
 
 @dataclass(frozen=True)
@@ -436,7 +444,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     location = f"steps[{index}]"
     _reject_unknown_keys(
         raw_step,
-        allowed_keys={"id", "name", "request", "assertions", "warning", "mandatory"},
+        allowed_keys={"id", "name", "request", "assertions", "warning", "mandatory", "optional"},
         location=location,
     )
 
@@ -454,6 +462,9 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     assertions = _required_object_array(raw_step, "assertions", location=location)
     warning = _parse_optional_warning(raw_step, location=location)
     mandatory = _parse_optional_mandatory(raw_step, location=location)
+    optional = _parse_optional_optional(raw_step, location=location)
+    if mandatory and optional:
+        raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
 
     return ManifestStep(
         id=step_id,
@@ -465,6 +476,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
         ),
         warning=warning,
         mandatory=mandatory,
+        optional=optional,
     )
 
 
@@ -1053,6 +1065,37 @@ def _parse_optional_mandatory(raw_step: dict[str, JsonValue], *, location: str) 
     # admit integers. We want to reject ``1``/``0`` and other truthy values.
     if not isinstance(value, bool):
         raise ManifestError(f"{location}.mandatory must be a JSON boolean when present")
+    return value
+
+
+def _parse_optional_optional(raw_step: dict[str, JsonValue], *, location: str) -> bool:
+    """Extract the optional ``optional`` flag from a v1 step.
+
+    The ``optional`` field is opt-in for the default test plan. When absent
+    ``False`` is returned (the step is part of default coverage and selected
+    in the default plan). When present it must be a JSON boolean — truthy
+    integers and other coercible values are rejected so that a misauthored
+    manifest cannot silently change which steps default-run.
+
+    Mutual exclusion with ``mandatory`` is enforced by the caller, not here,
+    so the parse-time error message can name both fields together.
+
+    Args:
+        raw_step: Raw JSON object for the step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        ``True`` if the step is opt-in (deselected in the default plan),
+        ``False`` otherwise.
+
+    Raises:
+        ManifestError: If ``optional`` is present but is not a JSON boolean.
+    """
+    if "optional" not in raw_step:
+        return False
+    value = raw_step["optional"]
+    if not isinstance(value, bool):
+        raise ManifestError(f"{location}.optional must be a JSON boolean when present")
     return value
 
 

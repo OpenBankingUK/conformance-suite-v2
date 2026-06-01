@@ -34,6 +34,7 @@ from conformance.manifest import (
 )
 from conformance.masking import mask_form_fields, mask_headers, mask_json_value
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
@@ -84,6 +85,7 @@ def run_manifest(
     environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
+    plan: TestPlan | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -97,6 +99,11 @@ def run_manifest(
         execution_logger: Optional structured execution-log sink. Defaults to
             a :class:`NullExecutionLogger` for backwards-compatible callers
             that do not want a log.
+        plan: Optional :class:`TestPlan` selecting which v1 steps to run.
+            When ``None`` (the default) the executor builds the default plan
+            from the manifest, which selects every mandatory plus every
+            non-optional step — i.e. behaves as before this feature was
+            added. Ignored for v0 manifests, which have no plan model.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
@@ -108,7 +115,14 @@ def run_manifest(
     )
     try:
         if manifest.schema_version == "v1":
-            result = _run_manifest_v1(manifest, environment=environment, client=client, execution_logger=logger_sink)
+            effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
+            result = _run_manifest_v1(
+                manifest,
+                environment=environment,
+                client=client,
+                execution_logger=logger_sink,
+                plan=effective_plan,
+            )
         else:
             result = _run_manifest_v0(manifest, environment=environment, client=client, execution_logger=logger_sink)
     except Exception as error:
@@ -136,6 +150,7 @@ def _run_manifest_v1(
     environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
+    plan: TestPlan,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
@@ -143,20 +158,51 @@ def _run_manifest_v1(
     validates the resolved URL, fetches the endpoint, evaluates assertions,
     and records the result into the execution context for later steps.
 
+    Only steps whose ids appear in ``plan.selected_step_ids()`` are executed.
+    Deselected steps do not run and produce no :class:`StepResult` (they
+    are not the same as ``SKIPPED``). A ``step-deselected`` event is emitted
+    once per deselected step before any ``step-started`` event, so the log
+    preserves a complete record of the plan-vs-manifest delta.
+
     Args:
         manifest: Parsed v1 manifest containing sequential steps.
         environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink.
+        plan: Test plan governing which steps run and which are skipped
+            entirely. Must have been derived from this manifest (the
+            executor does not re-validate that the plan's step ids match
+            the manifest — :meth:`TestPlan.default_plan_from_manifest`
+            and :meth:`TestPlan.with_deselection` already enforce that).
 
     Returns:
-        Smoke-check result with one entry per step.
+        Smoke-check result with one entry per executed (selected) step.
     """
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
     context = ExecutionContext()
 
+    selected_ids = set(plan.selected_step_ids())
+
+    # Emit one ``step-deselected`` event per deselected step before any
+    # ``step-started`` event. Done up-front (rather than interleaved with
+    # execution) so a log consumer can read the plan-vs-manifest delta
+    # without scanning the entire run.
+    for entry in plan.entries:
+        if not entry.selected:
+            execution_logger.emit(
+                "step-deselected",
+                step_id=entry.step_id,
+                payload={"mandatory": entry.mandatory},
+            )
+
     for manifest_step in manifest.steps:
+        if manifest_step.id not in selected_ids:
+            # Deselected: do not run and do not produce a StepResult.
+            # Placeholder references from later steps to this id will
+            # surface as MissingPredecessorResponseError at resolve time
+            # — the executor's existing SKIPPED handling covers that case.
+            continue
         step_result, context = _execute_v1_step(
             manifest_step, context=context, client=client, execution_logger=execution_logger
         )
@@ -169,7 +215,7 @@ def _run_manifest_v1(
             step_result = replace(step_result, mandatory=True)
         steps.append(step_result)
 
-    return build_smoke_check_result(environment, steps, started_at=started_at)
+    return build_smoke_check_result(environment, steps, started_at=started_at, plan=plan)
 
 
 def _execute_v1_step(

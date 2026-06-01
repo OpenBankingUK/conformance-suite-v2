@@ -14,6 +14,7 @@ from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
+from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
 
@@ -31,11 +32,27 @@ def run(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
-    parser.add_argument("--manifest", type=Path, help="Optional manifest v0 JSON file to execute")
+    parser.add_argument("--manifest", type=Path, help="Optional manifest JSON file (v0 or v1) to execute")
+    parser.add_argument(
+        "--deselect",
+        action="append",
+        default=[],
+        metavar="STEP_ID",
+        help=(
+            "Deselect a v1 manifest step from the default test plan. Repeatable. "
+            "Deselected steps do not run and produce no step result. Deselecting "
+            "a mandatory step flips certificationEligibility to ineligible. "
+            "Only valid alongside --manifest."
+        ),
+    )
     try:
         args = parser.parse_args(argv)
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 2
+
+    if args.deselect and args.manifest is None:
+        logger.error("--deselect requires --manifest")
+        return 2
 
     warn_if_developer_mode()
 
@@ -56,6 +73,12 @@ def run(argv: Sequence[str] | None = None) -> int:
             logger.error("Manifest error: %s", error)
             return 2
 
+        try:
+            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(args.deselect)
+        except ValueError as error:
+            logger.error("Plan error: %s", error)
+            return 2
+
         http_client = build_json_http_client(
             timeout_seconds=config.timeout_seconds,
             ca_bundle_path=config.tls.ca_bundle_path,
@@ -68,6 +91,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 environment=config.environment,
                 client=http_client,
                 execution_logger=execution_logger,
+                plan=plan,
             )
         finally:
             http_client.close()
