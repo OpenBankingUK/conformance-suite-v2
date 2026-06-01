@@ -289,7 +289,7 @@ def test_flush_to_path_cleans_up_temp_file_on_rename_failure(tmp_path: Path, mon
     logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     logger.emit("run-started")
 
-    def _raise_oserror(self: Path, _target: Path) -> None:  # noqa: ANN001
+    def _raise_oserror(self: Path, _target: Path) -> None:
         raise OSError("rename failed")
 
     monkeypatch.setattr(Path, "replace", _raise_oserror)
