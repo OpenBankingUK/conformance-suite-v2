@@ -2308,7 +2308,7 @@ def test_psu_manual_step_times_out() -> None:
 def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
     """Non-PASS PSU results mask credential-bearing authorization URL params."""
     fake_clock = _FakeClock()
-    result, _context = _execute_v1_psu_step(
+    result, context = _execute_v1_psu_step(
         _psu_manual_step(
             authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
             request_object="signed.request.jwt",
@@ -2330,8 +2330,90 @@ def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
     assert result.url == request_url
     assert "client_assertion=***" in request_url
     assert "request=***" in request_url
+    assert context.steps["psu"].request.url == request_url
     assert "inline.assertion" not in rendered
     assert "signed.request.jwt" not in rendered
+
+
+@pytest.mark.unit
+def test_psu_manual_step_records_masked_request_url_for_placeholders() -> None:
+    """PSU request URLs stored in context are safe for downstream placeholders."""
+    store = AuthSessionStore()
+    step = _psu_manual_step(
+        authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+        request_object="signed.request.jwt",
+    )
+
+    def capture_once() -> None:
+        if store.get("run-masked-context", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-masked-context",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-masked-context", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    request_url = context.steps["psu"].request.url
+    assert result.status == "passed"
+    assert result.url == request_url
+    assert "client_assertion=***" in request_url
+    assert "request=***" in request_url
+    assert "inline.assertion" not in request_url
+    assert "signed.request.jwt" not in request_url
+
+
+@pytest.mark.unit
+def test_psu_manual_step_placeholder_failure_records_masked_request_url() -> None:
+    """PSU placeholder failures store the masked endpoint template in context."""
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            client_id="${steps.missing.response.body.client_id}",
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-placeholder-failure",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-placeholder-failure", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert context.steps["psu"].request.url == "https://auth.example.com/authorize?client_assertion=***"
+    assert "inline.assertion" not in json.dumps(result.to_json_object())
+
+
+@pytest.mark.unit
+def test_psu_manual_step_register_failure_records_masked_request_url() -> None:
+    """PSU auth-session failures store the masked resolved endpoint in context."""
+    store = AuthSessionStore()
+    store.register("other-run", state="d" * 32)
+
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            state="d" * 32,
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-duplicate-masked-url",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-duplicate-masked-url", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert context.steps["psu"].request.url == "https://auth.example.com/authorize?client_assertion=***"
+    assert "inline.assertion" not in json.dumps(result.to_json_object())
 
 
 @pytest.mark.unit
@@ -2625,6 +2707,33 @@ def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
     assert "redirect target" in result.message
     assert "evil.example.com" not in rendered
     assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_accepts_redirect_with_explicit_default_https_port() -> None:
+    """Headless redirect matching treats omitted HTTPS port and ``:443`` as equivalent."""
+    state = "p" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com:443/callback?state={state}&code=headless-code"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-default-port",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-default-port", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "passed"
+    assert context.steps["psu"].response is not None
 
 
 @pytest.mark.unit

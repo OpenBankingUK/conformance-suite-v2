@@ -390,7 +390,7 @@ def _execute_v1_psu_step_inner(
             step_id=manifest_step.id,
             payload={"location": "psu-authorization", "message": str(error)},
         )
-        request_record = RequestRecord(method="GET", url=manifest_step.authorization_endpoint)
+        request_record = RequestRecord(method="GET", url=initial_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             _attach_evidence(
@@ -415,7 +415,7 @@ def _execute_v1_psu_step_inner(
         )
         validate_https_url(manifest_step.redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
     except HttpsUrlValidationError as error:
-        request_record = RequestRecord(method="GET", url=resolved_authorization_endpoint)
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             _attach_evidence(
@@ -434,7 +434,7 @@ def _execute_v1_psu_step_inner(
     try:
         session = auth_session_store.register(run_id, state=resolved_state)
     except (AuthSessionLimitError, InvalidAuthSessionStateError, DuplicateAuthSessionError) as error:
-        request_record = RequestRecord(method="GET", url=resolved_authorization_endpoint)
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
         return (
             _attach_evidence(
@@ -459,8 +459,8 @@ def _execute_v1_psu_step_inner(
         state=session.state,
         request_object=resolved_request_object,
     )
-    request_record = RequestRecord(method="GET", url=authorization_url)
     result_url = _mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
+    request_record = RequestRecord(method="GET", url=result_url)
     request_evidence["url"] = result_url
     # The browser-facing URL is emitted as the raw event payload so the CLI
     # decorator can print it for manual consent; BufferedExecutionLogger masks

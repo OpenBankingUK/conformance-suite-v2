@@ -80,9 +80,9 @@ def redirect_matches_registered_uri(*, location: str, redirect_uri: str) -> bool
     """Return whether an ASPSP redirect targets the configured callback URI.
 
     Query strings and fragments are intentionally ignored because the ASPSP
-    appends OAuth 2.0 response parameters there. Scheme, host/port, and path
-    must match the manifest's ``redirectUri`` exactly after hostname casing is
-    normalised by :func:`urllib.parse.urlsplit`.
+    appends OAuth 2.0 response parameters there. Scheme, effective host/port,
+    and path must match the manifest's ``redirectUri`` after hostname casing
+    is normalised by :func:`urllib.parse.urlsplit`.
 
     Args:
         location: Redirect URL received in the headless authorisation response.
@@ -97,9 +97,31 @@ def redirect_matches_registered_uri(*, location: str, redirect_uri: str) -> bool
     return (
         location_parts.scheme == redirect_parts.scheme
         and location_parts.hostname == redirect_parts.hostname
-        and location_parts.port == redirect_parts.port
+        and _effective_port(location_parts.scheme, location_parts.port)
+        == _effective_port(redirect_parts.scheme, redirect_parts.port)
         and location_parts.path == redirect_parts.path
     )
+
+
+def _effective_port(scheme: str, parsed_port: int | None) -> int | None:
+    """Return the explicit or default port for a parsed URI.
+
+    Args:
+        scheme: URI scheme parsed from the URL.
+        parsed_port: Explicit port parsed from the URL, or ``None`` when the
+            URL omitted a port.
+
+    Returns:
+        The explicit port when present, the default port for HTTP(S) schemes,
+        or ``None`` when no default is known.
+    """
+    if parsed_port is not None:
+        return parsed_port
+    if scheme == "https":
+        return 443
+    if scheme == "http":
+        return 80
+    return None
 
 
 def extract_redirect_parameters(location: str) -> dict[str, str]:

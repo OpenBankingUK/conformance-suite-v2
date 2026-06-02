@@ -46,9 +46,11 @@ class RequestRecord:
 
     Attributes:
         method: HTTP method used.
-        url: URL recorded at the time the step was captured. This is the
-            resolved URL when placeholder resolution succeeded, or the
-            original unresolved template when resolution failed.
+        url: URL recorded at the time the step was captured. This is usually
+            the resolved URL when placeholder resolution succeeded, or the
+            original unresolved template when resolution failed. Step executors
+            may store a masked URL when the value is available to later
+            placeholders and could otherwise expose credentials.
     """
 
     method: str
