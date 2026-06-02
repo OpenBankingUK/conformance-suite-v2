@@ -409,7 +409,13 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         when the per-run session cap is exceeded
         (:class:`AuthSessionLimitError`); 404 if the run is unknown; 409
         if the run has already reached a terminal state or if the
-        requested state is already registered.
+        requested state is already registered. After a successful
+        ``register`` the run record is re-fetched: if it has been pruned
+        or transitioned to a terminal state in the interim (racing
+        :func:`_execute_run`'s ``discard_for_run`` cleanup), the
+        just-created session is rolled back via
+        :meth:`AuthSessionStore.discard` and the corresponding 404/409
+        is returned instead of 201.
     """
     raw_state: str | None = None
     if request.content_type == "application/json" and request.body:
@@ -441,8 +447,25 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
     except AuthSessionLimitError as error:
         return JsonResponse({"error": str(error)}, status=400)
 
-    if record.execution_logger is not None:
-        record.execution_logger.emit(
+    # Re-validate the run record after registration to close the race
+    # against ``_execute_run``'s terminal-state cleanup: the run may have
+    # transitioned to ``completed``/``failed`` (and ``discard_for_run``
+    # may have already swept the run's sessions) while this request was
+    # in-flight. Roll back the just-created session so it cannot outlive
+    # its parent run's lifecycle guarantees.
+    post_record = run_store.get_run(run_id)
+    if post_record is None:
+        auth_session_store.discard(run_id, session.state)
+        return JsonResponse({"error": "Run not found"}, status=404)
+    if post_record.status in ("completed", "failed"):
+        auth_session_store.discard(run_id, session.state)
+        return JsonResponse(
+            {"error": "Run is no longer active", "status": post_record.status},
+            status=409,
+        )
+
+    if post_record.execution_logger is not None:
+        post_record.execution_logger.emit(
             "auth-session-registered",
             payload={"state": session.state, "status": session.status},
         )

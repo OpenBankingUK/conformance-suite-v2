@@ -261,6 +261,34 @@ class AuthSessionStore:
                 del self._sessions[state]
             return len(to_drop)
 
+    def discard(self, run_id: str, state: str) -> bool:
+        """Drop a single auth session identified by ``(run_id, state)``.
+
+        Used by :func:`conformance.api.views.register_auth_session` to
+        roll back a registration when the parent run transitions to a
+        terminal state between the pre-register active-run check and the
+        post-register revalidation. The single-session form avoids
+        clobbering sibling sessions registered concurrently against the
+        same run.
+
+        Args:
+            run_id: Identifier of the parent run that should own the
+                session. A mismatching ``run_id`` is treated as "not
+                present" — the method never deletes a session belonging
+                to a different run.
+            state: The opaque state token identifying the session.
+
+        Returns:
+            ``True`` if a matching session was removed, ``False`` if no
+            session matched the ``(run_id, state)`` pair.
+        """
+        with self._lock:
+            session = self._sessions.get(state)
+            if session is None or session.run_id != run_id:
+                return False
+            del self._sessions[state]
+            return True
+
     def reset(self) -> None:
         """Wipe all auth-session state. Intended for test fixtures only.
 

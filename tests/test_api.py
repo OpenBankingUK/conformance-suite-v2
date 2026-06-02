@@ -687,6 +687,41 @@ class TestRegisterAuthSessionEndpoint:
         response = client.post("/api/runs/some-id/auth-sessions/")
         assert response.status_code == 403
 
+    def test_rolls_back_session_when_run_terminates_during_register(self) -> None:
+        """Race fix: a run completing mid-register must not leak a session.
+
+        Simulates ``_execute_run`` transitioning the run to
+        ``completed`` (and sweeping its sessions) between
+        ``auth_session_store.register`` and the post-register run-record
+        revalidation. The view must roll back the just-created session
+        and return 409 instead of 201, preventing the session from
+        outliving its parent run.
+        """
+        from unittest.mock import patch
+
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        original_get_run = run_store.get_run
+        call_count = {"n": 0}
+
+        def get_run_with_terminal_race(run_id: str) -> object:
+            """Return the live record on the pre-check, terminate on revalidation."""
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                run_store.mark_running(run_id)
+                run_store.mark_completed(run_id, result={"status": "passed"})
+            return original_get_run(run_id)
+
+        with patch.object(run_store, "get_run", side_effect=get_run_with_terminal_race):
+            response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+
+        assert response.status_code == 409
+        assert response.json()["status"] == "completed"
+        # The just-created session must have been rolled back.
+        assert auth_session_store.for_run(record.run_id) == []
+
 
 @pytest.mark.integration
 class TestGetAuthSessionEndpoint:
@@ -760,27 +795,23 @@ class TestGetAuthSessionEndpoint:
         assert response.status_code == 404
 
     def test_returns_404_for_cross_run_lookup(self) -> None:
-        """A state registered against another run is not visible."""
-        from conformance.api.auth_session_store import auth_session_store
+        """A state registered against another run is not visible.
 
+        Exercises the ``(run_id, state)`` scoping guarantee directly:
+        the lookup runs against an *existing* but unrelated run record,
+        so a 404 here is attributable to run-scoped binding rather than
+        a missing run.
+        """
         client = Client()
         run_a = run_store.create_run()
-        registered = client.post(f"/api/runs/{run_a.run_id}/auth-sessions/").json()
         run_store.mark_running(run_a.run_id)
         run_store.mark_completed(run_a.run_id, result={"status": "passed"})
-        # The discard-on-terminal hook lives in _execute_run; here we
-        # exercise the read path directly so re-register the state under
-        # a fresh run-id to simulate a cross-run probe.
-        auth_session_store.reset()
         run_b = run_store.create_run()
-        client.post(
-            f"/api/runs/{run_b.run_id}/auth-sessions/",
-            data=json.dumps({"state": registered["state"]}),
-            content_type="application/json",
-        )
-        # Look up under a *third*, non-existent run id.
+        registered = client.post(f"/api/runs/{run_b.run_id}/auth-sessions/").json()
+
+        # Look up ``run_b``'s state under ``run_a``'s still-existing run id.
         response = client.get(
-            f"/api/runs/wrong-run/auth-sessions/{registered['state']}/",
+            f"/api/runs/{run_a.run_id}/auth-sessions/{registered['state']}/",
         )
         assert response.status_code == 404
 

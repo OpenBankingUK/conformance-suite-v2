@@ -15,7 +15,9 @@ Security model (PRD Phase 1):
   Coupling the endpoint to ``REMOTE_ADDR`` would break reverse-proxy
   deployments without adding real security.
 * The threat model relies on three independent properties: ``state``
-  unguessability (≥32 bytes of entropy enforced by
+  unguessability (server-generated states use
+  ``secrets.token_urlsafe(32)`` — 32 bytes of entropy; caller-supplied
+  states are required to be at least 32 characters long, enforced by
   :class:`AuthSessionStore`), one-shot consumption (a second hit with the
   same state is rejected by
   :class:`AuthSessionAlreadyResolvedError`), and run-scoped binding (the
