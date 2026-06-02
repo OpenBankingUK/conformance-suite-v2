@@ -1,0 +1,37 @@
+{# Minimal landing page for the PSU authorization callback.
+
+   Three variants selected via the ``outcome`` context variable:
+     * "success" — the FCS captured an authorization code.
+     * "error"   — the ASPSP returned an OAuth 2.0 error response.
+     * "failure" — the callback was rejected (unknown / expired state,
+                   malformed query, etc.). Renders a generic message
+                   with no request-supplied values to avoid leaking
+                   which states the store knows about.
+
+   No JavaScript, no inline secrets. All values are auto-escaped by the
+   Django template engine. #}
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>PSU authorization callback</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+</head>
+<body>
+    {% if outcome == "success" %}
+        <h1>Authorization code received</h1>
+        <p>The conformance suite has recorded your authorization. You can close
+           this tab and return to the CLI or UI to continue the test run.</p>
+    {% elif outcome == "error" %}
+        <h1>Authorization failed</h1>
+        <p>The ASPSP reported an error during authorization
+           {% if error_code %}(<code>{{ error_code }}</code>){% endif %}.
+           The conformance suite has recorded the failure. Return to the CLI
+           or UI for details.</p>
+    {% else %}
+        <h1>Callback rejected</h1>
+        <p>{{ message }}</p>
+    {% endif %}
+</body>
+</html>

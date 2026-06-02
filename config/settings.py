@@ -102,7 +102,13 @@ ROOT_URLCONF = "config.urls"
 TEMPLATES = [
     {
         "BACKEND": "django.template.backends.django.DjangoTemplates",
-        "DIRS": [],
+        # ``conformance.api`` is not registered as an INSTALLED_APP (it is
+        # a plain Python package, not a Django app), so its templates
+        # would not be discovered by ``APP_DIRS`` alone. Listing the
+        # package's ``templates/`` directory explicitly keeps the package
+        # un-pluggable from Django's app machinery while still allowing
+        # ``render(request, "conformance/callback.html", ...)`` to resolve.
+        "DIRS": [BASE_DIR / "conformance" / "api" / "templates"],
         "APP_DIRS": True,
         "OPTIONS": {
             "context_processors": [
