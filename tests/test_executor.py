@@ -5,6 +5,7 @@ from typing import Any, cast
 import httpx
 import pytest
 
+from conformance.api.auth_session_store import AuthSessionStore
 from conformance.executor import run_manifest
 from conformance.json_types import JsonValue
 from conformance.manifest import parse_manifest
@@ -2048,3 +2049,92 @@ def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
     }
+
+
+# --- PSU plumbing: run_id + AuthSessionStore wiring (Phase 1) ---
+
+
+def _trivial_v1_manifest() -> dict[str, JsonValue]:
+    """Return a single-step v1 manifest used by Phase 1 plumbing tests."""
+    return {
+        "schemaVersion": "v1",
+        "name": "plumbing",
+        "steps": [
+            {
+                "id": "ping",
+                "name": "Ping",
+                "request": {"method": "GET", "url": "https://modelbank.example.com/ping"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+
+class _RecordingAuthSessionStore(AuthSessionStore):
+    """Sentinel :class:`AuthSessionStore` subclass for identity assertions.
+
+    Used by Phase 1 wiring tests to prove that the store passed by the caller
+    is the very same instance threaded through to the per-step executor — not
+    a freshly-constructed default.
+    """
+
+
+@pytest.mark.unit
+def test_run_manifest_generates_run_id_when_caller_supplies_none() -> None:
+    """``run_manifest`` must Just Work without a ``run_id`` (CLI/legacy callers)."""
+    manifest = parse_manifest(_trivial_v1_manifest())
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        # No run_id, no auth_session_store — must not raise and must execute the step.
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert [step.status for step in result.steps] == ["passed"]
+
+
+@pytest.mark.unit
+def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
+    """The caller's store instance must reach the per-step executor unchanged."""
+    captured: dict[str, object] = {}
+
+    def fake_execute_v1_step(
+        manifest_step: Any,
+        *,
+        context: Any,
+        client: Any,
+        execution_logger: Any,
+        run_id: str,
+        auth_session_store: AuthSessionStore,
+    ) -> tuple[Any, Any]:
+        """Capture the threaded run_id and store, then delegate to the real impl."""
+        captured["run_id"] = run_id
+        captured["store"] = auth_session_store
+        return _real_execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+
+    from conformance import executor as executor_module
+
+    sentinel_store = _RecordingAuthSessionStore()
+    manifest = parse_manifest(_trivial_v1_manifest())
+    _real_execute_v1_step = executor_module._execute_v1_step
+    try:
+        executor_module._execute_v1_step = fake_execute_v1_step
+        with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+            run_manifest(
+                manifest,
+                environment="env",
+                client=client,
+                run_id="run-abc",
+                auth_session_store=sentinel_store,
+            )
+    finally:
+        executor_module._execute_v1_step = _real_execute_v1_step
+
+    assert captured["run_id"] == "run-abc"
+    assert captured["store"] is sentinel_store

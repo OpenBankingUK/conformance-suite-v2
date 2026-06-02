@@ -358,6 +358,8 @@ def _execute_run(
                     client=http_client,
                     execution_logger=logger_sink,
                     plan=plan,
+                    run_id=run_id,
+                    auth_session_store=auth_session_store,
                 )
             finally:
                 http_client.close()

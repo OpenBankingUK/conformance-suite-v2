@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import httpx
 
+from conformance.api.auth_session_store import AuthSessionStore
 from conformance.assertions import AssertionResult, evaluate_assertion
 from conformance.context import (
     ExecutionContext,
@@ -18,7 +19,7 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
-from conformance.execution_log import ExecutionLogger, NullExecutionLogger
+from conformance.execution_log import ExecutionLogger, NullExecutionLogger, new_run_id
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -86,6 +87,8 @@ def run_manifest(
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     plan: TestPlan | None = None,
+    run_id: str | None = None,
+    auth_session_store: AuthSessionStore | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -104,11 +107,26 @@ def run_manifest(
             from the manifest, which selects every mandatory plus every
             non-optional step — i.e. behaves as before this feature was
             added. Ignored for v0 manifests, which have no plan model.
+        run_id: Optional run identifier used to correlate PSU authorisation
+            sessions with this execution. When ``None`` (the default) a
+            fresh UUID4 hex is generated so legacy callers Just Work; the
+            API supplies its own. Currently only consumed by future
+            ``psu-authorization`` steps — plain HTTP steps ignore it.
+        auth_session_store: Optional store the executor uses to register
+            and await PSU authorisation callbacks for upcoming
+            ``psu-authorization`` steps. When ``None`` (the default) a
+            fresh per-call :class:`AuthSessionStore` is constructed so the
+            parameter is always non-``None`` inside the executor. Callers
+            that need the store to be observable from outside the run
+            (e.g. the API, which serves ``/callback/`` against a shared
+            singleton) must pass it explicitly.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
     """
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    effective_run_id = run_id if run_id is not None else new_run_id()
+    effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
     logger_sink.emit(
         "run-started",
         payload={"environment": environment, "schemaVersion": manifest.schema_version},
@@ -122,9 +140,18 @@ def run_manifest(
                 client=client,
                 execution_logger=logger_sink,
                 plan=effective_plan,
+                run_id=effective_run_id,
+                auth_session_store=effective_store,
             )
         else:
-            result = _run_manifest_v0(manifest, environment=environment, client=client, execution_logger=logger_sink)
+            result = _run_manifest_v0(
+                manifest,
+                environment=environment,
+                client=client,
+                execution_logger=logger_sink,
+                run_id=effective_run_id,
+                auth_session_store=effective_store,
+            )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
         raise
@@ -151,6 +178,8 @@ def _run_manifest_v1(
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     plan: TestPlan,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
@@ -174,6 +203,10 @@ def _run_manifest_v1(
             executor does not re-validate that the plan's step ids match
             the manifest — :meth:`TestPlan.default_plan_from_manifest`
             and :meth:`TestPlan.with_deselection` already enforce that).
+        run_id: Run identifier propagated to per-step executors so PSU
+            authorisation steps can register sessions against this run.
+        auth_session_store: Store the executor uses to register and await
+            PSU authorisation callbacks. Threaded to per-step executors.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -204,7 +237,12 @@ def _run_manifest_v1(
             # — the executor's existing SKIPPED handling covers that case.
             continue
         step_result, context = _execute_v1_step(
-            manifest_step, context=context, client=client, execution_logger=execution_logger
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
         )
         # Carry the manifest's mandatory flag onto the step result so the
         # aggregate certificationEligibility block can reason about it
@@ -224,6 +262,8 @@ def _execute_v1_step(
     context: ExecutionContext,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -239,10 +279,17 @@ def _execute_v1_step(
             ``step-started``, ``request-sent``, ``response-received``,
             ``assertion-evaluated``, ``placeholder-error`` and
             ``step-completed`` events as the step progresses.
+        run_id: Run identifier propagated so PSU authorisation steps can
+            register sessions against this run. Ignored by plain HTTP
+            steps (Phase 1 wiring only).
+        auth_session_store: Store used by PSU authorisation steps to
+            register and await callbacks. Ignored by plain HTTP steps
+            (Phase 1 wiring only).
 
     Returns:
         A tuple of the step result and the updated execution context.
     """
+    del run_id, auth_session_store  # Plain HTTP steps don't consume these (yet).
     execution_logger.emit("step-started", step_id=manifest_step.id)
     step_result, new_context = _execute_v1_step_inner(
         manifest_step, context=context, client=client, execution_logger=execution_logger
@@ -656,6 +703,8 @@ def _run_manifest_v0(
     environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -670,6 +719,11 @@ def _run_manifest_v0(
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink threaded through to
             each desugared v1 step.
+        run_id: Run identifier propagated through desugared v1 steps. v0
+            manifests have no PSU authorisation steps today, but the
+            parameter keeps the v0/v1 dispatch surface symmetric.
+        auth_session_store: Store propagated through desugared v1 steps,
+            mirroring ``run_id`` for the same reason.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -710,7 +764,12 @@ def _run_manifest_v0(
             assertions=test.assertions,
         )
         step_result, context = _execute_v1_step(
-            primary_step, context=context, client=client, execution_logger=execution_logger
+            primary_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
         )
         steps.append(step_result)
 
@@ -751,7 +810,12 @@ def _run_manifest_v0(
                     assertions=test.follow_up.assertions,
                 )
                 follow_up_result, context = _execute_v1_step(
-                    follow_up_step, context=context, client=client, execution_logger=execution_logger
+                    follow_up_step,
+                    context=context,
+                    client=client,
+                    execution_logger=execution_logger,
+                    run_id=run_id,
+                    auth_session_store=auth_session_store,
                 )
                 steps.append(follow_up_result)
 

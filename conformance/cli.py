@@ -62,7 +62,8 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Config error: %s", error)
         return 2
 
-    execution_logger = BufferedExecutionLogger(run_id=new_run_id())
+    run_id = new_run_id()
+    execution_logger = BufferedExecutionLogger(run_id=run_id)
 
     if args.manifest is None:
         result = run_model_bank_smoke_check(config, execution_logger=execution_logger)
@@ -92,6 +93,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 client=http_client,
                 execution_logger=execution_logger,
                 plan=plan,
+                run_id=run_id,
             )
         finally:
             http_client.close()
