@@ -386,6 +386,9 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
     response includes the opaque ``state`` token that the caller MUST use
     when constructing the authorization request URL.
 
+    CSRF is exempt because this is an unauthenticated, loopback-guarded API
+    designed for programmatic callers. No browser session is involved.
+
     Request body (JSON, optional): an object with an optional ``state``
     field. When supplied, the value must meet the minimum entropy bar
     enforced by :class:`AuthSessionStore`; when omitted, the store
