@@ -2,8 +2,8 @@ name: Ozone Integration
 
 # Live-network conformance checks against the real Ozone model bank.
 #
-# Scope: tier 1 today (OpenID discovery via the v1 manifest engine).
-#   See ai/plans/2026-05-28-ozone-integration-tiers.md for higher tiers.
+# Scope: tier 1 by default (OpenID discovery via the v1 manifest engine), plus
+#   a provisional tier 2 headless PSU run when workflow_dispatch opts in.
 #
 # Trigger model (per the plan §"CI policy"):
 #   - pull_request:      every PR into develop/main/release/**/hotfix/** so
@@ -47,6 +47,11 @@ on:
         required: false
         default: ""
         type: string
+      run_headless_psu_tier2:
+        description: "Run provisional tier 2 headless PSU test (sets OZONE_HEADLESS_PSU_SUPPORTED=true)"
+        required: false
+        default: false
+        type: boolean
   schedule:
     # Nightly at 03:17 UTC. Non-round minute avoids the top-of-hour scheduling
     # spike on shared GitHub Actions infrastructure.
@@ -61,7 +66,7 @@ permissions:
 
 jobs:
   ozone-integration:
-    name: Ozone Tier 1 Integration
+    name: Ozone Integration
     runs-on: ubuntu-latest
     # Repository-level configuration. Configure the OZONE_DISCOVERY_URL
     # variable under repo settings → Secrets and variables → Actions →
@@ -117,7 +122,19 @@ jobs:
             exit 1
           fi
 
-      - name: Run Ozone tier 1 integration tests
+      - name: Resolve headless PSU tier 2 toggle
+        id: headless_psu
+        env:
+          REQUESTED: ${{ inputs.run_headless_psu_tier2 }}
+        run: |
+          if [[ "${REQUESTED}" == "true" ]]; then
+            echo "supported=true" >> "$GITHUB_OUTPUT"
+            echo "::notice::Running provisional tier 2 headless PSU test. This opts into the PRD open-investigation item for Ozone headless PSU feasibility."
+          else
+            echo "supported=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run Ozone integration tests
         if: steps.resolve.outputs.available == 'true'
         env:
           # The discovery URL is masked above only when supplied via the
@@ -126,6 +143,7 @@ jobs:
           # publishable repository variable (see the file-header rationale
           # block), not a secret.
           OZONE_DISCOVERY_URL: ${{ steps.resolve.outputs.discovery_url }}
+          OZONE_HEADLESS_PSU_SUPPORTED: ${{ steps.headless_psu.outputs.supported == 'true' && 'true' || '' }}
         run: |
           set -euo pipefail
           uv run pytest \
@@ -142,11 +160,13 @@ jobs:
         if: always() && steps.resolve.outputs.available == 'true'
         env:
           DISCOVERY_SOURCE: ${{ steps.resolve.outputs.source }}
+          HEADLESS_PSU_TIER2: ${{ steps.headless_psu.outputs.supported }}
         run: |
           {
-            echo "## Ozone Tier 1 Integration"
+            echo "## Ozone Integration"
             echo ""
             echo "- Discovery URL source: \`${DISCOVERY_SOURCE}\`"
+            echo "- Provisional tier 2 headless PSU enabled: \`${HEADLESS_PSU_TIER2}\`"
             echo "- Result file: \`ozone-integration-results.json\` (uploaded as an artefact)"
             echo ""
             if [[ -f pytest-output.log ]]; then
