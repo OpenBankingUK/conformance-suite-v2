@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Literal, TextIO, cast
 
 from conformance.json_types import JsonObject, JsonValue
-from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value
+from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, _mask_url_query, mask_headers, mask_json_value
 
 logger = logging.getLogger(__name__)
 
@@ -392,6 +392,8 @@ class BufferedExecutionLogger(ExecutionLogger):
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
                 masked[key] = dict(mask_headers(str_headers))
+            elif event_type == "psu-authorization-url" and key == "url" and isinstance(value, str):
+                masked[key] = _mask_url_query(value, SENSITIVE_JSON_KEYS)
             elif event_type == "psu-authorization-url" and key in {"client_id", "request_object"}:
                 masked[key] = MASKED_VALUE if value is not None else None
             elif key.lower() in SENSITIVE_JSON_KEYS:

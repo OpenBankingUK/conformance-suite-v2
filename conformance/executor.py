@@ -462,9 +462,9 @@ def _execute_v1_psu_step_inner(
     request_record = RequestRecord(method="GET", url=authorization_url)
     result_url = _mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
     request_evidence["url"] = result_url
-    # The browser-facing URL is intentionally emitted in full so a manual
-    # participant can paste it into their browser; sensitive query values are
-    # supplied as separately-keyed payload fields so the logger can mask them.
+    # The browser-facing URL is emitted as the raw event payload so the CLI
+    # decorator can print it for manual consent; BufferedExecutionLogger masks
+    # sensitive query values before persisting or serving the structured log.
     execution_logger.emit(
         "psu-authorization-url",
         step_id=manifest_step.id,
