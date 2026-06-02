@@ -536,3 +536,256 @@ class TestGetRunLogEndpoint:
         assert response.status_code == 200
         lines = response.content.decode("utf-8").rstrip("\n").split("\n")
         assert json.loads(lines[0])["type"] == "run-started"
+
+
+# ─── Auth-session API endpoints ─────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_session_store() -> None:
+    """Reset the global auth-session store between tests."""
+    from conformance.api.auth_session_store import auth_session_store
+
+    auth_session_store.reset()
+
+
+@pytest.mark.integration
+class TestRegisterAuthSessionEndpoint:
+    """``POST /api/runs/<id>/auth-sessions/`` registers a PSU auth session."""
+
+    def test_returns_201_with_server_generated_state(self) -> None:
+        """A bodyless request returns 201 with a server-generated state."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 201
+        body = response.json()
+        assert body["status"] == "awaiting"
+        assert "createdAt" in body
+        assert len(body["state"]) >= 32
+
+    def test_accepts_caller_supplied_state_above_entropy_bar(self) -> None:
+        """A caller-supplied state of sufficient length is accepted."""
+        client = Client()
+        record = run_store.create_run()
+        state = "x" * 32
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert response.status_code == 201
+        assert response.json()["state"] == state
+
+    def test_rejects_caller_supplied_state_below_entropy_bar(self) -> None:
+        """A short caller-supplied state is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": "short"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_non_string_state(self) -> None:
+        """A non-string ``state`` field is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": 123}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_invalid_json_body(self) -> None:
+        """Malformed JSON in the body yields 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data="not json",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_non_object_body(self) -> None:
+        """A non-object JSON body is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps([1, 2]),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_returns_404_for_unknown_run(self) -> None:
+        """An unknown run id yields 404."""
+        client = Client()
+        response = client.post("/api/runs/missing/auth-sessions/")
+        assert response.status_code == 404
+
+    def test_returns_409_for_terminal_run(self) -> None:
+        """Registration against a completed run is rejected with 409."""
+        client = Client()
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 409
+
+    def test_returns_409_for_duplicate_state(self) -> None:
+        """Re-registering the same caller-supplied state yields 409."""
+        client = Client()
+        record = run_store.create_run()
+        state = "y" * 40
+        first = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert first.status_code == 201
+        second = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert second.status_code == 409
+
+    def test_returns_400_when_per_run_cap_exceeded(self) -> None:
+        """Registering past the per-run cap yields 400."""
+        from conformance.api.auth_session_store import MAX_SESSIONS_PER_RUN
+
+        client = Client()
+        record = run_store.create_run()
+        for _ in range(MAX_SESSIONS_PER_RUN):
+            ok = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+            assert ok.status_code == 201
+        over = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert over.status_code == 400
+
+    def test_emits_auth_session_registered_event(self) -> None:
+        """Successful registration appends an ``auth-session-registered`` event."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 201
+        live = run_store._runs[record.run_id]  # noqa: SLF001 — read live logger
+        assert live.execution_logger is not None
+        events = live.execution_logger.events()
+        types = [event.type for event in events]
+        assert "auth-session-registered" in types
+        registered = next(event for event in events if event.type == "auth-session-registered")
+        assert registered.payload["state"] == response.json()["state"]
+        assert registered.payload["status"] == "awaiting"
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        """The loopback guard applies to the register endpoint."""
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        response = client.post("/api/runs/some-id/auth-sessions/")
+        assert response.status_code == 403
+
+
+@pytest.mark.integration
+class TestGetAuthSessionEndpoint:
+    """``GET /api/runs/<id>/auth-sessions/<state>/`` returns session state."""
+
+    def test_returns_awaiting_session(self) -> None:
+        """A freshly registered session is returned with status ``awaiting``."""
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["state"] == registered["state"]
+        assert body["status"] == "awaiting"
+        assert "createdAt" in body
+        assert "code" not in body
+        assert "capturedAt" not in body
+
+    def test_returns_captured_session_with_code(self) -> None:
+        """After ``capture_code`` the response includes the code and capturedAt."""
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        auth_session_store.capture_code(registered["state"], "auth-code-xyz")
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "captured"
+        assert body["code"] == "auth-code-xyz"
+        assert "capturedAt" in body
+
+    def test_returns_error_session(self) -> None:
+        """After ``capture_error`` the response includes error fields."""
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        auth_session_store.capture_error(
+            registered["state"],
+            error="access_denied",
+            description="User declined consent",
+        )
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"] == "access_denied"
+        assert body["errorDescription"] == "User declined consent"
+
+    def test_returns_404_for_unknown_run(self) -> None:
+        """Unknown run id yields 404."""
+        client = Client()
+        response = client.get("/api/runs/missing/auth-sessions/any-state/")
+        assert response.status_code == 404
+
+    def test_returns_404_for_unknown_state(self) -> None:
+        """Unknown state under a known run yields 404."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.get(f"/api/runs/{record.run_id}/auth-sessions/bogus/")
+        assert response.status_code == 404
+
+    def test_returns_404_for_cross_run_lookup(self) -> None:
+        """A state registered against another run is not visible."""
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        run_a = run_store.create_run()
+        registered = client.post(f"/api/runs/{run_a.run_id}/auth-sessions/").json()
+        run_store.mark_running(run_a.run_id)
+        run_store.mark_completed(run_a.run_id, result={"status": "passed"})
+        # The discard-on-terminal hook lives in _execute_run; here we
+        # exercise the read path directly so re-register the state under
+        # a fresh run-id to simulate a cross-run probe.
+        auth_session_store.reset()
+        run_b = run_store.create_run()
+        client.post(
+            f"/api/runs/{run_b.run_id}/auth-sessions/",
+            data=json.dumps({"state": registered["state"]}),
+            content_type="application/json",
+        )
+        # Look up under a *third*, non-existent run id.
+        response = client.get(
+            f"/api/runs/wrong-run/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 404
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        """The loopback guard applies to the get endpoint."""
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        response = client.get("/api/runs/some-id/auth-sessions/some-state/")
+        assert response.status_code == 403

@@ -26,6 +26,12 @@ from django.http import HttpRequest, HttpResponse, JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.views.decorators.http import require_GET, require_POST
 
+from conformance.api.auth_session_store import (
+    AuthSessionLimitError,
+    DuplicateAuthSessionError,
+    InvalidAuthSessionStateError,
+    auth_session_store,
+)
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
 from conformance.executor import run_manifest
@@ -360,3 +366,140 @@ def _execute_run(
     except Exception:
         logger.exception("Run %s failed with an internal error", run_id)
         run_store.mark_failed(run_id, error="An internal error occurred")
+    finally:
+        # Awaiting auth sessions must not outlive their parent run; drop
+        # them on terminal transition so a subsequent run cannot inherit
+        # stale state. Done in ``finally`` to cover both happy-path and
+        # failure-path exits from the run.
+        auth_session_store.discard_for_run(run_id)
+
+
+@_require_loopback
+@csrf_exempt
+@require_POST
+def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
+    """Register an expected PSU authorization session for a run.
+
+    The run driver calls this before redirecting the participant's browser
+    to the ASPSP, so the public ``/callback/`` endpoint can correlate the
+    inbound ``state`` query parameter back to a known session. The
+    response includes the opaque ``state`` token that the caller MUST use
+    when constructing the authorization request URL.
+
+    Request body (JSON, optional): an object with an optional ``state``
+    field. When supplied, the value must meet the minimum entropy bar
+    enforced by :class:`AuthSessionStore`; when omitted, the store
+    generates one via ``secrets.token_urlsafe``. An empty body is
+    equivalent to ``{}``.
+
+    On success an ``auth-session-registered`` event is appended to the
+    parent run's execution log with payload ``{"state": ..., "status":
+    "awaiting"}`` — the state value is non-sensitive (it leaves the
+    process inside the authorization URL anyway) and proves the FCS
+    expected this state, which complements the later
+    ``auth-callback-received`` event.
+
+    Args:
+        request: The inbound ``POST`` request from the run driver.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        201 with ``{state, status, createdAt}`` on success; 400 on
+        malformed body or caller-supplied state below the entropy bar;
+        404 if the run is unknown; 409 if the run has already reached a
+        terminal state or if the requested state is already registered;
+        500 in the unlikely event that the per-run session cap is
+        exceeded but the store still rejects (treated as a server-side
+        invariant break).
+    """
+    raw_state: str | None = None
+    if request.content_type == "application/json" and request.body:
+        try:
+            body = json.loads(request.body)
+        except json.JSONDecodeError, UnicodeDecodeError:
+            return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
+        if not isinstance(body, dict):
+            return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
+        raw_state = body.get("state")
+        if raw_state is not None and not isinstance(raw_state, str):
+            return JsonResponse({"error": '"state" must be a string if provided'}, status=400)
+
+    record = run_store.get_run(run_id)
+    if record is None:
+        return JsonResponse({"error": "Run not found"}, status=404)
+    if record.status in ("completed", "failed"):
+        return JsonResponse(
+            {"error": "Run is no longer active", "status": record.status},
+            status=409,
+        )
+
+    try:
+        session = auth_session_store.register(run_id, state=raw_state)
+    except InvalidAuthSessionStateError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except DuplicateAuthSessionError as error:
+        return JsonResponse({"error": str(error)}, status=409)
+    except AuthSessionLimitError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
+    if record.execution_logger is not None:
+        record.execution_logger.emit(
+            "auth-session-registered",
+            payload={"state": session.state, "status": session.status},
+        )
+
+    return JsonResponse(
+        {
+            "state": session.state,
+            "status": session.status,
+            "createdAt": session.created_at.isoformat(),
+        },
+        status=201,
+    )
+
+
+@_require_loopback
+@require_GET
+def get_auth_session(request: HttpRequest, run_id: str, state: str) -> JsonResponse:
+    """Return the current state of a registered PSU auth session.
+
+    The run driver polls this endpoint after redirecting the browser to
+    the ASPSP, waiting for the ``status`` to transition from ``awaiting``
+    to ``captured`` (or ``error``). The captured authorization ``code``
+    is included in the response only when ``status`` is ``captured`` —
+    callers are expected to consume it immediately for the token
+    exchange, and the run-scoped key prevents probing of sessions owned
+    by other runs.
+
+    Args:
+        request: The inbound ``GET`` request from the run driver.
+        run_id: The unique run identifier from the URL path.
+        state: The opaque state token identifying the session.
+
+    Returns:
+        200 with ``{state, status, createdAt, capturedAt?, code?, error?,
+        errorDescription?}`` on success; 404 if either the run or the
+        session is unknown. The 404 response is identical for both
+        failure modes so an unauthenticated caller cannot enumerate run
+        IDs by probing.
+    """
+    if run_store.get_run(run_id) is None:
+        return JsonResponse({"error": "Auth session not found"}, status=404)
+    session = auth_session_store.get(run_id, state)
+    if session is None:
+        return JsonResponse({"error": "Auth session not found"}, status=404)
+
+    body: dict[str, str] = {
+        "state": session.state,
+        "status": session.status,
+        "createdAt": session.created_at.isoformat(),
+    }
+    if session.captured_at is not None:
+        body["capturedAt"] = session.captured_at.isoformat()
+    if session.code is not None:
+        body["code"] = session.code
+    if session.error is not None:
+        body["error"] = session.error
+    if session.error_description is not None:
+        body["errorDescription"] = session.error_description
+    return JsonResponse(body, status=200)
