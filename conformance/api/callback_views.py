@@ -38,6 +38,7 @@ from django.shortcuts import render
 from django.views.decorators.http import require_GET
 
 from conformance.api.auth_session_store import (
+    AuthSession,
     AuthSessionAlreadyResolvedError,
     UnknownAuthSessionError,
     auth_session_store,
@@ -112,13 +113,7 @@ def callback_view(request: HttpRequest) -> HttpResponse:
         logger.warning("PSU callback rejected: unknown or already-resolved state")
         return _render_failure(request)
 
-    _emit_callback_event(
-        session.run_id,
-        state=state,
-        code=code,
-        error=error,
-        error_description=error_description,
-    )
+    _emit_callback_event(session, state=state)
 
     return render(
         request,
@@ -152,46 +147,45 @@ def _render_failure(request: HttpRequest) -> HttpResponse:
     )
 
 
-def _emit_callback_event(
-    run_id: str,
-    *,
-    state: str,
-    code: str | None,
-    error: str | None,
-    error_description: str | None,
-) -> None:
+def _emit_callback_event(session: AuthSession, *, state: str) -> None:
     """Append an ``auth-callback-received`` event to the parent run's log.
 
-    The event payload is built from the inbound redirect parameters and
-    handed unmodified to :meth:`BufferedExecutionLogger.emit`; the logger
-    masks the ``code`` field via
-    :data:`conformance.masking.SENSITIVE_JSON_KEYS` so the raw
-    authorization code never lands in NDJSON. If the parent run record has
-    been pruned or never carried a logger, the emission is silently
+    The event payload is built from the **resolved** :class:`AuthSession`
+    rather than from the raw redirect query parameters, so the emitted
+    fields always match the stored outcome. This prevents a malformed or
+    hostile redirect (for example one that carries both ``error`` and
+    ``code``, or an ``error_description`` on a success redirect) from
+    landing fields in the execution log that contradict the session's
+    actual ``captured``/``error`` status — a concern that becomes
+    security-relevant under a future developer-mode toggle that lifts the
+    :data:`conformance.masking.SENSITIVE_JSON_KEYS` masking of ``code``.
+
+    The payload is handed unmodified to
+    :meth:`BufferedExecutionLogger.emit`; the logger masks the ``code``
+    field via :data:`conformance.masking.SENSITIVE_JSON_KEYS` so the raw
+    authorization code never lands in NDJSON. If the parent run record
+    has been pruned or never carried a logger, the emission is silently
     skipped — the captured session itself is still retrievable via the
     loopback API.
 
     Args:
-        run_id: Identifier of the parent run that owns the auth session.
-        state: The opaque state token from the redirect query.
-        code: The raw authorization code, if the redirect carried one.
-            Passed through unmodified so the logger can mask it.
-        error: The ASPSP-supplied error code, if the redirect carried one.
-        error_description: The ASPSP-supplied free-text error description
-            (RFC 6749 §4.1.2.1), if present. Included on the
-            ASPSP-reported-error path as the snake_case ``error_description``
-            payload key so downstream log consumers see the full diagnostic.
+        session: The resolved auth session whose status drives the payload
+            shape. ``captured`` sessions emit ``{state, code}``; ``error``
+            sessions emit ``{state, error[, error_description]}``.
+        state: The opaque state token from the redirect query. Equal to
+            ``session.state`` by construction; passed explicitly so the
+            caller controls the wire-format key.
     """
-    record = run_store.get_run(run_id)
+    record = run_store.get_run(session.run_id)
     if record is None or record.execution_logger is None:
         return
     payload: dict[str, JsonValue] = {"state": state}
-    if code is not None:
-        payload["code"] = code
-    if error is not None:
-        payload["error"] = error
-    if error_description is not None:
-        payload["error_description"] = error_description
+    if session.status == "captured" and session.code is not None:
+        payload["code"] = session.code
+    elif session.status == "error" and session.error is not None:
+        payload["error"] = session.error
+        if session.error_description is not None:
+            payload["error_description"] = session.error_description
     record.execution_logger.emit(
         "auth-callback-received",
         payload=payload,

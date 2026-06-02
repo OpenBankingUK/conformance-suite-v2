@@ -207,3 +207,65 @@ class TestCallbackView:
         captured = auth_session_store.get(run_id, session.state)
         assert captured is not None
         assert captured.status == "captured"
+
+    def test_error_redirect_with_stray_code_emits_only_error_payload(self) -> None:
+        # A malformed/hostile redirect that carries both ``error`` and
+        # ``code`` must resolve to an ``error`` session (the view branches
+        # on ``error`` first) AND the emitted execution-log payload must
+        # reflect the stored outcome — no stray ``code`` field that could
+        # be unmasked under a future developer-mode toggle.
+        run_id, state = _registered_state()
+        client = Client()
+
+        client.get(
+            "/callback/",
+            {
+                "state": state,
+                "error": "access_denied",
+                "code": "should-not-be-logged",
+                "error_description": "psu cancelled",
+            },
+        )
+
+        record = run_store.get_run(run_id)
+        assert record is not None
+        assert record.execution_logger is not None
+        callback_events = [e for e in record.execution_logger.events() if e.type == "auth-callback-received"]
+        assert len(callback_events) == 1
+        payload = callback_events[0].payload
+        assert payload["state"] == state
+        assert payload["error"] == "access_denied"
+        assert payload["error_description"] == "psu cancelled"
+        assert "code" not in payload
+        # Belt-and-braces: the stray code value must not appear in the
+        # serialised NDJSON either.
+        ndjson = record.execution_logger.to_ndjson_bytes()
+        assert b"should-not-be-logged" not in ndjson
+
+    def test_success_redirect_with_stray_error_description_is_not_logged(self) -> None:
+        # The success path must not carry ``error_description`` into the
+        # log payload just because the redirect query included it — the
+        # payload shape is driven by the resolved session, not by raw
+        # query parameters.
+        run_id, state = _registered_state()
+        client = Client()
+
+        client.get(
+            "/callback/",
+            {
+                "state": state,
+                "code": "auth-code-xyz",
+                "error_description": "leftover from a previous attempt",
+            },
+        )
+
+        record = run_store.get_run(run_id)
+        assert record is not None
+        assert record.execution_logger is not None
+        callback_events = [e for e in record.execution_logger.events() if e.type == "auth-callback-received"]
+        assert len(callback_events) == 1
+        payload = callback_events[0].payload
+        assert payload["state"] == state
+        assert "code" in payload
+        assert "error" not in payload
+        assert "error_description" not in payload
