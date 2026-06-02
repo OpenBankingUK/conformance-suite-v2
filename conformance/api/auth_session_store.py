@@ -18,9 +18,11 @@ with full docstrings; behaviour is implemented in a follow-up TDD step.
 
 from __future__ import annotations
 
+import dataclasses
+import secrets
 import threading
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import UTC, datetime
 from typing import Literal
 
 AuthSessionStatus = Literal["awaiting", "captured", "error"]
@@ -120,7 +122,23 @@ class AuthSessionStore:
             AuthSessionLimitError: If the parent run already has
                 :data:`MAX_SESSIONS_PER_RUN` sessions registered.
         """
-        raise NotImplementedError
+        if state is not None and len(state) < MIN_CALLER_SUPPLIED_STATE_LENGTH:
+            raise InvalidAuthSessionStateError(state)
+        with self._lock:
+            resolved_state = state if state is not None else secrets.token_urlsafe(32)
+            if resolved_state in self._sessions:
+                raise DuplicateAuthSessionError(resolved_state)
+            run_count = sum(1 for s in self._sessions.values() if s.run_id == run_id)
+            if run_count >= MAX_SESSIONS_PER_RUN:
+                raise AuthSessionLimitError(run_id)
+            session = AuthSession(
+                state=resolved_state,
+                run_id=run_id,
+                status="awaiting",
+                created_at=datetime.now(UTC),
+            )
+            self._sessions[resolved_state] = session
+            return dataclasses.replace(session)
 
     def capture_code(self, state: str, code: str) -> AuthSession:
         """Record an authorization code captured from the ASPSP redirect.
@@ -141,7 +159,16 @@ class AuthSessionStore:
             AuthSessionAlreadyResolvedError: If the session is already in
                 a terminal state.
         """
-        raise NotImplementedError
+        with self._lock:
+            session = self._sessions.get(state)
+            if session is None:
+                raise UnknownAuthSessionError(state)
+            if session.status != "awaiting":
+                raise AuthSessionAlreadyResolvedError(state, session.status)
+            session.status = "captured"
+            session.code = code
+            session.captured_at = datetime.now(UTC)
+            return dataclasses.replace(session)
 
     def capture_error(
         self,
@@ -167,7 +194,17 @@ class AuthSessionStore:
             AuthSessionAlreadyResolvedError: If the session is already in
                 a terminal state.
         """
-        raise NotImplementedError
+        with self._lock:
+            session = self._sessions.get(state)
+            if session is None:
+                raise UnknownAuthSessionError(state)
+            if session.status != "awaiting":
+                raise AuthSessionAlreadyResolvedError(state, session.status)
+            session.status = "error"
+            session.error = error
+            session.error_description = description
+            session.captured_at = datetime.now(UTC)
+            return dataclasses.replace(session)
 
     def get(self, run_id: str, state: str) -> AuthSession | None:
         """Look up an auth session by ``(run_id, state)``.
@@ -183,7 +220,11 @@ class AuthSessionStore:
             The :class:`AuthSession`, or ``None`` if no session exists for
             this ``(run_id, state)`` pair.
         """
-        raise NotImplementedError
+        with self._lock:
+            session = self._sessions.get(state)
+            if session is None or session.run_id != run_id:
+                return None
+            return dataclasses.replace(session)
 
     def for_run(self, run_id: str) -> list[AuthSession]:
         """List all auth sessions registered against a run.
@@ -196,7 +237,8 @@ class AuthSessionStore:
             registration order. Empty if the run has no sessions (or is
             unknown — the store does not validate run IDs).
         """
-        raise NotImplementedError
+        with self._lock:
+            return [dataclasses.replace(session) for session in self._sessions.values() if session.run_id == run_id]
 
     def discard_for_run(self, run_id: str) -> int:
         """Drop all auth sessions belonging to a run.
@@ -210,7 +252,11 @@ class AuthSessionStore:
         Returns:
             The number of sessions removed.
         """
-        raise NotImplementedError
+        with self._lock:
+            to_drop = [state for state, session in self._sessions.items() if session.run_id == run_id]
+            for state in to_drop:
+                del self._sessions[state]
+            return len(to_drop)
 
     def reset(self) -> None:
         """Wipe all auth-session state. Intended for test fixtures only.
