@@ -789,3 +789,118 @@ class TestGetAuthSessionEndpoint:
         client = Client(REMOTE_ADDR="10.0.0.5")
         response = client.get("/api/runs/some-id/auth-sessions/some-state/")
         assert response.status_code == 403
+
+
+# ─── Run lifecycle ↔ auth-session-store integration ─────────────────────────
+
+
+@pytest.mark.integration
+class TestExecuteRunDiscardsAuthSessions:
+    """``_execute_run`` must drop auth sessions on terminal exit.
+
+    Awaiting auth sessions registered against a run MUST NOT outlive that
+    run. The hook lives in ``_execute_run``'s ``finally`` block so it
+    covers both the happy path (``mark_completed``) and the failure path
+    (``mark_failed``). These tests exercise the hook directly rather than
+    relying on the full HTTP request lifecycle.
+    """
+
+    def test_completed_run_discards_awaiting_auth_sessions(self) -> None:
+        """Sessions are discarded after a successful run completes."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        auth_session_store.register(record.run_id)
+        assert len(auth_session_store.for_run(record.run_id)) == 2
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            return_value=fake_result,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(record.run_id) == []
+        # The run itself transitioned to completed (sanity check).
+        assert run_store.get_run(record.run_id) is not None
+        assert run_store.get_run(record.run_id).status == "completed"  # type: ignore[union-attr]
+
+    def test_failed_run_also_discards_awaiting_auth_sessions(self) -> None:
+        """Sessions are discarded even when the run raises internally."""
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        assert len(auth_session_store.for_run(record.run_id)) == 1
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            side_effect=RuntimeError("boom"),
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(record.run_id) == []
+        assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
+
+    def test_other_runs_auth_sessions_are_not_discarded(self) -> None:
+        """The hook is run-scoped: sibling runs' sessions are untouched."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        finishing = run_store.create_run()
+        other_run_id = "other-run-id"
+        auth_session_store.register(finishing.run_id)
+        auth_session_store.register(other_run_id)
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            return_value=fake_result,
+        ):
+            _execute_run(finishing.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(finishing.run_id) == []
+        assert len(auth_session_store.for_run(other_run_id)) == 1
