@@ -5,10 +5,16 @@ from __future__ import annotations
 import argparse
 import json
 import logging
+import sys
 from collections.abc import Sequence
 from pathlib import Path
 
-from conformance.execution_log import BufferedExecutionLogger, new_run_id, warn_if_developer_mode
+from conformance.execution_log import (
+    BufferedExecutionLogger,
+    PsuAuthorizationUrlConsoleLogger,
+    new_run_id,
+    warn_if_developer_mode,
+)
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest
@@ -64,9 +70,14 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     run_id = new_run_id()
     execution_logger = BufferedExecutionLogger(run_id=run_id)
+    logger_sink = PsuAuthorizationUrlConsoleLogger(
+        execution_logger,
+        stdout=sys.stdout,
+        stderr=sys.stderr,
+    )
 
     if args.manifest is None:
-        result = run_model_bank_smoke_check(config, execution_logger=execution_logger)
+        result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
         try:
             manifest = load_manifest(args.manifest)
@@ -91,7 +102,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 manifest,
                 environment=config.environment,
                 client=http_client,
-                execution_logger=execution_logger,
+                execution_logger=logger_sink,
                 plan=plan,
                 run_id=run_id,
             )

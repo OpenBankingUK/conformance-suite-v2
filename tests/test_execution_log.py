@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import io
 import json
 import threading
 from pathlib import Path
@@ -12,10 +13,23 @@ from conformance.execution_log import (
     BufferedExecutionLogger,
     ExecutionEvent,
     NullExecutionLogger,
+    PsuAuthorizationUrlConsoleLogger,
     is_developer_mode_enabled,
     new_run_id,
     warn_if_developer_mode,
 )
+
+
+class _TtyStringIO(io.StringIO):
+    """String buffer that reports TTY status for console-logger tests."""
+
+    def isatty(self) -> bool:
+        """Return True so tests can exercise interactive CLI output.
+
+        Returns:
+            Always True.
+        """
+        return True
 
 
 @pytest.mark.unit
@@ -32,6 +46,33 @@ def test_null_logger_emit_is_a_no_op() -> None:
     logger = NullExecutionLogger()
     logger.emit("run-started")
     logger.emit("step-completed", step_id="x", payload={"status": "passed"})
+
+
+@pytest.mark.unit
+def test_psu_url_console_logger_prints_to_stderr_when_stdout_is_tty() -> None:
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    stdout = _TtyStringIO()
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
+    url = "https://auth.example.com/authorize?client_id=client-123&state=s"
+
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": url})
+
+    assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
+    assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
+
+
+@pytest.mark.unit
+def test_psu_url_console_logger_is_quiet_when_stdout_is_not_tty() -> None:
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    stdout = io.StringIO()
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
+
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://auth.example.com/authorize"})
+
+    assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
+    assert stderr.getvalue() == ""
 
 
 @pytest.mark.unit

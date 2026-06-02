@@ -39,7 +39,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, TextIO, cast
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value
@@ -187,6 +187,54 @@ class NullExecutionLogger(ExecutionLogger):
             payload: Ignored.
         """
         return
+
+
+class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
+    """Decorator that mirrors PSU authorisation URLs to an interactive CLI.
+
+    The wrapped logger remains the canonical execution-log sink. This
+    decorator only adds an operator-facing stderr line when the executor emits
+    a ``psu-authorization-url`` event and stdout is attached to a TTY, so
+    non-interactive CI invocations keep their output quiet while the existing
+    NDJSON log remains complete.
+    """
+
+    def __init__(self, wrapped: ExecutionLogger, *, stdout: TextIO, stderr: TextIO) -> None:
+        """Initialise the console mirroring decorator.
+
+        Args:
+            wrapped: Execution-log sink that receives every event unchanged.
+            stdout: Stream whose ``isatty()`` result decides whether the CLI
+                is interactive.
+            stderr: Stream that receives the participant-facing PSU URL line.
+        """
+        self._wrapped = wrapped
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def emit(
+        self,
+        event_type: EventType,
+        *,
+        step_id: str | None = None,
+        payload: Mapping[str, JsonValue] | None = None,
+    ) -> None:
+        """Forward an event and mirror PSU authorisation URLs when interactive.
+
+        Args:
+            event_type: Event type from the closed taxonomy.
+            step_id: Optional manifest step identifier.
+            payload: Optional event-specific data. The wrapped logger applies
+                its normal masking policy; this decorator reads only the raw
+                ``url`` field needed for the browser hand-off line.
+        """
+        self._wrapped.emit(event_type, step_id=step_id, payload=payload)
+        if event_type != "psu-authorization-url" or not self._stdout.isatty():
+            return
+        url = (payload or {}).get("url")
+        if not isinstance(url, str):
+            return
+        print(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}", file=self._stderr)
 
 
 class BufferedExecutionLogger(ExecutionLogger):

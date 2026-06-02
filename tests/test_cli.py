@@ -1,14 +1,32 @@
 import json
+import sys
+from datetime import UTC, datetime
+from io import StringIO
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
 
 from conformance import cli
+from conformance.execution_log import ExecutionLogger
+from conformance.results import SmokeCheckResult
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
 EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v0-openid-jwks-example.json"
+
+
+class _TtyStringIO(StringIO):
+    """String buffer that reports TTY status for CLI tests."""
+
+    def isatty(self) -> bool:
+        """Return True so tests can exercise interactive CLI output.
+
+        Returns:
+            Always True.
+        """
+        return True
 
 
 @pytest.mark.unit
@@ -120,6 +138,76 @@ def test_cli_runs_manifest_from_committed_example_config(monkeypatch: pytest.Mon
     result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
     assert result["status"] == "passed"
     assert result["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
+
+
+@pytest.mark.unit
+def test_cli_prints_psu_authorization_url_to_tty_stderr(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "model-bank.json"
+    manifest_path = tmp_path / "manifest.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "test-env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "executionLogPath": str(tmp_path / "execution.ndjson"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "v1",
+                "name": "cli psu url surfacing",
+                "steps": [
+                    {
+                        "id": "placeholder",
+                        "name": "Placeholder HTTP step",
+                        "request": {"method": "GET", "url": "https://example.com/unused"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    url = "https://auth.example.com/authorize?client_id=client-123&state=s"
+
+    def fake_run_manifest(*_args: object, **kwargs: object) -> SmokeCheckResult:
+        """Emit a PSU URL event and return a passing manifest result.
+
+        Args:
+            *_args: Positional arguments accepted by ``cli.run_manifest``.
+            **kwargs: Keyword arguments accepted by ``cli.run_manifest``.
+
+        Returns:
+            Passing smoke-check result for the CLI to serialise.
+        """
+        execution_logger = cast(ExecutionLogger, kwargs["execution_logger"])
+        execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": url})
+        now = datetime.now(UTC)
+        return SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=now,
+            finished_at=now,
+            steps=(),
+        )
+
+    stdout = _TtyStringIO()
+    stderr = StringIO()
+    monkeypatch.setattr(cli, "run_manifest", fake_run_manifest)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    exit_code = cli.run([str(config_path), "--manifest", str(manifest_path)])
+
+    assert exit_code == 0
+    assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
 
 
 @pytest.mark.unit
