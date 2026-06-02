@@ -1,4 +1,5 @@
 import json
+import secrets
 from typing import Any, cast
 
 import httpx
@@ -1329,6 +1330,12 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"ok": True})
 
+    # Generate the sentinel at runtime so no secret-shaped literal is
+    # hardcoded in the test (Snyk: hardcoded non-cryptographic secret).
+    # The test still verifies that whatever value flows through the
+    # form-body field never appears in the recorded step result.
+    secret_sentinel = f"sentinel-{secrets.token_hex(16)}"
+
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
         "name": "No field leak",
@@ -1342,7 +1349,7 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
                     "body": {
                         "encoding": "form",
                         "fields": {
-                            "client_secret": "super-secret-value-shhh",  # pragma: allowlist secret
+                            "client_secret": secret_sentinel,
                             "grant_type": "client_credentials",
                         },
                     },
@@ -1362,7 +1369,7 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
     # or field name. ``str`` covers nested dataclasses/mappings without
     # imposing a JSON-serialisable constraint on the result.
     serialised = str(result.steps[0])
-    assert "super-secret-value-shhh" not in serialised
+    assert secret_sentinel not in serialised
     assert "client_secret" not in serialised
 
 
