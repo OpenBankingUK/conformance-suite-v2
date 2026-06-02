@@ -299,3 +299,86 @@ def test_flush_to_path_cleans_up_temp_file_on_rename_failure(tmp_path: Path, mon
 
     leftovers = list(tmp_path.glob("*.tmp"))
     assert leftovers == [], f"Unexpected temp files: {leftovers}"
+
+
+@pytest.mark.unit
+def test_buffered_logger_emits_auth_session_registered_event() -> None:
+    """``auth-session-registered`` event records state and status, no secrets."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit(
+        "auth-session-registered",
+        step_id="psu-auth",
+        payload={"state": "abc123state", "status": "awaiting"},
+    )
+    event = logger.events()[0]
+    assert event.type == "auth-session-registered"
+    assert event.step_id == "psu-auth"
+    assert event.payload == {"state": "abc123state", "status": "awaiting"}
+
+
+@pytest.mark.unit
+def test_buffered_logger_masks_code_on_auth_callback_received_event() -> None:
+    """The captured authorization ``code`` MUST never appear in NDJSON."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit(
+        "auth-callback-received",
+        step_id="psu-auth",
+        payload={"state": "abc123state", "code": "super-secret-auth-code", "error": None},  # pragma: allowlist secret
+    )
+    payload = logger.events()[0].payload
+    assert payload["state"] == "abc123state"
+    assert payload["code"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+    assert payload["error"] is None
+
+
+@pytest.mark.unit
+def test_buffered_logger_auth_callback_event_preserves_error_when_present() -> None:
+    """Error callbacks record ``error`` and ``error_description`` verbatim."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit(
+        "auth-callback-received",
+        step_id="psu-auth",
+        payload={
+            "state": "abc123state",
+            "code": None,
+            "error": "access_denied",
+            "error_description": "PSU declined consent",
+        },
+    )
+    payload = logger.events()[0].payload
+    assert payload["error"] == "access_denied"
+    assert payload["error_description"] == "PSU declined consent"
+    assert payload["code"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+
+
+@pytest.mark.unit
+def test_auth_events_preserve_emission_order_around_step_started() -> None:
+    """Auth events interleave with step lifecycle events in emission order."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit("auth-session-registered", step_id="psu", payload={"state": "s", "status": "awaiting"})
+    logger.emit("step-started", step_id="psu")
+    logger.emit(
+        "auth-callback-received",
+        step_id="psu",
+        payload={"state": "s", "code": "x", "error": None},  # pragma: allowlist secret
+    )
+    logger.emit("step-completed", step_id="psu", payload={"status": "passed"})
+
+    assert [e.type for e in logger.events()] == [
+        "auth-session-registered",
+        "step-started",
+        "auth-callback-received",
+        "step-completed",
+    ]
+
+
+@pytest.mark.unit
+def test_buffered_logger_developer_mode_does_not_mask_auth_code() -> None:
+    """Developer mode bypasses masking, including for ``code`` payloads."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=True)
+    logger.emit(
+        "auth-callback-received",
+        payload={"state": "s", "code": "raw-code-value"},  # pragma: allowlist secret
+    )
+    payload = logger.events()[0].payload
+    assert payload["code"] == "raw-code-value"  # noqa: S105 — developer mode bypasses masking

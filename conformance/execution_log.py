@@ -22,6 +22,7 @@ Event taxonomy (``type`` field):
     step-started, step-completed, step-deselected,
     request-sent, response-received,
     assertion-evaluated,
+    auth-session-registered, auth-callback-received,
     placeholder-error, application-error.
 """
 
@@ -40,7 +41,7 @@ from pathlib import Path
 from typing import Literal, cast
 
 from conformance.json_types import JsonObject, JsonValue
-from conformance.masking import mask_headers, mask_json_value
+from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value
 
 logger = logging.getLogger(__name__)
 
@@ -53,6 +54,8 @@ EventType = Literal[
     "request-sent",
     "response-received",
     "assertion-evaluated",
+    "auth-session-registered",
+    "auth-callback-received",
     "placeholder-error",
     "application-error",
 ]
@@ -338,6 +341,13 @@ class BufferedExecutionLogger(ExecutionLogger):
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
                 masked[key] = dict(mask_headers(str_headers))
+            elif key.lower() in SENSITIVE_JSON_KEYS:
+                # Top-level sensitive scalar (e.g. ``code`` on an
+                # auth-callback-received event): mask_json_value only
+                # masks keys *inside* nested objects, so we must mask
+                # the value here to prevent raw authorization codes,
+                # tokens, or client secrets being persisted in NDJSON.
+                masked[key] = MASKED_VALUE
             else:
                 masked[key] = mask_json_value(value)
         return masked
