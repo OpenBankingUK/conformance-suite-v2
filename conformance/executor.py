@@ -2,12 +2,22 @@
 
 from __future__ import annotations
 
+import time
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime
 
 import httpx
 
-from conformance.api.auth_session_store import AuthSessionStore
+from conformance.api.auth_session_store import (
+    AuthSession,
+    AuthSessionAlreadyResolvedError,
+    AuthSessionLimitError,
+    AuthSessionStore,
+    DuplicateAuthSessionError,
+    InvalidAuthSessionStateError,
+    UnknownAuthSessionError,
+)
 from conformance.assertions import AssertionResult, evaluate_assertion
 from conformance.context import (
     ExecutionContext,
@@ -34,7 +44,13 @@ from conformance.manifest import (
     PsuAuthorizationStep,
     validate_header_value,
 )
-from conformance.masking import mask_form_fields, mask_headers, mask_json_value
+from conformance.masking import SENSITIVE_JSON_KEYS, _mask_url_query, mask_form_fields, mask_headers, mask_json_value
+from conformance.psu_authorization import (
+    build_authorization_url,
+    extract_redirect_parameters,
+    redirect_matches_registered_uri,
+    synthesize_psu_response,
+)
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -238,22 +254,23 @@ def _run_manifest_v1(
             # — the executor's existing SKIPPED handling covers that case.
             continue
         if isinstance(manifest_step, PsuAuthorizationStep):
-            # PSU authorisation step dispatch is implemented in Phase 3 of
-            # the PSU manifest-step plan. Phase 2 only adds the parse path
-            # so manifests can declare PSU steps; refuse to silently
-            # mis-execute one until the dedicated executor branch lands.
-            raise NotImplementedError(
-                f"PSU authorisation step '{manifest_step.id}' execution not yet implemented "
-                "(parse path only — see feature/psu-authorization-step plan Phase 3)"
+            step_result, context = _execute_v1_psu_step(
+                manifest_step,
+                context=context,
+                client=client,
+                run_id=run_id,
+                auth_session_store=auth_session_store,
+                execution_logger=execution_logger,
             )
-        step_result, context = _execute_v1_step(
-            manifest_step,
-            context=context,
-            client=client,
-            execution_logger=execution_logger,
-            run_id=run_id,
-            auth_session_store=auth_session_store,
-        )
+        else:
+            step_result, context = _execute_v1_step(
+                manifest_step,
+                context=context,
+                client=client,
+                execution_logger=execution_logger,
+                run_id=run_id,
+                auth_session_store=auth_session_store,
+            )
         # Carry the manifest's mandatory flag onto the step result so the
         # aggregate certificationEligibility block can reason about it
         # without re-walking the manifest. Done here (rather than inside
@@ -264,6 +281,500 @@ def _run_manifest_v1(
         steps.append(step_result)
 
     return build_smoke_check_result(environment, steps, started_at=started_at, plan=plan)
+
+
+def _execute_v1_psu_step(
+    manifest_step: PsuAuthorizationStep,
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+    execution_logger: ExecutionLogger,
+    clock: Callable[[], float] | None = None,
+    sleep: Callable[[float], None] | None = None,
+) -> tuple[StepResult, ExecutionContext]:
+    """Execute a manual PSU authorisation step and record captured code context.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step to execute.
+        context: Current execution context with earlier step records.
+        client: Preconfigured synchronous HTTP client. Used by headless mode
+            to issue the authorisation request with redirect following disabled.
+        run_id: Run identifier used to scope the auth-session registration.
+        auth_session_store: Store used to register and poll the session.
+        execution_logger: Structured execution-log sink.
+        clock: Optional monotonic clock used for deadline checks. Defaults
+            to :func:`time.monotonic`; injectable for tests.
+        sleep: Optional sleep function used between polls. Defaults to
+            :func:`time.sleep`; injectable for tests.
+
+    Returns:
+        A tuple of the PSU step result and updated execution context.
+    """
+    effective_clock = time.monotonic if clock is None else clock
+    effective_sleep = time.sleep if sleep is None else sleep
+    execution_logger.emit("step-started", step_id=manifest_step.id)
+    step_result, new_context = _execute_v1_psu_step_inner(
+        manifest_step,
+        context=context,
+        client=client,
+        run_id=run_id,
+        auth_session_store=auth_session_store,
+        execution_logger=execution_logger,
+        clock=effective_clock,
+        sleep=effective_sleep,
+    )
+    execution_logger.emit(
+        "step-completed",
+        step_id=manifest_step.id,
+        payload={"status": step_result.status, "message": step_result.message},
+    )
+    return step_result, new_context
+
+
+def _execute_v1_psu_step_inner(
+    manifest_step: PsuAuthorizationStep,
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+    execution_logger: ExecutionLogger,
+    clock: Callable[[], float],
+    sleep: Callable[[float], None],
+) -> tuple[StepResult, ExecutionContext]:
+    """Run the manual PSU authorisation flow without lifecycle wrapper events.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step to execute.
+        context: Current execution context with earlier step records.
+        client: Preconfigured synchronous HTTP client. Used by headless mode
+            to issue the authorisation request with redirect following disabled.
+        run_id: Run identifier used to scope the auth-session registration.
+        auth_session_store: Store used to register and poll the session.
+        execution_logger: Structured execution-log sink.
+        clock: Monotonic clock used for deadline checks.
+        sleep: Sleep function used between polls.
+
+    Returns:
+        A tuple of the PSU step result and updated execution context.
+    """
+    initial_result_url = _mask_url_query(manifest_step.authorization_endpoint, SENSITIVE_JSON_KEYS)
+    request_evidence: dict[str, JsonValue] = {
+        "method": "GET",
+        "url": initial_result_url,
+    }
+    try:
+        resolved_authorization_endpoint = resolve_placeholders(manifest_step.authorization_endpoint, context)
+        resolved_client_id = resolve_placeholders(manifest_step.client_id, context)
+        resolved_state = resolve_placeholders(manifest_step.state, context) if manifest_step.state is not None else None
+        resolved_request_object = (
+            resolve_placeholders(manifest_step.request_object, context)
+            if manifest_step.request_object is not None
+            else None
+        )
+    except MissingPredecessorResponseError as error:
+        return _skipped_step(
+            manifest_step.id,
+            context=context,
+            method="GET",
+            url=initial_result_url,
+            error=error,
+            request_evidence=request_evidence,
+            execution_logger=execution_logger,
+        )
+    except PlaceholderResolutionError as error:
+        execution_logger.emit(
+            "placeholder-error",
+            step_id=manifest_step.id,
+            payload={"location": "psu-authorization", "message": str(error)},
+        )
+        request_record = RequestRecord(method="GET", url=manifest_step.authorization_endpoint)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=initial_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    resolved_result_url = _mask_url_query(resolved_authorization_endpoint, SENSITIVE_JSON_KEYS)
+    request_evidence["url"] = resolved_result_url
+    try:
+        validate_https_url(
+            resolved_authorization_endpoint,
+            label=f"Step '{manifest_step.id}' authorizationEndpoint",
+        )
+        validate_https_url(manifest_step.redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
+    except HttpsUrlValidationError as error:
+        request_record = RequestRecord(method="GET", url=resolved_authorization_endpoint)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=str(error),
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    try:
+        session = auth_session_store.register(run_id, state=resolved_state)
+    except (AuthSessionLimitError, InvalidAuthSessionStateError, DuplicateAuthSessionError) as error:
+        request_record = RequestRecord(method="GET", url=resolved_authorization_endpoint)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to register PSU authorisation session: {error}",
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    authorization_url = build_authorization_url(
+        endpoint=resolved_authorization_endpoint,
+        client_id=resolved_client_id,
+        redirect_uri=manifest_step.redirect_uri,
+        response_type=manifest_step.response_type,
+        scope=manifest_step.scope,
+        state=session.state,
+        request_object=resolved_request_object,
+    )
+    request_record = RequestRecord(method="GET", url=authorization_url)
+    result_url = _mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
+    request_evidence["url"] = result_url
+    # The browser-facing URL is intentionally emitted in full so a manual
+    # participant can paste it into their browser; sensitive query values are
+    # supplied as separately-keyed payload fields so the logger can mask them.
+    execution_logger.emit(
+        "psu-authorization-url",
+        step_id=manifest_step.id,
+        payload={
+            "url": authorization_url,
+            "client_id": resolved_client_id,
+            "request_object": resolved_request_object,
+            "state": session.state,
+            "mode": manifest_step.mode,
+        },
+    )
+
+    if manifest_step.mode == "headless":
+        return _execute_headless_psu_authorization(
+            manifest_step,
+            context=context,
+            client=client,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+            execution_logger=execution_logger,
+            authorization_url=authorization_url,
+            result_url=result_url,
+            request_record=request_record,
+            request_evidence=request_evidence,
+            registered_state=session.state,
+        )
+
+    deadline = clock() + manifest_step.timeout_seconds
+    while clock() < deadline:
+        sleep(0.5)
+        current_session = auth_session_store.get(run_id, session.state)
+        if current_session is None or current_session.status == "awaiting":
+            continue
+        return _complete_psu_step_from_session(
+            manifest_step,
+            context=context,
+            request_record=request_record,
+            request_evidence=request_evidence,
+            authorization_url=authorization_url,
+            result_url=result_url,
+            current_session=current_session,
+        )
+
+    return (
+        _attach_evidence(
+            StepResult(
+                name=manifest_step.id,
+                status="failed",
+                message=f"{manifest_step.name} timed out waiting for PSU authorisation callback",
+                url=result_url,
+                details={"timeoutSeconds": manifest_step.timeout_seconds},
+            ),
+            request_evidence=request_evidence,
+            response_evidence=None,
+        ),
+        record_step(context, manifest_step.id, request_record, None),
+    )
+
+
+def _execute_headless_psu_authorization(
+    manifest_step: PsuAuthorizationStep,
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+    execution_logger: ExecutionLogger,
+    authorization_url: str,
+    result_url: str,
+    request_record: RequestRecord,
+    request_evidence: dict[str, JsonValue],
+    registered_state: str,
+) -> tuple[StepResult, ExecutionContext]:
+    """Execute a headless PSU authorisation redirect exchange.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step being executed.
+        context: Current execution context with earlier step records.
+        client: Preconfigured HTTP client used to issue the authorisation
+            request. Redirect following is disabled for this call.
+        run_id: Run identifier used to scope auth-session lookup.
+        auth_session_store: Store containing the registered PSU session.
+        execution_logger: Structured execution-log sink.
+        authorization_url: Fully built authorisation URL.
+        result_url: Masked authorisation URL safe to embed in result files.
+        request_record: Request record for the authorisation URL.
+        request_evidence: Mutable request evidence attached to failures.
+        registered_state: State value registered for this PSU step.
+
+    Returns:
+        A tuple of the PSU step result and updated execution context.
+    """
+    try:
+        response = client.get(authorization_url, follow_redirects=False)
+    except httpx.HTTPError as error:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"PSU authorisation headless request failed: {error}",
+                    url=result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    response_evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
+    if not 300 <= response.status_code < 400:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=(
+                        "PSU authorisation headless request did not return a redirect "
+                        f"(got HTTP {response.status_code})"
+                    ),
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    location = response.headers.get("Location")
+    if location is None:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message="PSU authorisation headless redirect was missing a Location header",
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    if not redirect_matches_registered_uri(location=location, redirect_uri=manifest_step.redirect_uri):
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message="PSU authorisation redirect target did not match the configured redirectUri",
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    redirect_params = extract_redirect_parameters(location)
+    redirect_state = redirect_params.get("state")
+    if redirect_state is None or redirect_state != registered_state:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message="PSU authorisation redirect state did not match the registered session",
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    execution_logger.emit(
+        "psu-authorization-redirect-received",
+        step_id=manifest_step.id,
+        payload={"state": redirect_state, "status": response.status_code},
+    )
+
+    try:
+        if "error" in redirect_params:
+            auth_session_store.capture_error(
+                redirect_state,
+                redirect_params["error"],
+                redirect_params.get("error_description"),
+            )
+        elif "code" in redirect_params and redirect_params["code"]:
+            auth_session_store.capture_code(redirect_state, redirect_params["code"])
+        else:
+            return (
+                _attach_evidence(
+                    StepResult(
+                        name=manifest_step.id,
+                        status="failed",
+                        message="PSU authorisation redirect did not include a code or error",
+                        url=result_url,
+                        status_code=response.status_code,
+                    ),
+                    request_evidence=request_evidence,
+                    response_evidence=response_evidence,
+                ),
+                record_step(context, manifest_step.id, request_record, None),
+            )
+    except (UnknownAuthSessionError, AuthSessionAlreadyResolvedError) as error:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to capture PSU authorisation redirect: {error}",
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    current_session = auth_session_store.get(run_id, redirect_state)
+    if current_session is None:
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message="PSU authorisation redirect did not resolve a session for this run",
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            record_step(context, manifest_step.id, request_record, None),
+        )
+
+    return _complete_psu_step_from_session(
+        manifest_step,
+        context=context,
+        request_record=request_record,
+        request_evidence=request_evidence,
+        authorization_url=authorization_url,
+        result_url=result_url,
+        current_session=current_session,
+    )
+
+
+def _complete_psu_step_from_session(
+    manifest_step: PsuAuthorizationStep,
+    *,
+    context: ExecutionContext,
+    request_record: RequestRecord,
+    request_evidence: dict[str, JsonValue],
+    authorization_url: str,
+    result_url: str,
+    current_session: AuthSession,
+) -> tuple[StepResult, ExecutionContext]:
+    """Convert a terminal auth session into a PSU step result.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step being completed.
+        context: Current execution context with earlier step records.
+        request_record: Request record for the authorisation URL.
+        request_evidence: Request evidence attached to non-PASS results.
+        authorization_url: Fully built authorisation URL.
+        result_url: Masked authorisation URL safe to embed in result files.
+        current_session: Terminal auth session captured by manual callback
+            polling or by the headless redirect parser.
+
+    Returns:
+        A tuple of the PSU step result and updated execution context.
+    """
+    if current_session.status == "captured" and current_session.code is not None:
+        response_record = synthesize_psu_response(code=current_session.code, state=current_session.state)
+        new_context = record_step(context, manifest_step.id, request_record, response_record)
+        return (
+            StepResult(
+                name=manifest_step.id,
+                status="passed",
+                message=f"{manifest_step.name} captured authorization code",
+                url=result_url,
+                status_code=response_record.status_code,
+            ),
+            new_context,
+        )
+
+    error_details: dict[str, JsonValue] = {"error": current_session.error or "authorization_error"}
+    if current_session.error_description is not None:
+        error_details["error_description"] = current_session.error_description
+    return (
+        _attach_evidence(
+            StepResult(
+                name=manifest_step.id,
+                status="failed",
+                message=f"{manifest_step.name} returned an authorization error",
+                url=result_url,
+                details=error_details,
+            ),
+            request_evidence=request_evidence,
+            response_evidence=None,
+        ),
+        record_step(context, manifest_step.id, request_record, None),
+    )
 
 
 def _execute_v1_step(

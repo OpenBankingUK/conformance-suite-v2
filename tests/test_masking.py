@@ -9,6 +9,7 @@ from conformance.masking import (
     MASKED_VALUE,
     SENSITIVE_HEADER_NAMES,
     SENSITIVE_JSON_KEYS,
+    _mask_url_query,
     mask_form_fields,
     mask_headers,
     mask_json_value,
@@ -85,6 +86,21 @@ class TestMaskJsonValue:
         long = mask_json_value({"access_token": "a" * 10_000})
         assert short == long == {"access_token": MASKED_VALUE}
 
+    def test_request_object_keys_are_masked(self) -> None:
+        """FAPI/JAR request JWT fields are treated as credential-bearing values."""
+        masked = mask_json_value(
+            {
+                "request": "opaque-request-jwt",
+                "request_object": "opaque-request-object-jwt",
+                "client_id": "client-123",
+            }
+        )
+        assert masked == {
+            "request": MASKED_VALUE,
+            "request_object": MASKED_VALUE,
+            "client_id": "client-123",
+        }
+
 
 @pytest.mark.unit
 class TestMaskHeaders:
@@ -141,12 +157,40 @@ class TestMaskFormFields:
 
 
 @pytest.mark.unit
+class TestMaskUrlQuery:
+    """Behaviour of :func:`_mask_url_query` for OAuth 2.0 URL evidence."""
+
+    def test_sensitive_query_values_are_masked_case_insensitively(self) -> None:
+        """Selected query params are masked while non-sensitive params remain visible."""
+        url = (
+            "https://auth.example.com/authorize?client_id=client-123"
+            "&request=opaque-request-jwt&CLIENT_ASSERTION=opaque-client-assertion#frag"
+        )
+
+        masked = _mask_url_query(url, frozenset({"request", "client_assertion"}))
+
+        assert masked == (
+            "https://auth.example.com/authorize?client_id=client-123"
+            f"&request={MASKED_VALUE}&CLIENT_ASSERTION={MASKED_VALUE}#frag"
+        )
+
+    def test_url_without_sensitive_query_values_is_returned_unchanged(self) -> None:
+        """URLs that do not carry sensitive params are not normalised needlessly."""
+        url = "https://auth.example.com/authorize?scope=openid+accounts"
+        assert _mask_url_query(url, frozenset({"request"})) == url
+
+
+@pytest.mark.unit
 class TestSensitiveKeySets:
     """Sanity checks on the published sensitive-key constants."""
 
     def test_json_key_set_is_lowercase(self) -> None:
         """Sensitive JSON keys are stored lowercase for case-insensitive lookup."""
         assert all(key == key.lower() for key in SENSITIVE_JSON_KEYS)
+
+    def test_json_key_set_includes_psu_authorization_credentials(self) -> None:
+        """PSU authorization codes and JAR request values are masked by default."""
+        assert {"code", "client_assertion", "request", "request_object"} <= SENSITIVE_JSON_KEYS
 
     def test_header_name_set_is_lowercase(self) -> None:
         """Sensitive header names are stored lowercase for case-insensitive lookup."""

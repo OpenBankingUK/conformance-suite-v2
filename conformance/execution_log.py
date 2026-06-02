@@ -23,6 +23,7 @@ Event taxonomy (``type`` field):
     request-sent, response-received,
     assertion-evaluated,
     auth-session-registered, auth-callback-received,
+    psu-authorization-url, psu-authorization-redirect-received,
     placeholder-error, application-error.
 """
 
@@ -56,6 +57,8 @@ EventType = Literal[
     "assertion-evaluated",
     "auth-session-registered",
     "auth-callback-received",
+    "psu-authorization-url",
+    "psu-authorization-redirect-received",
     "placeholder-error",
     "application-error",
 ]
@@ -341,6 +344,8 @@ class BufferedExecutionLogger(ExecutionLogger):
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
                 masked[key] = dict(mask_headers(str_headers))
+            elif event_type == "psu-authorization-url" and key in {"client_id", "request_object"}:
+                masked[key] = MASKED_VALUE if value is not None else None
             elif key.lower() in SENSITIVE_JSON_KEYS:
                 # Top-level sensitive scalar (e.g. ``code`` on an
                 # auth-callback-received event): mask_json_value only

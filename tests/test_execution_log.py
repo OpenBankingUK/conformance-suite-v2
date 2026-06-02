@@ -382,3 +382,25 @@ def test_buffered_logger_developer_mode_does_not_mask_auth_code() -> None:
     )
     payload = logger.events()[0].payload
     assert payload["code"] == "raw-code-value"  # noqa: S105 — developer mode bypasses masking
+
+
+@pytest.mark.unit
+def test_buffered_logger_masks_psu_authorization_url_payload_fields() -> None:
+    """PSU URL events keep the browser URL visible but mask copied credential fields."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit(
+        "psu-authorization-url",
+        step_id="psu",
+        payload={
+            "url": "https://auth.example.com/authorize?client_id=client-123&request=signed.jwt",
+            "client_id": "client-123",
+            "request_object": "signed.jwt",
+            "state": "s" * 32,
+        },
+    )
+
+    payload = logger.events()[0].payload
+    assert payload["url"] == "https://auth.example.com/authorize?client_id=client-123&request=signed.jwt"
+    assert payload["client_id"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+    assert payload["request_object"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+    assert payload["state"] == "s" * 32
