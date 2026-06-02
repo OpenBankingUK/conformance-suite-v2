@@ -233,3 +233,30 @@ POST /api/runs/
 ```
 
 `certificationEligibility` gains two related fields: `mandatoryDeselected` (count) and `mandatoryDeselectedStepIds` (ordered list). Whenever `mandatoryDeselected > 0` the run is **not eligible** and the dedicated reason `"Mandatory steps were deselected from the plan"` takes precedence over every other failure reason — a mandatory step that never ran cannot demonstrate coverage, regardless of why.
+
+## PSU Authorization Callback Coordination
+
+The PRD's PSU Authorisation flow (manual mode, Phase 1) requires the engine to receive the ASPSP's browser redirect after the participant approves an authorization request. This is supported by three pieces of plumbing — a public callback endpoint, an in-memory auth-session store, and a pair of loopback-guarded register/poll endpoints. Token exchange of the captured `code` and executor-side wiring (a manifest step type that awaits an auth code) are explicit follow-up work.
+
+**Endpoint contract:**
+
+| Method | Path | Auth | Purpose |
+| --- | --- | --- | --- |
+| `POST` | `/api/runs/<run_id>/auth-sessions/` | Loopback-guarded | Register an expected auth session; returns the opaque `state` to embed in the authorization URL. |
+| `GET`  | `/api/runs/<run_id>/auth-sessions/<state>/` | Loopback-guarded | Poll the session; returns `status` and (when `captured`) the authorization `code`. |
+| `GET`  | `/callback/` | **Public** (no loopback guard) | Receives the ASPSP redirect (`?state=...&code=...` or `?state=...&error=...`). |
+
+**State generation.** Prefer the server-generated value — `POST /api/runs/<id>/auth-sessions/` with an empty body returns a 32-byte URL-safe token from `secrets.token_urlsafe`. Callers MAY supply their own `state` (`{"state": "..."}`) when they need to thread an externally-generated correlator through the flow, but the value must be at least 32 characters long; shorter values are rejected with HTTP 400 to preserve the unguessability property the public `/callback/` endpoint relies on for security.
+
+**One-shot semantics.** A session transitions exactly once from `awaiting` to a terminal state (`captured` or `error`). A second hit on `/callback/` with the same `state` is rejected (returning the generic 400 failure page) and does not overwrite the captured value. There is no persistent nonce table — replay protection comes from the in-process one-shot rule and the per-run cap of 8 simultaneous sessions.
+
+**Why `/callback/` is not loopback-guarded.** A browser redirect from the ASPSP must be able to reach the endpoint. Even when the FCS runs locally the navigation arrives via the host's network stack, and coupling the endpoint to `REMOTE_ADDR` would break any future reverse-proxy or portal deployment without adding real security. The security model relies on three independent properties: `state` unguessability (≥32 bytes), one-shot consumption, and run-scoped binding (the loopback-guarded read API requires the parent `run_id` to retrieve the captured `code`). The callback never echoes the `state` value or any ASPSP-supplied free text into the response body.
+
+**Execution-log events.** Two new event types join the taxonomy:
+
+- `auth-session-registered` — emitted by `POST /api/runs/<id>/auth-sessions/` after successful registration. Payload: `{"state": "...", "status": "awaiting"}`. The `state` value is non-sensitive (it leaves the process inside the authorization URL anyway) and the event proves the FCS expected this state.
+- `auth-callback-received` — emitted by `/callback/` after successful capture. Payload: `{"state": "...", "code": "***"}` for the success path, `{"state": "...", "error": "...", "errorDescription": "..."}` for the ASPSP-reported-error path. The raw `code` is added to the masking allow-list in `conformance.masking` so it is **never** persisted to the NDJSON log in clear text. Unknown-state hits do not produce a log event — there is no run context to attach to, and emitting one would partially defeat the "does not disclose which states exist" property.
+
+**Lifecycle.** Auth sessions are dropped when their parent run reaches a terminal state (`completed` or `failed`). Awaiting sessions for a finished run are not retained.
+
+See [`FCS Rebuild - PRD v3 [DRAFT].md`](FCS%20Rebuild%20-%20PRD%20v3%20%5BDRAFT%5D.md) for the broader PSU authorization context and the Phase 1 vs. Phase 2 split.
