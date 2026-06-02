@@ -638,6 +638,25 @@ class TestRegisterAuthSessionEndpoint:
         )
         assert response.status_code == 400
 
+    def test_rejects_multipart_with_fields(self) -> None:
+        """``multipart/form-data`` carrying fields is rejected with 400.
+
+        Guards against the silent-drop bug where a caller posting
+        ``state`` as a multipart form field would otherwise be ignored
+        and receive 201 with a server-generated state. The empty
+        multipart envelope produced by Django's test client when
+        ``client.post(url)`` is called without ``data`` is still
+        accepted as bodyless (covered by
+        :meth:`test_registers_with_generated_state`).
+        """
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data={"state": "y" * 40},
+        )
+        assert response.status_code == 400
+
     def test_returns_404_for_unknown_run(self) -> None:
         """An unknown run id yields 404."""
         client = Client()

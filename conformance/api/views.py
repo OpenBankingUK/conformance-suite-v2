@@ -424,12 +424,26 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
     # bodies posted with the curl default of
     # ``application/x-www-form-urlencoded`` (e.g. ``curl -d
     # '{"state":...}'``) and returned 201 with a server-generated state —
-    # masking the client bug. ``multipart/form-data`` is excluded because
-    # Django's test client and HTML forms produce a non-empty multipart
-    # envelope even when the caller intends a bodyless request; multipart
-    # is never a legitimate carrier for this endpoint's optional JSON
-    # body. Mirrors ``create_run``'s parse-at-the-boundary behaviour.
-    if request.body and request.content_type != "multipart/form-data":
+    # masking the client bug.
+    #
+    # ``multipart/form-data`` is not a supported carrier for this
+    # endpoint's optional JSON body. However, Django's test client and
+    # HTML forms produce a non-empty multipart envelope even when the
+    # caller intends a bodyless request. To avoid rejecting truly
+    # bodyless calls, treat multipart as empty *only* when it contains no
+    # parsed fields/files; multipart requests that carry any fields are
+    # rejected with 400 so a caller-supplied ``state`` posted as form
+    # fields is never silently ignored (reintroducing the silent-drop
+    # bug). Mirrors ``create_run``'s parse-at-the-boundary behaviour.
+    if request.content_type == "multipart/form-data":
+        # Accessing ``request.POST``/``FILES`` consumes the request
+        # stream, so reading ``request.body`` afterwards raises
+        # ``RawPostDataException``. Handle multipart in its own branch
+        # and never fall through to the JSON parser for this content
+        # type.
+        if request.POST or request.FILES:
+            return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
+    elif request.body:
         # UnicodeDecodeError covers bytes that are not valid UTF-8 (json.loads
         # decodes internally and raises this before JSONDecodeError); both are
         # parse-boundary caller errors warranting the same 400.
