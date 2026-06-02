@@ -647,7 +647,7 @@ class TestRegisterAuthSessionEndpoint:
         multipart envelope produced by Django's test client when
         ``client.post(url)`` is called without ``data`` is still
         accepted as bodyless (covered by
-        :meth:`test_registers_with_generated_state`).
+        :meth:`test_returns_201_with_server_generated_state`).
         """
         client = Client()
         record = run_store.create_run()
