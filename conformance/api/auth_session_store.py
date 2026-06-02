@@ -12,8 +12,11 @@ auth sessions live only for the duration of their parent run. Replay
 protection is provided by one-shot capture semantics rather than persistent
 nonce tracking.
 
-This module is a Phase 1 skeleton: types and method signatures are defined
-with full docstrings; behaviour is implemented in a follow-up TDD step.
+Lifecycle and concurrency: registration, capture, retrieval, and per-run
+discard are all serialised by an internal :class:`threading.Lock`. Sessions
+transition exactly once from ``awaiting`` to a terminal state
+(``captured`` or ``error``); a second capture attempt against the same
+``state`` raises :class:`AuthSessionAlreadyResolvedError`.
 """
 
 from __future__ import annotations

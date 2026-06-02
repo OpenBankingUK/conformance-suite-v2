@@ -43,6 +43,23 @@ This repository is the **Open Banking UK Conformance Test Tool**, distributed as
 - `Any` requires explicit justification.
 - Code must pass mypy strict.
 
+### Python version (`requires-python = ">=3.14.4"`)
+
+This project targets **Python 3.14+**, so the following modern syntax is valid and MUST NOT be flagged as a SyntaxError or pre-3.x style:
+
+- **PEP 758** — `except` and `except*` without parentheses around the exception tuple:
+  ```python
+  try:
+      ...
+  except ValueError, TypeError:   # valid on 3.14+
+      ...
+  ```
+  This is the accepted PEP 758 syntax and is semantically identical to `except (ValueError, TypeError):`. It is NOT the Python 2 `except Exception, name:` binding form (which was removed in 3.x). Do not request a change purely on the basis that the syntax looks unfamiliar.
+- **PEP 695** — `type` statements for generic aliases, and `class Foo[T]:` / `def f[T](x: T)` syntax.
+- `from __future__ import annotations` is in use; string-form annotations and PEP 604 unions (`X | Y`) are expected.
+
+If a syntax construct only became valid in a recent Python version, verify against `requires-python` in `pyproject.toml` before flagging it.
+
 ## 5. Code Quality
 
 - Code must comply with the project's `ruff` config. `# noqa:` requires an inline justification.

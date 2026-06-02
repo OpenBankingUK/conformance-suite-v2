@@ -405,12 +405,11 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
 
     Returns:
         201 with ``{state, status, createdAt}`` on success; 400 on
-        malformed body or caller-supplied state below the entropy bar;
-        404 if the run is unknown; 409 if the run has already reached a
-        terminal state or if the requested state is already registered;
-        500 in the unlikely event that the per-run session cap is
-        exceeded but the store still rejects (treated as a server-side
-        invariant break).
+        malformed body, caller-supplied state below the entropy bar, or
+        when the per-run session cap is exceeded
+        (:class:`AuthSessionLimitError`); 404 if the run is unknown; 409
+        if the run has already reached a terminal state or if the
+        requested state is already registered.
     """
     raw_state: str | None = None
     if request.content_type == "application/json" and request.body:

@@ -51,8 +51,12 @@ _GENERIC_FAILURE_MESSAGE = "Invalid or expired callback."
 """Single error message used for every failure mode.
 
 Returned identically for unknown ``state``, missing ``state``, already-
-resolved sessions, and orphaned sessions whose parent run has gone away.
-A uniform response avoids leaking which states the store knows about.
+resolved sessions, and redirects that carry neither ``code`` nor
+``error``. A uniform response avoids leaking which states the store
+knows about. Note that an *orphaned* session whose parent run record has
+been pruned still captures successfully and renders the 200 landing page
+— only the execution-log emission is silently skipped (see
+:func:`_emit_callback_event`).
 """
 
 
@@ -108,7 +112,13 @@ def callback_view(request: HttpRequest) -> HttpResponse:
         logger.warning("PSU callback rejected: unknown or already-resolved state")
         return _render_failure(request)
 
-    _emit_callback_event(session.run_id, state=state, code=code, error=error)
+    _emit_callback_event(
+        session.run_id,
+        state=state,
+        code=code,
+        error=error,
+        error_description=error_description,
+    )
 
     return render(
         request,
@@ -148,6 +158,7 @@ def _emit_callback_event(
     state: str,
     code: str | None,
     error: str | None,
+    error_description: str | None,
 ) -> None:
     """Append an ``auth-callback-received`` event to the parent run's log.
 
@@ -166,6 +177,10 @@ def _emit_callback_event(
         code: The raw authorization code, if the redirect carried one.
             Passed through unmodified so the logger can mask it.
         error: The ASPSP-supplied error code, if the redirect carried one.
+        error_description: The ASPSP-supplied free-text error description
+            (RFC 6749 §4.1.2.1), if present. Included on the
+            ASPSP-reported-error path as the snake_case ``error_description``
+            payload key so downstream log consumers see the full diagnostic.
     """
     record = run_store.get_run(run_id)
     if record is None or record.execution_logger is None:
@@ -175,6 +190,8 @@ def _emit_callback_event(
         payload["code"] = code
     if error is not None:
         payload["error"] = error
+    if error_description is not None:
+        payload["error_description"] = error_description
     record.execution_logger.emit(
         "auth-callback-received",
         payload=payload,

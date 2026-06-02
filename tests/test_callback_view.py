@@ -160,6 +160,34 @@ class TestCallbackView:
         for line in ndjson.splitlines():
             json.loads(line)
 
+    def test_error_callback_emits_event_with_error_description(self) -> None:
+        # The ASPSP-reported-error path must include ``error_description``
+        # (snake_case, matching the rest of the execution-log event
+        # taxonomy) in the ``auth-callback-received`` payload so log
+        # consumers retain the full RFC 6749 §4.1.2.1 diagnostic.
+        run_id, state = _registered_state()
+        client = Client()
+
+        client.get(
+            "/callback/",
+            {
+                "state": state,
+                "error": "access_denied",
+                "error_description": "psu cancelled",
+            },
+        )
+
+        record = run_store.get_run(run_id)
+        assert record is not None
+        assert record.execution_logger is not None
+        callback_events = [e for e in record.execution_logger.events() if e.type == "auth-callback-received"]
+        assert len(callback_events) == 1
+        payload = callback_events[0].payload
+        assert payload["state"] == state
+        assert payload["error"] == "access_denied"
+        assert payload["error_description"] == "psu cancelled"
+        assert "code" not in payload
+
     def test_callback_for_unknown_run_still_returns_200(self) -> None:
         # Register a session, then drop the run record so the logger lookup
         # in the view returns None. The session itself survives and is
