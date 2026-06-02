@@ -31,6 +31,7 @@ from conformance.manifest import (
     ManifestRequest,
     ManifestStep,
     ManifestTest,
+    PsuAuthorizationStep,
     validate_header_value,
 )
 from conformance.masking import mask_form_fields, mask_headers, mask_json_value
@@ -236,6 +237,15 @@ def _run_manifest_v1(
             # surface as MissingPredecessorResponseError at resolve time
             # — the executor's existing SKIPPED handling covers that case.
             continue
+        if isinstance(manifest_step, PsuAuthorizationStep):
+            # PSU authorisation step dispatch is implemented in Phase 3 of
+            # the PSU manifest-step plan. Phase 2 only adds the parse path
+            # so manifests can declare PSU steps; refuse to silently
+            # mis-execute one until the dedicated executor branch lands.
+            raise NotImplementedError(
+                f"PSU authorisation step '{manifest_step.id}' execution not yet implemented "
+                "(parse path only — see feature/psu-authorization-step plan Phase 3)"
+            )
         step_result, context = _execute_v1_step(
             manifest_step,
             context=context,
