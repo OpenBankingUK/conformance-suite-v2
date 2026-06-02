@@ -163,11 +163,11 @@ def _emit_callback_event(session: AuthSession, *, state: str) -> None:
     :data:`conformance.masking.SENSITIVE_JSON_KEYS` masking of ``code``.
 
     The payload is handed unmodified to
-    :meth:`BufferedExecutionLogger.emit`; the logger masks the ``code``
-    field via :data:`conformance.masking.SENSITIVE_JSON_KEYS` so the raw
-    authorization code never lands in NDJSON. If the parent run record
-    has been pruned or never carried a logger, the emission is silently
-    skipped.
+    :meth:`BufferedExecutionLogger.emit`. When masking is enabled (the
+    default), the logger masks the ``code`` field via
+    :data:`conformance.masking.SENSITIVE_JSON_KEYS` so the raw authorization
+    code never lands in NDJSON. If the parent run record has been pruned or
+    never carried a logger, the emission is silently skipped.
 
     Args:
         session: The resolved auth session whose status drives the payload
