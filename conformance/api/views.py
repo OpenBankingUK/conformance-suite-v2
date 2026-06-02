@@ -418,7 +418,21 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         is returned instead of 201.
     """
     raw_state: str | None = None
-    if request.content_type == "application/json" and request.body:
+    # Parse whenever the caller sent a JSON-shaped payload, regardless of
+    # whether they remembered ``Content-Type: application/json``. The
+    # previous ``content_type == "application/json"`` gate silently dropped
+    # bodies posted with the curl default of
+    # ``application/x-www-form-urlencoded`` (e.g. ``curl -d
+    # '{"state":...}'``) and returned 201 with a server-generated state —
+    # masking the client bug. ``multipart/form-data`` is excluded because
+    # Django's test client and HTML forms produce a non-empty multipart
+    # envelope even when the caller intends a bodyless request; multipart
+    # is never a legitimate carrier for this endpoint's optional JSON
+    # body. Mirrors ``create_run``'s parse-at-the-boundary behaviour.
+    if request.body and request.content_type != "multipart/form-data":
+        # UnicodeDecodeError covers bytes that are not valid UTF-8 (json.loads
+        # decodes internally and raises this before JSONDecodeError); both are
+        # parse-boundary caller errors warranting the same 400.
         try:
             body = json.loads(request.body)
         except json.JSONDecodeError, UnicodeDecodeError:

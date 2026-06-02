@@ -610,6 +610,23 @@ class TestRegisterAuthSessionEndpoint:
         )
         assert response.status_code == 400
 
+    def test_rejects_non_json_body_without_content_type(self) -> None:
+        """A non-empty body is parsed regardless of Content-Type.
+
+        Prevents the silent-drop bug where a caller posting
+        ``{"state": ...}`` without ``Content-Type: application/json``
+        would have their state ignored and receive 201 with a
+        server-generated state instead.
+        """
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data="not json",
+            content_type="text/plain",
+        )
+        assert response.status_code == 400
+
     def test_rejects_non_object_body(self) -> None:
         """A non-object JSON body is rejected with 400."""
         client = Client()
