@@ -536,3 +536,438 @@ class TestGetRunLogEndpoint:
         assert response.status_code == 200
         lines = response.content.decode("utf-8").rstrip("\n").split("\n")
         assert json.loads(lines[0])["type"] == "run-started"
+
+
+# ─── Auth-session API endpoints ─────────────────────────────────────────────
+
+
+@pytest.fixture(autouse=True)
+def _reset_auth_session_store() -> None:
+    """Reset the global auth-session store between tests."""
+    from conformance.api.auth_session_store import auth_session_store
+
+    auth_session_store.reset()
+
+
+@pytest.mark.integration
+class TestRegisterAuthSessionEndpoint:
+    """``POST /api/runs/<id>/auth-sessions/`` registers a PSU auth session."""
+
+    def test_returns_201_with_server_generated_state(self) -> None:
+        """A bodyless request returns 201 with a server-generated state."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 201
+        body = response.json()
+        assert body["status"] == "awaiting"
+        assert "createdAt" in body
+        assert len(body["state"]) >= 32
+
+    def test_accepts_caller_supplied_state_above_entropy_bar(self) -> None:
+        """A caller-supplied state of sufficient length is accepted."""
+        client = Client()
+        record = run_store.create_run()
+        state = "x" * 32
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert response.status_code == 201
+        assert response.json()["state"] == state
+
+    def test_rejects_caller_supplied_state_below_entropy_bar(self) -> None:
+        """A short caller-supplied state is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": "short"}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_non_string_state(self) -> None:
+        """A non-string ``state`` field is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": 123}),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_invalid_json_body(self) -> None:
+        """Malformed JSON in the body yields 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data="not json",
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_non_json_body_without_content_type(self) -> None:
+        """A non-empty body is parsed regardless of Content-Type.
+
+        Prevents the silent-drop bug where a caller posting
+        ``{"state": ...}`` without ``Content-Type: application/json``
+        would have their state ignored and receive 201 with a
+        server-generated state instead.
+        """
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data="not json",
+            content_type="text/plain",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_non_object_body(self) -> None:
+        """A non-object JSON body is rejected with 400."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps([1, 2]),
+            content_type="application/json",
+        )
+        assert response.status_code == 400
+
+    def test_rejects_multipart_with_fields(self) -> None:
+        """``multipart/form-data`` carrying fields is rejected with 400.
+
+        Guards against the silent-drop bug where a caller posting
+        ``state`` as a multipart form field would otherwise be ignored
+        and receive 201 with a server-generated state. The empty
+        multipart envelope produced by Django's test client when
+        ``client.post(url)`` is called without ``data`` is still
+        accepted as bodyless (covered by
+        :meth:`test_returns_201_with_server_generated_state`).
+        """
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data={"state": "y" * 40},
+        )
+        assert response.status_code == 400
+
+    def test_returns_404_for_unknown_run(self) -> None:
+        """An unknown run id yields 404."""
+        client = Client()
+        response = client.post("/api/runs/missing/auth-sessions/")
+        assert response.status_code == 404
+
+    def test_returns_409_for_terminal_run(self) -> None:
+        """Registration against a completed run is rejected with 409."""
+        client = Client()
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 409
+
+    def test_returns_409_for_duplicate_state(self) -> None:
+        """Re-registering the same caller-supplied state yields 409."""
+        client = Client()
+        record = run_store.create_run()
+        state = "y" * 40
+        first = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert first.status_code == 201
+        second = client.post(
+            f"/api/runs/{record.run_id}/auth-sessions/",
+            data=json.dumps({"state": state}),
+            content_type="application/json",
+        )
+        assert second.status_code == 409
+
+    def test_returns_400_when_per_run_cap_exceeded(self) -> None:
+        """Registering past the per-run cap yields 400."""
+        from conformance.api.auth_session_store import MAX_SESSIONS_PER_RUN
+
+        client = Client()
+        record = run_store.create_run()
+        for _ in range(MAX_SESSIONS_PER_RUN):
+            ok = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+            assert ok.status_code == 201
+        over = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert over.status_code == 400
+
+    def test_emits_auth_session_registered_event(self) -> None:
+        """Successful registration appends an ``auth-session-registered`` event."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+        assert response.status_code == 201
+        live = run_store._runs[record.run_id]  # noqa: SLF001 — read live logger
+        assert live.execution_logger is not None
+        events = live.execution_logger.events()
+        types = [event.type for event in events]
+        assert "auth-session-registered" in types
+        registered = next(event for event in events if event.type == "auth-session-registered")
+        assert registered.payload["state"] == response.json()["state"]
+        assert registered.payload["status"] == "awaiting"
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        """The loopback guard applies to the register endpoint."""
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        response = client.post("/api/runs/some-id/auth-sessions/")
+        assert response.status_code == 403
+
+    def test_rolls_back_session_when_run_terminates_during_register(self) -> None:
+        """Race fix: a run completing mid-register must not leak a session.
+
+        Simulates ``_execute_run`` transitioning the run to
+        ``completed`` (and sweeping its sessions) between
+        ``auth_session_store.register`` and the post-register run-record
+        revalidation. The view must roll back the just-created session
+        and return 409 instead of 201, preventing the session from
+        outliving its parent run.
+        """
+        from unittest.mock import patch
+
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        original_get_run = run_store.get_run
+        call_count = {"n": 0}
+
+        def get_run_with_terminal_race(run_id: str) -> object:
+            """Return the live record on the pre-check, terminate on revalidation."""
+            call_count["n"] += 1
+            if call_count["n"] == 2:
+                run_store.mark_running(run_id)
+                run_store.mark_completed(run_id, result={"status": "passed"})
+            return original_get_run(run_id)
+
+        with patch.object(run_store, "get_run", side_effect=get_run_with_terminal_race):
+            response = client.post(f"/api/runs/{record.run_id}/auth-sessions/")
+
+        assert response.status_code == 409
+        assert response.json()["status"] == "completed"
+        # The just-created session must have been rolled back.
+        assert auth_session_store.for_run(record.run_id) == []
+
+
+@pytest.mark.integration
+class TestGetAuthSessionEndpoint:
+    """``GET /api/runs/<id>/auth-sessions/<state>/`` returns session state."""
+
+    def test_returns_awaiting_session(self) -> None:
+        """A freshly registered session is returned with status ``awaiting``."""
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["state"] == registered["state"]
+        assert body["status"] == "awaiting"
+        assert "createdAt" in body
+        assert "code" not in body
+        assert "capturedAt" not in body
+
+    def test_returns_captured_session_with_code(self) -> None:
+        """After ``capture_code`` the response includes the code and capturedAt."""
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        auth_session_store.capture_code(registered["state"], "auth-code-xyz")
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "captured"
+        assert body["code"] == "auth-code-xyz"
+        assert "capturedAt" in body
+
+    def test_returns_error_session(self) -> None:
+        """After ``capture_error`` the response includes error fields."""
+        from conformance.api.auth_session_store import auth_session_store
+
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        auth_session_store.capture_error(
+            registered["state"],
+            error="access_denied",
+            description="User declined consent",
+        )
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "error"
+        assert body["error"] == "access_denied"
+        assert body["errorDescription"] == "User declined consent"
+
+    def test_returns_404_for_unknown_run(self) -> None:
+        """Unknown run id yields 404."""
+        client = Client()
+        response = client.get("/api/runs/missing/auth-sessions/any-state/")
+        assert response.status_code == 404
+
+    def test_returns_404_for_unknown_state(self) -> None:
+        """Unknown state under a known run yields 404."""
+        client = Client()
+        record = run_store.create_run()
+        response = client.get(f"/api/runs/{record.run_id}/auth-sessions/bogus/")
+        assert response.status_code == 404
+
+    def test_returns_404_for_cross_run_lookup(self) -> None:
+        """A state registered against another run is not visible.
+
+        Exercises the ``(run_id, state)`` scoping guarantee directly:
+        the lookup runs against an *existing* but unrelated run record,
+        so a 404 here is attributable to run-scoped binding rather than
+        a missing run.
+        """
+        client = Client()
+        run_a = run_store.create_run()
+        run_store.mark_running(run_a.run_id)
+        run_store.mark_completed(run_a.run_id, result={"status": "passed"})
+        run_b = run_store.create_run()
+        registered = client.post(f"/api/runs/{run_b.run_id}/auth-sessions/").json()
+
+        # Look up ``run_b``'s state under ``run_a``'s still-existing run id.
+        response = client.get(
+            f"/api/runs/{run_a.run_id}/auth-sessions/{registered['state']}/",
+        )
+        assert response.status_code == 404
+
+    def test_non_loopback_request_is_rejected_with_403(self) -> None:
+        """The loopback guard applies to the get endpoint."""
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        response = client.get("/api/runs/some-id/auth-sessions/some-state/")
+        assert response.status_code == 403
+
+
+# ─── Run lifecycle ↔ auth-session-store integration ─────────────────────────
+
+
+@pytest.mark.integration
+class TestExecuteRunDiscardsAuthSessions:
+    """``_execute_run`` must drop auth sessions on terminal exit.
+
+    Awaiting auth sessions registered against a run MUST NOT outlive that
+    run. The hook lives in ``_execute_run``'s ``finally`` block so it
+    covers both the happy path (``mark_completed``) and the failure path
+    (``mark_failed``). These tests exercise the hook directly rather than
+    relying on the full HTTP request lifecycle.
+    """
+
+    def test_completed_run_discards_awaiting_auth_sessions(self) -> None:
+        """Sessions are discarded after a successful run completes."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        auth_session_store.register(record.run_id)
+        assert len(auth_session_store.for_run(record.run_id)) == 2
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            return_value=fake_result,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(record.run_id) == []
+        # The run itself transitioned to completed (sanity check).
+        assert run_store.get_run(record.run_id) is not None
+        assert run_store.get_run(record.run_id).status == "completed"  # type: ignore[union-attr]
+
+    def test_failed_run_also_discards_awaiting_auth_sessions(self) -> None:
+        """Sessions are discarded even when the run raises internally."""
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        assert len(auth_session_store.for_run(record.run_id)) == 1
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            side_effect=RuntimeError("boom"),
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(record.run_id) == []
+        assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
+
+    def test_other_runs_auth_sessions_are_not_discarded(self) -> None:
+        """The hook is run-scoped: sibling runs' sessions are untouched."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.views import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        finishing = run_store.create_run()
+        other_run_id = "other-run-id"
+        auth_session_store.register(finishing.run_id)
+        auth_session_store.register(other_run_id)
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with patch(
+            "conformance.api.views.run_model_bank_smoke_check",
+            return_value=fake_result,
+        ):
+            _execute_run(finishing.run_id, config, manifest=None, plan=None)
+
+        assert auth_session_store.for_run(finishing.run_id) == []
+        assert len(auth_session_store.for_run(other_run_id)) == 1
