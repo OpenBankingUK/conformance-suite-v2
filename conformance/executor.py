@@ -294,7 +294,7 @@ def _execute_v1_psu_step(
     clock: Callable[[], float] | None = None,
     sleep: Callable[[float], None] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
-    """Execute a manual PSU authorisation step and record captured code context.
+    """Execute a PSU authorisation step and record captured code context.
 
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
