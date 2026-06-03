@@ -319,8 +319,11 @@ class PsuAuthorizationStep:
             are **not** permitted (defence in depth — a redirect URI must
             be known at manifest-author time, never derived at runtime).
         response_type: OAuth 2.0 ``response_type`` value. Defaults to
-            ``"code id_token"`` (FAPI 1 Advanced hybrid flow).
+            ``"code id_token"`` (FAPI 1 Advanced hybrid flow). Placeholders
+            are **not** permitted — this is a static FAPI-defined value.
         scope: OAuth 2.0 ``scope`` value. Defaults to ``"openid"``.
+            Placeholders are **not** permitted — scope is a static,
+            manifest-author-time consent declaration.
         state: Optional caller-supplied ``state`` token. Placeholders are
             permitted so the value can come from an earlier step. When
             omitted (``None``) the executor asks the store to generate
@@ -755,7 +758,11 @@ def _parse_v1_psu_authorization_step(
     response_type = _parse_psu_optional_string(
         raw_step, key="responseType", default=_PSU_AUTH_DEFAULT_RESPONSE_TYPE, location=location
     )
+    if _PLACEHOLDER_FIND_PATTERN.search(response_type):
+        raise ManifestError(f"{location}.responseType must not contain placeholders")
     scope = _parse_psu_optional_string(raw_step, key="scope", default=_PSU_AUTH_DEFAULT_SCOPE, location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(scope):
+        raise ManifestError(f"{location}.scope must not contain placeholders")
 
     state = _parse_psu_optional_state(raw_step, location=location, seen_ids=seen_ids)
     request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)

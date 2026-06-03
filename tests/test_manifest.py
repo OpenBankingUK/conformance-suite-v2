@@ -1825,6 +1825,24 @@ def test_parse_v1_psu_step_rejects_placeholder_in_redirect_uri() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_rejects_placeholder_in_response_type() -> None:
+    """responseType is a static FAPI-defined value — placeholders are rejected at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["responseType"] = "${steps.x.response.body.type}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.responseType must not contain placeholders"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_placeholder_in_scope() -> None:
+    """scope is a static consent declaration — placeholders are rejected at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["scope"] = "${steps.x.response.body.scope}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.scope must not contain placeholders"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
 def test_parse_v1_psu_step_rejects_non_https_redirect_uri() -> None:
     """Redirect URI is HTTPS-validated at parse time."""
     raw = valid_psu_manifest()
