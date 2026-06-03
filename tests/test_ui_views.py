@@ -201,6 +201,29 @@ class TestPlanBuilderUi:
         )
         assert accepted.status_code == 200
 
+    @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_is_csrf_protected(self, mock_start_run: Mock) -> None:
+        """Launch POST rejects missing CSRF tokens and accepts token-backed submissions."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        client = Client(enforce_csrf_checks=True)
+        manifest = _v1_manifest([_http_step("standard")])
+
+        rejected = client.post("/plan/launch/", data=_plan_form_data(manifest, selected_step_ids=["standard"]))
+
+        assert rejected.status_code == 403
+        mock_start_run.assert_not_called()
+
+        get_response = client.get("/plan/")
+        csrf_token = get_response.cookies["csrftoken"].value
+        accepted = client.post(
+            "/plan/launch/",
+            data={**_plan_form_data(manifest, selected_step_ids=["standard"]), "csrfmiddlewaretoken": csrf_token},
+        )
+
+        assert accepted.status_code == 302
+        assert accepted["Location"] == "/runs/run-123/"
+        assert mock_start_run.call_count == 1
+
 
 @pytest.mark.integration
 class TestRunDetailUi:
