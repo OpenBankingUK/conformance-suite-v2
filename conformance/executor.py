@@ -344,7 +344,7 @@ def _execute_v1_psu_step_inner(
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[StepResult, ExecutionContext]:
-    """Run the manual PSU authorisation flow without lifecycle wrapper events.
+    """Run the PSU authorisation flow (manual or headless) without lifecycle wrapper events.
 
     Args:
         manifest_step: Parsed PSU authorisation step to execute.
