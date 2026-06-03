@@ -194,9 +194,9 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
 
     The wrapped logger remains the canonical execution-log sink. This
     decorator only adds an operator-facing stderr line when the executor emits
-    a ``psu-authorization-url`` event and stdout is attached to a TTY, so
-    non-interactive CI invocations keep their output quiet while the existing
-    NDJSON log remains complete.
+    a ``psu-authorization-url`` event and both console streams are attached to
+    a TTY, so non-interactive CI invocations and redirected log streams keep
+    their output quiet while the existing NDJSON log remains complete.
     """
 
     def __init__(self, wrapped: ExecutionLogger, *, stdout: TextIO, stderr: TextIO) -> None:
@@ -204,9 +204,11 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
 
         Args:
             wrapped: Execution-log sink that receives every event unchanged.
-            stdout: Stream whose ``isatty()`` result decides whether the CLI
-                is interactive.
-            stderr: Stream that receives the participant-facing PSU URL line.
+            stdout: Stream whose ``isatty()`` result contributes to the
+                interactive CLI decision.
+            stderr: Stream whose ``isatty()`` result contributes to the
+                interactive CLI decision and that receives the
+                participant-facing PSU URL line.
         """
         self._wrapped = wrapped
         self._stdout = stdout
@@ -229,7 +231,7 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
                 ``url`` field needed for the browser hand-off line.
         """
         self._wrapped.emit(event_type, step_id=step_id, payload=payload)
-        if event_type != "psu-authorization-url" or not self._stdout.isatty():
+        if event_type != "psu-authorization-url" or not (self._stdout.isatty() and self._stderr.isatty()):
             return
         url = (payload or {}).get("url")
         if not isinstance(url, str):
@@ -365,12 +367,13 @@ class BufferedExecutionLogger(ExecutionLogger):
 
         ``headers`` mappings go through :func:`conformance.masking.mask_headers`;
         all other values go through :func:`conformance.masking.mask_json_value`.
-        The ``event_type`` argument is accepted to allow future per-type rules
-        without a signature change.
+        Event-specific rules cover payload shapes that need more context than
+        key names alone, including PSU authorisation URL query parameters and
+        copied credential fields.
 
         Args:
-            event_type: Accepted for future per-type dispatch; not used to
-                select masking rules in the current implementation.
+            event_type: Event taxonomy value used to select any event-specific
+                masking rules.
             payload: Raw payload supplied by the caller. May contain sensitive
                 credentials, tokens, or header values.
 

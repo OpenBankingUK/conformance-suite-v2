@@ -49,10 +49,10 @@ def test_null_logger_emit_is_a_no_op() -> None:
 
 
 @pytest.mark.unit
-def test_psu_url_console_logger_prints_to_stderr_when_stdout_is_tty() -> None:
+def test_psu_url_console_logger_prints_to_stderr_when_console_streams_are_tty() -> None:
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
     stdout = _TtyStringIO()
-    stderr = io.StringIO()
+    stderr = _TtyStringIO()
     logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
     url = "https://auth.example.com/authorize?client_id=client-123&state=s"
 
@@ -60,6 +60,19 @@ def test_psu_url_console_logger_prints_to_stderr_when_stdout_is_tty() -> None:
 
     assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
     assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
+
+
+@pytest.mark.unit
+def test_psu_url_console_logger_is_quiet_when_stderr_is_not_tty() -> None:
+    wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    stdout = _TtyStringIO()
+    stderr = io.StringIO()
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
+
+    logger.emit("psu-authorization-url", step_id="psu", payload={"url": "https://auth.example.com/authorize"})
+
+    assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
+    assert stderr.getvalue() == ""
 
 
 @pytest.mark.unit

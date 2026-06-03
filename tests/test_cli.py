@@ -199,7 +199,7 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
         )
 
     stdout = _TtyStringIO()
-    stderr = StringIO()
+    stderr = _TtyStringIO()
     monkeypatch.setattr(cli, "run_manifest", fake_run_manifest)
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)

@@ -253,8 +253,8 @@ _PSU_AUTH_TIMEOUT_MAX_SECONDS = 600
 """Maximum permitted value for ``timeoutSeconds`` on a PSU authorisation step.
 
 Bounded at ten minutes so a misauthored manifest cannot stall a CI run
-indefinitely. The runtime deadline check enforces the same upper bound
-defensively.
+indefinitely. Parsed manifests outside this range fail before execution, so
+the executor deadline calculation receives only validated values.
 """
 
 _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS = 120

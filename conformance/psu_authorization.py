@@ -20,10 +20,11 @@ def build_authorization_url(
 ) -> str:
     """Build an OAuth 2.0 authorisation URL with encoded query parameters.
 
-    Existing query parameters on the authorisation endpoint are preserved and
-    the PSU step parameters are appended using :func:`urllib.parse.urlencode`
-    so reserved characters in FAPI hybrid-flow values (for example the space
-    in ``"code id_token"``) are encoded by the standard library.
+    Existing non-OAuth query parameters on the authorisation endpoint are
+    preserved. OAuth parameters owned by the PSU step are replaced with the
+    executor-controlled values using :func:`urllib.parse.urlencode` so reserved
+    characters in FAPI hybrid-flow values (for example the space in
+    ``"code id_token"``) are encoded by the standard library.
 
     Args:
         endpoint: Authorisation endpoint URL, already resolved from the manifest.
@@ -40,7 +41,12 @@ def build_authorization_url(
         issue in headless mode.
     """
     parts = urlsplit(endpoint)
-    query_items = parse_qsl(parts.query, keep_blank_values=True)
+    reserved_query_keys = {"client_id", "redirect_uri", "response_type", "scope", "state", "request"}
+    query_items = [
+        (name, value)
+        for name, value in parse_qsl(parts.query, keep_blank_values=True)
+        if name not in reserved_query_keys
+    ]
     query_items.extend(
         [
             ("client_id", client_id),
