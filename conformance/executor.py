@@ -127,8 +127,8 @@ def run_manifest(
         run_id: Optional run identifier used to correlate PSU authorisation
             sessions with this execution. When ``None`` (the default) a
             fresh UUID4 hex is generated so legacy callers Just Work; the
-            API supplies its own. Currently only consumed by future
-            ``psu-authorization`` steps — plain HTTP steps ignore it.
+            API supplies its own. Consumed by ``psu-authorization`` steps;
+            plain HTTP steps ignore it.
         auth_session_store: Optional store the executor uses to register
             and await PSU authorisation callbacks for upcoming
             ``psu-authorization`` steps. When ``None`` (the default) a
