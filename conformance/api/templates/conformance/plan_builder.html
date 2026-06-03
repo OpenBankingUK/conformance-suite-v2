@@ -264,10 +264,10 @@
             <h1>Test plan builder</h1>
             <div class="muted">v1 manifest selection</div>
         </div>
-        <a class="button" href="/health/">Health</a>
+        <a class="button" href="{% url 'health' %}">Health</a>
     </header>
 
-    <form method="post" action="{% url 'plan-preview' %}" hx-post="{% url 'plan-preview' %}" hx-target="body">
+    <form method="post" action="{% url 'plan-preview' %}">
         {% csrf_token %}
         {% if preview %}
             <input type="hidden" name="selection_mode" value="select">
@@ -297,9 +297,9 @@
             </div>
 
             <div class="actions">
-                <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}" hx-post="{% url 'plan-preview' %}">Preview</button>
+                <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}">Preview</button>
                 {% if preview %}
-                    <button type="submit" formaction="{% url 'plan-launch' %}" hx-post="{% url 'plan-launch' %}" {% if not preview.launch_supported %}disabled{% endif %}>Launch run</button>
+                    <button type="submit" formaction="{% url 'plan-launch' %}" {% if not preview.launch_supported %}disabled{% endif %}>Launch run</button>
                 {% endif %}
             </div>
         </section>

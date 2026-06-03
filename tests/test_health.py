@@ -34,6 +34,16 @@ def test_unknown_browser_route_renders_friendly_404() -> None:
     assert "Open plan builder" in content
 
 
+@pytest.mark.integration
+def test_unknown_api_route_returns_json_404() -> None:
+    """Unknown API namespace routes should keep the REST JSON error shape."""
+    response = Client().get("/api/not-a-real-endpoint/")
+
+    assert response.status_code == 404
+    assert response["Content-Type"] == "application/json"
+    assert response.json() == {"error": "API endpoint not found"}
+
+
 @pytest.mark.unit
 def test_healthcheck_host_is_always_allowed() -> None:
     """The reserved container healthcheck host must always be in ALLOWED_HOSTS.

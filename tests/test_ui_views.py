@@ -120,6 +120,8 @@ class TestPlanBuilderUi:
         assert "Test plan builder" in content
         assert "Config JSON" in content
         assert "Manifest JSON" in content
+        assert 'href="/health/"' in content
+        assert "hx-post" not in content
 
     def test_preview_post_renders_step_selection_table(self) -> None:
         """POST /plan/preview/ renders selectable v1 manifest rows."""
@@ -134,6 +136,7 @@ class TestPlanBuilderUi:
         assert "Step optional" in content
         assert "Mandatory" in content
         assert "Optional" in content
+        assert "hx-post" not in content
 
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
@@ -248,8 +251,20 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert f"Run {record.run_id}" in content
         assert "pending" in content
-        assert f"/api/runs/{record.run_id}/log/" in content
+        assert 'http-equiv="refresh" content="2"' in content
+        assert f"/runs/{record.run_id}/log.ndjson" in content
         assert "Result pending" in content
+
+    def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
+        """Completed run detail pages should not keep refreshing."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        assert 'http-equiv="refresh"' not in response.content.decode("utf-8")
 
     def test_status_partial_renders_current_timestamps(self) -> None:
         """The status partial renders the current run snapshot."""
@@ -264,7 +279,7 @@ class TestRunDetailUi:
         assert "Started" in content
 
     def test_log_partial_renders_masked_log_link_and_event_count(self) -> None:
-        """The log partial links to the loopback-guarded NDJSON endpoint."""
+        """The log partial links to the browser-accessible NDJSON endpoint."""
         record = run_store.create_run()
         assert record.execution_logger is not None
         record.execution_logger.emit("run-started")
@@ -275,8 +290,45 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert ">2<" in content
-        assert f"/api/runs/{record.run_id}/log/" in content
+        assert f"/runs/{record.run_id}/log.ndjson" in content
         assert "Masked log" in content
+
+    def test_log_partial_counts_events_without_serialising_ndjson(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Rendering the log partial should count buffered events directly.
+
+        Args:
+            monkeypatch: pytest fixture used to make NDJSON serialisation fail
+                if the UI summary accidentally calls it.
+        """
+        record = run_store.create_run()
+        assert record.execution_logger is not None
+        record.execution_logger.emit("run-started")
+        monkeypatch.setattr(
+            record.execution_logger,
+            "to_ndjson_bytes",
+            Mock(side_effect=AssertionError("log count must not serialise NDJSON")),
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/log/")
+
+        assert response.status_code == 200
+        assert ">1<" in response.content.decode("utf-8")
+
+    def test_log_download_is_available_to_non_loopback_browser_clients(self) -> None:
+        """UI log downloads should not inherit the REST API loopback guard."""
+        record = run_store.create_run()
+        assert record.execution_logger is not None
+        record.execution_logger.emit("run-started")
+
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        api_response = client.get(f"/api/runs/{record.run_id}/log/")
+        ui_response = client.get(f"/runs/{record.run_id}/log.ndjson")
+
+        assert api_response.status_code == 403
+        assert ui_response.status_code == 200
+        assert ui_response["Content-Type"] == "application/x-ndjson"
+        assert ui_response["Content-Disposition"] == f'attachment; filename="{record.run_id}-execution-log.ndjson"'
+        assert json.loads(ui_response.content.decode("utf-8").strip())["type"] == "run-started"
 
     def test_result_partial_renders_completed_summary(self) -> None:
         """The result partial summarises completed structured results."""
@@ -305,7 +357,23 @@ class TestRunDetailUi:
         assert "passed" in content
         assert "eligible" in content
         assert "Plan selected" in content
-        assert f"/api/runs/{record.run_id}/result/" in content
+        assert f"/runs/{record.run_id}/result.json" in content
+
+    def test_result_download_is_available_to_non_loopback_browser_clients(self) -> None:
+        """UI result downloads should not inherit the REST API loopback guard."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+
+        client = Client(REMOTE_ADDR="10.0.0.5")
+        api_response = client.get(f"/api/runs/{record.run_id}/result/")
+        ui_response = client.get(f"/runs/{record.run_id}/result.json")
+
+        assert api_response.status_code == 403
+        assert ui_response.status_code == 200
+        assert ui_response["Content-Type"] == "application/json"
+        assert ui_response["Content-Disposition"] == f'attachment; filename="{record.run_id}-result.json"'
+        assert ui_response.json() == {"status": "passed"}
 
     def test_result_partial_renders_failed_run_message(self) -> None:
         """Failed runs render the stored terminal error message."""

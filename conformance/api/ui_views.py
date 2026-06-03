@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from django.http import HttpRequest, HttpResponse, HttpResponseNotFound
+from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
@@ -161,6 +161,54 @@ def run_result_partial(request: HttpRequest, run_id: str) -> HttpResponse:
     return render(request, "conformance/partials/run_result.html", _run_context(record))
 
 
+@require_GET
+def run_log_download(request: HttpRequest, run_id: str) -> HttpResponse:
+    """Return the browser-accessible masked NDJSON execution log.
+
+    Args:
+        request: The incoming browser GET request.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        ``application/x-ndjson`` response for known runs, 404 for unknown
+        runs, or 500 when the run exists without an attached log buffer.
+    """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return HttpResponseNotFound("Run not found")
+    if record.execution_logger is None:
+        return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
+    response = HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
+    response["Content-Disposition"] = f'attachment; filename="{record.run_id}-execution-log.ndjson"'
+    return response
+
+
+@require_GET
+def run_result_download(request: HttpRequest, run_id: str) -> JsonResponse:
+    """Return the browser-accessible masked JSON result for a run.
+
+    Args:
+        request: The incoming browser GET request.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        JSON response containing the completed result, or an error response
+        when the run is unknown, incomplete, failed, or missing its result.
+    """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return JsonResponse({"error": "Run not found"}, status=404)
+    if record.status in ("pending", "running"):
+        return JsonResponse({"error": "Run has not completed yet", "status": record.status}, status=409)
+    if record.status == "failed":
+        return JsonResponse({"error": "Run failed internally"}, status=500)
+    if record.result is None:
+        return JsonResponse({"error": "Run result unavailable"}, status=500)
+    response = JsonResponse(record.result)
+    response["Content-Disposition"] = f'attachment; filename="{record.run_id}-result.json"'
+    return response
+
+
 def _plan_context(
     form: PlanBuilderForm,
     *,
@@ -204,8 +252,8 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "status_url": reverse("ui-run-status", kwargs={"run_id": record.run_id}),
         "log_partial_url": reverse("ui-run-log", kwargs={"run_id": record.run_id}),
         "result_partial_url": reverse("ui-run-result", kwargs={"run_id": record.run_id}),
-        "raw_log_url": reverse("api-run-log", kwargs={"run_id": record.run_id}),
-        "raw_result_url": reverse("api-run-result", kwargs={"run_id": record.run_id}),
+        "raw_log_url": reverse("ui-run-log-download", kwargs={"run_id": record.run_id}),
+        "raw_result_url": reverse("ui-run-result-download", kwargs={"run_id": record.run_id}),
         "log_event_count": _log_event_count(record),
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
@@ -225,10 +273,7 @@ def _log_event_count(record: RunRecord) -> int:
     """
     if record.execution_logger is None:
         return 0
-    body = record.execution_logger.to_ndjson_bytes().decode("utf-8")
-    if not body:
-        return 0
-    return len(body.rstrip("\n").split("\n"))
+    return len(record.execution_logger.events())
 
 
 def _result_summary(result: JsonObject | None) -> JsonObject | None:

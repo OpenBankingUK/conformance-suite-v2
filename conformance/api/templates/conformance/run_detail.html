@@ -5,6 +5,7 @@
     <title>Run {{ run.run_id }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% if run.status == "pending" or run.status == "running" %}<meta http-equiv="refresh" content="2">{% endif %}
     <style>
         :root {
             color-scheme: light;
