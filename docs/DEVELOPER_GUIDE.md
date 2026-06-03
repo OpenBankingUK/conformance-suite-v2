@@ -140,7 +140,7 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 | `DJANGO_SECRET_KEY` | Production only | Django cryptographic signing key. Falls back to a safe `django-insecure-` value for local tooling. |
 | `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
 | `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
-| `CONFORMANCE_TOOL_VERSION` | Release builds only | Optional tool version stamped into generated reports. Docker builds can set this through `--build-arg CONFORMANCE_TOOL_VERSION=<version>`; source runs fall back to `pyproject.toml`. |
+| `CONFORMANCE_TOOL_VERSION` | No | Optional tool version stamped into generated reports. Docker builds can set this through `--build-arg CONFORMANCE_TOOL_VERSION=<version>`; source runs fall back to `pyproject.toml`. |
 
 ### How environment variables are managed per context
 
