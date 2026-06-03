@@ -135,7 +135,7 @@ def mask_form_fields(fields: Mapping[str, str]) -> dict[str, str]:
     return {name: (MASKED_VALUE if name.lower() in SENSITIVE_JSON_KEYS else value) for name, value in fields.items()}
 
 
-def _mask_url_query(url: str, sensitive_params: Collection[str]) -> str:
+def mask_url_query(url: str, sensitive_params: Collection[str]) -> str:
     """Return a URL with selected query-parameter values masked.
 
     OAuth 2.0 authorisation URLs can carry credential-bearing parameters,

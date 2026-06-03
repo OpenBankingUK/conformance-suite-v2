@@ -44,7 +44,7 @@ from conformance.manifest import (
     PsuAuthorizationStep,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, _mask_url_query, mask_form_fields, mask_headers, mask_json_value
+from conformance.masking import SENSITIVE_JSON_KEYS, mask_url_query, mask_form_fields, mask_headers, mask_json_value
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
@@ -375,7 +375,7 @@ def _execute_v1_psu_step_inner(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
-    initial_result_url = _mask_url_query(manifest_step.authorization_endpoint, SENSITIVE_JSON_KEYS)
+    initial_result_url = mask_url_query(manifest_step.authorization_endpoint, SENSITIVE_JSON_KEYS)
     request_evidence: dict[str, JsonValue] = {
         "method": "GET",
         "url": initial_result_url,
@@ -421,7 +421,7 @@ def _execute_v1_psu_step_inner(
             new_context,
         )
 
-    resolved_result_url = _mask_url_query(resolved_authorization_endpoint, SENSITIVE_JSON_KEYS)
+    resolved_result_url = mask_url_query(resolved_authorization_endpoint, SENSITIVE_JSON_KEYS)
     request_evidence["url"] = resolved_result_url
     try:
         validate_https_url(
@@ -474,7 +474,7 @@ def _execute_v1_psu_step_inner(
         state=session.state,
         request_object=resolved_request_object,
     )
-    result_url = _mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
+    result_url = mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
     request_record = RequestRecord(method="GET", url=result_url)
     request_evidence["url"] = result_url
     # The browser-facing URL is emitted as the raw event payload so the CLI

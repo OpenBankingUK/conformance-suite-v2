@@ -9,7 +9,7 @@ from conformance.masking import (
     MASKED_VALUE,
     SENSITIVE_HEADER_NAMES,
     SENSITIVE_JSON_KEYS,
-    _mask_url_query,
+    mask_url_query,
     mask_form_fields,
     mask_headers,
     mask_json_value,
@@ -167,7 +167,7 @@ class TestMaskUrlQuery:
             "&request=opaque-request-jwt&CLIENT_ASSERTION=opaque-client-assertion#frag"
         )
 
-        masked = _mask_url_query(url, frozenset({"request", "client_assertion"}))
+        masked = mask_url_query(url, frozenset({"request", "client_assertion"}))
 
         assert masked == (
             "https://auth.example.com/authorize?client_id=client-123"
@@ -177,7 +177,7 @@ class TestMaskUrlQuery:
     def test_url_without_sensitive_query_values_is_returned_unchanged(self) -> None:
         """URLs that do not carry sensitive params are not normalised needlessly."""
         url = "https://auth.example.com/authorize?scope=openid+accounts"
-        assert _mask_url_query(url, frozenset({"request"})) == url
+        assert mask_url_query(url, frozenset({"request"})) == url
 
 
 @pytest.mark.unit
