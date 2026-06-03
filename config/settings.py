@@ -22,11 +22,39 @@ def _get_allowed_hosts() -> list[str]:
     return [host.strip() for host in raw.split(",") if host.strip()]
 
 
+# Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
+# The healthcheck runs inside the container against ``http://localhost:8000/``
+# but sends an explicit ``Host: healthcheck.local`` header so the probe does
+# not depend on operators including ``localhost`` in ``DJANGO_ALLOWED_HOSTS``.
+# This token is reserved for the in-container probe and is unconditionally
+# trusted; it is not routable from outside the container.
+HEALTHCHECK_HOST = "healthcheck.local"
+
+
+def _build_allowed_hosts(*, debug: bool) -> list[str]:
+    """Build the Django host allow-list for the current runtime mode.
+
+    Args:
+        debug: Whether Django debug mode is enabled.
+
+    Returns:
+        Hostnames accepted by Django's host-header validation.
+    """
+    allowed_hosts = _get_allowed_hosts()
+    if debug:
+        for local_host in ("localhost", "127.0.0.1", "[::1]"):
+            if local_host not in allowed_hosts:
+                allowed_hosts.append(local_host)
+    if HEALTHCHECK_HOST not in allowed_hosts:
+        allowed_hosts.append(HEALTHCHECK_HOST)
+    return allowed_hosts
+
+
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "django-insecure-dev-tooling-fallback")
 
 DEBUG = os.environ.get("DJANGO_DEBUG", "false").lower() == "true"
 
-ALLOWED_HOSTS = _get_allowed_hosts()
+ALLOWED_HOSTS = _build_allowed_hosts(debug=DEBUG)
 
 # Conformance REST API: defence-in-depth loopback guard. When False
 # (the default), API views reject any request whose REMOTE_ADDR is not
@@ -36,16 +64,6 @@ ALLOWED_HOSTS = _get_allowed_hosts()
 # you control. The primary control remains binding the published
 # Docker port to 127.0.0.1; this setting backstops misconfiguration.
 API_ALLOW_NON_LOCAL = os.environ.get("CONFORMANCE_API_ALLOW_NON_LOCAL", "false").lower() == "true"
-
-# Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
-# The healthcheck runs inside the container against ``http://localhost:8000/``
-# but sends an explicit ``Host: healthcheck.local`` header so the probe does
-# not depend on operators including ``localhost`` in ``DJANGO_ALLOWED_HOSTS``.
-# This token is reserved for the in-container probe and is unconditionally
-# trusted; it is not routable from outside the container.
-HEALTHCHECK_HOST = "healthcheck.local"
-if HEALTHCHECK_HOST not in ALLOWED_HOSTS:
-    ALLOWED_HOSTS.append(HEALTHCHECK_HOST)
 
 # Production safety: enforce production-grade configuration when the
 # user has explicitly set DJANGO_SECRET_KEY and disabled DEBUG. Skipped

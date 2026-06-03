@@ -1,0 +1,369 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Test plan builder</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --border: #ccd3dc;
+            --text: #1b1f24;
+            --muted: #667085;
+            --accent: #0b6bcb;
+            --danger: #b42318;
+            --warning: #a15c07;
+            --success: #1f7a4d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+
+        main {
+            width: min(1180px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 24px 0 40px;
+        }
+
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        h1,
+        h2 {
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+        }
+
+        h2 {
+            font-size: 1.15rem;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 16px;
+        }
+
+        label {
+            display: block;
+            font-weight: 650;
+            margin-bottom: 8px;
+        }
+
+        textarea {
+            width: 100%;
+            min-height: 280px;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            color: var(--text);
+            background: #fbfcfe;
+        }
+
+        .actions,
+        .counts {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .actions {
+            justify-content: flex-end;
+            margin-top: 14px;
+        }
+
+        button,
+        .button {
+            min-height: 38px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 650;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        button.secondary {
+            background: #ffffff;
+            color: var(--accent);
+        }
+
+        button:disabled {
+            border-color: var(--border);
+            background: #e4e7ec;
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        .message,
+        .errorlist {
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin: 0 0 12px;
+        }
+
+        .message.error,
+        .errorlist {
+            border: 1px solid #fecdca;
+            background: #fffbfa;
+            color: var(--danger);
+        }
+
+        .message.warning {
+            border: 1px solid #fedf89;
+            background: #fffcf5;
+            color: var(--warning);
+        }
+
+        .message.success {
+            border: 1px solid #abefc6;
+            background: #f6fef9;
+            color: var(--success);
+        }
+
+        .errorlist {
+            list-style: none;
+        }
+
+        .count {
+            min-width: 104px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 8px 10px;
+            background: #fbfcfe;
+        }
+
+        .count strong {
+            display: block;
+            font-size: 1.1rem;
+        }
+
+        .count span,
+        .muted {
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .table-wrap {
+            overflow-x: auto;
+            margin-top: 12px;
+        }
+
+        table {
+            width: 100%;
+            min-width: 760px;
+            border-collapse: collapse;
+        }
+
+        th,
+        td {
+            border-bottom: 1px solid var(--border);
+            padding: 10px;
+            text-align: left;
+            vertical-align: middle;
+        }
+
+        th {
+            color: var(--muted);
+            font-size: 0.84rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .step-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.86rem;
+        }
+
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            border-radius: 999px;
+            border: 1px solid var(--border);
+            padding: 2px 8px;
+            font-size: 0.82rem;
+            font-weight: 650;
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .badge.required {
+            border-color: #fecdd3;
+            color: var(--danger);
+            background: #fff1f2;
+        }
+
+        .badge.optional {
+            border-color: #bfdbfe;
+            color: #175cd3;
+            background: #eff6ff;
+        }
+
+        .badge.blocked {
+            border-color: #fedf89;
+            color: var(--warning);
+            background: #fffcf5;
+        }
+
+        @media (max-width: 820px) {
+            header,
+            .grid {
+                display: block;
+            }
+
+            .grid > div + div {
+                margin-top: 14px;
+            }
+
+            textarea {
+                min-height: 220px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Test plan builder</h1>
+            <div class="muted">v1 manifest selection</div>
+        </div>
+        <a class="button" href="{% url 'health' %}">Health</a>
+    </header>
+
+    <form method="post" action="{% url 'plan-preview' %}">
+        {% csrf_token %}
+        {% if preview %}
+            <input type="hidden" name="selection_mode" value="select">
+        {% endif %}
+
+        <section class="panel" aria-labelledby="input-heading">
+            <h2 id="input-heading">Inputs</h2>
+            {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+            {% if launch_error %}
+                <div class="message error">
+                    {{ launch_error }}
+                    {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}">Open active run</a>{% endif %}
+                </div>
+            {% endif %}
+
+            <div class="grid">
+                <div>
+                    <label for="{{ form.config_json.id_for_label }}">Config JSON</label>
+                    {{ form.config_json.errors }}
+                    <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
+                </div>
+                <div>
+                    <label for="{{ form.manifest_json.id_for_label }}">Manifest JSON</label>
+                    {{ form.manifest_json.errors }}
+                    <textarea id="{{ form.manifest_json.id_for_label }}" name="manifest_json" spellcheck="false">{{ form.manifest_json.value|default_if_none:"" }}</textarea>
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}">Preview</button>
+                {% if preview %}
+                    <button type="submit" formaction="{% url 'plan-launch' %}" {% if not preview.launch_supported %}disabled{% endif %}>Launch run</button>
+                {% endif %}
+            </div>
+        </section>
+
+        {% if preview %}
+            <section class="panel" aria-labelledby="preview-heading">
+                <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
+
+                <div class="counts" aria-label="Plan counts">
+                    <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>
+                    <div class="count"><strong>{{ preview_counts.selected }}</strong><span>Selected</span></div>
+                    <div class="count"><strong>{{ preview_counts.mandatory }}</strong><span>Mandatory</span></div>
+                    <div class="count"><strong>{{ preview_counts.optional }}</strong><span>Optional</span></div>
+                    <div class="count"><strong>{{ preview_counts.mandatory_deselected }}</strong><span>Mandatory off</span></div>
+                </div>
+
+                {% if preview.certification_eligible_by_selection %}
+                    <div class="message success">Certification selection eligible</div>
+                {% else %}
+                    <div class="message warning">Certification selection ineligible</div>
+                {% endif %}
+
+                {% for blocker in preview.launch_blockers %}
+                    <div class="message warning">{{ blocker }}</div>
+                {% endfor %}
+
+                <div class="table-wrap">
+                    <table>
+                        <thead>
+                        <tr>
+                            <th scope="col">Run</th>
+                            <th scope="col">Step</th>
+                            <th scope="col">Kind</th>
+                            <th scope="col">Certification</th>
+                            <th scope="col">Default</th>
+                            <th scope="col">Selection</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        {% for row in preview.rows %}
+                            <tr>
+                                <td>
+                                    <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="Select {{ row.id }}">
+                                </td>
+                                <td>
+                                    <strong>{{ row.name }}</strong><br>
+                                    <span class="step-id">{{ row.id }}</span>
+                                </td>
+                                <td><span class="badge">{{ row.kind }}</span></td>
+                                <td>
+                                    {% if row.mandatory %}<span class="badge required">Mandatory</span>{% endif %}
+                                    {% if row.optional %}<span class="badge optional">Optional</span>{% endif %}
+                                    {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
+                                </td>
+                                <td>{% if row.default_selected %}Selected{% else %}Off{% endif %}</td>
+                                <td>{% if row.selected_after_form %}Selected{% else %}Off{% endif %}</td>
+                            </tr>
+                        {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </section>
+        {% endif %}
+    </form>
+</main>
+</body>
+</html>

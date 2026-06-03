@@ -1,0 +1,10 @@
+<section class="panel" id="run-status" hx-get="{{ status_url }}" hx-trigger="load, every 2s" hx-swap="outerHTML">
+    <h2>Status</h2>
+    <p><span class="status {{ run.status }}">{{ run.status }}</span></p>
+    <div class="grid">
+        <div class="metric"><strong>{{ run.created_at }}</strong><span>Created</span></div>
+        <div class="metric"><strong>{{ run.started_at|default:"-" }}</strong><span>Started</span></div>
+        <div class="metric"><strong>{{ run.finished_at|default:"-" }}</strong><span>Finished</span></div>
+    </div>
+    {% if run.error %}<p>{{ run.error }}</p>{% endif %}
+</section>
