@@ -140,6 +140,7 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 | `DJANGO_SECRET_KEY` | Production only | Django cryptographic signing key. Falls back to a safe `django-insecure-` value for local tooling. |
 | `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
 | `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
+| `CONFORMANCE_TOOL_VERSION` | Release builds only | Optional tool version stamped into generated reports. Docker builds can set this through `--build-arg CONFORMANCE_TOOL_VERSION=<version>`; source runs fall back to `pyproject.toml`. |
 
 ### How environment variables are managed per context
 
@@ -157,6 +158,40 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 ```bash
 DJANGO_SECRET_KEY="my-local-key" DJANGO_ALLOWED_HOSTS="localhost" make docker  # pragma: allowlist secret
 ```
+
+## Certification Report Validation
+
+The OBL-side certification validator is an internal CLI that checks a participant-submitted report against the manifest used for the run and an externally supplied approved-release policy. It deliberately recomputes mandatory coverage from the manifest instead of trusting the participant-side `certificationEligibility` block.
+
+```bash
+uv run python -m conformance.certification_cli out/test-results.json \
+  --manifest config/manifest-v1-openid-jwks-example.json \
+  --approved-releases config/approved-fcs-releases-example.json
+```
+
+Use `--summary-output path/to/summary.txt` to write the Confluence-ready summary to disk instead of stdout. Exit codes are `0` for a valid report, `1` for validation failures, `2` for invalid inputs, and `3` when the summary output cannot be written.
+
+The approved-release policy shape is intentionally small:
+
+```json
+{
+  "schemaVersion": "v1",
+  "approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
+}
+```
+
+`schemaVersion` must currently be `v1`; `approvedToolVersions` is an exact-match list compared against `tool.version` in the submitted report. `config/approved-fcs-releases-example.json` is parseable but non-authoritative and uses a placeholder value so it cannot accidentally certify a development build.
+
+Generated reports carry the metadata consumed by the validator as top-level fields:
+
+```json
+{
+  "metadata": {"reportVersion": "1.0"},
+  "tool": {"version": "0.1.0"}
+}
+```
+
+The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy.
 
 ## Structured Execution Log
 

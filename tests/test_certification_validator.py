@@ -142,6 +142,30 @@ def test_parse_approved_release_policy_rejects_wrong_schema_version() -> None:
 
 
 @pytest.mark.unit
+def test_parse_approved_release_policy_accepts_schema_version_and_versions() -> None:
+    policy = parse_approved_release_policy(
+        {
+            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+            "approvedToolVersions": [" 1.2.3 ", "2.0.0"],
+        }
+    )
+
+    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+    assert policy.approved_tool_versions == ("1.2.3", "2.0.0")
+
+
+@pytest.mark.unit
+def test_example_approved_release_policy_is_parseable() -> None:
+    policy_path = Path(__file__).resolve().parents[1] / "config" / "approved-fcs-releases-example.json"
+    raw_policy = json.loads(policy_path.read_text(encoding="utf-8"))
+
+    policy = parse_approved_release_policy(raw_policy)
+
+    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+    assert policy.approved_tool_versions == ("EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION",)
+
+
+@pytest.mark.unit
 def test_validate_certification_report_loads_inputs_from_paths(tmp_path: Path) -> None:
     report_path = tmp_path / "report.json"
     manifest_path = tmp_path / "manifest.json"

@@ -14,6 +14,7 @@
   - [Test Markers](#test-markers)
   - [Code Quality Tools](#code-quality-tools)
   - [Coverage Targets](#coverage-targets)
+  - [Certification Validator Cases](#certification-validator-cases)
 
 ---
 
@@ -155,3 +156,18 @@ The `TestPlan` model (PRD Participant Story #4) introduces three behaviours that
 - **Mandatory-deselection eligibility** — whenever the plan reports `mandatoryDeselected > 0`, `certificationEligibility.eligible` must be `false` with reason `"Mandatory steps were deselected from the plan"`, taking precedence over `"No mandatory steps declared"`, failed-step, and skipped-step reasons. The top-level `plan` block must surface stable counts (`totalSteps`, `selectedSteps`, `deselectedSteps`, `mandatorySelected`, `mandatoryDeselected`). See `tests/test_results.py`.
 
 The CLI and REST surfaces are covered by `tests/test_cli.py` (`--deselect` flag) and `tests/test_api.py` (`deselectStepIds` field) — both assert input validation (unknown ids, missing manifest) and a successful happy path.
+
+## Certification Validator Cases
+
+The OBL-side certification validator is covered as a separate internal-tool surface, not through the participant runner CLI:
+
+- `tests/test_results.py` verifies generated reports include top-level `metadata.reportVersion` and `tool.version` while preserving existing result and plan semantics.
+- `tests/test_version.py` verifies `CONFORMANCE_TOOL_VERSION` override, `pyproject.toml` fallback, and the `0+unknown` fallback.
+- `tests/test_certification_validator.py` verifies approved-release policy parsing, mandatory `passed`/`warn` acceptance, mandatory `failed`/`skipped`/missing rejection, malformed report rejection, and Confluence summary rendering.
+- `tests/test_certification_cli.py` verifies CLI exit codes for valid reports, validation failures, invalid inputs, and summary-output write failures.
+
+Run the focused validator suite while iterating:
+
+```bash
+DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py tests/test_certification_validator.py tests/test_certification_cli.py -v
+```
