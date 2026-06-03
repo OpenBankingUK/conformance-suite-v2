@@ -1,0 +1,30 @@
+<section class="panel" id="run-result" hx-get="{{ result_partial_url }}" hx-trigger="load, every 2s" hx-swap="outerHTML">
+    <h2>Result</h2>
+    {% if run.status == "completed" and run.result %}
+        <div class="grid">
+            <div class="metric"><strong>{{ run.result.status|default:"-" }}</strong><span>Outcome</span></div>
+            <div class="metric"><strong><a href="{{ raw_result_url }}">JSON</a></strong><span>Masked report</span></div>
+            <div class="metric"><strong>{{ certification_eligibility|default:"-" }}</strong><span>Certification</span></div>
+        </div>
+
+        {% if result_summary %}
+            <div class="grid">
+                <div class="metric"><strong>{{ result_summary.total|default:"0" }}</strong><span>Total</span></div>
+                <div class="metric"><strong>{{ result_summary.passed|default:"0" }}</strong><span>Passed</span></div>
+                <div class="metric"><strong>{{ result_summary.failed|default:"0" }}</strong><span>Failed</span></div>
+            </div>
+        {% endif %}
+
+        {% if plan_summary %}
+            <div class="grid">
+                <div class="metric"><strong>{{ plan_summary.selectedSteps|default:"0" }}</strong><span>Plan selected</span></div>
+                <div class="metric"><strong>{{ plan_summary.deselectedSteps|default:"0" }}</strong><span>Plan off</span></div>
+                <div class="metric"><strong>{{ plan_summary.mandatoryDeselected|default:"0" }}</strong><span>Mandatory off</span></div>
+            </div>
+        {% endif %}
+    {% elif run.status == "failed" %}
+        <p>{{ run.error|default:"Run failed internally" }}</p>
+    {% else %}
+        <p>Result pending</p>
+    {% endif %}
+</section>
