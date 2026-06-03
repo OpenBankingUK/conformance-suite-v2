@@ -342,6 +342,39 @@ def test_parse_v1_manifest_accepts_single_step_without_placeholders() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Config placeholder manifest",
+        "steps": [
+            {
+                "id": "config-driven",
+                "name": "Config-driven request",
+                "request": {
+                    "method": "POST",
+                    "url": "${config.discoveryUrl}",
+                    "headers": {"X-Environment": "${config.environment}"},
+                    "body": {
+                        "encoding": "json",
+                        "value": {
+                            "discovery": "${config.discoveryUrl}",
+                            "environment": "${config.environment}",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.request.url == "${config.discoveryUrl}"
+    assert step.request.headers == {"X-Environment": "${config.environment}"}
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_rejects_duplicate_step_ids() -> None:
     raw_manifest = valid_v1_manifest()
     steps = cast("list[dict[str, JsonValue]]", raw_manifest["steps"])
@@ -379,6 +412,28 @@ def test_parse_v1_manifest_rejects_forward_reference() -> None:
     }
 
     with pytest.raises(ManifestError, match=r"steps\[0\]\.request\.url references undefined step 'step-b'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unknown_config_placeholder() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Unsafe config placeholder",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "${config.tls.clientPrivateKeyPath}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match="unsupported config placeholder"):
         parse_manifest(raw_manifest)
 
 

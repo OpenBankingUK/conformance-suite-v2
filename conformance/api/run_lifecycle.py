@@ -13,6 +13,7 @@ import threading
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import run_store
+from conformance.context import RuntimeConfig
 from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
@@ -102,6 +103,10 @@ def _execute_run(
                     plan=plan,
                     run_id=run_id,
                     auth_session_store=auth_session_store,
+                    runtime_config=RuntimeConfig(
+                        discovery_url=config.discovery_url,
+                        environment=config.environment,
+                    ),
                 )
             finally:
                 http_client.close()

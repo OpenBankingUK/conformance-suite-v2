@@ -10,6 +10,7 @@ import pytest
 
 from conformance import cli
 from conformance.api.auth_session_store import auth_session_store
+from conformance.context import RuntimeConfig
 from conformance.execution_log import ExecutionLogger
 from conformance.results import SmokeCheckResult
 
@@ -189,7 +190,10 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
             Passing smoke-check result for the CLI to serialise.
         """
         execution_logger = cast(ExecutionLogger, kwargs["execution_logger"])
+        runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
         assert kwargs["auth_session_store"] is auth_session_store
+        assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
+        assert runtime_config.environment == "test-env"
         execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": url})
         now = datetime.now(UTC)
         return SmokeCheckResult(

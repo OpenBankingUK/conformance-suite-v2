@@ -25,6 +25,7 @@ from conformance.context import (
     PlaceholderResolutionError,
     RequestRecord,
     ResponseRecord,
+    RuntimeConfig,
     record_step,
     resolve_in_structure,
     resolve_placeholders,
@@ -106,6 +107,7 @@ def run_manifest(
     plan: TestPlan | None = None,
     run_id: str | None = None,
     auth_session_store: AuthSessionStore | None = None,
+    runtime_config: RuntimeConfig | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -138,6 +140,8 @@ def run_manifest(
             that need the store to be observable from outside the run
             (e.g. the API, which serves ``/callback/`` against a shared
             singleton) must pass it explicitly.
+        runtime_config: Optional safe participant config values available to
+            manifest placeholders via the narrow ``${config.*}`` grammar.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
@@ -160,6 +164,7 @@ def run_manifest(
                 plan=effective_plan,
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
+                runtime_config=runtime_config,
             )
         else:
             result = _run_manifest_v0(
@@ -169,6 +174,7 @@ def run_manifest(
                 execution_logger=logger_sink,
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
+                runtime_config=runtime_config,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -212,6 +218,7 @@ def _run_manifest_v1(
     plan: TestPlan,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    runtime_config: RuntimeConfig | None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
@@ -239,13 +246,15 @@ def _run_manifest_v1(
             authorisation steps can register sessions against this run.
         auth_session_store: Store the executor uses to register and await
             PSU authorisation callbacks. Threaded to per-step executors.
+        runtime_config: Optional safe participant config values available to
+            ``${config.*}`` placeholders.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
     """
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
-    context = ExecutionContext()
+    context = ExecutionContext(config=runtime_config)
 
     selected_ids = set(plan.selected_step_ids())
 
@@ -1242,6 +1251,7 @@ def _run_manifest_v0(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    runtime_config: RuntimeConfig | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -1261,13 +1271,15 @@ def _run_manifest_v0(
             parameter keeps the v0/v1 dispatch surface symmetric.
         auth_session_store: Store propagated through desugared v1 steps,
             mirroring ``run_id`` for the same reason.
+        runtime_config: Optional safe participant config values available to
+            desugared step placeholder resolution.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
     """
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
-    context = ExecutionContext()
+    context = ExecutionContext(config=runtime_config)
 
     for test in manifest.tests:
         # v0 contract: primary requests are GET-only. _parse_request enforces this

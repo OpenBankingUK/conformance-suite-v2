@@ -1078,3 +1078,54 @@ class TestExecuteRunDiscardsAuthSessions:
 
         assert auth_session_store.for_run(finishing.run_id) == []
         assert len(auth_session_store.for_run(other_run_id)) == 1
+
+    def test_manifest_run_passes_runtime_config_to_executor(self) -> None:
+        """Manifest runs receive safe config placeholder values from the lifecycle."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        import httpx
+
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.manifest import parse_manifest
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        manifest = parse_manifest(
+            {
+                "schemaVersion": "v1",
+                "name": "runtime config",
+                "steps": [
+                    {
+                        "id": "config-driven",
+                        "name": "Config-driven request",
+                        "request": {"method": "GET", "url": "${config.discoveryUrl}"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    }
+                ],
+            }
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with (
+            httpx.Client() as fake_client,
+            patch("conformance.api.run_lifecycle.build_json_http_client", return_value=fake_client),
+            patch("conformance.api.run_lifecycle.run_manifest", return_value=fake_result) as mock_run_manifest,
+        ):
+            _execute_run(record.run_id, config, manifest=manifest, plan=None)
+
+        assert mock_run_manifest.call_args is not None
+        runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]
+        assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
+        assert runtime_config.environment == "test-env"
