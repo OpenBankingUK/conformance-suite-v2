@@ -1,9 +1,12 @@
 import json
+import time
+from collections.abc import Callable
 from unittest.mock import patch
 
 import pytest
 from django.test import Client
 
+from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
@@ -130,10 +133,34 @@ VALID_MANIFEST = {
 }
 
 
+def _wait_for_value[WaitValue](producer: Callable[[], WaitValue | None], *, timeout_seconds: float) -> WaitValue:
+    """Poll until ``producer`` returns a non-None value or time expires.
+
+    Args:
+        producer: Callback that returns a value once the awaited condition is
+            satisfied, or ``None`` while the caller should keep waiting.
+        timeout_seconds: Maximum wall-clock duration to wait.
+
+    Returns:
+        The first non-None value returned by ``producer``.
+
+    Raises:
+        AssertionError: If the timeout expires before a value is produced.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        value = producer()
+        if value is not None:
+            return value
+        time.sleep(0.01)
+    raise AssertionError(f"Timed out after {timeout_seconds}s waiting for asynchronous API run")
+
+
 @pytest.fixture(autouse=True)
-def _reset_run_store() -> None:
-    """Reset the global run store between tests to avoid cross-contamination."""
+def _reset_global_stores() -> None:
+    """Reset process-local singleton stores between tests."""
     run_store.reset()
+    auth_session_store.reset()
 
 
 @pytest.mark.integration
@@ -264,6 +291,84 @@ class TestCreateRunEndpoint:
         client = Client()
         response = client.get("/api/runs/")
         assert response.status_code == 405
+
+
+@pytest.mark.integration
+class TestPsuAuthorizationApiRun:
+    """End-to-end API coverage for manual PSU authorisation manifest runs."""
+
+    def test_manifest_run_passes_after_synthetic_callback(self) -> None:
+        """A PSU manifest run can be completed through the public callback path."""
+        client = Client()
+        state = "api-psu-state-" + "x" * 32
+        manifest = {
+            "schemaVersion": "v1",
+            "name": "api psu authorisation",
+            "steps": [
+                {
+                    "kind": "psu-authorization",
+                    "id": "psu",
+                    "name": "PSU authorisation",
+                    "mode": "manual",
+                    "authorizationEndpoint": "https://auth.example.com/authorize",
+                    "clientId": "client-123",
+                    "redirectUri": "https://conformance.example.com/callback",
+                    "state": state,
+                    "timeoutSeconds": 3,
+                    "mandatory": True,
+                }
+            ],
+        }
+
+        create_response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": VALID_CONFIG, "manifest": manifest}),
+            content_type="application/json",
+        )
+        assert create_response.status_code == 201
+        run_id = create_response.json()["id"]
+
+        _wait_for_value(
+            lambda: True if auth_session_store.get(run_id, state) is not None else None,
+            timeout_seconds=2.0,
+        )
+        callback_response = client.get("/callback/", {"state": state, "code": "api-auth-code"})
+        assert callback_response.status_code == 200
+
+        def completed_result() -> dict[str, object] | None:
+            """Return result JSON once the asynchronous run has completed.
+
+            Returns:
+                Result JSON dictionary when available, otherwise ``None``
+                while the run is still pending/running.
+
+            Raises:
+                AssertionError: If the result endpoint reports an unexpected
+                terminal or internal-error response.
+            """
+            result_response = client.get(f"/api/runs/{run_id}/result/")
+            if result_response.status_code == 200:
+                body = result_response.json()
+                assert isinstance(body, dict)
+                return body
+            if result_response.status_code == 409:
+                return None
+            raise AssertionError(
+                f"Unexpected result response {result_response.status_code}: {result_response.content!r}"
+            )
+
+        result = _wait_for_value(completed_result, timeout_seconds=4.0)
+        assert result["status"] == "passed"
+        assert result["summary"] == {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0}
+        steps = result["steps"]
+        assert isinstance(steps, list)
+        assert steps[0]["name"] == "psu"
+        assert steps[0]["status"] == "passed"
+
+        log_response = client.get(f"/api/runs/{run_id}/log/")
+        assert log_response.status_code == 200
+        events = [json.loads(line) for line in log_response.content.decode("utf-8").splitlines()]
+        assert "psu-authorization-url" in [event["type"] for event in events]
 
 
 @pytest.mark.integration
@@ -539,14 +644,6 @@ class TestGetRunLogEndpoint:
 
 
 # ─── Auth-session API endpoints ─────────────────────────────────────────────
-
-
-@pytest.fixture(autouse=True)
-def _reset_auth_session_store() -> None:
-    """Reset the global auth-session store between tests."""
-    from conformance.api.auth_session_store import auth_session_store
-
-    auth_session_store.reset()
 
 
 @pytest.mark.integration

@@ -1,0 +1,53 @@
+{
+  "schemaVersion": "v1",
+  "name": "FAPI 1 Advanced hybrid PSU authorisation (manual mode example)",
+  "steps": [
+    {
+      "id": "discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+      },
+      "assertions": [
+        { "type": "http_status", "expected": 200 },
+        { "type": "json_field", "path": "authorization_endpoint", "rule": "https_url" },
+        { "type": "json_field", "path": "token_endpoint", "rule": "https_url" }
+      ]
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization",
+      "name": "PSU authorisation (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
+      "clientId": "synthetic-client-id-00000000000000000000",
+      "redirectUri": "https://conformance.example.com/callback",
+      "responseType": "code id_token",
+      "scope": "openid accounts",
+      "timeoutSeconds": 180,
+      "mandatory": true
+    },
+    {
+      "id": "token-exchange",
+      "name": "Token exchange (authorization_code)",
+      "request": {
+        "method": "POST",
+        "url": "${steps.discovery.response.body.token_endpoint}",
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "${steps.psu-authorization.response.body.code}",
+            "client_id": "synthetic-client-id-00000000000000000000",
+            "redirect_uri": "https://conformance.example.com/callback"
+          }
+        }
+      },
+      "assertions": [
+        { "type": "http_status", "expected": 200 },
+        { "type": "json_field", "path": "access_token", "rule": "required" }
+      ]
+    }
+  ]
+}

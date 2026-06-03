@@ -23,6 +23,7 @@ Event taxonomy (``type`` field):
     request-sent, response-received,
     assertion-evaluated,
     auth-session-registered, auth-callback-received,
+    psu-authorization-url, psu-authorization-redirect-received,
     placeholder-error, application-error.
 """
 
@@ -38,10 +39,10 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal, cast
+from typing import Literal, TextIO, cast
 
 from conformance.json_types import JsonObject, JsonValue
-from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value
+from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value, mask_url_query
 
 logger = logging.getLogger(__name__)
 
@@ -56,6 +57,8 @@ EventType = Literal[
     "assertion-evaluated",
     "auth-session-registered",
     "auth-callback-received",
+    "psu-authorization-url",
+    "psu-authorization-redirect-received",
     "placeholder-error",
     "application-error",
 ]
@@ -186,6 +189,68 @@ class NullExecutionLogger(ExecutionLogger):
         return
 
 
+class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
+    """Decorator that mirrors PSU authorisation URLs to an interactive CLI.
+
+    The wrapped logger remains the canonical execution-log sink. This
+    decorator only adds an operator-facing stderr line when the executor emits
+    a ``psu-authorization-url`` event and both console streams are attached to
+    a TTY, so non-interactive CI invocations and redirected log streams keep
+    their output quiet while the existing NDJSON log remains complete.
+    """
+
+    def __init__(self, wrapped: ExecutionLogger, *, stdout: TextIO, stderr: TextIO) -> None:
+        """Initialise the console mirroring decorator.
+
+        Args:
+            wrapped: Execution-log sink that receives every event unchanged.
+            stdout: Stream whose ``isatty()`` result contributes to the
+                interactive CLI decision.
+            stderr: Stream whose ``isatty()`` result contributes to the
+                interactive CLI decision and that receives the
+                participant-facing PSU URL line.
+        """
+        self._wrapped = wrapped
+        self._stdout = stdout
+        self._stderr = stderr
+
+    def emit(
+        self,
+        event_type: EventType,
+        *,
+        step_id: str | None = None,
+        payload: Mapping[str, JsonValue] | None = None,
+    ) -> None:
+        """Forward an event and mirror PSU authorisation URLs when interactive.
+
+        Args:
+            event_type: Event type from the closed taxonomy.
+            step_id: Optional manifest step identifier.
+            payload: Optional event-specific data. The wrapped logger applies
+                its normal masking policy; this decorator reads only the raw
+                ``url`` field needed for the browser hand-off line.
+        """
+        self._wrapped.emit(event_type, step_id=step_id, payload=payload)
+        if event_type != "psu-authorization-url" or not (self._stdout.isatty() and self._stderr.isatty()):
+            return
+        url = (payload or {}).get("url")
+        if not isinstance(url, str):
+            return
+        self._stderr.write(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n")
+        self._stderr.flush()
+
+    @property
+    def run_id(self) -> str | None:
+        """Return the wrapped logger's run identifier when it exposes one.
+
+        Returns:
+            The wrapped logger's non-empty run identifier, or ``None`` when
+            the wrapped sink is stateless.
+        """
+        wrapped_run_id = getattr(self._wrapped, "run_id", None)
+        return wrapped_run_id if isinstance(wrapped_run_id, str) and wrapped_run_id else None
+
+
 class BufferedExecutionLogger(ExecutionLogger):
     """In-memory execution-log buffer with an atomic NDJSON write.
 
@@ -314,12 +379,13 @@ class BufferedExecutionLogger(ExecutionLogger):
 
         ``headers`` mappings go through :func:`conformance.masking.mask_headers`;
         all other values go through :func:`conformance.masking.mask_json_value`.
-        The ``event_type`` argument is accepted to allow future per-type rules
-        without a signature change.
+        Event-specific rules cover payload shapes that need more context than
+        key names alone, including PSU authorisation URL query parameters and
+        copied credential fields.
 
         Args:
-            event_type: Accepted for future per-type dispatch; not used to
-                select masking rules in the current implementation.
+            event_type: Event taxonomy value used to select any event-specific
+                masking rules.
             payload: Raw payload supplied by the caller. May contain sensitive
                 credentials, tokens, or header values.
 
@@ -341,6 +407,10 @@ class BufferedExecutionLogger(ExecutionLogger):
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
                 masked[key] = dict(mask_headers(str_headers))
+            elif event_type == "psu-authorization-url" and key == "url" and isinstance(value, str):
+                masked[key] = mask_url_query(value, SENSITIVE_JSON_KEYS)
+            elif event_type == "psu-authorization-url" and key in {"client_id", "request_object"}:
+                masked[key] = MASKED_VALUE if value is not None else None
             elif key.lower() in SENSITIVE_JSON_KEYS:
                 # Top-level sensitive scalar (e.g. ``code`` on an
                 # auth-callback-received event): mask_json_value only

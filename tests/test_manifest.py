@@ -1,13 +1,23 @@
+import re
 from pathlib import Path
 from typing import cast
 
 import pytest
 
 from conformance.json_types import JsonValue
-from conformance.manifest import FormBody, JsonBody, ManifestError, load_manifest, parse_manifest
+from conformance.manifest import (
+    FormBody,
+    JsonBody,
+    ManifestError,
+    ManifestStep,
+    PsuAuthorizationStep,
+    load_manifest,
+    parse_manifest,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v0-openid-jwks-example.json"
+PSU_EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v1-psu-authorization-example.json"
 
 
 def valid_manifest() -> dict[str, JsonValue]:
@@ -300,9 +310,12 @@ def test_parse_v1_manifest_accepts_minimal_multi_step() -> None:
     assert manifest.name == "Ozone OpenID discovery and JWKS (v1)"
     assert len(manifest.steps) == 2
     assert manifest.steps[0].id == "openid-discovery"
-    assert manifest.steps[0].request.url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+    assert (
+        cast("ManifestStep", manifest.steps[0]).request.url
+        == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+    )
     assert manifest.steps[1].id == "jwks-fetch"
-    assert manifest.steps[1].request.url == "${steps.openid-discovery.response.body.jwks_uri}"
+    assert cast("ManifestStep", manifest.steps[1]).request.url == "${steps.openid-discovery.response.body.jwks_uri}"
 
 
 @pytest.mark.unit
@@ -534,7 +547,7 @@ def test_parse_v1_manifest_defers_https_validation_for_placeholder_url() -> None
     manifest = parse_manifest(raw_manifest)
 
     # The second step has a placeholder URL — it should parse fine
-    assert "${steps.openid-discovery.response.body.jwks_uri}" in manifest.steps[1].request.url
+    assert "${steps.openid-discovery.response.body.jwks_uri}" in cast("ManifestStep", manifest.steps[1]).request.url
 
 
 # --- v1 manifest parser tests: POST/PUT/PATCH/DELETE, headers, body ---
@@ -559,7 +572,7 @@ def test_parse_v1_manifest_accepts_non_get_methods(method: str) -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.method == method
+    assert cast("ManifestStep", manifest.steps[0]).request.method == method
 
 
 @pytest.mark.unit
@@ -605,7 +618,7 @@ def test_parse_v1_manifest_accepts_headers() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.headers == {
+    assert cast("ManifestStep", manifest.steps[0]).request.headers == {
         "Authorization": "Bearer token123",
         "X-Custom": "value",
     }
@@ -630,7 +643,7 @@ def test_parse_v1_manifest_accepts_headers_on_get() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.headers == {"Authorization": "Bearer token123"}
+    assert cast("ManifestStep", manifest.steps[0]).request.headers == {"Authorization": "Bearer token123"}
 
 
 @pytest.mark.unit
@@ -742,7 +755,7 @@ def test_parse_v1_manifest_accepts_json_body() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[0].request.body
+    parsed = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed, JsonBody)
     assert parsed.value == {"grant_type": "authorization_code", "code": "abc123"}
 
@@ -783,7 +796,7 @@ def test_parse_v1_manifest_body_is_isolated_from_raw_dict() -> None:
     inner_body["credentials"] = {"client_id": "tampered"}
     cast(list[JsonValue], inner_body["scopes"]).append("offline_access")
 
-    parsed_body = manifest.steps[0].request.body
+    parsed_body = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed_body, JsonBody)
     assert parsed_body.value == {
         "credentials": {"client_id": "original"},
@@ -866,8 +879,9 @@ def test_parse_v1_manifest_validates_placeholders_in_headers() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[1].request.headers is not None
-    assert "${steps.discovery.response.body.issuer}" in manifest.steps[1].request.headers["X-Issuer"]
+    headers = cast("ManifestStep", manifest.steps[1]).request.headers
+    assert headers is not None
+    assert "${steps.discovery.response.body.issuer}" in headers["X-Issuer"]
 
 
 @pytest.mark.unit
@@ -931,7 +945,7 @@ def test_parse_v1_manifest_validates_placeholders_in_body() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[1].request.body is not None
+    assert cast("ManifestStep", manifest.steps[1]).request.body is not None
 
 
 @pytest.mark.unit
@@ -1012,7 +1026,7 @@ def test_parse_v1_manifest_accepts_body_on_delete() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[0].request.body
+    parsed = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed, JsonBody)
     assert parsed.value == {"reason": "test cleanup"}
 
@@ -1053,7 +1067,7 @@ def test_parse_v1_manifest_accepts_body_with_nested_arrays() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[1].request.body is not None
+    assert cast("ManifestStep", manifest.steps[1]).request.body is not None
 
 
 @pytest.mark.unit
@@ -1141,7 +1155,7 @@ def test_parse_v1_manifest_accepts_header_value_with_htab() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].request.headers == {"Authorization": "Bearer\ttoken"}
+    assert cast("ManifestStep", manifest.steps[0]).request.headers == {"Authorization": "Bearer\ttoken"}
 
 
 @pytest.mark.unit
@@ -1206,7 +1220,7 @@ def test_parse_v1_manifest_accepts_form_body() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[0].request.body
+    parsed = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed, FormBody)
     assert dict(parsed.fields) == {
         "grant_type": "authorization_code",
@@ -1247,7 +1261,7 @@ def test_parse_v1_manifest_accepts_form_body_placeholders_in_values() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[1].request.body
+    parsed = cast("ManifestStep", manifest.steps[1]).request.body
     assert isinstance(parsed, FormBody)
     assert parsed.fields["code"] == "${steps.consent.response.body.code}"
 
@@ -1415,7 +1429,7 @@ def test_parse_v1_manifest_accepts_tagged_json_body() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[0].request.body
+    parsed = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed, JsonBody)
     assert parsed.value == {"k": "v"}
 
@@ -1440,7 +1454,7 @@ def test_parse_v1_manifest_form_body_is_immutable_after_parse() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    parsed = manifest.steps[0].request.body
+    parsed = cast("ManifestStep", manifest.steps[0]).request.body
     assert isinstance(parsed, FormBody)
     # Cast to a mutable mapping so mypy permits the assignment; the runtime
     # TypeError still fires from MappingProxyType.__setitem__, which is what
@@ -1466,7 +1480,7 @@ def test_parse_v1_step_accepts_optional_warning() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].warning == "Use endpoint /b instead (deprecated in v4.1)"
+    assert cast("ManifestStep", manifest.steps[0]).warning == "Use endpoint /b instead (deprecated in v4.1)"
 
 
 @pytest.mark.unit
@@ -1485,7 +1499,7 @@ def test_parse_v1_step_warning_defaults_to_none() -> None:
         ],
     }
     manifest = parse_manifest(raw_manifest)
-    assert manifest.steps[0].warning is None
+    assert cast("ManifestStep", manifest.steps[0]).warning is None
 
 
 @pytest.mark.unit
@@ -1566,4 +1580,389 @@ def test_parse_v1_step_mandatory_rejects_non_boolean(bad_value: JsonValue) -> No
         ],
     }
     with pytest.raises(ManifestError, match=r"steps\[0\]\.mandatory must be a JSON boolean"):
+        parse_manifest(raw_manifest)
+
+
+# --- v1 manifest parser tests: psu-authorization step ---
+
+
+def valid_psu_step() -> dict[str, JsonValue]:
+    """Return a minimally-valid raw PSU authorisation step entry."""
+    return {
+        "kind": "psu-authorization",
+        "id": "psu",
+        "name": "PSU authorisation",
+        "mode": "manual",
+        "authorizationEndpoint": "https://auth.example.com/authorize",
+        "clientId": "synthetic-client-id-00000000",
+        "redirectUri": "https://conformance.example.com/callback",
+    }
+
+
+def valid_psu_manifest() -> dict[str, JsonValue]:
+    """Return a minimally-valid v1 manifest containing a single PSU step."""
+    return {
+        "schemaVersion": "v1",
+        "name": "PSU authorisation only",
+        "steps": [valid_psu_step()],
+    }
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_loads_psu_authorization_example_file() -> None:
+    """The bundled v1 PSU example manifest parses and exposes the PSU step."""
+    manifest = load_manifest(PSU_EXAMPLE_MANIFEST_PATH)
+    assert manifest.schema_version == "v1"
+    assert len(manifest.steps) == 3
+    psu_step = manifest.steps[1]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.id == "psu-authorization"
+    assert psu_step.mode == "manual"
+    assert psu_step.mandatory is True
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_applies_defaults() -> None:
+    """Optional fields fall back to their documented defaults."""
+    manifest = parse_manifest(valid_psu_manifest())
+    psu_step = manifest.steps[0]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.response_type == "code id_token"
+    assert psu_step.scope == "openid"
+    assert psu_step.state is None
+    assert psu_step.request_object is None
+    assert psu_step.timeout_seconds == 120
+    assert psu_step.mandatory is False
+    assert psu_step.optional is False
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_accepts_all_fields() -> None:
+    """Every optional PSU field round-trips when populated."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    step["responseType"] = "code"
+    step["scope"] = "openid accounts"
+    step["state"] = "x" * 64
+    step["requestObject"] = "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
+    step["timeoutSeconds"] = 60
+    step["mandatory"] = True
+    manifest = parse_manifest(raw)
+    psu_step = manifest.steps[0]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.response_type == "code"
+    assert psu_step.scope == "openid accounts"
+    assert psu_step.state == "x" * 64
+    assert psu_step.request_object == "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
+    assert psu_step.timeout_seconds == 60
+    assert psu_step.mandatory is True
+
+
+@pytest.mark.unit
+def test_parse_v1_step_kind_defaults_to_http() -> None:
+    """A step without ``kind`` is parsed as a plain HTTP step."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "default-kind",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert not isinstance(manifest.steps[0], PsuAuthorizationStep)
+
+
+@pytest.mark.unit
+def test_parse_v1_step_explicit_kind_http_is_accepted() -> None:
+    """Setting ``"kind": "http"`` explicitly is equivalent to omitting it."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "explicit-http",
+        "steps": [
+            {
+                "kind": "http",
+                "id": "first",
+                "name": "First",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    assert not isinstance(manifest.steps[0], PsuAuthorizationStep)
+
+
+@pytest.mark.unit
+def test_parse_v1_step_rejects_unknown_kind() -> None:
+    """Unknown ``kind`` values fail at parse time."""
+    raw: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-kind",
+        "steps": [{"kind": "telepathy", "id": "first", "name": "first"}],
+    }
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.kind must be one of"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_step_rejects_non_string_kind() -> None:
+    """``kind`` must be a string when present."""
+    raw: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-kind-type",
+        "steps": [{"kind": 7, "id": "first", "name": "first"}],
+    }
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.kind must be a string"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_request_field() -> None:
+    """HTTP-only fields are rejected on a PSU step."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["request"] = {
+        "method": "GET",
+        "url": "https://example.com/x",
+    }
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field\(s\): request"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_psu_fields() -> None:
+    """PSU-only fields are rejected on an HTTP step."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "http-with-psu-field",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "clientId": "should-not-be-here",
+            }
+        ],
+    }
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field\(s\): clientId"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "missing_key",
+    ["id", "name", "mode", "authorizationEndpoint", "clientId", "redirectUri"],
+)
+def test_parse_v1_psu_step_rejects_missing_required_field(missing_key: str) -> None:
+    """Each required PSU step field fails fast when omitted."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    del step[missing_key]
+    with pytest.raises(ManifestError, match=re.escape(f"steps[0].{missing_key}")):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_unknown_mode() -> None:
+    """``mode`` must be one of the supported literal values."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["mode"] = "auto"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.mode must be one of"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_accepts_placeholder_in_authorization_endpoint() -> None:
+    """Authorisation endpoint may be sourced from an earlier step's response."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "with-discovery",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {"method": "GET", "url": "https://auth.example.com/.well-known/openid-configuration"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU",
+                "mode": "headless",
+                "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
+                "clientId": "c",
+                "redirectUri": "https://conformance.example.com/callback",
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    psu_step = manifest.steps[1]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.mode == "headless"
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_non_https_authorization_endpoint() -> None:
+    """Literal authorisation endpoints are HTTPS-validated at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["authorizationEndpoint"] = "http://auth.example.com/authorize"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.authorizationEndpoint"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_placeholder_in_redirect_uri() -> None:
+    """Redirect URI must be a manifest-author-time literal — no placeholders."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["redirectUri"] = "${steps.discovery.response.body.redirect_uri}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.redirectUri must not contain placeholders"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_placeholder_in_response_type() -> None:
+    """responseType is a static FAPI-defined value — placeholders are rejected at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["responseType"] = "${steps.x.response.body.type}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.responseType must not contain placeholders"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_placeholder_in_scope() -> None:
+    """scope is a static consent declaration — placeholders are rejected at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["scope"] = "${steps.x.response.body.scope}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.scope must not contain placeholders"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_non_https_redirect_uri() -> None:
+    """Redirect URI is HTTPS-validated at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["redirectUri"] = "http://conformance.example.com/callback"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.redirectUri"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_short_literal_state() -> None:
+    """Literal state values shorter than 32 characters are rejected at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["state"] = "too-short"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.state must be at least 32 characters"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_accepts_placeholder_state_below_min_length() -> None:
+    """A placeholder-bearing state is exempt from the parse-time length check."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "with-state-placeholder",
+        "steps": [
+            {
+                "id": "make-state",
+                "name": "Make state",
+                "request": {"method": "GET", "url": "https://example.com/state"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "c",
+                "redirectUri": "https://conformance.example.com/callback",
+                "state": "${steps.make-state.response.body.value}",
+            },
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    psu_step = manifest.steps[1]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.state == "${steps.make-state.response.body.value}"
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_empty_request_object() -> None:
+    """Empty/whitespace request_object is rejected (omit instead)."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = "   "
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.requestObject must be a non-empty string"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_value", [0, -1, 601, 1000])
+def test_parse_v1_psu_step_rejects_out_of_range_timeout(bad_value: int) -> None:
+    """Timeout must be within the documented 1..600 second range."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["timeoutSeconds"] = bad_value
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.timeoutSeconds must be between"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_value", [True, False, "30", 1.5, None])
+def test_parse_v1_psu_step_rejects_non_integer_timeout(bad_value: JsonValue) -> None:
+    """Timeout must be a JSON integer; booleans/strings/floats are rejected."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["timeoutSeconds"] = bad_value
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.timeoutSeconds must be a JSON integer"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_mandatory_and_optional_both_true() -> None:
+    """``mandatory`` and ``optional`` are mutually exclusive on a PSU step."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    step["mandatory"] = True
+    step["optional"] = True
+    with pytest.raises(ManifestError, match=r"steps\[0\]: 'mandatory' and 'optional' must not both be true"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_unknown_key() -> None:
+    """Unknown top-level keys on a PSU step fail fast."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["nonsense"] = True
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field\(s\): nonsense"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_duplicate_id() -> None:
+    """A PSU step id collision with an earlier step is rejected."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "dup-id",
+        "steps": [
+            {
+                "id": "shared",
+                "name": "First",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "kind": "psu-authorization",
+                "id": "shared",
+                "name": "PSU",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "c",
+                "redirectUri": "https://conformance.example.com/callback",
+            },
+        ],
+    }
+    with pytest.raises(ManifestError, match=r"steps\[1\]\.id 'shared' is a duplicate"):
         parse_manifest(raw_manifest)

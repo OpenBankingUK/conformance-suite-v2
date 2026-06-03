@@ -219,6 +219,155 @@ class ManifestStep:
     optional: bool = False
 
 
+PsuAuthorizationMode = Literal["manual", "headless"]
+"""Mode controlling how the engine completes a PSU authorisation step.
+
+``manual`` surfaces the authorisation URL to the participant and polls the
+:class:`conformance.api.auth_session_store.AuthSessionStore` until the
+ASPSP browser redirect resolves the session. ``headless`` issues the
+authorisation request engine-side, parses the ``Location`` header of the
+expected 3xx response, and feeds the result into the store programmatically
+(see PRD open-investigation item: feasibility against the Ozone sandbox
+is not yet confirmed — the code path is unit-tested via
+``httpx.MockTransport`` and gated by a separate env var in the tier-2
+integration suite).
+"""
+
+
+PsuAuthorizationStepKind = Literal["psu-authorization"]
+"""Discriminator value identifying a PSU authorisation step in v1 manifests."""
+
+
+HttpStepKind = Literal["http"]
+"""Discriminator value identifying a plain HTTP step in v1 manifests."""
+
+
+V1StepKind = HttpStepKind | PsuAuthorizationStepKind
+"""All v1 step ``kind`` discriminator values accepted by the parser."""
+
+
+_PSU_AUTH_TIMEOUT_MIN_SECONDS = 1
+"""Minimum permitted value for ``timeoutSeconds`` on a PSU authorisation step."""
+
+_PSU_AUTH_TIMEOUT_MAX_SECONDS = 600
+"""Maximum permitted value for ``timeoutSeconds`` on a PSU authorisation step.
+
+Bounded at ten minutes so a misauthored manifest cannot stall a CI run
+indefinitely. Parsed manifests outside this range fail before execution, so
+the executor deadline calculation receives only validated values.
+"""
+
+_PSU_AUTH_DEFAULT_TIMEOUT_SECONDS = 120
+"""Default ``timeoutSeconds`` applied when a PSU step omits the field."""
+
+_PSU_AUTH_DEFAULT_RESPONSE_TYPE = "code id_token"
+"""Default ``responseType`` for a PSU authorisation step (FAPI 1 Advanced hybrid flow)."""
+
+_PSU_AUTH_DEFAULT_SCOPE = "openid"
+"""Default ``scope`` for a PSU authorisation step.
+
+The minimum scope required for an OIDC flow. Manifest authors override
+this for AIS/PIS/CBPII/VRP consent flows that require additional scopes
+(e.g. ``"openid accounts"``).
+"""
+
+_PSU_AUTH_MIN_STATE_LENGTH = 32
+"""Minimum length for a manifest-supplied ``state`` value (after stripping).
+
+Mirrors :data:`conformance.api.auth_session_store.MIN_CALLER_SUPPLIED_STATE_LENGTH`
+so a misauthored manifest fails fast at parse time rather than producing
+a runtime FAIL inside the executor when the store rejects the value.
+A literal ``state`` value that contains a placeholder is exempt from
+this parse-time check — the value will be resolved at runtime and the
+store will enforce the same minimum then.
+"""
+
+
+@dataclass(frozen=True)
+class PsuAuthorizationStep:
+    """Single PSU authorisation step declared by a v1 manifest.
+
+    Drives the existing ``AuthSessionStore`` + ``/callback/`` plumbing to
+    capture an ASPSP-issued authorisation ``code``. The captured ``code``
+    is exposed to downstream steps via the synthetic
+    ``${steps.<id>.response.body.code}`` placeholder so a subsequent
+    standard HTTP step can perform the token exchange.
+
+    Per the PRD's PSU Authorisation section, two modes are supported:
+
+    * ``manual``: the executor surfaces the authorisation URL via an
+      execution-log event and polls the store until the participant
+      completes the consent flow in a browser.
+    * ``headless``: the executor issues the authorisation request itself
+      with ``follow_redirects=False`` and parses the 3xx ``Location``
+      header to extract ``state`` and ``code`` (or ``error``).
+
+    Attributes:
+        id: Stable identifier for the step, referenced by later placeholders.
+        name: Human-readable step name.
+        mode: Whether the step waits for a browser callback (``manual``) or
+            drives the redirect itself (``headless``).
+        authorization_endpoint: Authorisation endpoint URL. Placeholders are
+            permitted so the URL can be sourced from an earlier discovery
+            step. Validated as HTTPS at parse time when no placeholder is
+            present, and again at runtime after placeholder resolution.
+        client_id: OAuth 2.0 client identifier sent as the ``client_id``
+            query parameter. Placeholders permitted.
+        redirect_uri: Registered redirect URI sent as the ``redirect_uri``
+            query parameter and used to match the ASPSP redirect in
+            headless mode. Validated as HTTPS at parse time; placeholders
+            are **not** permitted (defence in depth — a redirect URI must
+            be known at manifest-author time, never derived at runtime).
+        response_type: OAuth 2.0 ``response_type`` value. Defaults to
+            ``"code id_token"`` (FAPI 1 Advanced hybrid flow). Placeholders
+            are **not** permitted — this is a static FAPI-defined value.
+        scope: OAuth 2.0 ``scope`` value. Defaults to ``"openid"``.
+            Placeholders are **not** permitted — scope is a static,
+            manifest-author-time consent declaration.
+        state: Optional caller-supplied ``state`` token. Placeholders are
+            permitted so the value can come from an earlier step. When
+            omitted (``None``) the executor asks the store to generate
+            a cryptographically secure value. When supplied as a literal
+            (no placeholders), the value must be at least 32 characters
+            to mirror the store's minimum entropy requirement.
+        request_object: Optional signed JWT carried as the ``request``
+            query parameter (RFC 9101 JAR). Treated as an opaque string;
+            placeholders permitted so the JWT can be produced by an
+            upstream signing step.
+        timeout_seconds: Per-step deadline in seconds. Defaults to 120;
+            must be between 1 and 600 inclusive.
+        mandatory: Whether the step is required for certification
+            eligibility. Same semantics as :class:`ManifestStep`.
+        optional: Whether the step is opt-in for the default test plan.
+            Same semantics as :class:`ManifestStep`. Mutually exclusive
+            with ``mandatory`` (enforced at parse time).
+    """
+
+    id: str
+    name: str
+    mode: PsuAuthorizationMode
+    authorization_endpoint: str
+    client_id: str
+    redirect_uri: str
+    response_type: str = _PSU_AUTH_DEFAULT_RESPONSE_TYPE
+    scope: str = _PSU_AUTH_DEFAULT_SCOPE
+    state: str | None = None
+    request_object: str | None = None
+    timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
+    mandatory: bool = False
+    optional: bool = False
+
+
+type V1Step = ManifestStep | PsuAuthorizationStep
+"""Discriminated v1 step variant carried by :attr:`Manifest.steps`.
+
+``ManifestStep`` represents a plain HTTP step (``"kind": "http"`` —
+the default and the only kind accepted before this addition).
+``PsuAuthorizationStep`` represents an OAuth 2.0 / OIDC PSU authorisation
+step (``"kind": "psu-authorization"``).
+"""
+
+
 @dataclass(frozen=True)
 class Manifest:
     """Validated conformance manifest (v0 or v1).
@@ -228,12 +377,14 @@ class Manifest:
         name: Human-readable manifest name.
         tests: Ordered manifest tests to execute (v0 only, empty for v1).
         steps: Ordered sequential steps to execute (v1 only, empty for v0).
+            Each entry is either a plain HTTP step or a PSU authorisation
+            step — see :data:`V1Step` for the discriminated union.
     """
 
     schema_version: ManifestSchemaVersion
     name: str
     tests: tuple[ManifestTest, ...] = ()
-    steps: tuple[ManifestStep, ...] = ()
+    steps: tuple[V1Step, ...] = ()
 
 
 def load_manifest(manifest_path: Path) -> Manifest:
@@ -413,7 +564,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
 
     seen_ids: set[str] = set()
-    steps: list[ManifestStep] = []
+    steps: list[V1Step] = []
     for index, raw_step in enumerate(raw_steps):
         step = _parse_v1_step(raw_step, index=index, seen_ids=seen_ids)
         seen_ids.add(step.id)
@@ -426,8 +577,11 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     )
 
 
-def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> ManifestStep:
+def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> V1Step:
     """Parse a single step entry from the v1 manifest steps array.
+
+    Dispatches on the optional ``kind`` discriminator (default ``"http"``)
+    to the matching per-kind parser. Unknown ``kind`` values are rejected.
 
     Args:
         raw_step: Raw JSON object representing one manifest step.
@@ -435,7 +589,40 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
         seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
 
     Returns:
-        Validated manifest step with request and assertions.
+        Validated manifest step — either a :class:`ManifestStep` (kind
+        ``"http"``) or a :class:`PsuAuthorizationStep` (kind
+        ``"psu-authorization"``).
+
+    Raises:
+        ManifestError: If required fields are missing, ids are duplicated,
+            placeholders reference forward/unknown steps, or ``kind`` is
+            unknown.
+    """
+    location = f"steps[{index}]"
+    if not isinstance(raw_step, dict):
+        # _required_object_array already enforces dict shape, but the
+        # narrow re-check keeps mypy happy when reading raw_step.get below.
+        raise ManifestError(f"{location} must be a JSON object")
+    kind_raw = raw_step.get("kind", "http")
+    if not isinstance(kind_raw, str):
+        raise ManifestError(f"{location}.kind must be a string when present")
+    if kind_raw == "http":
+        return _parse_v1_http_step(raw_step, index=index, seen_ids=seen_ids)
+    if kind_raw == "psu-authorization":
+        return _parse_v1_psu_authorization_step(raw_step, index=index, seen_ids=seen_ids)
+    raise ManifestError(f"{location}.kind must be one of: http, psu-authorization (got: {kind_raw!r})")
+
+
+def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> ManifestStep:
+    """Parse a plain HTTP v1 manifest step (``"kind": "http"`` or default).
+
+    Args:
+        raw_step: Raw JSON object representing one manifest step.
+        index: Zero-based position in the steps array, used for error locations.
+        seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+
+    Returns:
+        Validated :class:`ManifestStep` with request and assertions.
 
     Raises:
         ManifestError: If required fields are missing, ids are duplicated, or
@@ -444,7 +631,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     location = f"steps[{index}]"
     _reject_unknown_keys(
         raw_step,
-        allowed_keys={"id", "name", "request", "assertions", "warning", "mandatory", "optional"},
+        allowed_keys={"kind", "id", "name", "request", "assertions", "warning", "mandatory", "optional"},
         location=location,
     )
 
@@ -478,6 +665,275 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
         mandatory=mandatory,
         optional=optional,
     )
+
+
+_PSU_AUTH_ALLOWED_KEYS: set[str] = {
+    "kind",
+    "id",
+    "name",
+    "mode",
+    "authorizationEndpoint",
+    "clientId",
+    "redirectUri",
+    "responseType",
+    "scope",
+    "state",
+    "requestObject",
+    "timeoutSeconds",
+    "mandatory",
+    "optional",
+}
+"""Permitted top-level keys on a ``psu-authorization`` v1 step.
+
+Closed set — unknown keys are rejected at parse time so a typo in (e.g.)
+``redirect_uri`` vs ``redirectUri`` fails fast instead of silently falling
+back to the default endpoint. The HTTP-step fields ``request``,
+``assertions``, and ``warning`` are intentionally excluded — they do not
+apply to PSU steps and the executor would have nothing to do with them.
+"""
+
+
+def _parse_v1_psu_authorization_step(
+    raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]
+) -> PsuAuthorizationStep:
+    """Parse a v1 manifest step of ``"kind": "psu-authorization"``.
+
+    Args:
+        raw_step: Raw JSON object representing one PSU authorisation step.
+        index: Zero-based position in the steps array, used for error locations.
+        seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+
+    Returns:
+        Validated :class:`PsuAuthorizationStep` ready for the executor's
+        PSU branch.
+
+    Raises:
+        ManifestError: If required fields are missing, ids are duplicated,
+            placeholders reference forward/unknown steps, fields fail type
+            or value validation, or ``mandatory`` and ``optional`` are both
+            set.
+    """
+    location = f"steps[{index}]"
+    _reject_unknown_keys(raw_step, allowed_keys=_PSU_AUTH_ALLOWED_KEYS, location=location)
+
+    step_id = _required_string(raw_step, "id", location=location)
+    _validate_step_id(step_id, location=location)
+    if step_id in seen_ids:
+        raise ManifestError(f"{location}.id '{step_id}' is a duplicate")
+    step_name = _required_string(raw_step, "name", location=location)
+
+    mode = _parse_psu_mode(raw_step, location=location)
+
+    authorization_endpoint = _required_string(raw_step, "authorizationEndpoint", location=location)
+    _validate_placeholder_syntax(
+        authorization_endpoint,
+        location=f"{location}.authorizationEndpoint",
+        seen_ids=seen_ids,
+    )
+    if not _PLACEHOLDER_FIND_PATTERN.search(authorization_endpoint):
+        try:
+            validate_https_url(authorization_endpoint, label=f"{location}.authorizationEndpoint")
+        except HttpsUrlValidationError as error:
+            raise ManifestError(str(error)) from error
+
+    client_id = _required_string(raw_step, "clientId", location=location)
+    _validate_placeholder_syntax(client_id, location=f"{location}.clientId", seen_ids=seen_ids)
+
+    # ``redirectUri`` deliberately rejects placeholders: a redirect URI is
+    # a registered, manifest-author-time value. Allowing runtime derivation
+    # would widen the open-redirect attack surface in headless mode where
+    # the executor matches the ASPSP-returned ``Location`` against this
+    # value.
+    redirect_uri = _required_string(raw_step, "redirectUri", location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(redirect_uri):
+        raise ManifestError(
+            f"{location}.redirectUri must not contain placeholders "
+            "(redirect URIs are registered, manifest-author-time values)"
+        )
+    try:
+        validate_https_url(redirect_uri, label=f"{location}.redirectUri")
+    except HttpsUrlValidationError as error:
+        raise ManifestError(str(error)) from error
+
+    response_type = _parse_psu_optional_string(
+        raw_step, key="responseType", default=_PSU_AUTH_DEFAULT_RESPONSE_TYPE, location=location
+    )
+    if _PLACEHOLDER_FIND_PATTERN.search(response_type):
+        raise ManifestError(f"{location}.responseType must not contain placeholders")
+    scope = _parse_psu_optional_string(raw_step, key="scope", default=_PSU_AUTH_DEFAULT_SCOPE, location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(scope):
+        raise ManifestError(f"{location}.scope must not contain placeholders")
+
+    state = _parse_psu_optional_state(raw_step, location=location, seen_ids=seen_ids)
+    request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)
+    timeout_seconds = _parse_psu_timeout_seconds(raw_step, location=location)
+
+    mandatory = _parse_optional_mandatory(raw_step, location=location)
+    optional = _parse_optional_optional(raw_step, location=location)
+    if mandatory and optional:
+        raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
+
+    return PsuAuthorizationStep(
+        id=step_id,
+        name=step_name,
+        mode=mode,
+        authorization_endpoint=authorization_endpoint,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=response_type,
+        scope=scope,
+        state=state,
+        request_object=request_object,
+        timeout_seconds=timeout_seconds,
+        mandatory=mandatory,
+        optional=optional,
+    )
+
+
+def _parse_psu_mode(raw_step: dict[str, JsonValue], *, location: str) -> PsuAuthorizationMode:
+    """Extract and validate the PSU step ``mode`` discriminator.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated mode literal (``"manual"`` or ``"headless"``).
+
+    Raises:
+        ManifestError: If ``mode`` is missing or not one of the supported values.
+    """
+    mode = _required_string(raw_step, "mode", location=location)
+    if mode == "manual":
+        return "manual"
+    if mode == "headless":
+        return "headless"
+    raise ManifestError(f"{location}.mode must be one of: manual, headless (got: {mode!r})")
+
+
+def _parse_psu_optional_string(raw_step: dict[str, JsonValue], *, key: str, default: str, location: str) -> str:
+    """Extract an optional non-empty string field on a PSU step.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        key: The key to read from the step (e.g. ``"responseType"``).
+        default: Value returned when the key is absent.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The stripped string when present, otherwise ``default``.
+
+    Raises:
+        ManifestError: If the key is present but is not a non-empty string.
+    """
+    if key not in raw_step:
+        return default
+    value = raw_step[key]
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.{key} must be a non-empty string when present")
+    return value.strip()
+
+
+def _parse_psu_optional_state(raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> str | None:
+    """Parse the optional ``state`` field on a PSU authorisation step.
+
+    Placeholders are permitted (and the runtime check inside the
+    :class:`AuthSessionStore` enforces the same 32-character minimum after
+    resolution). When the literal value contains no placeholders the
+    32-character minimum is enforced at parse time as well, mirroring the
+    store's :data:`MIN_CALLER_SUPPLIED_STATE_LENGTH` so a misauthored
+    manifest fails fast.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        The stripped ``state`` string, or ``None`` if the key was absent.
+
+    Raises:
+        ManifestError: If ``state`` is present but is not a non-empty
+            string, contains a malformed placeholder, references a
+            forward step, or — when given as a literal — is shorter than
+            the store's minimum length.
+    """
+    if "state" not in raw_step:
+        return None
+    value = raw_step["state"]
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.state must be a non-empty string when present")
+    state_value = value.strip()
+    _validate_placeholder_syntax(state_value, location=f"{location}.state", seen_ids=seen_ids)
+    if not _PLACEHOLDER_FIND_PATTERN.search(state_value) and len(state_value) < _PSU_AUTH_MIN_STATE_LENGTH:
+        raise ManifestError(
+            f"{location}.state must be at least {_PSU_AUTH_MIN_STATE_LENGTH} characters "
+            "(matches AuthSessionStore minimum caller-supplied entropy)"
+        )
+    return state_value
+
+
+def _parse_psu_optional_request_object(
+    raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+) -> str | None:
+    """Parse the optional ``requestObject`` field on a PSU authorisation step.
+
+    The value is treated as an opaque JWT string. Placeholders are permitted
+    so the JWT can be produced by an upstream signing step. No structural
+    validation of the JWT body is performed at parse time.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for forward-ref detection).
+
+    Returns:
+        The stripped JWT string, or ``None`` if the key was absent.
+
+    Raises:
+        ManifestError: If ``requestObject`` is present but is not a
+            non-empty string, contains a malformed placeholder, or
+            references a forward step.
+    """
+    if "requestObject" not in raw_step:
+        return None
+    value = raw_step["requestObject"]
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.requestObject must be a non-empty string when present")
+    request_object = value.strip()
+    _validate_placeholder_syntax(request_object, location=f"{location}.requestObject", seen_ids=seen_ids)
+    return request_object
+
+
+def _parse_psu_timeout_seconds(raw_step: dict[str, JsonValue], *, location: str) -> int:
+    """Parse the optional ``timeoutSeconds`` field on a PSU authorisation step.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated integer timeout. Returns the module-level default
+        when the key is absent.
+
+    Raises:
+        ManifestError: If the value is present but is not a JSON integer
+            in the inclusive range
+            ``[_PSU_AUTH_TIMEOUT_MIN_SECONDS, _PSU_AUTH_TIMEOUT_MAX_SECONDS]``.
+    """
+    if "timeoutSeconds" not in raw_step:
+        return _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
+    value = raw_step["timeoutSeconds"]
+    # Reject ``bool`` (subclass of ``int``) so ``true``/``false`` cannot
+    # silently become 1/0 second timeouts on a misauthored manifest.
+    if not isinstance(value, int) or isinstance(value, bool):
+        raise ManifestError(f"{location}.timeoutSeconds must be a JSON integer when present")
+    if value < _PSU_AUTH_TIMEOUT_MIN_SECONDS or value > _PSU_AUTH_TIMEOUT_MAX_SECONDS:
+        raise ManifestError(
+            f"{location}.timeoutSeconds must be between {_PSU_AUTH_TIMEOUT_MIN_SECONDS} "
+            f"and {_PSU_AUTH_TIMEOUT_MAX_SECONDS} inclusive (got: {value})"
+        )
+    return value
 
 
 def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:

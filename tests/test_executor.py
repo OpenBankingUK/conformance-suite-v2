@@ -1,13 +1,17 @@
 import json
 import secrets
+from collections.abc import Callable
 from typing import Any, cast
 
 import httpx
 import pytest
 
-from conformance.executor import run_manifest
+from conformance.api.auth_session_store import AuthSessionStore
+from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, record_step
+from conformance.execution_log import BufferedExecutionLogger
+from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonValue
-from conformance.manifest import parse_manifest
+from conformance.manifest import PsuAuthorizationStep, parse_manifest
 
 
 def manifest_config() -> dict[str, JsonValue]:
@@ -2048,3 +2052,754 @@ def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
     }
+
+
+# --- PSU plumbing: run_id + AuthSessionStore wiring (Phase 1) ---
+
+
+def _trivial_v1_manifest() -> dict[str, JsonValue]:
+    """Return a single-step v1 manifest used by Phase 1 plumbing tests."""
+    return {
+        "schemaVersion": "v1",
+        "name": "plumbing",
+        "steps": [
+            {
+                "id": "ping",
+                "name": "Ping",
+                "request": {"method": "GET", "url": "https://modelbank.example.com/ping"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+
+class _RecordingAuthSessionStore(AuthSessionStore):
+    """Sentinel :class:`AuthSessionStore` subclass for identity assertions.
+
+    Used by Phase 1 wiring tests to prove that the store passed by the caller
+    is the very same instance threaded through to the per-step executor — not
+    a freshly-constructed default.
+    """
+
+
+@pytest.mark.unit
+def test_run_manifest_generates_run_id_when_caller_supplies_none() -> None:
+    """``run_manifest`` must Just Work without a ``run_id`` (CLI/legacy callers)."""
+    manifest = parse_manifest(_trivial_v1_manifest())
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        # No run_id, no auth_session_store — must not raise and must execute the step.
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert [step.status for step in result.steps] == ["passed"]
+
+
+@pytest.mark.unit
+def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stateful logger's run ID is reused for per-step PSU correlation."""
+    from conformance import executor as executor_module
+    from conformance.execution_log import BufferedExecutionLogger
+
+    captured: dict[str, object] = {}
+    real_execute_v1_step = executor_module._execute_v1_step
+
+    def fake_execute_v1_step(
+        manifest_step: Any,
+        *,
+        context: Any,
+        client: Any,
+        execution_logger: Any,
+        run_id: str,
+        auth_session_store: AuthSessionStore,
+    ) -> tuple[Any, Any]:
+        """Capture the threaded run ID before delegating to the real executor."""
+        captured["run_id"] = run_id
+        captured["store"] = auth_session_store
+        return real_execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+
+    sentinel_store = _RecordingAuthSessionStore()
+    manifest = parse_manifest(_trivial_v1_manifest())
+    execution_logger = BufferedExecutionLogger(run_id="logger-run", developer_mode=False)
+    monkeypatch.setattr(executor_module, "_execute_v1_step", fake_execute_v1_step)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+            auth_session_store=sentinel_store,
+        )
+
+    assert captured["run_id"] == "logger-run"
+    assert captured["store"] is sentinel_store
+
+
+@pytest.mark.unit
+def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
+    """The caller's store instance must reach the per-step executor unchanged."""
+    captured: dict[str, object] = {}
+
+    def fake_execute_v1_step(
+        manifest_step: Any,
+        *,
+        context: Any,
+        client: Any,
+        execution_logger: Any,
+        run_id: str,
+        auth_session_store: AuthSessionStore,
+    ) -> tuple[Any, Any]:
+        """Capture the threaded run_id and store, then delegate to the real impl."""
+        captured["run_id"] = run_id
+        captured["store"] = auth_session_store
+        return _real_execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+
+    from conformance import executor as executor_module
+
+    sentinel_store = _RecordingAuthSessionStore()
+    manifest = parse_manifest(_trivial_v1_manifest())
+    _real_execute_v1_step = executor_module._execute_v1_step
+    try:
+        executor_module._execute_v1_step = fake_execute_v1_step
+        with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+            run_manifest(
+                manifest,
+                environment="env",
+                client=client,
+                run_id="run-abc",
+                auth_session_store=sentinel_store,
+            )
+    finally:
+        executor_module._execute_v1_step = _real_execute_v1_step
+
+    assert captured["run_id"] == "run-abc"
+    assert captured["store"] is sentinel_store
+
+
+# --- PSU authorisation executor: manual mode (Phase 3) ---
+
+
+class _FakeClock:
+    """Deterministic monotonic clock for PSU polling tests."""
+
+    def __init__(self, *, on_sleep: Callable[[], None] | None = None) -> None:
+        """Initialise at time zero.
+
+        Args:
+            on_sleep: Optional callback invoked after each fake sleep.
+        """
+        self.now = 0.0
+        self.sleep_calls = 0
+        self._on_sleep = on_sleep
+
+    def monotonic(self) -> float:
+        """Return the current fake monotonic time.
+
+        Returns:
+            Current fake time in seconds.
+        """
+        return self.now
+
+    def sleep(self, seconds: float) -> None:
+        """Advance fake time and invoke the optional hook.
+
+        Args:
+            seconds: Number of fake seconds to advance.
+        """
+        self.now += seconds
+        self.sleep_calls += 1
+        if self._on_sleep is not None:
+            self._on_sleep()
+
+
+def _psu_manual_step(**overrides: Any) -> PsuAuthorizationStep:
+    """Build a parsed PSU manual step for executor unit tests.
+
+    Args:
+        overrides: Dataclass field overrides applied to the default step.
+
+    Returns:
+        Parsed :class:`PsuAuthorizationStep` instance.
+    """
+    data: dict[str, Any] = {
+        "id": "psu",
+        "name": "PSU authorisation",
+        "mode": "manual",
+        "authorization_endpoint": "https://auth.example.com/authorize?existing=1",
+        "client_id": "client-123",
+        "redirect_uri": "https://conformance.example.com/callback",
+        "response_type": "code id_token",
+        "scope": "openid accounts",
+        "state": "s" * 32,
+        "request_object": None,
+        "timeout_seconds": 2,
+        "mandatory": False,
+        "optional": False,
+    }
+    data.update(overrides)
+    return PsuAuthorizationStep(**data)
+
+
+def _psu_headless_step(**overrides: Any) -> PsuAuthorizationStep:
+    """Build a parsed PSU headless step for executor unit tests.
+
+    Args:
+        overrides: Dataclass field overrides applied to the default step.
+
+    Returns:
+        Parsed :class:`PsuAuthorizationStep` instance in headless mode.
+    """
+    return _psu_manual_step(mode="headless", **overrides)
+
+
+@pytest.mark.unit
+def test_psu_manual_step_captures_code_into_context() -> None:
+    """Manual mode polls until callback capture and records code for placeholders."""
+    store = AuthSessionStore()
+    step = _psu_manual_step()
+
+    def capture_once() -> None:
+        if store.get("run-1", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    execution_logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-1",
+        auth_session_store=store,
+        execution_logger=execution_logger,
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert "existing=1" in result.url
+    assert "response_type=code+id_token" in result.url
+    assert context.steps["psu"].response is not None
+    assert context.steps["psu"].response.body["code"] == "auth-code-123"
+    url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
+    assert len(url_events) == 1
+    assert url_events[0].payload["client_id"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+
+
+@pytest.mark.unit
+def test_psu_manual_step_records_authorization_error() -> None:
+    """Manual mode converts an ASPSP error redirect into a failed step."""
+    store = AuthSessionStore()
+    step = _psu_manual_step()
+
+    def capture_error_once() -> None:
+        if store.get("run-err", "s" * 32) is not None:
+            store.capture_error("s" * 32, "access_denied", "PSU declined consent")
+
+    fake_clock = _FakeClock(on_sleep=capture_error_once)
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-err",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-err", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    assert result.status == "failed"
+    assert result.details["error"] == "access_denied"
+    assert result.details["error_description"] == "PSU declined consent"
+    assert result.details["request"] != {}
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_manual_step_times_out() -> None:
+    """Manual mode fails when no callback resolves before the deadline."""
+    fake_clock = _FakeClock()
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(timeout_seconds=1),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-timeout",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-timeout", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    assert result.status == "failed"
+    assert result.details["timeoutSeconds"] == 1
+    assert result.details["request"] != {}
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
+    """Non-PASS PSU results mask credential-bearing authorization URL params."""
+    fake_clock = _FakeClock()
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            request_object="signed.request.jwt",
+            timeout_seconds=1,
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-timeout-masked-url",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-timeout-masked-url", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    rendered = json.dumps(result.to_json_object())
+    request_details = cast("dict[str, Any]", result.details["request"])
+    request_url = cast("str", request_details["url"])
+    assert result.status == "failed"
+    assert result.url == request_url
+    assert "client_assertion=***" in request_url
+    assert "request=***" in request_url
+    assert context.steps["psu"].request.url == request_url
+    assert "inline.assertion" not in rendered
+    assert "signed.request.jwt" not in rendered
+
+
+@pytest.mark.unit
+def test_psu_manual_step_records_masked_request_url_for_placeholders() -> None:
+    """PSU request URLs stored in context are safe for downstream placeholders."""
+    store = AuthSessionStore()
+    step = _psu_manual_step(
+        authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+        request_object="signed.request.jwt",
+    )
+
+    def capture_once() -> None:
+        if store.get("run-masked-context", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-masked-context",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-masked-context", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    request_url = context.steps["psu"].request.url
+    assert result.status == "passed"
+    assert result.url == request_url
+    assert "client_assertion=***" in request_url
+    assert "request=***" in request_url
+    assert "inline.assertion" not in request_url
+    assert "signed.request.jwt" not in request_url
+
+
+@pytest.mark.unit
+def test_psu_manual_step_placeholder_failure_records_masked_request_url() -> None:
+    """PSU placeholder failures store the masked endpoint template in context."""
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            client_id="${steps.missing.response.body.client_id}",
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-placeholder-failure",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-placeholder-failure", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert context.steps["psu"].request.url == "https://auth.example.com/authorize?client_assertion=***"
+    assert "inline.assertion" not in json.dumps(result.to_json_object())
+
+
+@pytest.mark.unit
+def test_psu_manual_step_register_failure_records_masked_request_url() -> None:
+    """PSU auth-session failures store the masked resolved endpoint in context."""
+    store = AuthSessionStore()
+    store.register("other-run", state="d" * 32)
+
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            state="d" * 32,
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-duplicate-masked-url",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-duplicate-masked-url", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert context.steps["psu"].request.url == "https://auth.example.com/authorize?client_assertion=***"
+    assert "inline.assertion" not in json.dumps(result.to_json_object())
+
+
+@pytest.mark.unit
+def test_run_manifest_mandatory_psu_timeout_counts_as_mandatory_failed(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A mandatory PSU timeout is counted as failed mandatory coverage, not skipped."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "mandatory psu timeout",
+        "steps": [
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU authorisation",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "client-123",
+                "redirectUri": "https://conformance.example.com/callback",
+                "state": "t" * 32,
+                "timeoutSeconds": 1,
+                "mandatory": True,
+            }
+        ],
+    }
+    fake_clock = _FakeClock()
+    monkeypatch.setattr("conformance.executor.time.monotonic", fake_clock.monotonic)
+    monkeypatch.setattr("conformance.executor.time.sleep", fake_clock.sleep)
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            run_id="run-mandatory-psu-timeout",
+            auth_session_store=AuthSessionStore(),
+        )
+
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].mandatory is True
+    eligibility = result.to_json_object()["certificationEligibility"]
+    assert isinstance(eligibility, dict)
+    assert eligibility["eligible"] is False
+    assert eligibility["mandatoryFailed"] == 1
+    assert eligibility["mandatorySkipped"] == 0
+    assert eligibility["reason"] == "1 mandatory step(s) failed"
+
+
+@pytest.mark.unit
+def test_psu_manual_step_fails_on_invalid_resolved_state_length() -> None:
+    """A placeholder-resolved short state is rejected by the auth-session store."""
+    context = record_step(
+        ExecutionContext(),
+        "state-source",
+        RequestRecord(method="GET", url="https://example.com/state"),
+        ResponseRecord(status_code=200, body={"state": "short"}),
+    )
+
+    result, new_context = _execute_v1_psu_step(
+        _psu_manual_step(state="${steps.state-source.response.body.state}"),
+        context=context,
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-short",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-short", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert "at least 32 characters" in result.message
+    assert new_context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_manual_step_fails_on_duplicate_state() -> None:
+    """A state collision in the store fails the PSU step cleanly."""
+    store = AuthSessionStore()
+    store.register("other-run", state="d" * 32)
+
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(state="d" * 32),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-dup",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-dup", developer_mode=False),
+        clock=_FakeClock().monotonic,
+        sleep=_FakeClock().sleep,
+    )
+
+    assert result.status == "failed"
+    assert "already registered" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A downstream form step can claim ``${steps.psu.response.body.code}``."""
+    state = "m" * 32
+    store = AuthSessionStore()
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "manual psu to token",
+        "steps": [
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU authorisation",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "client-123",
+                "redirectUri": "https://conformance.example.com/callback",
+                "state": state,
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "${steps.psu.response.body.code}",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+    fake_clock = _FakeClock()
+
+    def fake_sleep(seconds: float) -> None:
+        fake_clock.sleep(seconds)
+        if store.get("run-manual", state) is not None:
+            store.capture_code(state, "downstream-code")
+
+    captured_token_body: dict[str, str] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_token_body
+        captured_token_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"access_token": "masked-by-result-layer"})
+
+    monkeypatch.setattr("conformance.executor.time.monotonic", fake_clock.monotonic)
+    monkeypatch.setattr("conformance.executor.time.sleep", fake_sleep)
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            run_id="run-manual",
+            auth_session_store=store,
+        )
+
+    assert result.status == "passed"
+    assert [step.status for step in result.steps] == ["passed", "passed"]
+    assert captured_token_body["code"] == "downstream-code"
+
+
+# --- PSU authorisation executor: headless mode (Phase 4) ---
+
+
+@pytest.mark.unit
+def test_psu_headless_step_captures_code_from_redirect() -> None:
+    """Headless mode parses a 3xx Location and records code for placeholders."""
+    state = "h" * 32
+    store = AuthSessionStore()
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+        )
+
+    execution_logger = BufferedExecutionLogger(run_id="run-headless", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless",
+            auth_session_store=store,
+            execution_logger=execution_logger,
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "passed"
+    assert context.steps["psu"].response is not None
+    assert context.steps["psu"].response.body["code"] == "headless-code"
+    assert requested_urls == [
+        "https://auth.example.com/authorize?existing=1&client_id=client-123"
+        "&redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback"
+        "&response_type=code+id_token&scope=openid+accounts&state=" + state
+    ]
+    redirect_events = [
+        event for event in execution_logger.events() if event.type == "psu-authorization-redirect-received"
+    ]
+    assert len(redirect_events) == 1
+    assert redirect_events[0].payload == {"state": state, "status": 302}
+
+
+@pytest.mark.unit
+def test_psu_headless_step_records_authorization_error_redirect() -> None:
+    """Headless mode converts an ASPSP error redirect into a failed step."""
+    state = "e" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            303,
+            headers={
+                "Location": (
+                    "https://conformance.example.com/callback"
+                    f"?state={state}&error=access_denied&error_description=PSU+declined"
+                )
+            },
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-error",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-error", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert result.details["error"] == "access_denied"
+    assert result.details["error_description"] == "PSU declined"
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_fails_when_redirect_location_missing() -> None:
+    """Headless mode fails cleanly when a 3xx response omits Location."""
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(302))) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state="l" * 32),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-missing-location",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-missing-location", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert result.status_code == 302
+    assert "Location" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_fails_on_mismatched_redirect_target() -> None:
+    """Headless mode rejects redirects to any host/path other than redirectUri."""
+    state = "x" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://evil.example.com/callback?state={state}&code=bad-code"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-mismatch",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-mismatch", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    rendered = json.dumps(result.to_json_object())
+    assert result.status == "failed"
+    assert "redirect target" in result.message
+    assert "evil.example.com" not in rendered
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_accepts_redirect_with_explicit_default_https_port() -> None:
+    """Headless redirect matching treats omitted HTTPS port and ``:443`` as equivalent."""
+    state = "p" * 32
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com:443/callback?state={state}&code=headless-code"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-default-port",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-default-port", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "passed"
+    assert context.steps["psu"].response is not None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> None:
+    """Headless mode fails on 200 OK rather than attempting consent automation."""
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state="o" * 32),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-ok",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-ok", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert result.status_code == 200
+    assert "did not return a redirect" in result.message
+    assert context.steps["psu"].response is None

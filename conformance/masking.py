@@ -18,8 +18,9 @@ not preserved to avoid leaking entropy about the underlying secret.
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from typing import Final
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from conformance.json_types import JsonObject, JsonValue
 
@@ -36,6 +37,8 @@ SENSITIVE_JSON_KEYS: Final[frozenset[str]] = frozenset(
         "code",
         "client_assertion",
         "assertion",
+        "request",
+        "request_object",
         # Generic credential fields that may appear in form/JSON payloads
         "password",
         "private_key",
@@ -130,3 +133,42 @@ def mask_form_fields(fields: Mapping[str, str]) -> dict[str, str]:
         replaced by :data:`MASKED_VALUE`.
     """
     return {name: (MASKED_VALUE if name.lower() in SENSITIVE_JSON_KEYS else value) for name, value in fields.items()}
+
+
+def mask_url_query(url: str, sensitive_params: Collection[str]) -> str:
+    """Return a URL with selected query-parameter values masked.
+
+    OAuth 2.0 authorisation URLs can carry credential-bearing parameters,
+    notably FAPI/JAR ``request`` JWTs and ``client_assertion`` values. This
+    helper preserves the URL target and non-sensitive query parameters while
+    replacing selected values with :data:`MASKED_VALUE` so result-file evidence
+    can remain useful without exposing live credentials.
+
+    Args:
+        url: URL whose query string should be inspected.
+        sensitive_params: Lowercase query-parameter names whose values must be
+            replaced. Comparison is case-insensitive.
+
+    Returns:
+        The original URL when no sensitive query parameters are present;
+        otherwise, a URL with sensitive query values replaced by
+        :data:`MASKED_VALUE`.
+    """
+    parts = urlsplit(url)
+    if not parts.query:
+        return url
+
+    sensitive_names = {name.lower() for name in sensitive_params}
+    query_items = parse_qsl(parts.query, keep_blank_values=True)
+    masked_items: list[tuple[str, str]] = []
+    masked_any = False
+    for name, value in query_items:
+        if name.lower() in sensitive_names:
+            masked_items.append((name, MASKED_VALUE))
+            masked_any = True
+        else:
+            masked_items.append((name, value))
+
+    if not masked_any:
+        return url
+    return urlunsplit(parts._replace(query=urlencode(masked_items, safe="*")))

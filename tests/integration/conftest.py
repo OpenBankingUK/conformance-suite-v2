@@ -19,9 +19,9 @@ import pytest
 def ozone_discovery_url() -> str:
     """Return the Ozone OpenID discovery URL from ``OZONE_DISCOVERY_URL``.
 
-    Tests that consume this fixture must also apply ``requires_ozone(1)`` so
-    that the test is skipped (rather than erroring) when the variable is not
-    set in the current environment.
+    Tests that consume this fixture must also apply the relevant
+    ``requires_ozone(...)`` tier marker so that the test is skipped (rather
+    than erroring) when the variable is not set in the current environment.
 
     Returns:
         The absolute HTTPS discovery URL configured in the environment.
