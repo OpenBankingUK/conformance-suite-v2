@@ -125,10 +125,11 @@ def run_manifest(
             non-optional step — i.e. behaves as before this feature was
             added. Ignored for v0 manifests, which have no plan model.
         run_id: Optional run identifier used to correlate PSU authorisation
-            sessions with this execution. When ``None`` (the default) a
-            fresh UUID4 hex is generated so legacy callers Just Work; the
-            API supplies its own. Consumed by ``psu-authorization`` steps;
-            plain HTTP steps ignore it.
+            sessions with this execution. When ``None`` (the default), a
+            non-empty ``execution_logger.run_id`` is reused when available;
+            otherwise a fresh UUID4 hex is generated so legacy callers Just
+            Work. The API supplies its own. Consumed by
+            ``psu-authorization`` steps; plain HTTP steps ignore it.
         auth_session_store: Optional store the executor uses to register
             and await PSU authorisation callbacks for upcoming
             ``psu-authorization`` steps. When ``None`` (the default) a
@@ -142,7 +143,7 @@ def run_manifest(
         Smoke-check result containing ordered manifest test steps.
     """
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
-    effective_run_id = run_id if run_id is not None else new_run_id()
+    effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
     logger_sink.emit(
         "run-started",
@@ -186,6 +187,20 @@ def run_manifest(
         },
     )
     return result
+
+
+def _logger_run_id(execution_logger: ExecutionLogger) -> str | None:
+    """Return a run identifier exposed by a stateful execution logger.
+
+    Args:
+        execution_logger: Execution-log sink supplied to ``run_manifest``.
+
+    Returns:
+        The logger's non-empty run identifier, or ``None`` when the sink does
+        not expose one.
+    """
+    logger_run_id = getattr(execution_logger, "run_id", None)
+    return logger_run_id if isinstance(logger_run_id, str) and logger_run_id else None
 
 
 def _run_manifest_v1(

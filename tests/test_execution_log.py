@@ -78,6 +78,14 @@ def test_psu_url_console_logger_writes_to_stderr_and_flushes_when_console_stream
 
 
 @pytest.mark.unit
+def test_psu_url_console_logger_exposes_wrapped_run_id() -> None:
+    wrapped = BufferedExecutionLogger(run_id="wrapped-run", developer_mode=False)
+    logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=_TtyStringIO(), stderr=_TtyStringIO())
+
+    assert logger.run_id == "wrapped-run"
+
+
+@pytest.mark.unit
 def test_psu_url_console_logger_is_quiet_when_stderr_is_not_tty() -> None:
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
     stdout = _TtyStringIO()

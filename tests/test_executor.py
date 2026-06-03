@@ -2096,6 +2096,54 @@ def test_run_manifest_generates_run_id_when_caller_supplies_none() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stateful logger's run ID is reused for per-step PSU correlation."""
+    from conformance import executor as executor_module
+    from conformance.execution_log import BufferedExecutionLogger
+
+    captured: dict[str, object] = {}
+    real_execute_v1_step = executor_module._execute_v1_step
+
+    def fake_execute_v1_step(
+        manifest_step: Any,
+        *,
+        context: Any,
+        client: Any,
+        execution_logger: Any,
+        run_id: str,
+        auth_session_store: AuthSessionStore,
+    ) -> tuple[Any, Any]:
+        """Capture the threaded run ID before delegating to the real executor."""
+        captured["run_id"] = run_id
+        captured["store"] = auth_session_store
+        return real_execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+
+    sentinel_store = _RecordingAuthSessionStore()
+    manifest = parse_manifest(_trivial_v1_manifest())
+    execution_logger = BufferedExecutionLogger(run_id="logger-run", developer_mode=False)
+    monkeypatch.setattr(executor_module, "_execute_v1_step", fake_execute_v1_step)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
+        run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+            auth_session_store=sentinel_store,
+        )
+
+    assert captured["run_id"] == "logger-run"
+    assert captured["store"] is sentinel_store
+
+
+@pytest.mark.unit
 def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
     """The caller's store instance must reach the per-step executor unchanged."""
     captured: dict[str, object] = {}

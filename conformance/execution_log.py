@@ -239,6 +239,17 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         self._stderr.write(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n")
         self._stderr.flush()
 
+    @property
+    def run_id(self) -> str | None:
+        """Return the wrapped logger's run identifier when it exposes one.
+
+        Returns:
+            The wrapped logger's non-empty run identifier, or ``None`` when
+            the wrapped sink is stateless.
+        """
+        wrapped_run_id = getattr(self._wrapped, "run_id", None)
+        return wrapped_run_id if isinstance(wrapped_run_id, str) and wrapped_run_id else None
+
 
 class BufferedExecutionLogger(ExecutionLogger):
     """In-memory execution-log buffer with an atomic NDJSON write.
