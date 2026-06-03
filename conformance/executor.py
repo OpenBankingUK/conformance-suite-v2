@@ -759,6 +759,7 @@ def _complete_psu_step_from_session(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
+    del authorization_url  # Intentionally unused: raw URL must not be persisted into results/log evidence.
     if current_session.status == "captured" and current_session.code is not None:
         response_record = synthesize_psu_response(code=current_session.code, state=current_session.state)
         new_context = record_step(context, manifest_step.id, request_record, response_record)

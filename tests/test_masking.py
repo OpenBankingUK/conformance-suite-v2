@@ -158,7 +158,7 @@ class TestMaskFormFields:
 
 @pytest.mark.unit
 class TestMaskUrlQuery:
-    """Behaviour of :func:`_mask_url_query` for OAuth 2.0 URL evidence."""
+    """Behaviour of :func:`mask_url_query` for OAuth 2.0 URL evidence."""
 
     def test_sensitive_query_values_are_masked_case_insensitively(self) -> None:
         """Selected query params are masked while non-sensitive params remain visible."""
