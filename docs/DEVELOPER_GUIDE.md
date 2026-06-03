@@ -255,6 +255,20 @@ POST /api/runs/
 
 `deselectStepIds` must be an array of strings, requires an inline `manifest`, and is rejected with HTTP 400 if any id is unknown.
 
+**Browser plan builder UI:**
+
+Run the local server and open `http://localhost:8000/plan/`:
+
+```bash
+make dev
+```
+
+The page accepts model-bank config JSON and a v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification.
+
+Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and links to the masked JSON/NDJSON API outputs. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
+
+Manual `psu-authorization` steps can be previewed in the browser plan builder but cannot be launched from the UI yet. CLI and REST API runs still support manual PSU flows; the browser launch path is deferred until there is a one-time raw authorization URL handoff that does not persist the unmasked URL in result JSON or execution logs.
+
 **Result file additions.** When a plan is supplied (CLI manifest mode and any REST run), the result JSON gains a top-level `plan` block:
 
 ```json
