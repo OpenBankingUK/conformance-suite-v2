@@ -236,7 +236,8 @@ class PsuAuthorizationUrlConsoleLogger(ExecutionLogger):
         url = (payload or {}).get("url")
         if not isinstance(url, str):
             return
-        print(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}", file=self._stderr)
+        self._stderr.write(f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n")
+        self._stderr.flush()
 
 
 class BufferedExecutionLogger(ExecutionLogger):

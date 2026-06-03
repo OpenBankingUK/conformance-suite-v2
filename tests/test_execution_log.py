@@ -32,6 +32,20 @@ class _TtyStringIO(io.StringIO):
         return True
 
 
+class _FlushRecordingTtyStringIO(_TtyStringIO):
+    """TTY string buffer that records explicit flush calls."""
+
+    def __init__(self) -> None:
+        """Initialise an empty buffer with no recorded flush calls."""
+        super().__init__()
+        self.flush_count = 0
+
+    def flush(self) -> None:
+        """Record a flush call before delegating to the underlying buffer."""
+        self.flush_count += 1
+        super().flush()
+
+
 @pytest.mark.unit
 def test_new_run_id_returns_unique_hex_uuid() -> None:
     a = new_run_id()
@@ -49,10 +63,10 @@ def test_null_logger_emit_is_a_no_op() -> None:
 
 
 @pytest.mark.unit
-def test_psu_url_console_logger_prints_to_stderr_when_console_streams_are_tty() -> None:
+def test_psu_url_console_logger_writes_to_stderr_and_flushes_when_console_streams_are_tty() -> None:
     wrapped = BufferedExecutionLogger(run_id="r", developer_mode=False)
     stdout = _TtyStringIO()
-    stderr = _TtyStringIO()
+    stderr = _FlushRecordingTtyStringIO()
     logger = PsuAuthorizationUrlConsoleLogger(wrapped, stdout=stdout, stderr=stderr)
     url = "https://auth.example.com/authorize?client_id=client-123&state=s"
 
@@ -60,6 +74,7 @@ def test_psu_url_console_logger_prints_to_stderr_when_console_streams_are_tty() 
 
     assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
     assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
+    assert stderr.flush_count == 1
 
 
 @pytest.mark.unit

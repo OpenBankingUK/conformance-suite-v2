@@ -157,9 +157,10 @@ def _wait_for_value[WaitValue](producer: Callable[[], WaitValue | None], *, time
 
 
 @pytest.fixture(autouse=True)
-def _reset_run_store() -> None:
-    """Reset the global run store between tests to avoid cross-contamination."""
+def _reset_global_stores() -> None:
+    """Reset process-local singleton stores between tests."""
     run_store.reset()
+    auth_session_store.reset()
 
 
 @pytest.mark.integration
@@ -643,14 +644,6 @@ class TestGetRunLogEndpoint:
 
 
 # ─── Auth-session API endpoints ─────────────────────────────────────────────
-
-
-@pytest.fixture(autouse=True)
-def _reset_auth_session_store() -> None:
-    """Reset the global auth-session store between tests."""
-    from conformance.api.auth_session_store import auth_session_store
-
-    auth_session_store.reset()
 
 
 @pytest.mark.integration
