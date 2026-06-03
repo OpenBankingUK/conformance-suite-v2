@@ -16,10 +16,8 @@ import functools
 import ipaddress
 import json
 import logging
-import threading
 from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -32,17 +30,11 @@ from conformance.api.auth_session_store import (
     InvalidAuthSessionStateError,
     auth_session_store,
 )
+from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
-from conformance.executor import run_manifest
-from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest_from_object
-from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
-from conformance.runner import run_model_bank_smoke_check
+from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.test_plan import TestPlan
-
-if TYPE_CHECKING:
-    from conformance.manifest import Manifest
 
 logger = logging.getLogger(__name__)
 
@@ -217,26 +209,12 @@ def create_run(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
 
     try:
-        record = run_store.create_run()
+        response_body = start_run(config=config, manifest=manifest, plan=plan)
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},
             status=409,
         )
-
-    # Execute in background thread (Phase 1: single-threaded engine, one run
-    # at a time, but we don't block the HTTP response).
-    warn_if_developer_mode()
-    thread = threading.Thread(
-        target=_execute_run,
-        args=(record.run_id, config, manifest, plan),
-        daemon=True,
-    )
-    # Snapshot the pending state before starting the thread to avoid a
-    # race where the background thread calls mark_running() before the
-    # response is serialised.
-    response_body = record.to_status_json()
-    thread.start()
 
     return JsonResponse(response_body, status=201)
 
@@ -317,65 +295,6 @@ def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
     return HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
 
 
-def _execute_run(
-    run_id: str,
-    config: ModelBankConfig,
-    manifest: Manifest | None,
-    plan: TestPlan | None,
-) -> None:
-    """Execute a conformance run in a background thread.
-
-    Transitions the run record through running → completed/failed.
-
-    Args:
-        run_id: The run identifier to update in the store.
-        config: Validated model-bank configuration.
-        manifest: Parsed manifest object, or None for a smoke-check run.
-        plan: Optional :class:`TestPlan` derived from ``manifest`` with any
-            caller-supplied deselections already applied. Must be ``None``
-            when ``manifest`` is ``None``.
-    """
-    run_store.mark_running(run_id)
-    try:
-        run_record = run_store.get_run(run_id)
-        # ``get_run`` returns a shallow copy whose ``execution_logger``
-        # reference points at the same live buffer the API exposes; either
-        # accessing the live record or the copy yields the same logger.
-        logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
-        if manifest is None:
-            result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
-        else:
-            http_client = build_json_http_client(
-                timeout_seconds=config.timeout_seconds,
-                ca_bundle_path=config.tls.ca_bundle_path,
-                client_certificate_path=config.tls.client_certificate_path,
-                client_private_key_path=config.tls.client_private_key_path,
-            )
-            try:
-                result = run_manifest(
-                    manifest,
-                    environment=config.environment,
-                    client=http_client,
-                    execution_logger=logger_sink,
-                    plan=plan,
-                    run_id=run_id,
-                    auth_session_store=auth_session_store,
-                )
-            finally:
-                http_client.close()
-
-        run_store.mark_completed(run_id, result=result.to_json_object())
-    except Exception:
-        logger.exception("Run %s failed with an internal error", run_id)
-        run_store.mark_failed(run_id, error="An internal error occurred")
-    finally:
-        # Awaiting auth sessions must not outlive their parent run; drop
-        # them on terminal transition so a subsequent run cannot inherit
-        # stale state. Done in ``finally`` to cover both happy-path and
-        # failure-path exits from the run.
-        auth_session_store.discard_for_run(run_id)
-
-
 @_require_loopback
 @csrf_exempt
 @require_POST
@@ -416,8 +335,8 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         if the run has already reached a terminal state or if the
         requested state is already registered. After a successful
         ``register`` the run record is re-fetched: if it has been pruned
-        or transitioned to a terminal state in the interim (racing
-        :func:`_execute_run`'s ``discard_for_run`` cleanup), the
+        or transitioned to a terminal state in the interim (racing the
+        run lifecycle's ``discard_for_run`` cleanup), the
         just-created session is rolled back via
         :meth:`AuthSessionStore.discard` and the corresponding 404/409
         is returned instead of 201.
@@ -481,7 +400,7 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         return JsonResponse({"error": str(error)}, status=400)
 
     # Re-validate the run record after registration to close the race
-    # against ``_execute_run``'s terminal-state cleanup: the run may have
+    # against the run lifecycle's terminal-state cleanup: the run may have
     # transitioned to ``completed``/``failed`` (and ``discard_for_run``
     # may have already swept the run's sessions) while this request was
     # in-flight. Roll back the just-created session so it cannot outlive

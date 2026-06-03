@@ -1,7 +1,7 @@
 import json
 import time
 from collections.abc import Callable
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import pytest
 from django.test import Client
@@ -204,8 +204,8 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "Manifest validation failed" in response.json()["error"]
 
-    @patch("conformance.api.views._execute_run")
-    def test_creates_run_and_returns_201(self, mock_execute: object) -> None:
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -214,8 +214,18 @@ class TestCreateRunEndpoint:
         assert data["status"] == "pending"
         assert "id" in data
         assert "createdAt" in data
+        record = run_store.get_run(data["id"])
+        assert record is not None
+        assert record.status == "pending"
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        assert mock_execute.call_args.args[0] == data["id"]
+        assert mock_execute.call_args.args[2:] == (None, None)
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST}
@@ -225,7 +235,7 @@ class TestCreateRunEndpoint:
         assert data["status"] == "pending"
         assert "id" in data
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
         """A valid ``deselectStepIds`` against a v1 manifest is accepted."""
         client = Client()
@@ -252,7 +262,7 @@ class TestCreateRunEndpoint:
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
         """An unknown step id in ``deselectStepIds`` returns 400."""
         client = Client()
@@ -277,7 +287,7 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "array of strings" in response.json()["error"]
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}
@@ -378,7 +388,7 @@ class TestGetRunStatusEndpoint:
         response = client.get("/api/runs/nonexistent/")
         assert response.status_code == 404
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_run_status(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}
@@ -402,7 +412,7 @@ class TestGetRunResultEndpoint:
         response = client.get("/api/runs/nonexistent/result/")
         assert response.status_code == 404
 
-    @patch("conformance.api.views._execute_run")
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_409_when_run_not_complete(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG}
@@ -496,7 +506,7 @@ class TestLoopbackGuard:
         # Django test client uses REMOTE_ADDR=127.0.0.1 by default.
         client = Client()
         body = {"config": VALID_CONFIG}
-        with patch("conformance.api.views._execute_run"):
+        with patch("conformance.api.run_lifecycle._execute_run"):
             response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
 
@@ -823,7 +833,7 @@ class TestRegisterAuthSessionEndpoint:
     def test_rolls_back_session_when_run_terminates_during_register(self) -> None:
         """Race fix: a run completing mid-register must not leak a session.
 
-        Simulates ``_execute_run`` transitioning the run to
+        Simulates the run lifecycle transitioning the run to
         ``completed`` (and sweeping its sessions) between
         ``auth_session_store.register`` and the post-register run-record
         revalidation. The view must roll back the just-created session
@@ -960,7 +970,7 @@ class TestGetAuthSessionEndpoint:
 
 @pytest.mark.integration
 class TestExecuteRunDiscardsAuthSessions:
-    """``_execute_run`` must drop auth sessions on terminal exit.
+    """The run lifecycle must drop auth sessions on terminal exit.
 
     Awaiting auth sessions registered against a run MUST NOT outlive that
     run. The hook lives in ``_execute_run``'s ``finally`` block so it
@@ -975,7 +985,7 @@ class TestExecuteRunDiscardsAuthSessions:
         from pathlib import Path
 
         from conformance.api.auth_session_store import auth_session_store
-        from conformance.api.views import _execute_run
+        from conformance.api.run_lifecycle import _execute_run
         from conformance.model_bank_config import ModelBankConfig
         from conformance.results import SmokeCheckResult
 
@@ -997,7 +1007,7 @@ class TestExecuteRunDiscardsAuthSessions:
             steps=(),
         )
         with patch(
-            "conformance.api.views.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
             return_value=fake_result,
         ):
             _execute_run(record.run_id, config, manifest=None, plan=None)
@@ -1012,7 +1022,7 @@ class TestExecuteRunDiscardsAuthSessions:
         from pathlib import Path
 
         from conformance.api.auth_session_store import auth_session_store
-        from conformance.api.views import _execute_run
+        from conformance.api.run_lifecycle import _execute_run
         from conformance.model_bank_config import ModelBankConfig
 
         record = run_store.create_run()
@@ -1025,7 +1035,7 @@ class TestExecuteRunDiscardsAuthSessions:
             result_output_path=Path("results.json"),
         )
         with patch(
-            "conformance.api.views.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
             side_effect=RuntimeError("boom"),
         ):
             _execute_run(record.run_id, config, manifest=None, plan=None)
@@ -1039,7 +1049,7 @@ class TestExecuteRunDiscardsAuthSessions:
         from pathlib import Path
 
         from conformance.api.auth_session_store import auth_session_store
-        from conformance.api.views import _execute_run
+        from conformance.api.run_lifecycle import _execute_run
         from conformance.model_bank_config import ModelBankConfig
         from conformance.results import SmokeCheckResult
 
@@ -1061,7 +1071,7 @@ class TestExecuteRunDiscardsAuthSessions:
             steps=(),
         )
         with patch(
-            "conformance.api.views.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
             return_value=fake_result,
         ):
             _execute_run(finishing.run_id, config, manifest=None, plan=None)
