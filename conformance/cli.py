@@ -9,6 +9,7 @@ import sys
 from collections.abc import Sequence
 from pathlib import Path
 
+from conformance.api.auth_session_store import auth_session_store
 from conformance.execution_log import (
     BufferedExecutionLogger,
     PsuAuthorizationUrlConsoleLogger,
@@ -105,6 +106,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 execution_logger=logger_sink,
                 plan=plan,
                 run_id=run_id,
+                auth_session_store=auth_session_store,
             )
         finally:
             http_client.close()
