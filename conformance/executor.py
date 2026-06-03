@@ -44,7 +44,7 @@ from conformance.manifest import (
     PsuAuthorizationStep,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, mask_url_query, mask_form_fields, mask_headers, mask_json_value
+from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,

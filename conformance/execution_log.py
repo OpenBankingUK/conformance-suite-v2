@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import Literal, TextIO, cast
 
 from conformance.json_types import JsonObject, JsonValue
-from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_url_query, mask_headers, mask_json_value
+from conformance.masking import MASKED_VALUE, SENSITIVE_JSON_KEYS, mask_headers, mask_json_value, mask_url_query
 
 logger = logging.getLogger(__name__)
 
