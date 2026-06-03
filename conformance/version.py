@@ -16,6 +16,9 @@ REPORT_METADATA_VERSION = "1.0"
 UNKNOWN_TOOL_VERSION = "0+unknown"
 """Fallback tool version when no configured or project version can be resolved."""
 
+_PYPROJECT_VERSION_CACHE: dict[Path, str | None] = {}
+"""Cached ``[project].version`` values keyed by ``pyproject.toml`` path."""
+
 
 def resolve_conformance_tool_version(
     *,
@@ -65,20 +68,29 @@ def _read_pyproject_version(pyproject_path: Path) -> str | None:
         Stripped ``[project].version`` value, or ``None`` when the file is
         missing, malformed, or does not contain a non-empty string version.
     """
+    if pyproject_path in _PYPROJECT_VERSION_CACHE:
+        return _PYPROJECT_VERSION_CACHE[pyproject_path]
+
     try:
         with pyproject_path.open("rb") as pyproject_file:
             parsed_pyproject: object = tomllib.load(pyproject_file)
     except OSError, tomllib.TOMLDecodeError:
+        _PYPROJECT_VERSION_CACHE[pyproject_path] = None
         return None
 
     if not isinstance(parsed_pyproject, dict):
+        _PYPROJECT_VERSION_CACHE[pyproject_path] = None
         return None
     project_table = parsed_pyproject.get("project")
     if not isinstance(project_table, dict):
+        _PYPROJECT_VERSION_CACHE[pyproject_path] = None
         return None
     raw_version = project_table.get("version")
     if not isinstance(raw_version, str):
+        _PYPROJECT_VERSION_CACHE[pyproject_path] = None
         return None
 
     version = raw_version.strip()
-    return version or None
+    resolved_version = version or None
+    _PYPROJECT_VERSION_CACHE[pyproject_path] = resolved_version
+    return resolved_version

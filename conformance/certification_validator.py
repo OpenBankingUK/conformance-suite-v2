@@ -98,7 +98,7 @@ class ApprovedReleasePolicy:
             True when the exact tool version appears in the approved release
             list; otherwise False.
         """
-        return tool_version in set(self.approved_tool_versions)
+        return tool_version in self.approved_tool_versions
 
 
 @dataclass(frozen=True)
