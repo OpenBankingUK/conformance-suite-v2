@@ -6,7 +6,7 @@ import json
 import math
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Literal
+from typing import Literal, cast
 
 from conformance.json_types import JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -22,6 +22,35 @@ FollowUpMode = Literal["jwks", "discovery_only"]
 ``"jwks"`` fetches the JWKS document referenced by ``jwks_uri``;
 ``"discovery_only"`` stops after the discovery document itself.
 """
+
+SuiteStandard = Literal["ob-read-write"]
+"""Supported Open Banking standards that can be selected from config."""
+
+SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
+"""Supported specification versions for config-selected suite resolution."""
+
+SuiteProfile = Literal["fapi1-advanced"]
+"""Supported security profiles for config-selected suite resolution."""
+
+SuiteName = Literal["discovery-jwks"]
+"""Supported versioned conformance suite identifiers."""
+
+
+@dataclass(frozen=True)
+class SuiteSelection:
+    """Versioned conformance suite selected by participant configuration.
+
+    Attributes:
+        standard: Open Banking standard family to test.
+        spec_version: Standards specification version to test.
+        profile: Security profile that scopes the suite.
+        suite: Versioned smoke/conformance suite identifier.
+    """
+
+    standard: SuiteStandard
+    spec_version: SuiteSpecVersion
+    profile: SuiteProfile
+    suite: SuiteName
 
 
 @dataclass(frozen=True)
@@ -54,6 +83,9 @@ class ModelBankConfig:
             written. Defaults to ``out/execution-log.ndjson`` resolved under
             the output base directory (typically the process CWD),
             independently of ``result_output_path``.
+        test_suite: Optional versioned conformance suite selected by
+            participant configuration. When absent, the config remains a
+            model-bank smoke-check config.
     """
 
     environment: str
@@ -63,6 +95,7 @@ class ModelBankConfig:
     tls: TlsConfig = field(default_factory=TlsConfig)
     result_output_path: Path = Path("out/test-results.json")
     execution_log_path: Path = Path("out/execution-log.ndjson")
+    test_suite: SuiteSelection | None = None
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -125,6 +158,7 @@ def parse_model_bank_config(
             "tls",
             "resultOutputPath",
             "executionLogPath",
+            "testSuite",
         },
         location="config",
     )
@@ -146,6 +180,7 @@ def parse_model_bank_config(
         base_dir=output_base_dir or Path.cwd(),
         default=Path("out/execution-log.ndjson"),
     )
+    test_suite = _parse_test_suite_selection(raw_config)
 
     return ModelBankConfig(
         environment=environment,
@@ -155,6 +190,57 @@ def parse_model_bank_config(
         tls=tls,
         result_output_path=result_output_path,
         execution_log_path=execution_log_path,
+        test_suite=test_suite,
+    )
+
+
+def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelection | None:
+    """Parse the optional ``testSuite`` section of a participant config.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file.
+
+    Returns:
+        The validated suite selection, or ``None`` when the config does not
+        request catalog-driven suite resolution.
+
+    Raises:
+        ConfigError: If ``testSuite`` is not a JSON object, contains unknown
+            keys, omits required fields, or names an unsupported standard,
+            specification version, profile, or suite.
+    """
+    raw_test_suite = raw_config.get("testSuite")
+    if raw_test_suite is None:
+        return None
+    if not isinstance(raw_test_suite, dict):
+        raise ConfigError("testSuite must be a JSON object")
+
+    _reject_unknown_keys(
+        raw_test_suite,
+        allowed_keys={"standard", "specVersion", "profile", "suite"},
+        location="testSuite",
+    )
+
+    standard = _required_string_at(raw_test_suite, "standard", location="testSuite")
+    spec_version = _required_string_at(raw_test_suite, "specVersion", location="testSuite")
+    profile = _required_string_at(raw_test_suite, "profile", location="testSuite")
+    suite = _required_string_at(raw_test_suite, "suite", location="testSuite")
+
+    if standard != "ob-read-write":
+        raise ConfigError("testSuite.standard must be one of: ob-read-write")
+    if spec_version not in {"v3.1.11", "v4.0"}:
+        raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0")
+    if profile != "fapi1-advanced":
+        raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
+    if suite != "discovery-jwks":
+        raise ConfigError("testSuite.suite must be one of: discovery-jwks")
+
+    return SuiteSelection(
+        standard=cast(SuiteStandard, standard),
+        spec_version=cast(SuiteSpecVersion, spec_version),
+        profile=cast(SuiteProfile, profile),
+        suite=cast(SuiteName, suite),
     )
 
 
@@ -256,6 +342,27 @@ def _required_string(raw_config: dict[str, JsonValue], key: str) -> str:
     value = raw_config.get(key)
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{key} must be a non-empty string")
+    return value.strip()
+
+
+def _required_string_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
+    """Extract a required non-empty string value from a nested config dict.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value must be a non-empty string.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        The stripped string value.
+
+    Raises:
+        ConfigError: If the key is missing, the value is not a string, or the
+            string is blank after stripping whitespace.
+    """
+    value = raw_config.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{location}.{key} must be a non-empty string")
     return value.strip()
 
 

@@ -3,7 +3,14 @@ from pathlib import Path
 
 import pytest
 
-from conformance.model_bank_config import ConfigError, load_model_bank_config, parse_model_bank_config
+from conformance.json_types import JsonValue
+from conformance.model_bank_config import (
+    ConfigError,
+    SuiteSelection,
+    SuiteSpecVersion,
+    load_model_bank_config,
+    parse_model_bank_config,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
@@ -19,6 +26,7 @@ def test_example_model_bank_config_is_valid_json_config(monkeypatch: pytest.Monk
     assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
     assert config.follow_up_mode == "discovery_only"
     assert config.result_output_path == tmp_path / "out" / "test-results.json"
+    assert config.test_suite is None
 
 
 @pytest.mark.unit
@@ -60,6 +68,128 @@ def test_load_model_bank_config_reads_json_config(monkeypatch: pytest.MonkeyPatc
     assert config.timeout_seconds == 3.0
     assert config.follow_up_mode == "discovery_only"
     assert config.result_output_path == tmp_path / "results" / "model-bank.json"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0"])
+def test_parse_model_bank_config_accepts_supported_test_suite(spec_version: SuiteSpecVersion, tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": spec_version,
+                "profile": "fapi1-advanced",
+                "suite": "discovery-jwks",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version=spec_version,
+        profile="fapi1-advanced",
+        suite="discovery-jwks",
+    )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_keeps_test_suite_optional_for_smoke_checks(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite is None
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_non_object_test_suite(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="testSuite must be a JSON object"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": "discovery-jwks",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_missing_test_suite_field(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="testSuite.specVersion must be a non-empty string"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "profile": "fapi1-advanced",
+                    "suite": "discovery-jwks",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match=r"Unknown testSuite field\(s\): label"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v4.0",
+                    "profile": "fapi1-advanced",
+                    "suite": "discovery-jwks",
+                    "label": "Open Banking Read/Write discovery",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field_name", "value", "expected_message"),
+    [
+        ("standard", "ob-business-banking", "testSuite.standard must be one of: ob-read-write"),
+        ("specVersion", "v3.1.10", "testSuite.specVersion must be one of: v3.1.11, v4.0"),
+        ("profile", "fapi2-security-profile", "testSuite.profile must be one of: fapi1-advanced"),
+        ("suite", "full-read-write", "testSuite.suite must be one of: discovery-jwks"),
+    ],
+)
+def test_parse_model_bank_config_rejects_unsupported_test_suite_values(
+    field_name: str,
+    value: str,
+    expected_message: str,
+    tmp_path: Path,
+) -> None:
+    test_suite: dict[str, JsonValue] = {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    }
+    test_suite[field_name] = value
+
+    with pytest.raises(ConfigError, match=expected_message):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": test_suite,
+            },
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.unit
