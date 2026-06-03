@@ -48,7 +48,9 @@ RUN addgroup -g 1000 appuser && \
 COPY --from=builder --chown=appuser:appuser /app /app
 
 # Ensure the venv is on PATH
+ARG CONFORMANCE_TOOL_VERSION=""
 ENV PATH="/app/.venv/bin:$PATH"
+ENV CONFORMANCE_TOOL_VERSION=${CONFORMANCE_TOOL_VERSION}
 
 # Switch to non-root user
 USER appuser

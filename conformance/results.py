@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from conformance.json_types import JsonObject, JsonValue
+from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
     from conformance.test_plan import TestPlan
@@ -109,6 +110,8 @@ class SmokeCheckResult:
             JSON object suitable for serialisation into the result file.
         """
         body: JsonObject = {
+            "metadata": {"reportVersion": REPORT_METADATA_VERSION},
+            "tool": {"version": resolve_conformance_tool_version()},
             "environment": self.environment,
             "status": self.status,
             "startedAt": self.started_at.isoformat(),

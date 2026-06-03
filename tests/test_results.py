@@ -47,6 +47,55 @@ def test_step_result_mandatory_not_in_json_output() -> None:
 
 
 @pytest.mark.unit
+def test_model_bank_result_includes_report_metadata(monkeypatch: pytest.MonkeyPatch) -> None:
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV, REPORT_METADATA_VERSION
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "2.4.6")
+    started = datetime.now(UTC)
+
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+    ).to_json_object()
+
+    assert rendered["metadata"] == {"reportVersion": REPORT_METADATA_VERSION}
+    assert rendered["tool"] == {"version": "2.4.6"}
+
+
+@pytest.mark.unit
+def test_manifest_result_includes_report_metadata_without_changing_plan() -> None:
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.test_plan import TestPlan, TestPlanEntry
+    from conformance.version import REPORT_METADATA_VERSION
+
+    plan = TestPlan(entries=(TestPlanEntry(step_id="a", mandatory=True, optional=False, selected=True),))
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="a", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        plan=plan,
+    ).to_json_object()
+
+    assert rendered["metadata"] == {"reportVersion": REPORT_METADATA_VERSION}
+    assert isinstance(rendered["tool"], dict)
+    assert isinstance(rendered["tool"]["version"], str)
+    assert rendered["plan"] == {
+        "totalSteps": 1,
+        "selectedSteps": 1,
+        "deselectedSteps": 0,
+        "mandatorySelected": 1,
+        "mandatoryDeselected": 0,
+    }
+
+
+@pytest.mark.unit
 def test_eligibility_block_eligible_when_all_mandatory_pass() -> None:
     """Eligible when at least one mandatory step ran and all passed."""
     from datetime import UTC, datetime
