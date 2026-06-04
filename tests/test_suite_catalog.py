@@ -38,8 +38,8 @@ def test_resolve_suite_returns_bundled_manifest_for_supported_versions(spec_vers
     assert [step.id for step in manifest.steps] == ["openid-discovery", "jwks-fetch"]
     assert [step.mandatory for step in manifest.steps] == [True, True]
 
-    discovery_step = cast("ManifestStep", manifest.steps[0])
-    jwks_step = cast("ManifestStep", manifest.steps[1])
+    discovery_step = cast(ManifestStep, manifest.steps[0])
+    jwks_step = cast(ManifestStep, manifest.steps[1])
     assert discovery_step.request.url == "${config.discoveryUrl}"
     assert jwks_step.request.url == "${steps.openid-discovery.response.body.jwks_uri}"
 
