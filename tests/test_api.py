@@ -8,6 +8,7 @@ from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
+from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -1242,7 +1243,10 @@ class TestExecuteRunDiscardsAuthSessions:
         from conformance.results import SmokeCheckResult
 
         record = run_store.create_run()
-        approved_release_policy = ApprovedReleasePolicy(schema_version="v1", approved_tool_versions=("1.2.3",))
+        approved_release_policy = ApprovedReleasePolicy(
+            schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+            approved_tool_versions=("1.2.3",),
+        )
         config = ModelBankConfig(
             environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",

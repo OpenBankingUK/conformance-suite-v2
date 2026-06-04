@@ -189,7 +189,7 @@ def test_parse_model_bank_config_rejects_approved_release_policy_path_escape(tmp
         encoding="utf-8",
     )
 
-    with pytest.raises(ConfigError, match="approvedReleasePolicyPath must resolve inside the config directory"):
+    with pytest.raises(ConfigError, match="approvedReleasePolicyPath must resolve inside the config root"):
         parse_model_bank_config(
             {
                 "environment": "ozone-model-bank",

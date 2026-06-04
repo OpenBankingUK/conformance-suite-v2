@@ -148,7 +148,8 @@ def parse_model_bank_config(
 
     Args:
         raw_config: JSON object loaded from a model-bank config file.
-        base_dir: Directory used to resolve certificate paths.
+        base_dir: Directory used to resolve certificate and approved-release
+            policy paths.
         output_base_dir: Directory used to resolve result output paths.
 
     Returns:
@@ -239,7 +240,7 @@ def _optional_approved_release_policy(raw_config: dict[str, JsonValue], *, root:
     resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
     resolved_root = root.resolve()
     if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError("approvedReleasePolicyPath must resolve inside the config directory")
+        raise ConfigError("approvedReleasePolicyPath must resolve inside the config root")
     if not resolved_path.is_file():
         raise ConfigError("approvedReleasePolicyPath must point to an existing file")
     try:
