@@ -8,6 +8,11 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
 
+from conformance.approved_releases import (
+    ApprovedReleasePolicy,
+    ApprovedReleasePolicyError,
+    load_approved_release_policy,
+)
 from conformance.json_types import JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
@@ -86,6 +91,10 @@ class ModelBankConfig:
         test_suite: Optional versioned conformance suite selected by
             participant configuration. When absent, the config remains a
             model-bank smoke-check config.
+        approved_release_policy: Optional approved-release policy used for
+            participant-side report eligibility self-assessment. When absent,
+            generated reports mark the approved-release criterion as not
+            supplied.
     """
 
     environment: str
@@ -96,6 +105,7 @@ class ModelBankConfig:
     result_output_path: Path = Path("out/test-results.json")
     execution_log_path: Path = Path("out/execution-log.ndjson")
     test_suite: SuiteSelection | None = None
+    approved_release_policy: ApprovedReleasePolicy | None = None
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -159,6 +169,7 @@ def parse_model_bank_config(
             "resultOutputPath",
             "executionLogPath",
             "testSuite",
+            "approvedReleasePolicyPath",
         },
         location="config",
     )
@@ -181,6 +192,7 @@ def parse_model_bank_config(
         default=Path("out/execution-log.ndjson"),
     )
     test_suite = _parse_test_suite_selection(raw_config)
+    approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
 
     return ModelBankConfig(
         environment=environment,
@@ -191,7 +203,49 @@ def parse_model_bank_config(
         result_output_path=result_output_path,
         execution_log_path=execution_log_path,
         test_suite=test_suite,
+        approved_release_policy=approved_release_policy,
     )
+
+
+def _optional_approved_release_policy(raw_config: dict[str, JsonValue], *, root: Path) -> ApprovedReleasePolicy | None:
+    """Load an optional approved-release policy referenced by config.
+
+    The policy path is resolved under ``root`` and must point to an existing
+    file. This keeps participant-controlled paths inside the configuration
+    boundary used by the caller: the config file directory for CLI loads, or
+    the process CWD for API/UI JSON parsing.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+        root: Directory that the resolved policy path must reside inside.
+
+    Returns:
+        Parsed approved-release policy, or ``None`` when the config omits
+        ``approvedReleasePolicyPath``.
+
+    Raises:
+        ConfigError: If the supplied path is not a non-empty string, escapes
+            ``root``, does not point to an existing file, or the policy JSON
+            is malformed.
+    """
+    value = raw_config.get("approvedReleasePolicyPath")
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError("approvedReleasePolicyPath must be a non-empty string when supplied")
+
+    raw_path = Path(value.strip())
+    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
+    resolved_root = root.resolve()
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        raise ConfigError("approvedReleasePolicyPath must resolve inside the config directory")
+    if not resolved_path.is_file():
+        raise ConfigError("approvedReleasePolicyPath must point to an existing file")
+    try:
+        return load_approved_release_policy(resolved_path)
+    except ApprovedReleasePolicyError as error:
+        raise ConfigError(f"Invalid approved-release policy: {error}") from error
 
 
 def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelection | None:

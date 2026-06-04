@@ -1236,15 +1236,18 @@ class TestExecuteRunDiscardsAuthSessions:
         import httpx
 
         from conformance.api.run_lifecycle import _execute_run
+        from conformance.approved_releases import ApprovedReleasePolicy
         from conformance.manifest import parse_manifest
         from conformance.model_bank_config import ModelBankConfig
         from conformance.results import SmokeCheckResult
 
         record = run_store.create_run()
+        approved_release_policy = ApprovedReleasePolicy(schema_version="v1", approved_tool_versions=("1.2.3",))
         config = ModelBankConfig(
             environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
+            approved_release_policy=approved_release_policy,
         )
         manifest = parse_manifest(
             {
@@ -1278,3 +1281,4 @@ class TestExecuteRunDiscardsAuthSessions:
         runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]
         assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
         assert runtime_config.environment == "test-env"
+        assert mock_run_manifest.call_args.kwargs["approved_release_policy"] is approved_release_policy

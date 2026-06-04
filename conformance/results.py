@@ -283,7 +283,7 @@ def _build_eligibility(
         tool_version=tool_version,
     )
 
-    reasons: list[str] = []
+    reasons: list[JsonValue] = []
     # Precedence: deselected-mandatory beats every other reason because the
     # step never ran and therefore cannot demonstrate coverage. Then failed,
     # skipped, no mandatory declared, unapproved tool version, and finally

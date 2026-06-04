@@ -10,6 +10,7 @@ import pytest
 
 from conformance import cli
 from conformance.api.auth_session_store import auth_session_store
+from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.context import RuntimeConfig
 from conformance.execution_log import ExecutionLogger
 from conformance.results import SmokeCheckResult
@@ -315,6 +316,16 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
 ) -> None:
     config_path = tmp_path / "model-bank.json"
     manifest_path = tmp_path / "manifest.json"
+    policy_path = tmp_path / "approved-releases.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+                "approvedToolVersions": ["1.2.3"],
+            }
+        ),
+        encoding="utf-8",
+    )
     config_path.write_text(
         json.dumps(
             {
@@ -322,6 +333,7 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "resultOutputPath": str(tmp_path / "result.json"),
                 "executionLogPath": str(tmp_path / "execution.ndjson"),
+                "approvedReleasePolicyPath": policy_path.name,
             }
         ),
         encoding="utf-8",
@@ -357,9 +369,12 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
         """
         execution_logger = cast(ExecutionLogger, kwargs["execution_logger"])
         runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
+        approved_release_policy = cast(ApprovedReleasePolicy | None, kwargs["approved_release_policy"])
         assert kwargs["auth_session_store"] is auth_session_store
         assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
         assert runtime_config.environment == "test-env"
+        assert approved_release_policy is not None
+        assert approved_release_policy.approved_tool_versions == ("1.2.3",)
         execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": url})
         now = datetime.now(UTC)
         return SmokeCheckResult(

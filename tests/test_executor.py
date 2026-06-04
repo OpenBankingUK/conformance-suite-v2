@@ -7,11 +7,27 @@ import httpx
 import pytest
 
 from conformance.api.auth_session_store import AuthSessionStore
+from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonValue
 from conformance.manifest import PsuAuthorizationStep, parse_manifest
+
+
+def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
+    """Build an approved-release policy fixture.
+
+    Args:
+        *approved_tool_versions: Tool versions to include in the policy.
+
+    Returns:
+        Approved-release policy for executor tests.
+    """
+    return ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=tuple(approved_tool_versions),
+    )
 
 
 def manifest_config() -> dict[str, JsonValue]:
@@ -77,6 +93,47 @@ def test_run_manifest_fetches_primary_request_and_follow_up() -> None:
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "openid-discovery.followUp"]
     assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
+
+
+@pytest.mark.unit
+def test_run_manifest_v0_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return passing v0 discovery and JWKS responses.
+
+        Args:
+            request: HTTP request emitted by the manifest executor.
+
+        Returns:
+            Mock response satisfying the requested v0 step.
+        """
+        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://modelbank.example.com",
+                    "jwks_uri": "https://modelbank.example.com/jwks",
+                },
+            )
+        return httpx.Response(200, json={"keys": []})
+
+    manifest = parse_manifest(manifest_config())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="ozone-model-bank",
+            client=client,
+            approved_release_policy=approved_policy("1.2.3"),
+        )
+
+    eligibility = cast("dict[str, JsonValue]", result.to_json_object()["certificationEligibility"])
+    assert eligibility["approvedRelease"] == {
+        "checked": True,
+        "approved": True,
+        "toolVersion": "1.2.3",
+        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+    }
 
 
 @pytest.mark.unit
@@ -512,6 +569,44 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
     ]
     assert [step.name for step in result.steps] == ["openid-discovery", "jwks-fetch"]
     assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return passing v1 discovery and JWKS responses.
+
+        Args:
+            request: HTTP request emitted by the manifest executor.
+
+        Returns:
+            Mock response satisfying the requested v1 step.
+        """
+        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={"jwks_uri": "https://modelbank.example.com/jwks"},
+            )
+        return httpx.Response(200, json={"keys": []})
+
+    manifest = parse_manifest(v1_manifest_config())
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="ozone-model-bank",
+            client=client,
+            approved_release_policy=approved_policy("1.2.3"),
+        )
+
+    eligibility = cast("dict[str, JsonValue]", result.to_json_object()["certificationEligibility"])
+    assert eligibility["approvedRelease"] == {
+        "checked": True,
+        "approved": True,
+        "toolVersion": "1.2.3",
+        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+    }
 
 
 @pytest.mark.unit
@@ -1803,8 +1898,11 @@ def test_run_manifest_v1_skipped_step_includes_request_evidence_without_response
 
 
 @pytest.mark.unit
-def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility() -> None:
+def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     """Executor carries ``mandatory`` from manifest into StepResult and eligibility block."""
+    monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
         "name": "mandatory-mix",
@@ -1830,7 +1928,12 @@ def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility() ->
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            approved_release_policy=approved_policy("1.2.3"),
+        )
 
     assert result.steps[0].mandatory is True
     assert result.steps[1].mandatory is False
