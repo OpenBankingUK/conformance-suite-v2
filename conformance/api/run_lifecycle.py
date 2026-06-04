@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Mapping
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.api.run_store import run_store
+from conformance.api.run_store import RunStore, run_store
 from conformance.context import RuntimeConfig
-from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
+from conformance.execution_log import EventType, ExecutionLogger, NullExecutionLogger, warn_if_developer_mode
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
@@ -25,6 +26,77 @@ from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
+
+
+class BrowserParticipantActionLogger(ExecutionLogger):
+    """Decorator that mirrors browser-required PSU actions into run state.
+
+    The wrapped logger remains the durable execution-log sink. This API-layer
+    decorator observes raw events before the wrapped logger applies masking so
+    the browser UI can temporarily render the raw PSU authorisation URL from
+    in-memory run state without persisting it to logs or result JSON.
+    """
+
+    def __init__(self, wrapped: ExecutionLogger, *, run_id: str, store: RunStore) -> None:
+        """Initialise the browser participant action decorator.
+
+        Args:
+            wrapped: Execution-log sink that receives every event unchanged.
+            run_id: Run identifier whose participant action state is updated.
+            store: In-memory run store that holds browser participant actions.
+        """
+        self._wrapped = wrapped
+        self._run_id = run_id
+        self._store = store
+
+    def emit(
+        self,
+        event_type: EventType,
+        *,
+        step_id: str | None = None,
+        payload: Mapping[str, JsonValue] | None = None,
+    ) -> None:
+        """Forward an event and update browser participant action state.
+
+        Args:
+            event_type: Event type from the closed execution-log taxonomy.
+            step_id: Optional manifest step identifier associated with the
+                event.
+            payload: Optional event-specific data. The raw
+                ``psu-authorization-url`` payload is inspected before the
+                wrapped logger masks it for persistence.
+        """
+        if event_type == "psu-authorization-url":
+            self._set_participant_action(step_id=step_id, payload=payload)
+        elif event_type == "step-completed" and step_id is not None:
+            self._store.clear_participant_action(self._run_id, step_id=step_id)
+        elif event_type in {"auth-callback-received", "run-completed", "application-error"}:
+            self._store.clear_participant_action(self._run_id)
+        self._wrapped.emit(event_type, step_id=step_id, payload=payload)
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier whose browser action state is updated."""
+        return self._run_id
+
+    def _set_participant_action(
+        self,
+        *,
+        step_id: str | None,
+        payload: Mapping[str, JsonValue] | None,
+    ) -> None:
+        """Store a raw PSU authorisation URL when the event is well formed.
+
+        Args:
+            step_id: Manifest step that emitted the PSU URL. Missing step IDs
+                are ignored because browser action state is step-scoped.
+            payload: Raw event payload containing the ``url`` field before
+                masking.
+        """
+        url = (payload or {}).get("url")
+        if step_id is None or not isinstance(url, str):
+            return
+        self._store.set_participant_action(self._run_id, step_id=step_id, url=url)
 
 
 def start_run(
