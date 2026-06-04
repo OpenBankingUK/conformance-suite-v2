@@ -380,6 +380,35 @@ class TestRunDetailUi:
         assert "running" in content
         assert "Started" in content
 
+    def test_status_partial_renders_pending_psu_authorisation_action(self) -> None:
+        """The status partial renders active manual PSU browser actions."""
+        record = run_store.create_run()
+        authorisation_url = "https://auth.example.com/authorize?state=state-123"
+        run_store.set_participant_action(record.run_id, step_id="psu", url=authorisation_url)
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Action required" in content
+        assert "Step psu is waiting for PSU authorisation." in content
+        assert "Open authorisation" in content
+        assert f'href="{authorisation_url}"' in content
+        assert 'target="_blank"' in content
+        assert 'rel="noreferrer noopener"' in content
+
+    def test_status_partial_omits_psu_authorisation_action_when_absent(self) -> None:
+        """The status partial hides manual PSU controls when no action is pending."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Action required" not in content
+        assert "Open authorisation" not in content
+        assert 'target="_blank"' not in content
+
     def test_log_partial_renders_masked_log_link_and_event_count(self) -> None:
         """The log partial links to the browser-accessible NDJSON endpoint."""
         record = run_store.create_run()
