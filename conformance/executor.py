@@ -53,6 +53,7 @@ from conformance.psu_authorization import (
     synthesize_psu_response,
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
@@ -108,6 +109,7 @@ def run_manifest(
     run_id: str | None = None,
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
+    suite_metadata: SuiteMetadata | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -142,6 +144,8 @@ def run_manifest(
             singleton) must pass it explicitly.
         runtime_config: Optional safe participant config values available to
             manifest placeholders via the narrow ``${config.*}`` grammar.
+        suite_metadata: Optional catalog metadata describing a config-resolved
+            suite run. Omit for explicit manifests and legacy smoke checks.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
@@ -149,10 +153,10 @@ def run_manifest(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
-    logger_sink.emit(
-        "run-started",
-        payload={"environment": environment, "schemaVersion": manifest.schema_version},
-    )
+    run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
+    if suite_metadata is not None:
+        run_started_payload["suite"] = suite_metadata.to_json_object()
+    logger_sink.emit("run-started", payload=run_started_payload)
     try:
         if manifest.schema_version == "v1":
             effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
@@ -165,6 +169,7 @@ def run_manifest(
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
+                suite_metadata=suite_metadata,
             )
         else:
             result = _run_manifest_v0(
@@ -175,6 +180,7 @@ def run_manifest(
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
+                suite_metadata=suite_metadata,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -219,6 +225,7 @@ def _run_manifest_v1(
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
+    suite_metadata: SuiteMetadata | None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
@@ -248,6 +255,8 @@ def _run_manifest_v1(
             PSU authorisation callbacks. Threaded to per-step executors.
         runtime_config: Optional safe participant config values available to
             ``${config.*}`` placeholders.
+        suite_metadata: Optional catalog metadata to embed in the result for
+            config-resolved suite runs.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -304,7 +313,13 @@ def _run_manifest_v1(
             step_result = replace(step_result, mandatory=True)
         steps.append(step_result)
 
-    return build_smoke_check_result(environment, steps, started_at=started_at, plan=plan)
+    return build_smoke_check_result(
+        environment,
+        steps,
+        started_at=started_at,
+        plan=plan,
+        suite_metadata=suite_metadata,
+    )
 
 
 def _execute_v1_psu_step(
@@ -1252,6 +1267,7 @@ def _run_manifest_v0(
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
+    suite_metadata: SuiteMetadata | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -1273,6 +1289,8 @@ def _run_manifest_v0(
             mirroring ``run_id`` for the same reason.
         runtime_config: Optional safe participant config values available to
             desugared step placeholder resolution.
+        suite_metadata: Optional catalog metadata to embed in the result for
+            config-resolved suite runs.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -1368,7 +1386,7 @@ def _run_manifest_v0(
                 )
                 steps.append(follow_up_result)
 
-    return build_smoke_check_result(environment, steps, started_at=started_at)
+    return build_smoke_check_result(environment, steps, started_at=started_at, suite_metadata=suite_metadata)
 
 
 def _extract_v0_follow_up_url(context: ExecutionContext, test: ManifestTest) -> str | None:

@@ -254,8 +254,10 @@ class TestPlanBuilderUi:
         assert mock_start_run.call_count == 1
         manifest = mock_start_run.call_args.kwargs["manifest"]
         plan = mock_start_run.call_args.kwargs["plan"]
+        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
         assert plan.selected_step_ids() == ["openid-discovery"]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_blocks_manual_psu_manifest_without_starting_run(self, mock_start_run: Mock) -> None:
@@ -453,6 +455,35 @@ class TestRunDetailUi:
         assert "eligible" in content
         assert "Plan selected" in content
         assert f"/runs/{record.run_id}/result.json" in content
+
+    def test_result_partial_renders_structured_certification_eligibility(self) -> None:
+        """The result partial renders the current eligibility object shape."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "failed",
+                "summary": {"total": 1, "passed": 0, "failed": 1, "warn": 0, "skipped": 0},
+                "certificationEligibility": {
+                    "eligible": False,
+                    "mandatoryTotal": 1,
+                    "mandatoryPassed": 0,
+                    "mandatoryFailed": 1,
+                    "mandatoryWarn": 0,
+                    "mandatorySkipped": 0,
+                    "mandatoryDeselected": 0,
+                    "mandatoryDeselectedStepIds": [],
+                    "reason": "1 mandatory step(s) failed",
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "ineligible: 1 mandatory step(s) failed" in content
 
     def test_result_download_is_available_to_non_loopback_browser_clients(self) -> None:
         """UI result downloads should not inherit the REST API loopback guard."""

@@ -22,7 +22,7 @@ from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
-from conformance.suite_catalog import SuiteCatalogError, resolve_suite
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -79,7 +79,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         stderr=sys.stderr,
     )
 
-    suite_label: str | None = None
+    suite_metadata: SuiteMetadata | None = None
     if args.manifest is None and config.test_suite is None:
         result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
@@ -94,7 +94,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 logger.error("Suite catalog error: %s", error)
                 return 2
             manifest = resolved_suite.manifest
-            suite_label = resolved_suite.metadata.label
+            suite_metadata = resolved_suite.metadata
         else:
             try:
                 manifest = load_manifest(args.manifest)
@@ -127,6 +127,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                     discovery_url=config.discovery_url,
                     environment=config.environment,
                 ),
+                suite_metadata=suite_metadata,
             )
         finally:
             http_client.close()
@@ -148,8 +149,8 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     if args.manifest is not None:
         run_label = f"Manifest run ({args.manifest})"
-    elif suite_label is not None:
-        run_label = f"Suite run ({suite_label})"
+    elif suite_metadata is not None:
+        run_label = f"Suite run ({suite_metadata.label})"
     else:
         run_label = "Model-bank smoke check"
     if result.status == "passed":

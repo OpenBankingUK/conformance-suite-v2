@@ -233,7 +233,7 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
-        assert mock_execute.call_args.args[2:] == (None, None)
+        assert mock_execute.call_args.args[2:] == (None, None, None)
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
@@ -268,8 +268,10 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args is not None
         manifest = mock_execute.call_args.args[2]
         plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
         assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch"]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
         assert data["status"] == "pending"
 
     @patch("conformance.api.run_lifecycle._execute_run")
@@ -306,8 +308,10 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         manifest = mock_execute.call_args.args[2]
+        suite_metadata = mock_execute.call_args.args[4]
         assert manifest.name == "inline override"
         assert [step.id for step in manifest.steps] == ["inline-step"]
+        assert suite_metadata is None
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:

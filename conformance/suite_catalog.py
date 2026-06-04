@@ -7,7 +7,7 @@ from dataclasses import dataclass
 from importlib import resources
 from typing import cast
 
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestError, parse_manifest
 from conformance.model_bank_config import (
     SuiteName,
@@ -50,6 +50,22 @@ class SuiteMetadata:
     suite: SuiteName
     manifest_resource: str
     description: str
+
+    def to_json_object(self) -> JsonObject:
+        """Convert suite metadata into the public result/log JSON shape.
+
+        Returns:
+            JSON object containing the catalog identifiers and suite selection
+            fields safe to expose in participant-visible reports and logs.
+        """
+        return {
+            "catalogId": self.catalog_id,
+            "manifestResource": self.manifest_resource,
+            "standard": self.standard,
+            "specVersion": self.spec_version,
+            "profile": self.profile,
+            "suite": self.suite,
+        }
 
 
 @dataclass(frozen=True)

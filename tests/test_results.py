@@ -296,3 +296,57 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
         started_at=started,
     ).to_json_object()
     assert "plan" not in rendered
+
+
+@pytest.mark.unit
+def test_suite_metadata_absent_when_not_supplied() -> None:
+    """Smoke checks and explicit manifest runs omit the suite metadata block."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+    ).to_json_object()
+
+    assert "suite" not in rendered
+
+
+@pytest.mark.unit
+def test_suite_metadata_serialized_when_supplied() -> None:
+    """Config-resolved suite runs expose safe catalog metadata in results."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.suite_catalog import SuiteMetadata
+
+    started = datetime.now(UTC)
+    metadata = SuiteMetadata(
+        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="discovery-jwks",
+        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        description="Smoke-level discovery and JWKS checks.",
+    )
+
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+        suite_metadata=metadata,
+    ).to_json_object()
+
+    assert rendered["suite"] == {
+        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    }

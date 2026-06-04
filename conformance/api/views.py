@@ -34,7 +34,7 @@ from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
-from conformance.suite_catalog import SuiteCatalogError, resolve_suite
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -193,6 +193,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
     # Validate manifest eagerly if provided.
     manifest = None
     plan: TestPlan | None = None
+    suite_metadata: SuiteMetadata | None = None
     if raw_manifest is not None:
         try:
             manifest = load_manifest_from_object(raw_manifest)
@@ -200,9 +201,11 @@ def create_run(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
     elif config.test_suite is not None:
         try:
-            manifest = resolve_suite(config.test_suite).manifest
+            resolved_suite = resolve_suite(config.test_suite)
         except SuiteCatalogError as error:
             return JsonResponse({"error": f"Suite resolution failed: {error}"}, status=400)
+        manifest = resolved_suite.manifest
+        suite_metadata = resolved_suite.metadata
     elif raw_deselect is not None:
         return JsonResponse(
             {"error": '"deselectStepIds" is only valid with an inline "manifest" or config.testSuite'},
@@ -220,7 +223,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
 
     try:
-        response_body = start_run(config=config, manifest=manifest, plan=plan)
+        response_body = start_run(config=config, manifest=manifest, plan=plan, suite_metadata=suite_metadata)
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},

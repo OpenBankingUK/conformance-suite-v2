@@ -21,7 +21,7 @@ from conformance.json_types import JsonObject
 from conformance.manifest import Manifest
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
-from conformance.suite_catalog import resolve_suite
+from conformance.suite_catalog import SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -32,6 +32,7 @@ def start_run(
     config: ModelBankConfig,
     manifest: Manifest | None,
     plan: TestPlan | None,
+    suite_metadata: SuiteMetadata | None = None,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -43,6 +44,8 @@ def start_run(
             caller-supplied deselections already applied. When ``manifest`` is
             ``None`` but ``config.test_suite`` is present, ``None`` selects the
             suite manifest's default plan.
+        suite_metadata: Optional catalog metadata when ``manifest`` came from
+            config-driven suite resolution.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -55,7 +58,7 @@ def start_run(
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
-        args=(record.run_id, config, manifest, plan),
+        args=(record.run_id, config, manifest, plan, suite_metadata),
         daemon=True,
     )
     initial_status = record.to_status_json()
@@ -68,6 +71,7 @@ def _execute_run(
     config: ModelBankConfig,
     manifest: Manifest | None,
     plan: TestPlan | None,
+    suite_metadata: SuiteMetadata | None = None,
 ) -> None:
     """Execute a conformance run in a background thread.
 
@@ -82,6 +86,8 @@ def _execute_run(
             caller-supplied deselections already applied. When ``manifest`` is
             ``None`` but ``config.test_suite`` is present, ``None`` selects the
             suite manifest's default plan.
+        suite_metadata: Optional catalog metadata when ``manifest`` came from
+            config-driven suite resolution.
     """
     run_store.mark_running(run_id)
     try:
@@ -92,8 +98,11 @@ def _execute_run(
         logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
         effective_manifest = manifest
         effective_plan = plan
+        effective_suite_metadata = suite_metadata
         if effective_manifest is None and config.test_suite is not None:
-            effective_manifest = resolve_suite(config.test_suite).manifest
+            resolved_suite = resolve_suite(config.test_suite)
+            effective_manifest = resolved_suite.manifest
+            effective_suite_metadata = resolved_suite.metadata
 
         if effective_manifest is None:
             result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
@@ -119,6 +128,7 @@ def _execute_run(
                         discovery_url=config.discovery_url,
                         environment=config.environment,
                     ),
+                    suite_metadata=effective_suite_metadata,
                 )
             finally:
                 http_client.close()

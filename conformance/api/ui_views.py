@@ -71,7 +71,12 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
         )
 
     try:
-        status_body = start_run(config=preview.config, manifest=preview.manifest, plan=preview.selected_plan)
+        status_body = start_run(
+            config=preview.config,
+            manifest=preview.manifest,
+            plan=preview.selected_plan,
+            suite_metadata=preview.suite_metadata,
+        )
     except RunConflictError as error:
         return render(
             request,
@@ -311,19 +316,28 @@ def _plan_summary(result: JsonObject | None) -> JsonObject | None:
 
 
 def _certification_eligibility(result: JsonObject | None) -> str | None:
-    """Extract the certification eligibility label from completed result JSON.
+    """Extract a certification eligibility label from completed result JSON.
 
     Args:
         result: Structured run result JSON, or ``None`` before completion.
 
     Returns:
-        Certification eligibility value when present, otherwise ``None``.
+        Certification eligibility label when present, otherwise ``None``.
     """
     if result is None:
         return None
     value = result.get("certificationEligibility")
     if isinstance(value, str):
         return value
+    if isinstance(value, dict):
+        eligible = value.get("eligible")
+        if eligible is True:
+            return "eligible"
+        if eligible is False:
+            reason = value.get("reason")
+            if isinstance(reason, str) and reason:
+                return f"ineligible: {reason}"
+            return "ineligible"
     return None
 
 

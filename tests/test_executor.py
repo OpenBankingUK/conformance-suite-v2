@@ -1902,6 +1902,59 @@ def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
+    """Config-resolved suite metadata is emitted in run-started and results."""
+    from conformance.suite_catalog import SuiteMetadata
+
+    metadata = SuiteMetadata(
+        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="discovery-jwks",
+        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        description="Smoke-level discovery and JWKS checks.",
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "suite metadata",
+            "steps": [
+                {
+                    "id": "discovery",
+                    "name": "Discovery",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://modelbank.example.com/discovery"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=metadata,
+        )
+
+    expected_suite = {
+        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    }
+    assert execution_logger.events()[0].payload["suite"] == expected_suite
+    assert result.to_json_object()["suite"] == expected_suite
+
+
+@pytest.mark.unit
 def test_run_manifest_request_sent_masks_authorization_header() -> None:
     """request-sent event masks Authorization header values by default."""
     from conformance.execution_log import BufferedExecutionLogger
