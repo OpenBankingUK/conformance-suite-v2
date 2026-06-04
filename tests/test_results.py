@@ -363,6 +363,7 @@ def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None
     reasons = block["reasons"]
     assert isinstance(reasons, list)
     assert str(reasons[0]) == "Mandatory steps were deselected from the plan"
+    assert "No mandatory steps declared" not in reasons
 
 
 @pytest.mark.unit
@@ -387,6 +388,10 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     block = rendered["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["reason"] == "Mandatory steps were deselected from the plan"
+    assert block["mandatoryTotal"] == 1
+    reasons = block["reasons"]
+    assert isinstance(reasons, list)
+    assert "No mandatory steps declared" not in reasons
 
 
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
