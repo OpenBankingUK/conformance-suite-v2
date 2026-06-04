@@ -107,6 +107,108 @@ class TestRunStore:
         # Snapshot captured before mark_running — must still read "pending"
         assert snapshot.status == "pending"
 
+    RAW_PSU_AUTHORIZATION_URL = (
+        "https://auth.example.com/authorize?"
+        "client_id=client-123&request=raw-jws-value&state=browser-psu-state"
+    )
+
+    def test_participant_action_exposes_raw_psu_url_on_run_snapshot(self) -> None:
+        """Pending browser PSU actions are readable from in-memory run state."""
+        store = RunStore()
+        record = store.create_run()
+
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        action = store.get_participant_action(record.run_id)
+        assert action is not None
+        assert action.type == "psu-authorization-url"
+        assert action.step_id == "psu"
+        assert action.url == self.RAW_PSU_AUTHORIZATION_URL
+        assert action.created_at is not None
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert snapshot.participant_action is not None
+        assert snapshot.participant_action.url == self.RAW_PSU_AUTHORIZATION_URL
+
+    def test_participant_action_snapshot_is_not_live_mutable_state(self) -> None:
+        """Run snapshots detach participant actions from the live store."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        first_snapshot = store.get_run(record.run_id)
+        second_snapshot = store.get_run(record.run_id)
+
+        assert first_snapshot is not None
+        assert second_snapshot is not None
+        assert first_snapshot.participant_action is not None
+        assert second_snapshot.participant_action is not None
+        assert first_snapshot.participant_action is not second_snapshot.participant_action
+
+    def test_participant_action_is_not_persisted_to_status_result_or_log(self) -> None:
+        """Raw browser PSU URLs stay out of durable/public run artifacts."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL not in json.dumps(snapshot.to_status_json())
+
+        log_bytes = store.get_run_log_bytes(record.run_id)
+        assert log_bytes is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL.encode("utf-8") not in log_bytes
+
+        store.mark_running(record.run_id)
+        store.mark_completed(record.run_id, result={"status": "passed"})
+
+        completed = store.get_run(record.run_id)
+        assert completed is not None
+        assert completed.result is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL not in json.dumps(completed.result)
+
+    def test_clear_participant_action_removes_matching_pending_action(self) -> None:
+        """Callback and matching step-completion hooks can clear the active action."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        store.clear_participant_action(record.run_id, step_id="token")
+        assert store.get_participant_action(record.run_id) is not None
+
+        store.clear_participant_action(record.run_id, step_id="psu")
+        assert store.get_participant_action(record.run_id) is None
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert snapshot.participant_action is None
+
+    def test_clear_participant_action_without_step_id_clears_active_action(self) -> None:
+        """Run-level cleanup hooks can clear the active browser action."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        store.clear_participant_action(record.run_id)
+
+        assert store.get_participant_action(record.run_id) is None
+
+    def test_terminal_transitions_clear_participant_action(self) -> None:
+        """Completed and failed runs must not retain raw browser PSU URLs."""
+        store = RunStore()
+        completed = store.create_run()
+        store.set_participant_action(completed.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+        store.mark_running(completed.run_id)
+        store.mark_completed(completed.run_id, result={"status": "passed"})
+
+        failed = store.create_run()
+        store.set_participant_action(failed.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+        store.mark_running(failed.run_id)
+        store.mark_failed(failed.run_id, error="boom")
+
+        assert store.get_participant_action(completed.run_id) is None
+        assert store.get_participant_action(failed.run_id) is None
+
 
 # ─── API endpoint integration tests ─────────────────────────────────────────
 
@@ -610,6 +712,28 @@ class TestRunStoreBoundedHistory:
         assert first_ids[0] not in store._runs
         assert first_ids[-1] in store._runs
         assert extra.run_id in store._runs
+
+    def test_pruning_terminal_records_removes_participant_actions(self) -> None:
+        """Pruned terminal run records must not leave raw browser PSU URLs behind."""
+        store = RunStore()
+        first_record = store.create_run()
+        store.set_participant_action(
+            first_record.run_id,
+            step_id="psu",
+            url=TestRunStore.RAW_PSU_AUTHORIZATION_URL,
+        )
+        store.mark_running(first_record.run_id)
+        store.mark_completed(first_record.run_id, result={})
+
+        for _ in range(MAX_TERMINAL_RECORDS):
+            record = store.create_run()
+            store.mark_running(record.run_id)
+            store.mark_completed(record.run_id, result={})
+
+        store.create_run()
+
+        assert store.get_run(first_record.run_id) is None
+        assert store.get_participant_action(first_record.run_id) is None
 
 
 # ─── Loopback guard ─────────────────────────────────────────────────────────
