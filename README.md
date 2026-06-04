@@ -55,6 +55,8 @@ uv run python main.py config/model-bank-suite-example.json
 
 The REST API follows the same precedence: an inline `manifest` in `POST /api/runs/` wins; otherwise `config.testSuite` resolves a bundled suite; otherwise the legacy smoke check runs. `deselectStepIds` is accepted with inline or config-resolved manifests only. In the browser plan builder at `/plan/`, leave the manifest textarea blank to preview and launch the suite selected by config, or paste a manifest to override the catalog for authoring/testing.
 
+Browser-launched runs can also drive manual PSU authorisation manifests. While a manual PSU step is waiting for the ASPSP callback, the run detail and status views show an `Open authorisation` action for the current step. The raw authorisation URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
+
 Current bundled entries are smoke-level OpenID discovery and JWKS checks. They exercise the config-driven catalog, placeholder, plan, result, and UI rails, but they are not full Open Banking Read/Write v3.1.11 or v4.0 certification coverage.
 
 ## Certification report validation
