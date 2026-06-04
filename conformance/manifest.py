@@ -1762,8 +1762,7 @@ def _validate_group_id(group: str, *, location: str) -> None:
     """
     if not _STEP_ID_PATTERN.match(group):
         raise ManifestError(
-            f"{location}.group '{group}' contains invalid characters "
-            "(must match [A-Za-z0-9][A-Za-z0-9_-]*)"
+            f"{location}.group '{group}' contains invalid characters (must match [A-Za-z0-9][A-Za-z0-9_-]*)"
         )
 
 
