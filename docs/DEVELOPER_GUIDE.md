@@ -322,7 +322,7 @@ The page accepts model-bank config JSON and optional v1 manifest JSON in text ar
 
 Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and browser-accessible links to masked JSON/NDJSON outputs. The loopback-guarded REST API still exposes the same masked result and log for automation. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
 
-Manual `psu-authorization` steps can be previewed in the browser plan builder but cannot be launched from the UI yet. CLI and REST API runs still support manual PSU flows; the browser launch path is deferred until there is a one-time raw authorization URL handoff that does not persist the unmasked URL in result JSON or execution logs.
+Manual `psu-authorization` steps can be previewed and launched from the browser plan builder. While a browser-launched run is waiting for the ASPSP callback, `/runs/<run_id>/` and the status partial show a single `Open authorisation` action for the active step. The raw authorization URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
 
 **Result file additions.** When a plan is supplied (CLI/API/UI explicit manifest mode and config-selected suite mode), the result JSON gains a top-level `plan` block:
 

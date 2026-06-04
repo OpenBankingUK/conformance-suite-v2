@@ -7,8 +7,10 @@ import pytest
 from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
+from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+from conformance.execution_log import BufferedExecutionLogger
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -106,6 +108,202 @@ class TestRunStore:
         store.mark_running(record.run_id)
         # Snapshot captured before mark_running — must still read "pending"
         assert snapshot.status == "pending"
+
+    RAW_PSU_AUTHORIZATION_URL = (
+        "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-psu-state"
+    )
+
+    def test_participant_action_exposes_raw_psu_url_on_run_snapshot(self) -> None:
+        """Pending browser PSU actions are readable from in-memory run state."""
+        store = RunStore()
+        record = store.create_run()
+
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        action = store.get_participant_action(record.run_id)
+        assert action is not None
+        assert action.type == "psu-authorization-url"
+        assert action.step_id == "psu"
+        assert action.url == self.RAW_PSU_AUTHORIZATION_URL
+        assert action.created_at is not None
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert snapshot.participant_action is not None
+        assert snapshot.participant_action.url == self.RAW_PSU_AUTHORIZATION_URL
+
+    def test_participant_action_snapshot_is_not_live_mutable_state(self) -> None:
+        """Run snapshots detach participant actions from the live store."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        first_snapshot = store.get_run(record.run_id)
+        second_snapshot = store.get_run(record.run_id)
+
+        assert first_snapshot is not None
+        assert second_snapshot is not None
+        assert first_snapshot.participant_action is not None
+        assert second_snapshot.participant_action is not None
+        assert first_snapshot.participant_action is not second_snapshot.participant_action
+
+    def test_participant_action_is_not_persisted_to_status_result_or_log(self) -> None:
+        """Raw browser PSU URLs stay out of durable/public run artifacts."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL not in json.dumps(snapshot.to_status_json())
+
+        log_bytes = store.get_run_log_bytes(record.run_id)
+        assert log_bytes is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL.encode("utf-8") not in log_bytes
+
+        store.mark_running(record.run_id)
+        store.mark_completed(record.run_id, result={"status": "passed"})
+
+        completed = store.get_run(record.run_id)
+        assert completed is not None
+        assert completed.result is not None
+        assert self.RAW_PSU_AUTHORIZATION_URL not in json.dumps(completed.result)
+
+    def test_clear_participant_action_removes_matching_pending_action(self) -> None:
+        """Callback and matching step-completion hooks can clear the active action."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        store.clear_participant_action(record.run_id, step_id="token")
+        assert store.get_participant_action(record.run_id) is not None
+
+        store.clear_participant_action(record.run_id, step_id="psu")
+        assert store.get_participant_action(record.run_id) is None
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert snapshot.participant_action is None
+
+    def test_clear_participant_action_without_step_id_clears_active_action(self) -> None:
+        """Run-level cleanup hooks can clear the active browser action."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        store.clear_participant_action(record.run_id)
+
+        assert store.get_participant_action(record.run_id) is None
+
+    def test_terminal_transitions_clear_participant_action(self) -> None:
+        """Completed and failed runs must not retain raw browser PSU URLs."""
+        store = RunStore()
+        completed = store.create_run()
+        store.set_participant_action(completed.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+        store.mark_running(completed.run_id)
+        store.mark_completed(completed.run_id, result={"status": "passed"})
+
+        failed = store.create_run()
+        store.set_participant_action(failed.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+        store.mark_running(failed.run_id)
+        store.mark_failed(failed.run_id, error="boom")
+
+        assert store.get_participant_action(completed.run_id) is None
+        assert store.get_participant_action(failed.run_id) is None
+
+
+@pytest.mark.unit
+class TestBrowserParticipantActionLogger:
+    """Unit coverage for the API-layer browser action logger decorator."""
+
+    RAW_PSU_AUTHORIZATION_URL = TestRunStore.RAW_PSU_AUTHORIZATION_URL
+
+    def test_stores_raw_psu_url_in_run_state_and_forwards_masked_event(self) -> None:
+        """Raw PSU URLs are in-memory only while logs keep masking semantics."""
+        store = RunStore()
+        record = store.create_run()
+        wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
+        logger = BrowserParticipantActionLogger(wrapped, run_id=record.run_id, store=store)
+
+        logger.emit(
+            "psu-authorization-url",
+            step_id="psu",
+            payload={
+                "url": self.RAW_PSU_AUTHORIZATION_URL,
+                "client_id": "client-123",
+                "request_object": "raw-jws-value",
+            },
+        )
+
+        action = store.get_participant_action(record.run_id)
+        assert action is not None
+        assert action.step_id == "psu"
+        assert action.url == self.RAW_PSU_AUTHORIZATION_URL
+        events = wrapped.events()
+        assert [event.type for event in events] == ["psu-authorization-url"]
+        assert self.RAW_PSU_AUTHORIZATION_URL not in wrapped.to_ndjson_bytes().decode("utf-8")
+
+    def test_malformed_psu_url_event_is_forwarded_without_storing_action(self) -> None:
+        """Malformed PSU URL events do not create browser actions."""
+        store = RunStore()
+        record = store.create_run()
+        wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
+        logger = BrowserParticipantActionLogger(wrapped, run_id=record.run_id, store=store)
+
+        logger.emit("psu-authorization-url", payload={"url": self.RAW_PSU_AUTHORIZATION_URL})
+
+        assert store.get_participant_action(record.run_id) is None
+        assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
+
+    def test_matching_step_completion_clears_action(self) -> None:
+        """Only the step that raised the browser action clears it on completion."""
+        store = RunStore()
+        record = store.create_run()
+        wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
+        logger = BrowserParticipantActionLogger(wrapped, run_id=record.run_id, store=store)
+        logger.emit("psu-authorization-url", step_id="psu", payload={"url": self.RAW_PSU_AUTHORIZATION_URL})
+
+        logger.emit("step-completed", step_id="token", payload={"status": "passed"})
+        assert store.get_participant_action(record.run_id) is not None
+
+        logger.emit("step-completed", step_id="psu", payload={"status": "passed"})
+        assert store.get_participant_action(record.run_id) is None
+
+    def test_callback_received_clears_action(self) -> None:
+        """Callback capture clears the active browser action."""
+        store = RunStore()
+        record = store.create_run()
+        wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
+        logger = BrowserParticipantActionLogger(wrapped, run_id=record.run_id, store=store)
+        logger.emit("psu-authorization-url", step_id="psu", payload={"url": self.RAW_PSU_AUTHORIZATION_URL})
+
+        logger.emit("auth-callback-received", payload={"state": "state", "code": "auth-code"})
+
+        assert store.get_participant_action(record.run_id) is None
+
+    def test_terminal_events_clear_action(self) -> None:
+        """Run-level terminal events clear any active browser action."""
+        store = RunStore()
+        completed = store.create_run()
+        completed_logger = BrowserParticipantActionLogger(
+            BufferedExecutionLogger(run_id=completed.run_id, developer_mode=False),
+            run_id=completed.run_id,
+            store=store,
+        )
+        completed_logger.emit("psu-authorization-url", step_id="psu", payload={"url": self.RAW_PSU_AUTHORIZATION_URL})
+        completed_logger.emit("run-completed", payload={"status": "passed"})
+        assert store.get_participant_action(completed.run_id) is None
+
+        store.mark_running(completed.run_id)
+        store.mark_completed(completed.run_id, result={})
+        failed = store.create_run()
+        failed_logger = BrowserParticipantActionLogger(
+            BufferedExecutionLogger(run_id=failed.run_id, developer_mode=False),
+            run_id=failed.run_id,
+            store=store,
+        )
+        failed_logger.emit("psu-authorization-url", step_id="psu", payload={"url": self.RAW_PSU_AUTHORIZATION_URL})
+        failed_logger.emit("application-error", payload={"message": "boom"})
+        assert store.get_participant_action(failed.run_id) is None
 
 
 # ─── API endpoint integration tests ─────────────────────────────────────────
@@ -235,6 +433,7 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
         assert mock_execute.call_args.args[2:] == (None, None, None)
+        assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
@@ -610,6 +809,28 @@ class TestRunStoreBoundedHistory:
         assert first_ids[0] not in store._runs
         assert first_ids[-1] in store._runs
         assert extra.run_id in store._runs
+
+    def test_pruning_terminal_records_removes_participant_actions(self) -> None:
+        """Pruned terminal run records must not leave raw browser PSU URLs behind."""
+        store = RunStore()
+        first_record = store.create_run()
+        store.set_participant_action(
+            first_record.run_id,
+            step_id="psu",
+            url=TestRunStore.RAW_PSU_AUTHORIZATION_URL,
+        )
+        store.mark_running(first_record.run_id)
+        store.mark_completed(first_record.run_id, result={})
+
+        for _ in range(MAX_TERMINAL_RECORDS):
+            record = store.create_run()
+            store.mark_running(record.run_id)
+            store.mark_completed(record.run_id, result={})
+
+        store.create_run()
+
+        assert store.get_run(first_record.run_id) is None
+        assert store.get_participant_action(first_record.run_id) is None
 
 
 # ─── Loopback guard ─────────────────────────────────────────────────────────
@@ -1228,6 +1449,63 @@ class TestExecuteRunDiscardsAuthSessions:
 
         assert auth_session_store.for_run(finishing.run_id) == []
         assert len(auth_session_store.for_run(other_run_id)) == 1
+
+    def test_browser_psu_prompt_flag_wraps_execution_logger(self) -> None:
+        """Browser-launched runs mirror raw PSU URLs into transient run state."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.run_lifecycle import BrowserParticipantActionLogger, _execute_run
+        from conformance.execution_log import ExecutionLogger
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        raw_url = "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-state"
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+
+        def emit_browser_action(
+            config: ModelBankConfig,
+            *,
+            execution_logger: ExecutionLogger,
+        ) -> SmokeCheckResult:
+            """Assert the lifecycle provided the browser logger and emit a PSU URL.
+
+            Args:
+                config: Runtime model-bank configuration passed to the smoke check.
+                execution_logger: Logger supplied by the lifecycle.
+
+            Returns:
+                The fake successful smoke-check result.
+            """
+            assert config.environment == "test-env"
+            assert isinstance(execution_logger, BrowserParticipantActionLogger)
+            execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": raw_url})
+            return fake_result
+
+        with patch(
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            side_effect=emit_browser_action,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None, browser_psu_prompts=True)
+
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.status == "completed"
+        log_bytes = run_store.get_run_log_bytes(record.run_id)
+        assert log_bytes is not None
+        assert raw_url.encode("utf-8") not in log_bytes
 
     def test_manifest_run_passes_runtime_config_to_executor(self) -> None:
         """Manifest runs receive safe config placeholder values from the lifecycle."""

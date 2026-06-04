@@ -316,14 +316,12 @@ def test_v0_manifest_is_rejected_for_selectable_plan_builder() -> None:
 
 
 @pytest.mark.unit
-def test_manual_psu_step_previews_but_blocks_browser_launch() -> None:
+def test_manual_psu_step_previews_and_allows_browser_launch() -> None:
     form = _bound_form(_v1_manifest([_manual_psu_step("psu"), _http_step("token")]))
 
     preview = _validated_preview(form)
 
     assert preview.rows[0].kind == "psu-authorization"
     assert preview.rows[0].selected_after_form is True
-    assert preview.launch_supported is False
-    assert preview.launch_blockers == (
-        "Manual PSU authorisation step 'psu' cannot be launched from the browser UI yet.",
-    )
+    assert preview.launch_supported is True
+    assert preview.launch_blockers == ()

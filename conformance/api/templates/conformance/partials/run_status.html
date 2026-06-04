@@ -6,5 +6,12 @@
         <div class="metric"><strong>{{ run.started_at|default:"-" }}</strong><span>Started</span></div>
         <div class="metric"><strong>{{ run.finished_at|default:"-" }}</strong><span>Finished</span></div>
     </div>
+    {% if run.participant_action and run.participant_action.type == "psu-authorization-url" %}
+        <div class="participant-action" aria-live="polite">
+            <p><strong>Action required</strong></p>
+            <p class="muted">Step {{ run.participant_action.step_id }} is waiting for PSU authorisation.</p>
+            <p><a class="button" href="{{ run.participant_action.url }}" target="_blank" rel="noreferrer noopener">Open authorisation</a></p>
+        </div>
+    {% endif %}
     {% if run.error %}<p>{{ run.error }}</p>{% endif %}
 </section>

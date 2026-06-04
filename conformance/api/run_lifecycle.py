@@ -10,14 +10,15 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Mapping
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.api.run_store import run_store
+from conformance.api.run_store import RunStore, run_store
 from conformance.context import RuntimeConfig
-from conformance.execution_log import NullExecutionLogger, warn_if_developer_mode
+from conformance.execution_log import EventType, ExecutionLogger, NullExecutionLogger, warn_if_developer_mode
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
@@ -27,12 +28,84 @@ from conformance.test_plan import TestPlan
 logger = logging.getLogger(__name__)
 
 
+class BrowserParticipantActionLogger(ExecutionLogger):
+    """Decorator that mirrors browser-required PSU actions into run state.
+
+    The wrapped logger remains the durable execution-log sink. This API-layer
+    decorator observes raw events before the wrapped logger applies masking so
+    the browser UI can temporarily render the raw PSU authorisation URL from
+    in-memory run state without persisting it to logs or result JSON.
+    """
+
+    def __init__(self, wrapped: ExecutionLogger, *, run_id: str, store: RunStore) -> None:
+        """Initialise the browser participant action decorator.
+
+        Args:
+            wrapped: Execution-log sink that receives every event unchanged.
+            run_id: Run identifier whose participant action state is updated.
+            store: In-memory run store that holds browser participant actions.
+        """
+        self._wrapped = wrapped
+        self._run_id = run_id
+        self._store = store
+
+    def emit(
+        self,
+        event_type: EventType,
+        *,
+        step_id: str | None = None,
+        payload: Mapping[str, JsonValue] | None = None,
+    ) -> None:
+        """Forward an event and update browser participant action state.
+
+        Args:
+            event_type: Event type from the closed execution-log taxonomy.
+            step_id: Optional manifest step identifier associated with the
+                event.
+            payload: Optional event-specific data. The raw
+                ``psu-authorization-url`` payload is inspected before the
+                wrapped logger masks it for persistence.
+        """
+        if event_type == "psu-authorization-url":
+            self._set_participant_action(step_id=step_id, payload=payload)
+        elif event_type == "step-completed" and step_id is not None:
+            self._store.clear_participant_action(self._run_id, step_id=step_id)
+        elif event_type in {"auth-callback-received", "run-completed", "application-error"}:
+            self._store.clear_participant_action(self._run_id)
+        self._wrapped.emit(event_type, step_id=step_id, payload=payload)
+
+    @property
+    def run_id(self) -> str:
+        """Run identifier whose browser action state is updated."""
+        return self._run_id
+
+    def _set_participant_action(
+        self,
+        *,
+        step_id: str | None,
+        payload: Mapping[str, JsonValue] | None,
+    ) -> None:
+        """Store a raw PSU authorisation URL when the event is well formed.
+
+        Args:
+            step_id: Manifest step that emitted the PSU URL. Missing step IDs
+                are ignored because browser action state is step-scoped.
+            payload: Raw event payload containing the ``url`` field before
+                masking.
+        """
+        url = (payload or {}).get("url")
+        if step_id is None or not isinstance(url, str):
+            return
+        self._store.set_participant_action(self._run_id, step_id=step_id, url=url)
+
+
 def start_run(
     *,
     config: ModelBankConfig,
     manifest: Manifest | None,
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
+    browser_psu_prompts: bool = False,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -46,6 +119,8 @@ def start_run(
             suite manifest's default plan.
         suite_metadata: Optional catalog metadata when ``manifest`` came from
             config-driven suite resolution.
+        browser_psu_prompts: Whether to mirror raw manual PSU authorisation
+            URLs into transient in-memory run state for browser-launched runs.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -59,6 +134,7 @@ def start_run(
     thread = threading.Thread(
         target=_execute_run,
         args=(record.run_id, config, manifest, plan, suite_metadata),
+        kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
     initial_status = record.to_status_json()
@@ -72,6 +148,8 @@ def _execute_run(
     manifest: Manifest | None,
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
+    *,
+    browser_psu_prompts: bool = False,
 ) -> None:
     """Execute a conformance run in a background thread.
 
@@ -88,6 +166,9 @@ def _execute_run(
             suite manifest's default plan.
         suite_metadata: Optional catalog metadata when ``manifest`` came from
             config-driven suite resolution.
+        browser_psu_prompts: Whether to wrap the execution logger so raw manual
+            PSU authorisation URLs are exposed only as transient browser
+            participant actions.
     """
     run_store.mark_running(run_id)
     try:
@@ -95,7 +176,10 @@ def _execute_run(
         # ``get_run`` returns a shallow copy whose ``execution_logger``
         # reference points at the same live buffer the API exposes; either
         # accessing the live record or the copy yields the same logger.
-        logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
+        run_logger = run_record.execution_logger if run_record is not None else None
+        logger_sink: ExecutionLogger = run_logger or NullExecutionLogger()
+        if browser_psu_prompts:
+            logger_sink = BrowserParticipantActionLogger(logger_sink, run_id=run_id, store=run_store)
         effective_manifest = manifest
         effective_plan = plan
         effective_suite_metadata = suite_metadata

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import html
 import json
+import time
 from typing import cast
 from unittest.mock import Mock, patch
+from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from django.test import Client
@@ -81,6 +84,23 @@ def _manual_psu_step(step_id: str) -> dict[str, JsonValue]:
     }
 
 
+def _manual_psu_step_with_request_object(step_id: str, *, request_object: str) -> dict[str, JsonValue]:
+    """Build a manual PSU step carrying a request object.
+
+    Args:
+        step_id: Stable manifest step id.
+        request_object: Opaque request object value to include in the
+            authorisation URL.
+
+    Returns:
+        JSON object representing a valid manual PSU step.
+    """
+    step = _manual_psu_step(step_id)
+    step["requestObject"] = request_object
+    step["timeoutSeconds"] = 2
+    return step
+
+
 def _v1_manifest(steps: list[dict[str, JsonValue]]) -> dict[str, JsonValue]:
     """Build a v1 manifest for UI tests.
 
@@ -132,6 +152,65 @@ def _suite_plan_form_data(*, selected_step_ids: list[str] | None = None) -> dict
         "selection_mode": "select",
         "selected_step_ids": selected_step_ids or [],
     }
+
+
+def _run_id_from_redirect(location: str) -> str:
+    """Extract the run id from a Django redirect response.
+
+    Args:
+        location: Redirect target from a Django test response.
+
+    Returns:
+        Run id segment from the redirect target.
+    """
+    return location.rstrip("/").rsplit("/", maxsplit=1)[-1]
+
+
+def _query_parameter(url: str, name: str) -> str:
+    """Read a single query parameter from a URL.
+
+    Args:
+        url: Absolute URL containing a query string.
+        name: Query parameter name to extract.
+
+    Returns:
+        The first query parameter value.
+    """
+    values = parse_qs(urlsplit(url).query)[name]
+    return values[0]
+
+
+def _wait_for_participant_action(run_id: str) -> str:
+    """Wait until a browser PSU participant action is available.
+
+    Args:
+        run_id: Run whose action should become pending.
+
+    Returns:
+        Raw PSU authorisation URL from the participant action.
+    """
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        action = run_store.get_participant_action(run_id)
+        if action is not None:
+            return action.url
+        time.sleep(0.05)
+    raise AssertionError("Timed out waiting for participant action")
+
+
+def _wait_for_terminal_run(run_id: str) -> None:
+    """Wait until a run reaches a terminal state.
+
+    Args:
+        run_id: Run whose status should become completed or failed.
+    """
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        record = run_store.get_run(run_id)
+        if record is not None and record.status in {"completed", "failed"}:
+            return
+        time.sleep(0.05)
+    raise AssertionError("Timed out waiting for terminal run")
 
 
 @pytest.mark.integration
@@ -233,6 +312,7 @@ class TestPlanBuilderUi:
         assert response["Location"] == "/runs/run-123/"
         assert mock_start_run.call_count == 1
         plan = mock_start_run.call_args.kwargs["plan"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         assert plan.selected_step_ids() == ["mandatory"]
 
     @patch("conformance.api.ui_views.start_run")
@@ -255,21 +335,25 @@ class TestPlanBuilderUi:
         manifest = mock_start_run.call_args.kwargs["manifest"]
         plan = mock_start_run.call_args.kwargs["plan"]
         suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
         assert plan.selected_step_ids() == ["openid-discovery"]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
 
     @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_blocks_manual_psu_manifest_without_starting_run(self, mock_start_run: Mock) -> None:
-        """Manual PSU manifests are previewable but not launched by this UI slice."""
+    def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:
+        """Manual PSU manifests can be launched with browser PSU prompts enabled."""
+        mock_start_run.return_value = {"id": "run-psu", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
         manifest = _v1_manifest([_manual_psu_step("psu"), _http_step("token")])
 
         response = Client().post("/plan/launch/", data=_plan_form_data(manifest, selected_step_ids=["psu", "token"]))
 
-        assert response.status_code == 400
-        content = response.content.decode("utf-8")
-        assert "cannot be launched from the browser UI yet" in content
-        mock_start_run.assert_not_called()
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-psu/"
+        assert mock_start_run.call_count == 1
+        plan = mock_start_run.call_args.kwargs["plan"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert plan.selected_step_ids() == ["psu", "token"]
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_renders_conflict_when_run_is_active(self, mock_start_run: Mock) -> None:
@@ -329,6 +413,59 @@ class TestPlanBuilderUi:
 class TestRunDetailUi:
     """Browser coverage for run detail and partial views."""
 
+    def test_browser_launch_manual_psu_flow_renders_callback_and_clears_action(self) -> None:
+        """Browser launch renders manual PSU action until callback completion."""
+        client = Client()
+        raw_request_object = "ui-request-object-raw-value"
+        raw_auth_code = "ui-auth-code-123"
+        manifest = _v1_manifest([_manual_psu_step_with_request_object("psu", request_object=raw_request_object)])
+
+        launch_response = client.post("/plan/launch/", data=_plan_form_data(manifest, selected_step_ids=["psu"]))
+
+        assert launch_response.status_code == 302
+        run_id = _run_id_from_redirect(launch_response["Location"])
+        authorisation_url = _wait_for_participant_action(run_id)
+        state = _query_parameter(authorisation_url, "state")
+        assert _query_parameter(authorisation_url, "request") == raw_request_object
+
+        detail_response = client.get(f"/runs/{run_id}/")
+        status_response = client.get(f"/runs/{run_id}/status/")
+
+        assert detail_response.status_code == 200
+        assert status_response.status_code == 200
+        detail_content = html.unescape(detail_response.content.decode("utf-8"))
+        status_content = html.unescape(status_response.content.decode("utf-8"))
+        assert "Action required" in detail_content
+        assert "Step psu is waiting for PSU authorisation." in status_content
+        assert f'href="{authorisation_url}"' in status_content
+        assert 'target="_blank"' in status_content
+        assert 'rel="noreferrer noopener"' in status_content
+
+        callback_response = client.get("/callback/", {"state": state, "code": raw_auth_code})
+
+        assert callback_response.status_code == 200
+        _wait_for_terminal_run(run_id)
+        assert run_store.get_participant_action(run_id) is None
+        cleared_response = client.get(f"/runs/{run_id}/status/")
+        assert cleared_response.status_code == 200
+        cleared_content = cleared_response.content.decode("utf-8")
+        assert "Action required" not in cleared_content
+        assert "Open authorisation" not in cleared_content
+
+        log_response = client.get(f"/runs/{run_id}/log.ndjson")
+        result_response = client.get(f"/runs/{run_id}/result.json")
+
+        assert log_response.status_code == 200
+        assert result_response.status_code == 200
+        log_bytes = log_response.content
+        result_json = json.dumps(result_response.json(), sort_keys=True)
+        assert authorisation_url.encode("utf-8") not in log_bytes
+        assert raw_request_object.encode("utf-8") not in log_bytes
+        assert raw_auth_code.encode("utf-8") not in log_bytes
+        assert authorisation_url not in result_json
+        assert raw_request_object not in result_json
+        assert raw_auth_code not in result_json
+
     def test_run_detail_returns_404_for_unknown_run(self) -> None:
         """Unknown run ids render a browser 404."""
         response = Client().get("/runs/missing/")
@@ -374,6 +511,35 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
+
+    def test_status_partial_renders_pending_psu_authorisation_action(self) -> None:
+        """The status partial renders active manual PSU browser actions."""
+        record = run_store.create_run()
+        authorisation_url = "https://auth.example.com/authorize?state=state-123"
+        run_store.set_participant_action(record.run_id, step_id="psu", url=authorisation_url)
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Action required" in content
+        assert "Step psu is waiting for PSU authorisation." in content
+        assert "Open authorisation" in content
+        assert f'href="{authorisation_url}"' in content
+        assert 'target="_blank"' in content
+        assert 'rel="noreferrer noopener"' in content
+
+    def test_status_partial_omits_psu_authorisation_action_when_absent(self) -> None:
+        """The status partial hides manual PSU controls when no action is pending."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Action required" not in content
+        assert "Open authorisation" not in content
+        assert 'target="_blank"' not in content
 
     def test_log_partial_renders_masked_log_link_and_event_count(self) -> None:
         """The log partial links to the browser-accessible NDJSON endpoint."""
