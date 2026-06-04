@@ -248,6 +248,38 @@ Suite-resolved runs add safe suite metadata to participant-visible result JSON a
 
 This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks` entries are not full Open Banking Read/Write v3.1.11 or v4.0 certification suites; full Read/Write coverage should be added later as manifest-authoring work once the target Ozone v4 scope is confirmed.
 
+## Group-Aware Manifest Execution (v1)
+
+Manifest `schemaVersion: "v1"` now supports additive scheduling metadata on both HTTP and PSU authorisation steps:
+
+- `phase`: optional, `"setup"` or `"execution"`
+- `group`: optional execution-group identifier
+
+Accepted `phase` values are `"setup"` and `"execution"`. Omitted `phase` defaults to `"execution"`.
+Omitted `group` defaults to `"default"`.
+
+`group` uses the same identifier shape as `id` and is validated at parse time. Invalid group identifiers and unknown phase values are rejected during manifest loading so runtime scheduling stays deterministic.
+
+### Runtime Guarantees
+
+The v1 executor derives a schedule from manifest metadata plus active `TestPlan` selection and preserves the existing `run_manifest()` public signature.
+
+At runtime, the engine guarantees:
+
+1. `step-deselected` events are emitted before any step execution.
+2. Selected `setup` steps run first, sequentially, in manifest order.
+3. Selected `execution` steps run by independent group.
+4. Steps inside a single group remain sequential and ordered.
+5. Independent execution groups may run concurrently within one active run.
+6. A failure in one execution group does not suppress another independent execution group.
+7. Result ordering remains deterministic by manifest order, even when logs interleave due to concurrency.
+
+Selection remains plan-driven: deselected steps do not execute and do not produce `StepResult` entries.
+
+Grouping is manifest-authored metadata only. No new CLI or API request fields are required.
+
+This scheduling feature establishes the engine setup/execution model and does not, by itself, add full Open Banking Read/Write certification coverage.
+
 ## Structured Execution Log
 
 Every CLI and REST API run produces a structured **execution log** in [NDJSON](https://github.com/ndjson/ndjson-spec) format alongside the result file. One JSON object per line, streamable, tail-friendly, and partial-read safe — a truncated file is still parseable up to the last complete line.

@@ -14,6 +14,7 @@
   - [Test Markers](#test-markers)
   - [Code Quality Tools](#code-quality-tools)
   - [Coverage Targets](#coverage-targets)
+  - [Group-Aware Scheduling Cases](#group-aware-scheduling-cases)
   - [Certification Validator Cases](#certification-validator-cases)
 
 ---
@@ -146,6 +147,23 @@ uv run pytest -p no:django -m e2e
 | Critical security paths | 100% (enforced via `# pragma: no cover` policy) |
 
 Coverage is enforced via `fail_under = 80` in `[tool.coverage.report]` in `pyproject.toml`. Reports are uploaded as CI artifacts.
+
+## Group-Aware Scheduling Cases
+
+Group-aware v1 manifest execution introduces setup/execution phases and independent execution groups. Coverage should remain focused and deterministic:
+
+- `tests/test_manifest.py`: verify parser defaults (`phase="execution"`, `group="default"`), accepted values, and validation failures for invalid `phase`/`group` on both HTTP and `psu-authorization` steps.
+- `tests/test_execution_schedule.py`: verify schedule derivation from `Manifest + TestPlan` (selected setup steps, selected execution steps grouped by id, deselected steps excluded, deterministic manifest-order output).
+- `tests/test_executor.py`: verify setup runs before execution, same-group sequencing is preserved, independent groups continue after a failure in another group, and final result ordering remains manifest-deterministic under concurrency.
+- `tests/test_plan_builder.py` and `tests/test_ui_views.py`: verify participant-facing previews expose `phase` and `group` metadata so scheduling is visible before launch.
+
+Recommended focused run while iterating on scheduling semantics:
+
+```bash
+DJANGO_DEBUG=true uv run pytest tests/test_manifest.py tests/test_execution_schedule.py tests/test_executor.py tests/test_plan_builder.py tests/test_ui_views.py -v
+```
+
+Concurrency assertions should avoid timing-sensitive sleeps where possible. Prefer explicit synchronisation (`threading.Event`, barriers, or controlled fakes) and assert invariants (order inside a group, cross-group continuation, deterministic merged result order) rather than wall-clock duration.
 
 ## TestPlan / Mandatory-Deselection Cases
 
