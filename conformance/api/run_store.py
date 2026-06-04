@@ -20,6 +20,9 @@ from conformance.json_types import JsonObject
 RunStatus = Literal["pending", "running", "completed", "failed"]
 """Lifecycle states for a conformance run."""
 
+ParticipantActionType = Literal["psu-authorization-url"]
+"""Browser participant action kinds supported by the run store."""
+
 _TERMINAL_STATUSES: tuple[RunStatus, ...] = ("completed", "failed")
 """Lifecycle states beyond which a run will not transition again."""
 
@@ -35,6 +38,23 @@ Active (pending/running) records are never pruned.
 
 
 @dataclass
+class ParticipantAction:
+    """In-memory action required from the browser participant.
+
+    Attributes:
+        type: Discriminator for the pending participant action shape.
+        step_id: Manifest step that produced the participant action.
+        url: Raw PSU authorisation URL to render while awaiting consent.
+        created_at: UTC timestamp when the action became pending.
+    """
+
+    type: ParticipantActionType
+    step_id: str
+    url: str
+    created_at: datetime
+
+
+@dataclass
 class RunRecord:
     """Mutable state for a single conformance run.
 
@@ -46,6 +66,10 @@ class RunRecord:
         finished_at: UTC timestamp when execution ended, or None.
         result: Structured JSON result object, populated on completion.
         error: Human-readable error message if the run failed internally.
+        participant_action: In-memory browser action currently required from
+            the participant. This is deliberately omitted from status JSON,
+            results, and logs because it can contain a raw PSU authorisation
+            request object.
         execution_logger: Per-run structured execution log buffer. The
             engine appends events here during the run; the API exposes
             the buffer's bytes via the run-log endpoint. ``None`` only
@@ -59,6 +83,7 @@ class RunRecord:
     finished_at: datetime | None = None
     result: JsonObject | None = None
     error: str | None = None
+    participant_action: ParticipantAction | None = None
     execution_logger: BufferedExecutionLogger | None = None
 
     def to_status_json(self) -> JsonObject:
@@ -129,7 +154,62 @@ class RunStore:
         """
         with self._lock:
             record = self._runs.get(run_id)
-            return dataclasses.replace(record) if record is not None else None
+            return self._snapshot_record_locked(record) if record is not None else None
+
+    def get_participant_action(self, run_id: str) -> ParticipantAction | None:
+        """Snapshot the active browser participant action for a run.
+
+        Args:
+            run_id: The unique run identifier.
+
+        Returns:
+            A detached participant action snapshot, or ``None`` if the run is
+            unknown or no action is currently pending.
+        """
+        with self._lock:
+            record = self._runs.get(run_id)
+            if record is None:
+                return None
+            return self._snapshot_participant_action(record.participant_action)
+
+    def set_participant_action(self, run_id: str, *, step_id: str, url: str) -> None:
+        """Store a pending raw PSU authorisation URL for browser launch.
+
+        The action is intentionally process-local only. It is exposed through
+        run snapshots for the browser UI, but is not serialised into status
+        JSON, result JSON, or execution logs.
+
+        Args:
+            run_id: The unique run identifier.
+            step_id: Manifest step that emitted the PSU authorisation URL.
+            url: Raw PSU authorisation URL to render for the participant.
+        """
+        with self._lock:
+            record = self._runs[run_id]
+            record.participant_action = ParticipantAction(
+                type="psu-authorization-url",
+                step_id=step_id,
+                url=url,
+                created_at=datetime.now(UTC),
+            )
+
+    def clear_participant_action(self, run_id: str, *, step_id: str | None = None) -> None:
+        """Clear a pending browser participant action.
+
+        When ``step_id`` is provided, only a matching action is removed. Run
+        terminal cleanup passes no step ID so any active action is discarded.
+
+        Args:
+            run_id: The unique run identifier.
+            step_id: Optional manifest step that must match the active action.
+        """
+        with self._lock:
+            record = self._runs.get(run_id)
+            if record is None or record.participant_action is None:
+                return
+            if step_id is not None and record.participant_action.step_id != step_id:
+                return
+            record.participant_action = None
 
     def get_run_log_bytes(self, run_id: str) -> bytes | None:
         """Snapshot the run's execution log as NDJSON bytes.
@@ -178,6 +258,7 @@ class RunStore:
             record.status = "completed"
             record.finished_at = datetime.now(UTC)
             record.result = result
+            record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
 
@@ -195,6 +276,7 @@ class RunStore:
             record.status = "failed"
             record.finished_at = datetime.now(UTC)
             record.error = error
+            record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
 
@@ -229,6 +311,31 @@ class RunStore:
         evict_count = len(terminal_ids) - MAX_TERMINAL_RECORDS
         for run_id in terminal_ids[:evict_count]:
             del self._runs[run_id]
+
+    def _snapshot_record_locked(self, record: RunRecord) -> RunRecord:
+        """Create a detached run record snapshot.
+
+        Args:
+            record: Live run record stored under ``self._lock``.
+
+        Returns:
+            A shallow copy of the record with a detached participant action.
+        """
+        return dataclasses.replace(
+            record,
+            participant_action=self._snapshot_participant_action(record.participant_action),
+        )
+
+    def _snapshot_participant_action(self, action: ParticipantAction | None) -> ParticipantAction | None:
+        """Create a detached participant action snapshot.
+
+        Args:
+            action: Live participant action stored on a run record.
+
+        Returns:
+            A copied participant action, or ``None`` when no action is pending.
+        """
+        return dataclasses.replace(action) if action is not None else None
 
 
 class RunConflictError(Exception):

@@ -108,8 +108,7 @@ class TestRunStore:
         assert snapshot.status == "pending"
 
     RAW_PSU_AUTHORIZATION_URL = (
-        "https://auth.example.com/authorize?"
-        "client_id=client-123&request=raw-jws-value&state=browser-psu-state"
+        "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-psu-state"
     )
 
     def test_participant_action_exposes_raw_psu_url_on_run_snapshot(self) -> None:
