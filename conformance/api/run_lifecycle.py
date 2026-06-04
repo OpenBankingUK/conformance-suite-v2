@@ -21,7 +21,7 @@ from conformance.json_types import JsonObject
 from conformance.manifest import Manifest
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
-from conformance.suite_catalog import SuiteMetadata, resolve_suite
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -100,7 +100,12 @@ def _execute_run(
         effective_plan = plan
         effective_suite_metadata = suite_metadata
         if effective_manifest is None and config.test_suite is not None:
-            resolved_suite = resolve_suite(config.test_suite)
+            try:
+                resolved_suite = resolve_suite(config.test_suite)
+            except SuiteCatalogError as error:
+                logger.error("Suite resolution failed for run %s: %s", run_id, error)
+                run_store.mark_failed(run_id, error=f"Suite resolution failed: {error}")
+                return
             effective_manifest = resolved_suite.manifest
             effective_suite_metadata = resolved_suite.metadata
 

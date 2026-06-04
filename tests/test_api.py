@@ -1157,6 +1157,41 @@ class TestExecuteRunDiscardsAuthSessions:
         assert auth_session_store.for_run(record.run_id) == []
         assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
 
+    def test_suite_resolution_failure_surfaces_catalog_error(self) -> None:
+        """Catalog failures produce actionable run errors and still clean sessions."""
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.model_bank_config import ModelBankConfig, SuiteSelection
+        from conformance.suite_catalog import SuiteCatalogError
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+            test_suite=SuiteSelection(
+                standard="ob-read-write",
+                spec_version="v4.0",
+                profile="fapi1-advanced",
+                suite="discovery-jwks",
+            ),
+        )
+
+        with patch(
+            "conformance.api.run_lifecycle.resolve_suite",
+            side_effect=SuiteCatalogError("missing resource"),
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.status == "failed"
+        assert updated.error == "Suite resolution failed: missing resource"
+        assert auth_session_store.for_run(record.run_id) == []
+
     def test_other_runs_auth_sessions_are_not_discarded(self) -> None:
         """The hook is run-scoped: sibling runs' sessions are untouched."""
         from datetime import UTC, datetime
