@@ -18,6 +18,16 @@ VALID_CONFIG: dict[str, JsonValue] = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
+SUITE_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    },
+}
+
 
 @pytest.fixture(autouse=True)
 def _reset_global_stores() -> None:
@@ -107,6 +117,23 @@ def _plan_form_data(
     }
 
 
+def _suite_plan_form_data(*, selected_step_ids: list[str] | None = None) -> dict[str, object]:
+    """Build form data that resolves the manifest from config ``testSuite``.
+
+    Args:
+        selected_step_ids: Step ids submitted by checked row checkboxes.
+
+    Returns:
+        Form-encoded payload dictionary accepted by Django's test client.
+    """
+    return {
+        "config_json": json.dumps(SUITE_CONFIG),
+        "manifest_json": "",
+        "selection_mode": "select",
+        "selected_step_ids": selected_step_ids or [],
+    }
+
+
 @pytest.mark.integration
 class TestPlanBuilderUi:
     """Browser coverage for the participant plan-builder views."""
@@ -138,6 +165,39 @@ class TestPlanBuilderUi:
         assert "Optional" in content
         assert "hx-post" not in content
 
+    def test_preview_post_resolves_config_only_suite(self) -> None:
+        """POST /plan/preview/ can render a config-selected suite with blank manifest."""
+        response = Client().post(
+            "/plan/preview/",
+            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite" in content
+        assert "openid-discovery" in content
+        assert "jwks-fetch" in content
+        assert "ob-read-write" in content
+
+    def test_preview_post_explicit_manifest_overrides_config_suite(self) -> None:
+        """Pasted manifests override config suite selection in the browser preview."""
+        manifest = _v1_manifest([_http_step("explicit")])
+        response = Client().post(
+            "/plan/preview/",
+            data={
+                "config_json": json.dumps(SUITE_CONFIG),
+                "manifest_json": json.dumps(manifest),
+                "selection_mode": "select",
+                "selected_step_ids": ["explicit"],
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "UI manifest" in content
+        assert "explicit" in content
+        assert "openid-discovery" not in content
+
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
         response = Client().post(
@@ -147,6 +207,19 @@ class TestPlanBuilderUi:
 
         assert response.status_code == 400
         assert "Manifest validation failed" in response.content.decode("utf-8")
+
+    def test_preview_post_returns_400_for_invalid_suite_resolution(self) -> None:
+        """Suite catalog errors render form errors with HTTP 400."""
+        from conformance.suite_catalog import SuiteCatalogError
+
+        with patch("conformance.api.plan_builder.resolve_suite", side_effect=SuiteCatalogError("missing suite")):
+            response = Client().post(
+                "/plan/preview/",
+                data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
+            )
+
+        assert response.status_code == 400
+        assert "Suite resolution failed" in response.content.decode("utf-8")
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_run_and_redirects_to_detail(self, mock_start_run: Mock) -> None:
@@ -161,6 +234,28 @@ class TestPlanBuilderUi:
         assert mock_start_run.call_count == 1
         plan = mock_start_run.call_args.kwargs["plan"]
         assert plan.selected_step_ids() == ["mandatory"]
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_starts_config_resolved_suite(self, mock_start_run: Mock) -> None:
+        """Launch can start a config-only suite preview through shared lifecycle code.
+
+        Args:
+            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
+        """
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+
+        response = Client().post(
+            "/plan/launch/",
+            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
+        )
+
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-123/"
+        assert mock_start_run.call_count == 1
+        manifest = mock_start_run.call_args.kwargs["manifest"]
+        plan = mock_start_run.call_args.kwargs["plan"]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
+        assert plan.selected_step_ids() == ["openid-discovery"]
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_blocks_manual_psu_manifest_without_starting_run(self, mock_start_run: Mock) -> None:

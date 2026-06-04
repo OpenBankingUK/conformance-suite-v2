@@ -31,6 +31,36 @@ class _TtyStringIO(StringIO):
         return True
 
 
+def _write_suite_config(tmp_path: Path) -> Path:
+    """Write a config that selects the bundled discovery/JWKS suite.
+
+    Args:
+        tmp_path: Temporary directory used for config and output paths.
+
+    Returns:
+        Path to the written config file.
+    """
+    config_path = tmp_path / "suite-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "suite-env",
+                "discoveryUrl": "https://suite.example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "executionLogPath": str(tmp_path / "log.ndjson"),
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v4.0",
+                    "profile": "fapi1-advanced",
+                    "suite": "discovery-jwks",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 @pytest.mark.unit
 def test_cli_writes_result_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     config_path = tmp_path / "model-bank.json"
@@ -140,6 +170,142 @@ def test_cli_runs_manifest_from_committed_example_config(monkeypatch: pytest.Mon
     result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
     assert result["status"] == "passed"
     assert result["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
+
+
+@pytest.mark.unit
+def test_cli_resolves_config_selected_suite_when_manifest_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """A config ``testSuite`` supplies the manifest when ``--manifest`` is omitted.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace outbound HTTP with a mock
+            transport and run the CLI under ``tmp_path``.
+        tmp_path: Temporary directory used for config and output files.
+    """
+    config_path = _write_suite_config(tmp_path)
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return discovery/JWKS responses for the bundled suite.
+
+        Args:
+            request: HTTP request issued by the CLI runner.
+
+        Returns:
+            Mock HTTP response for the requested URL.
+        """
+        requested_urls.append(str(request.url))
+        if str(request.url) == "https://suite.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={"issuer": "https://suite.example.com", "jwks_uri": "https://suite.example.com/jwks"},
+            )
+        return httpx.Response(200, json={"keys": []})
+
+    original_client = httpx.Client
+
+    def mock_client(*, timeout: float, verify: bool | str, cert: tuple[str, str] | None) -> httpx.Client:
+        """Build an HTTPX client backed by the mock suite transport.
+
+        Args:
+            timeout: Ignored timeout passed by production client construction.
+            verify: Ignored TLS verification setting.
+            cert: Ignored client certificate tuple.
+
+        Returns:
+            HTTPX client using ``handler`` as its transport.
+        """
+        return original_client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(httpx, "Client", mock_client)
+
+    exit_code = cli.run([str(config_path)])
+
+    assert exit_code == 0
+    assert requested_urls == [
+        "https://suite.example.com/.well-known/openid-configuration",
+        "https://suite.example.com/jwks",
+    ]
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert result["status"] == "passed"
+    assert result["plan"] == {
+        "totalSteps": 2,
+        "selectedSteps": 2,
+        "deselectedSteps": 0,
+        "mandatorySelected": 2,
+        "mandatoryDeselected": 0,
+    }
+
+
+@pytest.mark.unit
+def test_cli_explicit_manifest_overrides_config_selected_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``--manifest`` remains the CLI override even when config has ``testSuite``.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace outbound HTTP with a mock
+            transport and run the CLI under ``tmp_path``.
+        tmp_path: Temporary directory used for config, manifest, and outputs.
+    """
+    config_path = _write_suite_config(tmp_path)
+    manifest_path = tmp_path / "explicit-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "v1",
+                "name": "explicit override",
+                "steps": [
+                    {
+                        "id": "explicit",
+                        "name": "Explicit step",
+                        "request": {"method": "GET", "url": "https://explicit.example.com/status"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Record explicit manifest requests and return a passing response.
+
+        Args:
+            request: HTTP request issued by the CLI runner.
+
+        Returns:
+            Passing mock HTTP response for the explicit manifest step.
+        """
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    original_client = httpx.Client
+
+    def mock_client(*, timeout: float, verify: bool | str, cert: tuple[str, str] | None) -> httpx.Client:
+        """Build an HTTPX client that records explicit manifest requests.
+
+        Args:
+            timeout: Ignored timeout passed by production client construction.
+            verify: Ignored TLS verification setting.
+            cert: Ignored client certificate tuple.
+
+        Returns:
+            HTTPX client backed by a mock transport.
+        """
+        return original_client(transport=httpx.MockTransport(handler))
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(httpx, "Client", mock_client)
+
+    exit_code = cli.run([str(config_path), "--manifest", str(manifest_path)])
+
+    assert exit_code == 0
+    assert requested_urls == ["https://explicit.example.com/status"]
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert [step["name"] for step in result["steps"]] == ["explicit"]
 
 
 @pytest.mark.unit
@@ -546,6 +712,55 @@ def test_cli_deselect_repeated_excludes_each_step_from_result(monkeypatch: pytes
         "deselectedSteps": 1,
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
+    }
+
+
+@pytest.mark.unit
+def test_cli_deselect_applies_to_config_resolved_suite(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """``--deselect`` is valid when config ``testSuite`` supplies the manifest.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace outbound HTTP with a mock
+            transport and run the CLI under ``tmp_path``.
+        tmp_path: Temporary directory used for config and outputs.
+    """
+    config_path = _write_suite_config(tmp_path)
+    original_client = httpx.Client
+
+    def mock_client(*, timeout: float, verify: bool | str, cert: tuple[str, str] | None) -> httpx.Client:
+        """Build an HTTPX client that only needs to serve the selected step.
+
+        Args:
+            timeout: Ignored timeout passed by production client construction.
+            verify: Ignored TLS verification setting.
+            cert: Ignored client certificate tuple.
+
+        Returns:
+            HTTPX client backed by a mock transport.
+        """
+        return original_client(
+            transport=httpx.MockTransport(
+                lambda _request: httpx.Response(
+                    200,
+                    json={"issuer": "https://suite.example.com", "jwks_uri": "https://suite.example.com/jwks"},
+                )
+            )
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(httpx, "Client", mock_client)
+
+    exit_code = cli.run([str(config_path), "--deselect", "jwks-fetch"])
+
+    assert exit_code == 0
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert [step["name"] for step in result["steps"]] == ["openid-discovery"]
+    assert result["plan"] == {
+        "totalSteps": 2,
+        "selectedSteps": 1,
+        "deselectedSteps": 1,
+        "mandatorySelected": 1,
+        "mandatoryDeselected": 1,
     }
 
 

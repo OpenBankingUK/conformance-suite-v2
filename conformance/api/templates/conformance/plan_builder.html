@@ -307,6 +307,13 @@
         {% if preview %}
             <section class="panel" aria-labelledby="preview-heading">
                 <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
+                {% if preview.suite_metadata %}
+                    <div class="muted">
+                        {{ preview.suite_metadata.label }} &middot; {{ preview.suite_metadata.standard }}
+                        {{ preview.suite_metadata.spec_version }} &middot; {{ preview.suite_metadata.profile }} &middot;
+                        {{ preview.suite_metadata.suite }}
+                    </div>
+                {% endif %}
 
                 <div class="counts" aria-label="Plan counts">
                     <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>

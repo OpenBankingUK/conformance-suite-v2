@@ -21,6 +21,7 @@ from conformance.json_types import JsonObject
 from conformance.manifest import Manifest
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
+from conformance.suite_catalog import resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -36,10 +37,12 @@ def start_run(
 
     Args:
         config: Validated model-bank configuration.
-        manifest: Parsed manifest object, or ``None`` for a smoke-check run.
+        manifest: Parsed manifest object, or ``None`` to resolve a suite from
+            ``config.test_suite`` or fall back to a smoke-check run.
         plan: Optional :class:`TestPlan` derived from ``manifest`` with any
-            caller-supplied deselections already applied. Must be ``None``
-            when ``manifest`` is ``None``.
+            caller-supplied deselections already applied. When ``manifest`` is
+            ``None`` but ``config.test_suite`` is present, ``None`` selects the
+            suite manifest's default plan.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -73,10 +76,12 @@ def _execute_run(
     Args:
         run_id: The run identifier to update in the store.
         config: Validated model-bank configuration.
-        manifest: Parsed manifest object, or None for a smoke-check run.
+        manifest: Parsed manifest object, or ``None`` to resolve a suite from
+            config or run the legacy smoke check.
         plan: Optional :class:`TestPlan` derived from ``manifest`` with any
-            caller-supplied deselections already applied. Must be ``None``
-            when ``manifest`` is ``None``.
+            caller-supplied deselections already applied. When ``manifest`` is
+            ``None`` but ``config.test_suite`` is present, ``None`` selects the
+            suite manifest's default plan.
     """
     run_store.mark_running(run_id)
     try:
@@ -85,9 +90,16 @@ def _execute_run(
         # reference points at the same live buffer the API exposes; either
         # accessing the live record or the copy yields the same logger.
         logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
-        if manifest is None:
+        effective_manifest = manifest
+        effective_plan = plan
+        if effective_manifest is None and config.test_suite is not None:
+            effective_manifest = resolve_suite(config.test_suite).manifest
+
+        if effective_manifest is None:
             result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
         else:
+            if effective_plan is None:
+                effective_plan = TestPlan.default_plan_from_manifest(effective_manifest)
             http_client = build_json_http_client(
                 timeout_seconds=config.timeout_seconds,
                 ca_bundle_path=config.tls.ca_bundle_path,
@@ -96,11 +108,11 @@ def _execute_run(
             )
             try:
                 result = run_manifest(
-                    manifest,
+                    effective_manifest,
                     environment=config.environment,
                     client=http_client,
                     execution_logger=logger_sink,
-                    plan=plan,
+                    plan=effective_plan,
                     run_id=run_id,
                     auth_session_store=auth_session_store,
                     runtime_config=RuntimeConfig(

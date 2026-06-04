@@ -15,6 +15,16 @@ VALID_CONFIG: dict[str, JsonValue] = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
+SUITE_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    },
+}
+
 
 def _http_step(step_id: str, *, mandatory: bool = False, optional: bool = False) -> dict[str, JsonValue]:
     """Build a minimal v1 HTTP step for plan-builder tests.
@@ -144,6 +154,92 @@ def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
     optional_row = preview.rows[2]
     assert optional_row.default_selected is False
     assert optional_row.selected_after_form is True
+
+
+@pytest.mark.unit
+def test_blank_manifest_resolves_config_selected_suite() -> None:
+    """A blank manifest textarea can preview the suite selected by config."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(SUITE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "select",
+            "selected_step_ids": ["openid-discovery"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is not None
+    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
+    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
+    assert preview.selected_plan.selected_step_ids() == ["openid-discovery"]
+
+
+@pytest.mark.unit
+def test_explicit_manifest_overrides_config_selected_suite() -> None:
+    """Pasted manifest JSON remains the plan-builder authoring override."""
+    explicit_manifest = _v1_manifest([_http_step("explicit")])
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(SUITE_CONFIG),
+            "manifest_json": json.dumps(explicit_manifest),
+            "selection_mode": "select",
+            "selected_step_ids": ["explicit"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is None
+    assert preview.manifest.name == "Plan builder manifest"
+    assert preview.selected_plan.selected_step_ids() == ["explicit"]
+
+
+@pytest.mark.unit
+def test_blank_manifest_without_config_suite_returns_form_error() -> None:
+    """A blank manifest still needs ``config.testSuite`` to be previewable."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(VALID_CONFIG),
+            "manifest_json": "",
+        }
+    )
+
+    assert form.is_valid() is False
+    assert "required unless config.testSuite" in form.errors["manifest_json"][0]
+
+
+@pytest.mark.unit
+def test_config_suite_resolution_error_returns_form_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Catalog resolution failures are shown as validation errors.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace suite resolution.
+    """
+    from conformance.suite_catalog import SuiteCatalogError
+
+    def fail_resolve_suite(_selection: object) -> object:
+        """Raise a catalog error for form validation.
+
+        Args:
+            _selection: Suite selection supplied by the validated config.
+
+        Raises:
+            SuiteCatalogError: Always raised to exercise form error handling.
+        """
+        raise SuiteCatalogError("missing suite")
+
+    monkeypatch.setattr("conformance.api.plan_builder.resolve_suite", fail_resolve_suite)
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(SUITE_CONFIG),
+            "manifest_json": "",
+        }
+    )
+
+    assert form.is_valid() is False
+    assert "Suite resolution failed" in form.non_field_errors()[0]
 
 
 @pytest.mark.unit

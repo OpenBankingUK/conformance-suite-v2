@@ -114,6 +114,16 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
+SUITE_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -236,6 +246,70 @@ class TestCreateRunEndpoint:
         assert "id" in data
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """A config ``testSuite`` supplies the manifest when inline manifest is absent.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": SUITE_CONFIG}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
+        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch"]
+        assert data["status"] == "pending"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """Inline API manifests remain explicit overrides for authoring workflows.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        inline_manifest = {
+            "schemaVersion": "v1",
+            "name": "inline override",
+            "steps": [
+                {
+                    "id": "inline-step",
+                    "name": "Inline step",
+                    "request": {"method": "GET", "url": "https://example.com/inline"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": SUITE_CONFIG, "manifest": inline_manifest}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        assert manifest.name == "inline override"
+        assert [step.id for step in manifest.steps] == ["inline-step"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
         """A valid ``deselectStepIds`` against a v1 manifest is accepted."""
         client = Client()
@@ -263,6 +337,27 @@ class TestCreateRunEndpoint:
         assert response.status_code == 201
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_config_resolved_suite_and_valid_deselection(self, mock_execute: Mock) -> None:
+        """``deselectStepIds`` is valid against a config-resolved suite manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        body = {"config": SUITE_CONFIG, "deselectStepIds": ["jwks-fetch"]}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        plan = mock_execute.call_args.args[3]
+        assert plan.selected_step_ids() == ["openid-discovery"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
         """An unknown step id in ``deselectStepIds`` returns 400."""
         client = Client()
@@ -272,12 +367,27 @@ class TestCreateRunEndpoint:
         assert "Plan validation failed" in response.json()["error"]
 
     def test_rejects_deselect_without_manifest(self) -> None:
-        """``deselectStepIds`` requires ``manifest``; returns 400 otherwise."""
+        """``deselectStepIds`` requires an inline or config-resolved manifest."""
         client = Client()
         body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
         assert "deselectStepIds" in response.json()["error"]
+
+    def test_rejects_invalid_config_suite_resolution(self) -> None:
+        """Catalog resolution errors are surfaced as HTTP 400 before run start."""
+        from conformance.suite_catalog import SuiteCatalogError
+
+        client = Client()
+        with patch("conformance.api.views.resolve_suite", side_effect=SuiteCatalogError("missing resource")):
+            response = client.post(
+                "/api/runs/",
+                data=json.dumps({"config": SUITE_CONFIG}),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400
+        assert "Suite resolution failed" in response.json()["error"]
 
     def test_rejects_deselect_not_array_of_strings(self) -> None:
         """``deselectStepIds`` must be an array of strings; otherwise 400."""
