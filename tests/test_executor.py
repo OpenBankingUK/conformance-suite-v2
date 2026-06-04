@@ -2,6 +2,7 @@ import json
 import secrets
 import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import httpx
@@ -802,6 +803,109 @@ def test_run_manifest_v1_merges_concurrent_group_results_in_manifest_order() -> 
 
     assert result.status == "passed"
     assert [step.name for step in result.steps] == ["alpha-1", "beta-1", "alpha-2", "beta-2"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_caps_execution_group_worker_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_max_workers: list[int] = []
+    real_executor = ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
+            captured_max_workers.append(max_workers)
+            self._delegate = real_executor(max_workers, *args, **kwargs)
+
+        def __enter__(self) -> Any:
+            return self._delegate.__enter__()
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
+            return self._delegate.__exit__(exc_type, exc, tb)
+
+    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
+
+    many_groups_steps: list[dict[str, JsonValue]] = []
+    for index in range(40):
+        many_groups_steps.append(
+            {
+                "id": f"group-{index}",
+                "name": f"Group {index}",
+                "group": f"group-{index}",
+                "request": {"method": "GET", "url": f"https://example.com/{index}"},
+                "assertions": cast("JsonValue", [{"type": "http_status", "expected": 200}]),
+            }
+        )
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "worker cap",
+        "steps": cast("JsonValue", many_groups_steps),
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert captured_max_workers == [32]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_uses_group_count_when_below_worker_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_max_workers: list[int] = []
+    real_executor = ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
+            captured_max_workers.append(max_workers)
+            self._delegate = real_executor(max_workers, *args, **kwargs)
+
+        def __enter__(self) -> Any:
+            return self._delegate.__enter__()
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
+            return self._delegate.__exit__(exc_type, exc, tb)
+
+    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "worker below cap",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "gamma-step",
+                "name": "Gamma step",
+                "group": "gamma",
+                "request": {"method": "GET", "url": "https://example.com/gamma"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert captured_max_workers == [3]
 
 
 @pytest.mark.unit

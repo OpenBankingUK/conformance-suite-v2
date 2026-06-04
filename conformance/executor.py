@@ -61,6 +61,14 @@ from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
+_MAX_EXECUTION_GROUP_WORKERS = 32
+"""Upper bound for concurrent v1 execution-group workers.
+
+The manifest is participant-provided input, so group count can be large. This
+cap prevents unbounded thread creation while preserving queue-based execution
+for additional groups.
+"""
+
 
 def _attach_evidence(
     step: StepResult,
@@ -393,8 +401,9 @@ def _execute_v1_execution_groups_concurrently(
     if not schedule_execution_groups:
         return []
 
+    max_workers = min(len(schedule_execution_groups), _MAX_EXECUTION_GROUP_WORKERS)
     ordered_futures: list[Future[list[StepResult]]] = []
-    with ThreadPoolExecutor(max_workers=len(schedule_execution_groups)) as executor:
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
         for execution_group in schedule_execution_groups:
             ordered_futures.append(
                 executor.submit(

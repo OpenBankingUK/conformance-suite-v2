@@ -155,6 +155,7 @@ Group-aware v1 manifest execution introduces setup/execution phases and independ
 - `tests/test_manifest.py`: verify parser defaults (`phase="execution"`, `group="default"`), accepted values, and validation failures for invalid `phase`/`group` on both HTTP and `psu-authorization` steps.
 - `tests/test_execution_schedule.py`: verify schedule derivation from `Manifest + TestPlan` (selected setup steps, selected execution steps grouped by id, deselected steps excluded, deterministic manifest-order output).
 - `tests/test_executor.py`: verify setup runs before execution, same-group sequencing is preserved, independent groups continue after a failure in another group, and final result ordering remains manifest-deterministic under concurrency.
+- `tests/test_executor.py`: verify execution-group worker pool sizing remains bounded by the internal cap and still uses exact group count when below the cap.
 - `tests/test_plan_builder.py` and `tests/test_ui_views.py`: verify participant-facing previews expose `phase` and `group` metadata so scheduling is visible before launch.
 
 Recommended focused run while iterating on scheduling semantics:

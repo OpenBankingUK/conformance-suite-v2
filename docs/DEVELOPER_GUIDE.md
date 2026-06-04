@@ -273,6 +273,7 @@ At runtime, the engine guarantees:
 5. Independent execution groups may run concurrently within one active run.
 6. A failure in one execution group does not suppress another independent execution group.
 7. Result ordering remains deterministic by manifest order, even when logs interleave due to concurrency.
+8. Execution-group concurrency is bounded by an internal worker cap (currently 32) so participant-authored manifests cannot create unbounded thread counts.
 
 Selection remains plan-driven: deselected steps do not execute and do not produce `StepResult` entries.
 
