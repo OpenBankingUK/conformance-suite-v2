@@ -1618,6 +1618,94 @@ def test_parse_v1_step_mandatory_defaults_to_false() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_step_group_and_phase_default_values() -> None:
+    """When omitted, v1 HTTP steps default to group=default and phase=execution."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "default-group-phase",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First step",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    step = cast("ManifestStep", manifest.steps[0])
+
+    assert step.group == "default"
+    assert step.phase == "execution"
+
+
+@pytest.mark.unit
+def test_parse_v1_step_accepts_explicit_group_and_setup_phase() -> None:
+    """HTTP steps accept explicit scheduling metadata."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "explicit-group-phase",
+        "steps": [
+            {
+                "id": "bootstrap",
+                "name": "Bootstrap",
+                "phase": "setup",
+                "group": "bank_a",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    step = cast("ManifestStep", manifest.steps[0])
+
+    assert step.group == "bank_a"
+    assert step.phase == "setup"
+
+
+@pytest.mark.unit
+def test_parse_v1_step_rejects_invalid_phase() -> None:
+    """HTTP steps reject unsupported phase values."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-phase",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First",
+                "phase": "parallel",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.phase must be one of: setup, execution"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_step_rejects_invalid_group() -> None:
+    """HTTP steps reject group ids that violate the step-id character shape."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-group",
+        "steps": [
+            {
+                "id": "first",
+                "name": "First",
+                "group": "bad.group",
+                "request": {"method": "GET", "url": "https://example.com/a"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.group 'bad\.group' contains invalid characters"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("bad_value", [1, 0, "true", "false", None, []])
 def test_parse_v1_step_mandatory_rejects_non_boolean(bad_value: JsonValue) -> None:
     """``mandatory`` must be a JSON boolean; truthy coercion is rejected."""
@@ -1689,6 +1777,8 @@ def test_parse_v1_psu_step_applies_defaults() -> None:
     assert psu_step.timeout_seconds == 120
     assert psu_step.mandatory is False
     assert psu_step.optional is False
+    assert psu_step.group == "default"
+    assert psu_step.phase == "execution"
 
 
 @pytest.mark.unit
@@ -1702,6 +1792,8 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     step["requestObject"] = "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     step["timeoutSeconds"] = 60
     step["mandatory"] = True
+    step["group"] = "consent"
+    step["phase"] = "setup"
     manifest = parse_manifest(raw)
     psu_step = manifest.steps[0]
     assert isinstance(psu_step, PsuAuthorizationStep)
@@ -1711,6 +1803,28 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     assert psu_step.request_object == "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     assert psu_step.timeout_seconds == 60
     assert psu_step.mandatory is True
+    assert psu_step.group == "consent"
+    assert psu_step.phase == "setup"
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_invalid_phase() -> None:
+    """PSU steps reject unsupported phase values."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["phase"] = "parallel"
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.phase must be one of: setup, execution"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_invalid_group() -> None:
+    """PSU steps reject group ids that violate the step-id character shape."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["group"] = "bad.group"
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.group 'bad\.group' contains invalid characters"):
+        parse_manifest(raw)
 
 
 @pytest.mark.unit

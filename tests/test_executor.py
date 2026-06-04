@@ -1,6 +1,8 @@
 import json
 import secrets
+import threading
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any, cast
 
 import httpx
@@ -572,6 +574,341 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_runs_setup_before_execution_groups() -> None:
+    """Setup-phase steps run before execution groups even if they appear later in the manifest."""
+    requested_urls: list[str] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "setup ordering",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "setup-discovery",
+                "name": "Setup discovery",
+                "phase": "setup",
+                "request": {"method": "GET", "url": "https://example.com/setup"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert requested_urls == ["https://example.com/setup", "https://example.com/alpha", "https://example.com/beta"]
+    assert [step.name for step in result.steps] == ["setup-discovery", "alpha-step", "beta-step"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_runs_independent_execution_groups_concurrently() -> None:
+    """A blocked group can make progress once a sibling execution group runs."""
+    alpha_started = threading.Event()
+    beta_called = threading.Event()
+    alpha_unblocked: list[bool] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "group concurrency",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha":
+            alpha_started.set()
+            alpha_unblocked.append(beta_called.wait(timeout=2.0))
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/beta":
+            alpha_started.wait(timeout=2.0)
+            beta_called.set()
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert alpha_unblocked == [True]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_failure_in_one_group_does_not_suppress_another_group() -> None:
+    """Independent execution groups continue even when one group fails assertions."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "group continuation",
+        "steps": [
+            {
+                "id": "alpha-fail",
+                "name": "Alpha fail",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-pass",
+                "name": "Beta pass",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha":
+            return httpx.Response(500, json={"error": "boom"})
+        if str(request.url) == "https://example.com/beta":
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "failed"
+    outcome_by_name = {step.name: step.status for step in result.steps}
+    assert outcome_by_name == {"alpha-fail": "failed", "beta-pass": "passed"}
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_preserves_sequential_order_within_a_group() -> None:
+    """Steps inside one execution group still run sequentially."""
+    alpha_first_done = threading.Event()
+    alpha_second_observed_first: list[bool] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "intra-group ordering",
+        "steps": [
+            {
+                "id": "alpha-first",
+                "name": "Alpha first",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "alpha-second",
+                "name": "Alpha second",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha-1":
+            alpha_first_done.set()
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/alpha-2":
+            alpha_second_observed_first.append(alpha_first_done.is_set())
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/beta":
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert alpha_second_observed_first == [True]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_merges_concurrent_group_results_in_manifest_order() -> None:
+    """Execution-group concurrency still returns step results in manifest order."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "manifest-order merge",
+        "steps": [
+            {
+                "id": "alpha-1",
+                "name": "Alpha 1",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-1",
+                "name": "Beta 1",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "alpha-2",
+                "name": "Alpha 2",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-2",
+                "name": "Beta 2",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == ["alpha-1", "beta-1", "alpha-2", "beta-2"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_caps_execution_group_worker_count(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_max_workers: list[int] = []
+    real_executor = ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
+            captured_max_workers.append(max_workers)
+            self._delegate = real_executor(max_workers, *args, **kwargs)
+
+        def __enter__(self) -> Any:
+            return self._delegate.__enter__()
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
+            return self._delegate.__exit__(exc_type, exc, tb)
+
+    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
+
+    many_groups_steps: list[dict[str, JsonValue]] = []
+    for index in range(40):
+        many_groups_steps.append(
+            {
+                "id": f"group-{index}",
+                "name": f"Group {index}",
+                "group": f"group-{index}",
+                "request": {"method": "GET", "url": f"https://example.com/{index}"},
+                "assertions": cast("JsonValue", [{"type": "http_status", "expected": 200}]),
+            }
+        )
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "worker cap",
+        "steps": cast("JsonValue", many_groups_steps),
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert captured_max_workers == [32]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_uses_group_count_when_below_worker_cap(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured_max_workers: list[int] = []
+    real_executor = ThreadPoolExecutor
+
+    class RecordingExecutor:
+        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
+            captured_max_workers.append(max_workers)
+            self._delegate = real_executor(max_workers, *args, **kwargs)
+
+        def __enter__(self) -> Any:
+            return self._delegate.__enter__()
+
+        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
+            return self._delegate.__exit__(exc_type, exc, tb)
+
+    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "worker below cap",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "gamma-step",
+                "name": "Gamma step",
+                "group": "gamma",
+                "request": {"method": "GET", "url": "https://example.com/gamma"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert captured_max_workers == [3]
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
 
@@ -1003,6 +1340,55 @@ def test_run_manifest_v1_unresolvable_field_still_fails_not_skips() -> None:
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
     assert "Placeholder resolution failed" in result.steps[1].message
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_cross_group_placeholder_reference_fails_not_skips() -> None:
+    """Cross-group placeholder references fail resolution rather than skipping.
+
+    Execution groups run from isolated post-setup context snapshots. A step in
+    one execution group therefore cannot resolve `${steps...}` placeholders
+    from a sibling execution group, even when the referenced step appears
+    earlier in manifest order.
+    """
+    requested_urls: list[str] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "cross-group-placeholder",
+        "steps": [
+            {
+                "id": "alpha-source",
+                "name": "Alpha source",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-dependent",
+                "name": "Beta dependent",
+                "group": "beta",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.alpha-source.response.body.next_url}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"next_url": "https://example.com/follow-up"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert requested_urls == ["https://example.com/alpha"]
+    assert result.steps[0].status == "passed"
+    assert result.steps[1].status == "failed"
+    assert "Placeholder resolution failed" in result.steps[1].message
+    assert "not found in execution context" in result.steps[1].message
 
 
 @pytest.mark.unit

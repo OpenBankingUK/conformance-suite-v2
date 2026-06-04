@@ -39,13 +39,22 @@ def _reset_global_stores() -> None:
     auth_session_store.reset()
 
 
-def _http_step(step_id: str, *, mandatory: bool = False, optional: bool = False) -> dict[str, JsonValue]:
+def _http_step(
+    step_id: str,
+    *,
+    mandatory: bool = False,
+    optional: bool = False,
+    phase: str = "execution",
+    group: str = "default",
+) -> dict[str, JsonValue]:
     """Build a minimal v1 HTTP step for UI tests.
 
     Args:
         step_id: Stable manifest step id.
         mandatory: Whether the manifest marks the step as mandatory.
         optional: Whether the manifest marks the step as optional.
+        phase: Scheduling phase declared by the manifest step.
+        group: Execution group declared by the manifest step.
 
     Returns:
         JSON object representing a valid v1 HTTP manifest step.
@@ -60,6 +69,8 @@ def _http_step(step_id: str, *, mandatory: bool = False, optional: bool = False)
         step["mandatory"] = True
     if optional:
         step["optional"] = True
+    step["phase"] = phase
+    step["group"] = group
     return step
 
 
@@ -80,6 +91,8 @@ def _manual_psu_step(step_id: str) -> dict[str, JsonValue]:
         "authorizationEndpoint": "https://auth.example.com/authorize",
         "clientId": "client-123",
         "redirectUri": "https://conformance.example.com/callback",
+        "phase": "setup",
+        "group": "consent",
         "mandatory": True,
     }
 
@@ -231,7 +244,12 @@ class TestPlanBuilderUi:
 
     def test_preview_post_renders_step_selection_table(self) -> None:
         """POST /plan/preview/ renders selectable v1 manifest rows."""
-        manifest = _v1_manifest([_http_step("mandatory", mandatory=True), _http_step("optional", optional=True)])
+        manifest = _v1_manifest(
+            [
+                _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
+                _http_step("optional", optional=True, phase="execution", group="accounts"),
+            ]
+        )
 
         response = Client().post("/plan/preview/", data=_plan_form_data(manifest, selected_step_ids=["mandatory"]))
 
@@ -242,6 +260,12 @@ class TestPlanBuilderUi:
         assert "Step optional" in content
         assert "Mandatory" in content
         assert "Optional" in content
+        assert "Phase" in content
+        assert "Group" in content
+        assert "setup" in content
+        assert "execution" in content
+        assert "bootstrap" in content
+        assert "accounts" in content
         assert "hx-post" not in content
 
     def test_preview_post_resolves_config_only_suite(self) -> None:
