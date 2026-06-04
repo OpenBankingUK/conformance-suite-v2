@@ -360,7 +360,9 @@ def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None
     assert block["reason"] == "Mandatory steps were deselected from the plan"
     assert block["mandatoryDeselected"] == 1
     assert block["mandatoryDeselectedStepIds"] == ["m"]
-    assert str(block["reasons"][0]) == "Mandatory steps were deselected from the plan"
+    reasons = block["reasons"]
+    assert isinstance(reasons, list)
+    assert str(reasons[0]) == "Mandatory steps were deselected from the plan"
 
 
 @pytest.mark.unit

@@ -10,10 +10,8 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from conformance import approved_releases
-from conformance.approved_releases import (
-    ApprovedReleasePolicy,
-    ApprovedReleasePolicyError,
-)
+from conformance.approved_releases import ApprovedReleasePolicy as ApprovedReleasePolicy
+from conformance.approved_releases import ApprovedReleasePolicyError
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestError, load_manifest
 from conformance.results import CheckStatus
