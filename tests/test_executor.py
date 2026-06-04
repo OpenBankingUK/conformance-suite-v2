@@ -572,6 +572,51 @@ def test_run_manifest_v1_multi_step_happy_path() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_runs_setup_before_execution_groups() -> None:
+    """Setup-phase steps run before execution groups even if they appear later in the manifest."""
+    requested_urls: list[str] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "setup ordering",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "setup-discovery",
+                "name": "Setup discovery",
+                "phase": "setup",
+                "request": {"method": "GET", "url": "https://example.com/setup"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert requested_urls == ["https://example.com/setup", "https://example.com/alpha", "https://example.com/beta"]
+    assert [step.name for step in result.steps] == ["setup-discovery", "alpha-step", "beta-step"]
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
 

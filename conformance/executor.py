@@ -32,6 +32,7 @@ from conformance.context import (
     resolve_placeholders,
 )
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, new_run_id
+from conformance.execution_schedule import build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -44,6 +45,7 @@ from conformance.manifest import (
     ManifestStep,
     ManifestTest,
     PsuAuthorizationStep,
+    V1Step,
     validate_header_value,
 )
 from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
@@ -234,11 +236,14 @@ def _run_manifest_v1(
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
-    """Execute a v1 manifest with sequential steps and context carry-forward.
+    """Execute a v1 manifest with setup first and grouped execution after.
 
     Each step resolves ``${...}`` placeholders from earlier step responses,
     validates the resolved URL, fetches the endpoint, evaluates assertions,
-    and records the result into the execution context for later steps.
+    and records the result into the execution context for later steps. The
+    execution schedule is derived from manifest phase/group metadata plus the
+    selected step plan: selected setup steps run first, then execution steps
+    run in deterministic group order.
 
     Only steps whose ids appear in ``plan.selected_step_ids()`` are executed.
     Deselected steps do not run and produce no :class:`StepResult` (they
@@ -271,10 +276,9 @@ def _run_manifest_v1(
         Smoke-check result with one entry per executed (selected) step.
     """
     started_at = datetime.now(UTC)
+    schedule = build_execution_schedule(manifest, plan)
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
-
-    selected_ids = set(plan.selected_step_ids())
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
@@ -288,39 +292,26 @@ def _run_manifest_v1(
                 payload={"mandatory": entry.mandatory},
             )
 
-    for manifest_step in manifest.steps:
-        if manifest_step.id not in selected_ids:
-            # Deselected: do not run and do not produce a StepResult.
-            # Placeholder references from later steps to this id will
-            # surface as MissingPredecessorResponseError at resolve time
-            # — the executor's existing SKIPPED handling covers that case.
-            continue
-        if isinstance(manifest_step, PsuAuthorizationStep):
-            step_result, context = _execute_v1_psu_step(
-                manifest_step,
-                context=context,
-                client=client,
-                run_id=run_id,
-                auth_session_store=auth_session_store,
-                execution_logger=execution_logger,
-            )
-        else:
-            step_result, context = _execute_v1_step(
-                manifest_step,
-                context=context,
-                client=client,
-                execution_logger=execution_logger,
-                run_id=run_id,
-                auth_session_store=auth_session_store,
-            )
-        # Carry the manifest's mandatory flag onto the step result so the
-        # aggregate certificationEligibility block can reason about it
-        # without re-walking the manifest. Done here (rather than inside
-        # _execute_v1_step) so the executor's many StepResult creation
-        # sites stay focused on outcome semantics.
-        if manifest_step.mandatory:
-            step_result = replace(step_result, mandatory=True)
-        steps.append(step_result)
+    setup_steps, context = _execute_v1_step_sequence(
+        schedule.setup_steps,
+        context=context,
+        client=client,
+        execution_logger=execution_logger,
+        run_id=run_id,
+        auth_session_store=auth_session_store,
+    )
+    steps.extend(setup_steps)
+
+    for execution_group in schedule.execution_groups:
+        group_steps, context = _execute_v1_step_sequence(
+            execution_group.steps,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+        steps.extend(group_steps)
 
     return build_smoke_check_result(
         environment,
@@ -330,6 +321,90 @@ def _run_manifest_v1(
         suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
     )
+
+
+def _execute_v1_step_sequence(
+    manifest_steps: tuple[V1Step, ...],
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+) -> tuple[list[StepResult], ExecutionContext]:
+    """Execute an ordered sequence of selected v1 steps.
+
+    Args:
+        manifest_steps: Selected v1 steps to execute in manifest order.
+        context: Current execution context with earlier step responses.
+        client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink.
+        run_id: Run identifier propagated to PSU authorisation steps.
+        auth_session_store: Store used by PSU authorisation steps to
+            register and await callbacks.
+
+    Returns:
+        Ordered step results and the updated execution context after the
+        final step in the sequence.
+    """
+    steps: list[StepResult] = []
+    for manifest_step in manifest_steps:
+        step_result, context = _execute_v1_manifest_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+        steps.append(step_result)
+    return steps, context
+
+
+def _execute_v1_manifest_step(
+    manifest_step: V1Step,
+    *,
+    context: ExecutionContext,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+) -> tuple[StepResult, ExecutionContext]:
+    """Execute one selected v1 step and preserve mandatory metadata.
+
+    Args:
+        manifest_step: Parsed v1 step to execute.
+        context: Current execution context with earlier step responses.
+        client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink.
+        run_id: Run identifier propagated to PSU authorisation steps.
+        auth_session_store: Store used by PSU authorisation steps to
+            register and await callbacks.
+
+    Returns:
+        A tuple of the step result and the updated execution context.
+    """
+    if isinstance(manifest_step, PsuAuthorizationStep):
+        step_result, new_context = _execute_v1_psu_step(
+            manifest_step,
+            context=context,
+            client=client,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+            execution_logger=execution_logger,
+        )
+    else:
+        step_result, new_context = _execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+        )
+    if manifest_step.mandatory:
+        step_result = replace(step_result, mandatory=True)
+    return step_result, new_context
 
 
 def _execute_v1_psu_step(
