@@ -193,6 +193,58 @@ Generated reports carry the metadata consumed by the validator as top-level fiel
 
 The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy.
 
+## Config-Driven Suite Resolution
+
+Participant configuration can select a bundled manifest catalog entry through an optional `testSuite` object. Existing configs without `testSuite` remain valid model-bank smoke-check configs, and unknown config keys continue to be rejected.
+
+```json
+{
+  "environment": "ozone-model-bank",
+  "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+  "timeoutSeconds": 10,
+  "testSuite": {
+    "standard": "ob-read-write",
+    "specVersion": "v4.0",
+    "profile": "fapi1-advanced",
+    "suite": "discovery-jwks"
+  },
+  "tls": {
+    "certificatePathRoot": "./certs"
+  },
+  "resultOutputPath": "./out/test-results.json",
+  "executionLogPath": "./out/execution-log.ndjson"
+}
+```
+
+The first supported catalog keys are intentionally narrow:
+
+| `standard` | `specVersion` | `profile` | `suite` | Scope |
+| --- | --- | --- | --- | --- |
+| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. |
+
+These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
+
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The current `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up, which keeps version/suite selection in participant config while leaving runtime values in the single config file.
+
+Manifest access to config is deliberately allow-listed. The only supported config placeholders are `${config.discoveryUrl}` and `${config.environment}`, accepted in the same URL/header/body leaves as existing step placeholders. Parser validation accepts those config placeholders without weakening strict forward-reference checks for `${steps.<id>...}` placeholders. TLS paths, private-key material, future credential fields, request objects, and arbitrary nested config traversal are intentionally not exposed through placeholders.
+
+CLI precedence is:
+
+1. `--manifest manifest.json` executes the explicit manifest, even when config also contains `testSuite`.
+2. With no `--manifest`, `config.testSuite` resolves and executes the bundled catalog manifest.
+3. With neither `--manifest` nor `testSuite`, the legacy model-bank smoke check runs.
+
+`--deselect` is valid for cases 1 and 2 only, because those cases have a v1 test plan. It exits with code `2` when used against a plain smoke check or with an unknown step id.
+
+REST API precedence matches the CLI. `POST /api/runs/` uses an inline `manifest` when present, otherwise resolves `config.testSuite`, otherwise falls back to the smoke check. `deselectStepIds` is accepted for inline or suite-resolved manifests and rejected for smoke checks. Suite resolution and invalid deselection failures use the existing HTTP 400 convention; the single-active-run guard still returns 409 for run conflicts.
+
+The browser plan builder at `/plan/` supports two authoring modes. Paste config plus manifest JSON to preview an explicit manifest, or leave the manifest textarea blank and provide a config with `testSuite` to preview the resolved bundled suite. The preview shows the suite label/version metadata for config-resolved plans and launches through the same shared run lifecycle as the REST API. Browser posts remain Django-form mediated and CSRF-protected.
+
+Suite-resolved runs add safe suite metadata to participant-visible result JSON and the `run-started` execution-log payload: `standard`, `specVersion`, `profile`, `suite`, `catalogId`, and `manifestResource`. Smoke checks and explicit-manifest runs keep their existing shape unless suite metadata is known.
+
+This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks` entries are not full Open Banking Read/Write v3.1.11 or v4.0 certification suites; full Read/Write coverage should be added later as manifest-authoring work once the target Ozone v4 scope is confirmed.
+
 ## Structured Execution Log
 
 Every CLI and REST API run produces a structured **execution log** in [NDJSON](https://github.com/ndjson/ndjson-spec) format alongside the result file. One JSON object per line, streamable, tail-friendly, and partial-read safe — a truncated file is still parseable up to the last complete line.
@@ -240,7 +292,7 @@ python -m conformance.cli config.json \
     --deselect step-id-b
 ```
 
-`--deselect` is repeatable, requires `--manifest`, and exits with code `2` for either condition (no manifest, or an unknown id).
+`--deselect` is repeatable, requires either `--manifest` or a config-selected `testSuite`, and exits with code `2` for invalid combinations or an unknown id.
 
 **REST API:**
 
@@ -248,12 +300,12 @@ python -m conformance.cli config.json \
 POST /api/runs/
 {
   "config":   { ... },
-  "manifest": { "schemaVersion": "v1", ... },
+  "manifest": { "schemaVersion": "v1", ... },   // optional when config.testSuite selects a bundled suite
   "deselectStepIds": ["step-id-a", "step-id-b"]   // optional
 }
 ```
 
-`deselectStepIds` must be an array of strings, requires an inline `manifest`, and is rejected with HTTP 400 if any id is unknown.
+`deselectStepIds` must be an array of strings, requires either an inline `manifest` or config-selected `testSuite`, and is rejected with HTTP 400 if any id is unknown.
 
 **Browser plan builder UI:**
 
@@ -263,13 +315,13 @@ Run the local server and open `http://localhost:8000/plan/`:
 make dev
 ```
 
-The page accepts model-bank config JSON and a v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification.
+The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification.
 
 Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and browser-accessible links to masked JSON/NDJSON outputs. The loopback-guarded REST API still exposes the same masked result and log for automation. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
 
 Manual `psu-authorization` steps can be previewed in the browser plan builder but cannot be launched from the UI yet. CLI and REST API runs still support manual PSU flows; the browser launch path is deferred until there is a one-time raw authorization URL handoff that does not persist the unmasked URL in result JSON or execution logs.
 
-**Result file additions.** When a plan is supplied (CLI manifest mode and any REST run), the result JSON gains a top-level `plan` block:
+**Result file additions.** When a plan is supplied (CLI/API/UI explicit manifest mode and config-selected suite mode), the result JSON gains a top-level `plan` block:
 
 ```json
 "plan": {

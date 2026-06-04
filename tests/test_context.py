@@ -6,6 +6,7 @@ from conformance.context import (
     PlaceholderResolutionError,
     RequestRecord,
     ResponseRecord,
+    RuntimeConfig,
     StepRecord,
     record_step,
     resolve_placeholders,
@@ -33,6 +34,16 @@ def _discovery_context() -> ExecutionContext:
                 ),
             ),
         }
+    )
+
+
+def _runtime_config_context() -> ExecutionContext:
+    """Build a context carrying safe participant config values."""
+    return ExecutionContext(
+        config=RuntimeConfig(
+            discovery_url="https://config.example.com/.well-known/openid-configuration",
+            environment="sandbox",
+        )
     )
 
 
@@ -76,6 +87,15 @@ class TestRecordStep:
 
         assert "existing" in new_ctx.steps
         assert "new-step" in new_ctx.steps
+
+    def test_preserves_runtime_config(self) -> None:
+        ctx = _runtime_config_context()
+        request = RequestRecord(method="GET", url="https://example.com/api")
+
+        new_ctx = record_step(ctx, "step-1", request, None)
+
+        assert new_ctx.config == ctx.config
+        assert resolve_placeholders("${config.environment}", new_ctx) == "sandbox"
 
     def test_steps_isolated_from_caller_mutation(self) -> None:
         mutable_dict: dict[str, StepRecord] = {
@@ -187,6 +207,16 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${steps.s1.response.body.empty}", ctx)
         assert result == "null"
 
+    def test_resolves_config_discovery_url(self) -> None:
+        ctx = _runtime_config_context()
+        result = resolve_placeholders("${config.discoveryUrl}", ctx)
+        assert result == "https://config.example.com/.well-known/openid-configuration"
+
+    def test_resolves_config_environment(self) -> None:
+        ctx = _runtime_config_context()
+        result = resolve_placeholders("env=${config.environment}", ctx)
+        assert result == "env=sandbox"
+
 
 @pytest.mark.unit
 class TestResolvePlaceholdersErrors:
@@ -258,6 +288,16 @@ class TestResolvePlaceholdersErrors:
         ctx = _discovery_context()
         with pytest.raises(PlaceholderResolutionError, match="Cannot resolve request path"):
             resolve_placeholders("${steps.openid-discovery.request.body.x}", ctx)
+
+    def test_unknown_config_placeholder_is_rejected(self) -> None:
+        ctx = _runtime_config_context()
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
+            resolve_placeholders("${config.tls.clientPrivateKeyPath}", ctx)
+
+    def test_config_placeholder_requires_runtime_config(self) -> None:
+        ctx = ExecutionContext()
+        with pytest.raises(PlaceholderResolutionError, match="Runtime config is not available"):
+            resolve_placeholders("${config.discoveryUrl}", ctx)
 
 
 @pytest.mark.unit
@@ -337,6 +377,17 @@ class TestResolveInStructure:
         assert result == {
             "endpoint": "https://auth.example.com/token",
             "static": "literal",
+        }
+
+    def test_resolves_config_placeholder_in_nested_dict(self) -> None:
+        from conformance.context import resolve_in_structure
+
+        ctx = _runtime_config_context()
+        structure: JsonValue = {"target": "${config.discoveryUrl}", "environment": "${config.environment}"}
+        result = resolve_in_structure(structure, ctx)
+        assert result == {
+            "target": "https://config.example.com/.well-known/openid-configuration",
+            "environment": "sandbox",
         }
 
     def test_resolves_nested_list(self) -> None:

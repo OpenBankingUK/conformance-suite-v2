@@ -20,6 +20,43 @@ Alongside the result file the runner writes a structured **execution log** (NDJS
 
 The config is JSON-only for now. Certificate paths, when supplied, are resolved under `tls.certificatePathRoot`; do not commit real certificates, private keys, or inline secret material.
 
+## Config-selected suite runs
+
+Participant config can also select a bundled conformance-suite manifest instead of requiring callers to pass or paste manifest JSON manually. Add a `testSuite` object to the model-bank config:
+
+```json
+{
+	"environment": "ozone-model-bank",
+	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+	"timeoutSeconds": 10,
+	"testSuite": {
+		"standard": "ob-read-write",
+		"specVersion": "v4.0",
+		"profile": "fapi1-advanced",
+		"suite": "discovery-jwks"
+	},
+	"tls": {
+		"certificatePathRoot": "./certs"
+	},
+	"resultOutputPath": "./out/test-results.json",
+	"executionLogPath": "./out/execution-log.ndjson"
+}
+```
+
+The supported combinations are `ob-read-write` `v3.1.11` or `v4.0`, `fapi1-advanced`, and `discovery-jwks`. The bundled manifests use `${config.discoveryUrl}` for the OpenID discovery request and then follow the discovered JWKS URI with ordinary step placeholders. Only `${config.discoveryUrl}` and `${config.environment}` are exposed to manifests; TLS paths, certificates, future secrets, and arbitrary config traversal are not placeholder-addressable.
+
+Run a config-selected suite from the CLI by omitting `--manifest`:
+
+```bash
+uv run python main.py config/model-bank-suite-example.json
+```
+
+`--manifest` remains an explicit override for authoring and certification-validation workflows. `--deselect` works with either an explicit manifest or a config-selected `testSuite`, and remains invalid for plain model-bank smoke checks that have neither.
+
+The REST API follows the same precedence: an inline `manifest` in `POST /api/runs/` wins; otherwise `config.testSuite` resolves a bundled suite; otherwise the legacy smoke check runs. `deselectStepIds` is accepted with inline or config-resolved manifests only. In the browser plan builder at `/plan/`, leave the manifest textarea blank to preview and launch the suite selected by config, or paste a manifest to override the catalog for authoring/testing.
+
+Current bundled entries are smoke-level OpenID discovery and JWKS checks. They exercise the config-driven catalog, placeholder, plan, result, and UI rails, but they are not full Open Banking Read/Write v3.1.11 or v4.0 certification coverage.
+
 ## Certification report validation
 
 OBL reviewers can validate a submitted result JSON against the manifest used for the run and an approved-release policy:

@@ -12,6 +12,7 @@ from django import forms
 from conformance.json_types import JsonValue
 from conformance.manifest import Manifest, ManifestError, ManifestStep, PsuAuthorizationStep, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan, TestPlanEntry
 
 StepKind = Literal["http", "psu-authorization"]
@@ -56,7 +57,10 @@ class PlanPreview:
 
     Attributes:
         config: Validated model-bank configuration supplied through the form.
-        manifest: Validated v1 manifest supplied through the form.
+        manifest: Validated v1 manifest supplied through the form or resolved
+            from ``config.test_suite``.
+        suite_metadata: Display metadata for a config-resolved suite, or
+            ``None`` when the preview uses an explicit manifest.
         default_plan: Default plan derived from the manifest before form input.
         selected_plan: Plan after applying submitted selection or deselection input.
         rows: Step presenters in manifest order.
@@ -67,6 +71,7 @@ class PlanPreview:
 
     config: ModelBankConfig
     manifest: Manifest
+    suite_metadata: SuiteMetadata | None
     default_plan: TestPlan
     selected_plan: TestPlan
     rows: tuple[PlanStepRow, ...]
@@ -112,7 +117,8 @@ class PlanBuilderForm(forms.Form):
 
     Attributes:
         config_json: Textarea containing model-bank config JSON.
-        manifest_json: Textarea containing v1 conformance manifest JSON.
+        manifest_json: Optional textarea containing v1 conformance manifest
+            JSON. When blank, ``config.testSuite`` may resolve a bundled suite.
         selection_mode: Choice controlling whether selected or deselected ids drive the submitted plan.
         selected_step_ids: Step ids posted by checked step checkboxes.
         deselect_step_ids: Step ids posted as explicit deselections.
@@ -120,7 +126,7 @@ class PlanBuilderForm(forms.Form):
     """
 
     config_json: forms.CharField = forms.CharField(label="Config JSON", widget=forms.Textarea)
-    manifest_json: forms.CharField = forms.CharField(label="Manifest JSON", widget=forms.Textarea)
+    manifest_json: forms.CharField = forms.CharField(label="Manifest JSON", required=False, widget=forms.Textarea)
     selection_mode: forms.ChoiceField = forms.ChoiceField(
         choices=(("deselect", "Deselect submitted ids"), ("select", "Select submitted ids")),
         required=False,
@@ -149,11 +155,12 @@ class PlanBuilderForm(forms.Form):
         except ConfigError as error:
             raise forms.ValidationError(f"Config validation failed: {error}", code="invalid_config") from error
 
-    def clean_manifest_json(self) -> Manifest:
+    def clean_manifest_json(self) -> Manifest | None:
         """Validate the submitted v1 conformance manifest JSON.
 
         Returns:
-            Parsed v1 manifest.
+            Parsed v1 manifest, or ``None`` when the field is blank so the
+            form can attempt config-driven suite resolution.
 
         Raises:
             ValidationError: If the value is not JSON, fails manifest
@@ -162,6 +169,8 @@ class PlanBuilderForm(forms.Form):
         raw_value = self.cleaned_data["manifest_json"]
         if not isinstance(raw_value, str):
             raise forms.ValidationError("Manifest JSON must be text", code="invalid_manifest_json")
+        if raw_value.strip() == "":
+            return None
         raw_manifest = _load_json_object(raw_value, label="Manifest JSON")
         try:
             manifest = load_manifest_from_object(raw_manifest)
@@ -184,7 +193,27 @@ class PlanBuilderForm(forms.Form):
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
         config = cleaned_data.get("config_json")
         manifest = cleaned_data.get("manifest_json")
-        if not isinstance(config, ModelBankConfig) or not isinstance(manifest, Manifest):
+        if not isinstance(config, ModelBankConfig):
+            return cleaned_data
+
+        suite_metadata: SuiteMetadata | None = None
+        if manifest is None:
+            if config.test_suite is None:
+                self.add_error(
+                    "manifest_json",
+                    forms.ValidationError(
+                        "Manifest JSON is required unless config.testSuite selects a bundled suite.",
+                        code="missing_manifest_or_suite",
+                    ),
+                )
+                return cleaned_data
+            try:
+                resolved_suite = resolve_suite(config.test_suite)
+            except SuiteCatalogError as error:
+                raise forms.ValidationError(f"Suite resolution failed: {error}", code="invalid_suite") from error
+            manifest = resolved_suite.manifest
+            suite_metadata = resolved_suite.metadata
+        elif not isinstance(manifest, Manifest):
             return cleaned_data
 
         selected_step_ids = _cleaned_step_ids(cleaned_data.get("selected_step_ids"))
@@ -194,6 +223,7 @@ class PlanBuilderForm(forms.Form):
             self.preview = build_plan_preview(
                 config=config,
                 manifest=manifest,
+                suite_metadata=suite_metadata,
                 selected_step_ids=selected_step_ids,
                 deselect_step_ids=deselect_step_ids,
                 selection_mode=selection_mode,
@@ -207,6 +237,7 @@ def build_plan_preview(
     *,
     config: ModelBankConfig,
     manifest: Manifest,
+    suite_metadata: SuiteMetadata | None = None,
     selected_step_ids: list[str] | None = None,
     deselect_step_ids: list[str] | None = None,
     selection_mode: SelectionMode = "deselect",
@@ -216,6 +247,8 @@ def build_plan_preview(
     Args:
         config: Validated model-bank configuration to carry into launch.
         manifest: Validated v1 manifest to preview.
+        suite_metadata: Optional metadata describing the config-resolved suite
+            that supplied ``manifest``.
         selected_step_ids: Step ids checked in a selection-mode form post.
         deselect_step_ids: Step ids unchecked or explicitly deselected by a deselection-mode form post.
         selection_mode: Whether to derive the submitted plan from selected ids
@@ -240,6 +273,7 @@ def build_plan_preview(
     return PlanPreview(
         config=config,
         manifest=manifest,
+        suite_metadata=suite_metadata,
         default_plan=default_plan,
         selected_plan=selected_plan,
         rows=rows,

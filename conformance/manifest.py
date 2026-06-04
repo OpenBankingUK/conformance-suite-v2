@@ -493,7 +493,7 @@ because it cannot be transmitted without a UnicodeEncodeError at the
 transport layer.
 """
 
-_PLACEHOLDER_PATTERN = re.compile(
+_STEP_PLACEHOLDER_PATTERN = re.compile(
     r"\$\{steps\.(" + _STEP_ID_CHAR_CLASS + r")"
     r"\.(?:"
     r"request\.(?:method|url)"
@@ -506,6 +506,9 @@ _PLACEHOLDER_PATTERN = re.compile(
 Request direction accepts: ``method``, ``url`` (no sub-segments).
 Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
 """
+
+_CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environment)\}")
+"""Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 """Regex matching any ``${...}`` token for syntax validation."""
@@ -998,8 +1001,15 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
         raise ManifestError(f"{location} contains an unterminated placeholder (missing closing '}}')")
     for match in matched_tokens:
         token = match.group(0)
-        valid_match = _PLACEHOLDER_PATTERN.fullmatch(token)
+        if _CONFIG_PLACEHOLDER_PATTERN.fullmatch(token) is not None:
+            continue
+        valid_match = _STEP_PLACEHOLDER_PATTERN.fullmatch(token)
         if valid_match is None:
+            if token.startswith("${config."):
+                raise ManifestError(
+                    f"{location} contains unsupported config placeholder: {token} "
+                    "(allowed: ${config.discoveryUrl}, ${config.environment})"
+                )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)
         if referenced_id not in seen_ids:

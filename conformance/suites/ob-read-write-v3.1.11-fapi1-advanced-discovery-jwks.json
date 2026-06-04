@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "v1",
+  "name": "Open Banking Read/Write v3.1.11 FAPI 1 Advanced discovery/JWKS smoke suite",
+  "steps": [
+    {
+      "id": "openid-discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "${config.discoveryUrl}"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "jwks_uri",
+          "rule": "https_url"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "jwks-fetch",
+      "name": "JWKS endpoint",
+      "request": {
+        "method": "GET",
+        "url": "${steps.openid-discovery.response.body.jwks_uri}"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "array"
+        }
+      ],
+      "mandatory": true
+    }
+  ]
+}

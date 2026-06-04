@@ -10,6 +10,7 @@ from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
 from conformance.json_types import JsonObject, JsonValue
+from conformance.suite_catalog import SuiteMetadata
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
@@ -93,6 +94,9 @@ class SmokeCheckResult:
             ``mandatory`` in the manifest but deselected from the plan.
             Surfaced verbatim in ``certificationEligibility`` so OBL can
             see exactly which mandatory coverage the participant skipped.
+        suite_metadata: Optional catalog metadata for config-resolved suite
+            runs. Omitted for legacy smoke checks and explicit manifest runs
+            so their public result shape remains stable.
     """
 
     environment: str
@@ -102,6 +106,7 @@ class SmokeCheckResult:
     steps: tuple[StepResult, ...]
     plan_summary: Mapping[str, int] | None = None
     deselected_mandatory_step_ids: tuple[str, ...] = ()
+    suite_metadata: SuiteMetadata | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -129,6 +134,8 @@ class SmokeCheckResult:
             ),
             "steps": [step.to_json_object() for step in self.steps],
         }
+        if self.suite_metadata is not None:
+            body["suite"] = self.suite_metadata.to_json_object()
         if self.plan_summary is not None:
             body["plan"] = dict(self.plan_summary)
         return body
@@ -140,6 +147,7 @@ def build_smoke_check_result(
     *,
     started_at: datetime,
     plan: TestPlan | None = None,
+    suite_metadata: SuiteMetadata | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -152,6 +160,9 @@ def build_smoke_check_result(
             and its deselected-mandatory step ids feed into
             ``certificationEligibility``. Omit for non-manifest smoke checks
             and v0 manifest runs.
+        suite_metadata: Optional catalog metadata for a config-resolved suite
+            run. Omit for smoke checks and explicit manifest runs to preserve
+            their existing result shape.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -175,6 +186,7 @@ def build_smoke_check_result(
         steps=tuple(steps),
         plan_summary=plan_summary,
         deselected_mandatory_step_ids=deselected_mandatory,
+        suite_metadata=suite_metadata,
     )
 
 

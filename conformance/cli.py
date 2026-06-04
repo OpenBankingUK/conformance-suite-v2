@@ -10,6 +10,7 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
+from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
     PsuAuthorizationUrlConsoleLogger,
@@ -21,6 +22,7 @@ from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -49,7 +51,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             "Deselect a v1 manifest step from the default test plan. Repeatable. "
             "Deselected steps do not run and produce no step result. Deselecting "
             "a mandatory step flips certificationEligibility to ineligible. "
-            "Only valid alongside --manifest."
+            "Only valid with --manifest or a config-selected testSuite."
         ),
     )
     try:
@@ -57,16 +59,16 @@ def run(argv: Sequence[str] | None = None) -> int:
     except SystemExit as error:
         return error.code if isinstance(error.code, int) else 2
 
-    if args.deselect and args.manifest is None:
-        logger.error("--deselect requires --manifest")
-        return 2
-
     warn_if_developer_mode()
 
     try:
         config = load_model_bank_config(args.config)
     except ConfigError as error:
         logger.error("Config error: %s", error)
+        return 2
+
+    if args.deselect and args.manifest is None and config.test_suite is None:
+        logger.error("--deselect requires --manifest or config.testSuite")
         return 2
 
     run_id = new_run_id()
@@ -77,14 +79,28 @@ def run(argv: Sequence[str] | None = None) -> int:
         stderr=sys.stderr,
     )
 
-    if args.manifest is None:
+    suite_metadata: SuiteMetadata | None = None
+    if args.manifest is None and config.test_suite is None:
         result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
-        try:
-            manifest = load_manifest(args.manifest)
-        except ManifestError as error:
-            logger.error("Manifest error: %s", error)
-            return 2
+        if args.manifest is None:
+            suite_selection = config.test_suite
+            if suite_selection is None:
+                logger.error("No manifest or config.testSuite available to run")
+                return 2
+            try:
+                resolved_suite = resolve_suite(suite_selection)
+            except SuiteCatalogError as error:
+                logger.error("Suite catalog error: %s", error)
+                return 2
+            manifest = resolved_suite.manifest
+            suite_metadata = resolved_suite.metadata
+        else:
+            try:
+                manifest = load_manifest(args.manifest)
+            except ManifestError as error:
+                logger.error("Manifest error: %s", error)
+                return 2
 
         try:
             plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(args.deselect)
@@ -107,6 +123,11 @@ def run(argv: Sequence[str] | None = None) -> int:
                 plan=plan,
                 run_id=run_id,
                 auth_session_store=auth_session_store,
+                runtime_config=RuntimeConfig(
+                    discovery_url=config.discovery_url,
+                    environment=config.environment,
+                ),
+                suite_metadata=suite_metadata,
             )
         finally:
             http_client.close()
@@ -126,7 +147,12 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Unable to write execution log to %s: %s", config.execution_log_path, error)
         return 3
 
-    run_label = f"Manifest run ({args.manifest})" if args.manifest else "Model-bank smoke check"
+    if args.manifest is not None:
+        run_label = f"Manifest run ({args.manifest})"
+    elif suite_metadata is not None:
+        run_label = f"Suite run ({suite_metadata.label})"
+    else:
+        run_label = "Model-bank smoke check"
     if result.status == "passed":
         logger.info(
             "%s passed; wrote %s and %s",

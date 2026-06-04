@@ -114,6 +114,16 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
+SUITE_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -223,7 +233,7 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
-        assert mock_execute.call_args.args[2:] == (None, None)
+        assert mock_execute.call_args.args[2:] == (None, None, None)
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
@@ -234,6 +244,74 @@ class TestCreateRunEndpoint:
         data = response.json()
         assert data["status"] == "pending"
         assert "id" in data
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """A config ``testSuite`` supplies the manifest when inline manifest is absent.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": SUITE_CONFIG}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        data = response.json()
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
+        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch"]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
+        assert data["status"] == "pending"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """Inline API manifests remain explicit overrides for authoring workflows.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        inline_manifest = {
+            "schemaVersion": "v1",
+            "name": "inline override",
+            "steps": [
+                {
+                    "id": "inline-step",
+                    "name": "Inline step",
+                    "request": {"method": "GET", "url": "https://example.com/inline"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": SUITE_CONFIG, "manifest": inline_manifest}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert manifest.name == "inline override"
+        assert [step.id for step in manifest.steps] == ["inline-step"]
+        assert suite_metadata is None
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
@@ -263,6 +341,27 @@ class TestCreateRunEndpoint:
         assert response.status_code == 201
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_config_resolved_suite_and_valid_deselection(self, mock_execute: Mock) -> None:
+        """``deselectStepIds`` is valid against a config-resolved suite manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        body = {"config": SUITE_CONFIG, "deselectStepIds": ["jwks-fetch"]}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        plan = mock_execute.call_args.args[3]
+        assert plan.selected_step_ids() == ["openid-discovery"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
         """An unknown step id in ``deselectStepIds`` returns 400."""
         client = Client()
@@ -272,12 +371,27 @@ class TestCreateRunEndpoint:
         assert "Plan validation failed" in response.json()["error"]
 
     def test_rejects_deselect_without_manifest(self) -> None:
-        """``deselectStepIds`` requires ``manifest``; returns 400 otherwise."""
+        """``deselectStepIds`` requires an inline or config-resolved manifest."""
         client = Client()
         body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
         assert "deselectStepIds" in response.json()["error"]
+
+    def test_rejects_invalid_config_suite_resolution(self) -> None:
+        """Catalog resolution errors are surfaced as HTTP 400 before run start."""
+        from conformance.suite_catalog import SuiteCatalogError
+
+        client = Client()
+        with patch("conformance.api.views.resolve_suite", side_effect=SuiteCatalogError("missing resource")):
+            response = client.post(
+                "/api/runs/",
+                data=json.dumps({"config": SUITE_CONFIG}),
+                content_type="application/json",
+            )
+
+        assert response.status_code == 400
+        assert "Suite resolution failed" in response.json()["error"]
 
     def test_rejects_deselect_not_array_of_strings(self) -> None:
         """``deselectStepIds`` must be an array of strings; otherwise 400."""
@@ -1043,6 +1157,41 @@ class TestExecuteRunDiscardsAuthSessions:
         assert auth_session_store.for_run(record.run_id) == []
         assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
 
+    def test_suite_resolution_failure_surfaces_catalog_error(self) -> None:
+        """Catalog failures produce actionable run errors and still clean sessions."""
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.model_bank_config import ModelBankConfig, SuiteSelection
+        from conformance.suite_catalog import SuiteCatalogError
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+            test_suite=SuiteSelection(
+                standard="ob-read-write",
+                spec_version="v4.0",
+                profile="fapi1-advanced",
+                suite="discovery-jwks",
+            ),
+        )
+
+        with patch(
+            "conformance.api.run_lifecycle.resolve_suite",
+            side_effect=SuiteCatalogError("missing resource"),
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.status == "failed"
+        assert updated.error == "Suite resolution failed: missing resource"
+        assert auth_session_store.for_run(record.run_id) == []
+
     def test_other_runs_auth_sessions_are_not_discarded(self) -> None:
         """The hook is run-scoped: sibling runs' sessions are untouched."""
         from datetime import UTC, datetime
@@ -1078,3 +1227,54 @@ class TestExecuteRunDiscardsAuthSessions:
 
         assert auth_session_store.for_run(finishing.run_id) == []
         assert len(auth_session_store.for_run(other_run_id)) == 1
+
+    def test_manifest_run_passes_runtime_config_to_executor(self) -> None:
+        """Manifest runs receive safe config placeholder values from the lifecycle."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        import httpx
+
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.manifest import parse_manifest
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        manifest = parse_manifest(
+            {
+                "schemaVersion": "v1",
+                "name": "runtime config",
+                "steps": [
+                    {
+                        "id": "config-driven",
+                        "name": "Config-driven request",
+                        "request": {"method": "GET", "url": "${config.discoveryUrl}"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    }
+                ],
+            }
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with (
+            httpx.Client() as fake_client,
+            patch("conformance.api.run_lifecycle.build_json_http_client", return_value=fake_client),
+            patch("conformance.api.run_lifecycle.run_manifest", return_value=fake_result) as mock_run_manifest,
+        ):
+            _execute_run(record.run_id, config, manifest=manifest, plan=None)
+
+        assert mock_run_manifest.call_args is not None
+        runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]
+        assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
+        assert runtime_config.environment == "test-env"

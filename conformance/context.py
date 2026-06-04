@@ -88,17 +88,40 @@ class ResponseRecord:
 
 
 @dataclass(frozen=True)
+class RuntimeConfig:
+    """Safe participant config values exposed to manifest placeholders.
+
+    Only deliberately non-secret, non-path values belong here. This keeps
+    ``${config.*}`` placeholders narrow enough for bundled manifests without
+    allowing arbitrary traversal of participant configuration such as TLS
+    paths, private-key material, or future credential fields.
+
+    Attributes:
+        discovery_url: OpenID discovery URL from validated participant config.
+        environment: Human-readable environment label from validated
+            participant config.
+    """
+
+    discovery_url: str
+    environment: str
+
+
+@dataclass(frozen=True)
 class ExecutionContext:
     """Immutable execution context accumulating step records.
 
     Provides carry-forward data so later manifest steps can resolve
-    ``${steps.<id>...}`` placeholders against earlier responses.
+    ``${steps.<id>...}`` placeholders against earlier responses and a small
+    allow-list of ``${config.*}`` placeholders from safe runtime config.
 
     Attributes:
         steps: Immutable mapping from step id to captured request/response record.
+        config: Optional runtime config values allowed in ``${config.*}``
+            placeholders.
     """
 
     steps: Mapping[str, StepRecord] = field(default_factory=lambda: MappingProxyType({}))
+    config: RuntimeConfig | None = None
 
     def __post_init__(self) -> None:
         """Wrap ``steps`` in a read-only proxy to enforce immutability.
@@ -136,7 +159,7 @@ def record_step(
     """
     new_steps = dict(context.steps)
     new_steps[step_id] = StepRecord(request=request, response=response)
-    return ExecutionContext(steps=new_steps)
+    return ExecutionContext(steps=new_steps, config=context.config)
 
 
 _TRUNCATION_CONTEXT_CHARS = 20
@@ -214,6 +237,7 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     Supported dot-path grammar:
     ``steps.<id>.request.(method|url)``
     ``steps.<id>.response.(status_code|body.<dot.path>)``
+    ``config.(discoveryUrl|environment)``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -255,7 +279,8 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
 
     Args:
         dot_path: The expression inside ``${...}`` (e.g.
-            ``steps.openid-discovery.response.body.jwks_uri``).
+            ``steps.openid-discovery.response.body.jwks_uri`` or
+            ``config.discoveryUrl``).
         context: Execution context to resolve against.
 
     Returns:
@@ -266,6 +291,8 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
             missing, or the resolved value is not a primitive.
     """
     segments = dot_path.split(".")
+    if segments[0] == "config":
+        return _resolve_config_path(segments, context, dot_path)
     if len(segments) < 4 or segments[0] != "steps":
         raise PlaceholderResolutionError(f"Invalid placeholder path: ${{{dot_path}}}")
 
@@ -286,6 +313,39 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
         return _resolve_response_path(record.response, field_name, segments[4:], dot_path)
 
     raise PlaceholderResolutionError(f"Invalid placeholder path segment '{direction}': ${{{dot_path}}}")
+
+
+def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_path: str) -> str:
+    """Resolve an allow-listed runtime config placeholder.
+
+    Args:
+        segments: Dot-path segments split from the placeholder expression.
+        context: Execution context carrying optional runtime config values.
+        dot_path: Full original dot-path for error messages.
+
+    Returns:
+        The resolved config value.
+
+    Raises:
+        PlaceholderResolutionError: If no runtime config was supplied or the
+            requested config field is not on the allow-list.
+    """
+    if len(segments) != 2:
+        raise PlaceholderResolutionError(
+            f"Unsupported config placeholder: ${{{dot_path}}} "
+            "(allowed: ${config.discoveryUrl}, ${config.environment})"
+        )
+    if context.config is None:
+        raise PlaceholderResolutionError(f"Runtime config is not available for placeholder: ${{{dot_path}}}")
+
+    field_name = segments[1]
+    if field_name == "discoveryUrl":
+        return context.config.discovery_url
+    if field_name == "environment":
+        return context.config.environment
+    raise PlaceholderResolutionError(
+        f"Unsupported config placeholder: ${{{dot_path}}} (allowed: ${{config.discoveryUrl}}, ${{config.environment}})"
+    )
 
 
 def _resolve_request_path(request: RequestRecord, field_name: str, remaining: list[str], dot_path: str) -> str:

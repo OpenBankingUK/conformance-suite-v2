@@ -34,6 +34,7 @@ from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
@@ -127,10 +128,13 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     The request body must be a JSON object with a required ``config`` key
     (model-bank config object) and an optional ``manifest`` key (v0/v1
-    manifest object). When ``manifest`` is supplied, an optional
-    ``deselectStepIds`` array of step ids may be supplied; each id is
-    validated against the manifest at request time and any unknown id
-    returns HTTP 400. ``deselectStepIds`` without ``manifest`` is rejected.
+    manifest object). When ``manifest`` is omitted and ``config.testSuite``
+    is present, the selected bundled suite manifest is resolved instead;
+    otherwise the request runs the legacy smoke check. An optional
+    ``deselectStepIds`` array of step ids may be supplied for inline or
+    config-resolved manifests; each id is validated against the manifest at
+    request time and any unknown id returns HTTP 400. ``deselectStepIds``
+    without either manifest source is rejected.
     The run executes asynchronously in a background thread; the response
     returns immediately with the run ID and status.
 
@@ -169,17 +173,13 @@ def create_run(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
 
     raw_deselect = body.get("deselectStepIds")
-    if raw_deselect is not None:
-        if raw_manifest is None:
-            return JsonResponse(
-                {"error": '"deselectStepIds" is only valid alongside an inline "manifest"'},
-                status=400,
-            )
-        if not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect):
-            return JsonResponse(
-                {"error": '"deselectStepIds" must be an array of strings'},
-                status=400,
-            )
+    if raw_deselect is not None and (
+        not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect)
+    ):
+        return JsonResponse(
+            {"error": '"deselectStepIds" must be an array of strings'},
+            status=400,
+        )
 
     # Validate config eagerly so the caller gets immediate feedback.
     # base_dir anchors relative TLS certificate paths in the request body to
@@ -193,12 +193,26 @@ def create_run(request: HttpRequest) -> JsonResponse:
     # Validate manifest eagerly if provided.
     manifest = None
     plan: TestPlan | None = None
+    suite_metadata: SuiteMetadata | None = None
     if raw_manifest is not None:
         try:
             manifest = load_manifest_from_object(raw_manifest)
         except ManifestError as error:
             return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
+    elif config.test_suite is not None:
+        try:
+            resolved_suite = resolve_suite(config.test_suite)
+        except SuiteCatalogError as error:
+            return JsonResponse({"error": f"Suite resolution failed: {error}"}, status=400)
+        manifest = resolved_suite.manifest
+        suite_metadata = resolved_suite.metadata
+    elif raw_deselect is not None:
+        return JsonResponse(
+            {"error": '"deselectStepIds" is only valid with an inline "manifest" or config.testSuite'},
+            status=400,
+        )
 
+    if manifest is not None:
         # Build the default plan, then narrow via deselection. ValueError
         # from with_deselection means the caller named an unknown step —
         # surface as 400 so the participant can correct the request rather
@@ -209,7 +223,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
             return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
 
     try:
-        response_body = start_run(config=config, manifest=manifest, plan=plan)
+        response_body = start_run(config=config, manifest=manifest, plan=plan, suite_metadata=suite_metadata)
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},

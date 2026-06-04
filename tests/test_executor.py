@@ -7,7 +7,7 @@ import httpx
 import pytest
 
 from conformance.api.auth_session_store import AuthSessionStore
-from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, record_step
+from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonValue
@@ -534,6 +534,105 @@ def test_run_manifest_v1_substitution_resolves_across_steps() -> None:
 
     assert result.status == "passed"
     assert result.steps[1].url == "https://modelbank.example.com/certs"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_resolves_config_placeholders_in_request_leaves() -> None:
+    """Config placeholders resolve in URL, headers, and JSON body leaves."""
+    observed_request: httpx.Request | None = None
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "config placeholders",
+        "steps": [
+            {
+                "id": "config-driven",
+                "name": "Config-driven request",
+                "request": {
+                    "method": "POST",
+                    "url": "${config.discoveryUrl}",
+                    "headers": {"X-Environment": "${config.environment}"},
+                    "body": {
+                        "encoding": "json",
+                        "value": {
+                            "discovery": "${config.discoveryUrl}",
+                            "environment": "${config.environment}",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outgoing request and return a passing response.
+
+        Args:
+            request: HTTP request emitted by the manifest executor.
+
+        Returns:
+            A JSON response satisfying the manifest assertion.
+        """
+        nonlocal observed_request
+        observed_request = request
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    runtime_config = RuntimeConfig(
+        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
+        environment="sandbox",
+    )
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client, runtime_config=runtime_config)
+
+    assert result.status == "passed"
+    assert observed_request is not None
+    assert str(observed_request.url) == "https://modelbank.example.com/.well-known/openid-configuration"
+    assert observed_request.headers["X-Environment"] == "sandbox"
+    assert json.loads(observed_request.content) == {
+        "discovery": "https://modelbank.example.com/.well-known/openid-configuration",
+        "environment": "sandbox",
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_valid_config_placeholder_without_runtime_config_fails_before_request() -> None:
+    """A valid config placeholder fails cleanly when no runtime config is supplied."""
+    requested = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "missing runtime config",
+        "steps": [
+            {
+                "id": "config-driven",
+                "name": "Config-driven request",
+                "request": {"method": "GET", "url": "${config.discoveryUrl}"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Record that an unexpected HTTP request was attempted.
+
+        Args:
+            request: HTTP request emitted by the manifest executor.
+
+        Returns:
+            A placeholder response; the test asserts this path is unused.
+        """
+        nonlocal requested
+        requested = True
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert requested is False
+    assert result.status == "failed"
+    assert result.steps[0].status == "failed"
+    assert "Runtime config is not available" in result.steps[0].message
 
 
 @pytest.mark.unit
@@ -1800,6 +1899,59 @@ def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
     assert "assertion-evaluated" in types
     assert types.count("step-started") == 2
     assert types.count("step-completed") == 2
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
+    """Config-resolved suite metadata is emitted in run-started and results."""
+    from conformance.suite_catalog import SuiteMetadata
+
+    metadata = SuiteMetadata(
+        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="discovery-jwks",
+        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        description="Smoke-level discovery and JWKS checks.",
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "suite metadata",
+            "steps": [
+                {
+                    "id": "discovery",
+                    "name": "Discovery",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://modelbank.example.com/discovery"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=metadata,
+        )
+
+    expected_suite = {
+        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
+        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "discovery-jwks",
+    }
+    assert execution_logger.events()[0].payload["suite"] == expected_suite
+    assert result.to_json_object()["suite"] == expected_suite
 
 
 @pytest.mark.unit
