@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Callable
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
 
@@ -32,7 +33,7 @@ from conformance.context import (
     resolve_placeholders,
 )
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, new_run_id
-from conformance.execution_schedule import build_execution_schedule
+from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
@@ -302,16 +303,16 @@ def _run_manifest_v1(
     )
     steps.extend(setup_steps)
 
-    for execution_group in schedule.execution_groups:
-        group_steps, context = _execute_v1_step_sequence(
-            execution_group.steps,
-            context=context,
-            client=client,
-            execution_logger=execution_logger,
-            run_id=run_id,
-            auth_session_store=auth_session_store,
-        )
-        steps.extend(group_steps)
+    execution_steps = _execute_v1_execution_groups_concurrently(
+        schedule_execution_groups=schedule.execution_groups,
+        setup_context=context,
+        manifest=manifest,
+        client=client,
+        execution_logger=execution_logger,
+        run_id=run_id,
+        auth_session_store=auth_session_store,
+    )
+    steps.extend(execution_steps)
 
     return build_smoke_check_result(
         environment,
@@ -359,6 +360,93 @@ def _execute_v1_step_sequence(
         )
         steps.append(step_result)
     return steps, context
+
+
+def _execute_v1_execution_groups_concurrently(
+    *,
+    schedule_execution_groups: tuple[ExecutionGroup, ...],
+    setup_context: ExecutionContext,
+    manifest: Manifest,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+) -> list[StepResult]:
+    """Execute execution-phase groups concurrently and merge deterministically.
+
+    Each group starts from the same post-setup execution context and runs its
+    own steps sequentially. Groups do not share mutable context; this keeps
+    independent groups isolated while still allowing true overlap.
+
+    Args:
+        schedule_execution_groups: Ordered execution groups from the schedule.
+        setup_context: Context after all selected setup steps completed.
+        manifest: Parsed v1 manifest used to recover manifest-order indices.
+        client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink.
+        run_id: Run identifier propagated to PSU authorisation steps.
+        auth_session_store: Store used by PSU authorisation steps.
+
+    Returns:
+        Executed step results sorted by original manifest order.
+    """
+    if not schedule_execution_groups:
+        return []
+
+    ordered_futures: list[Future[list[StepResult]]] = []
+    with ThreadPoolExecutor(max_workers=len(schedule_execution_groups)) as executor:
+        for execution_group in schedule_execution_groups:
+            ordered_futures.append(
+                executor.submit(
+                    _execute_v1_group,
+                    execution_group.steps,
+                    setup_context,
+                    client,
+                    execution_logger,
+                    run_id,
+                    auth_session_store,
+                )
+            )
+
+    completed_steps: list[StepResult] = []
+    for future in ordered_futures:
+        completed_steps.extend(future.result())
+
+    manifest_order = {step.id: index for index, step in enumerate(manifest.steps)}
+    completed_steps.sort(key=lambda step: manifest_order.get(step.name, len(manifest_order)))
+    return completed_steps
+
+
+def _execute_v1_group(
+    manifest_steps: tuple[V1Step, ...],
+    setup_context: ExecutionContext,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger,
+    run_id: str,
+    auth_session_store: AuthSessionStore,
+) -> list[StepResult]:
+    """Run one execution group sequentially from the shared setup context.
+
+    Args:
+        manifest_steps: Selected steps in one execution group.
+        setup_context: Post-setup context snapshot shared by all groups.
+        client: Preconfigured synchronous HTTP client.
+        execution_logger: Structured execution-log sink.
+        run_id: Run identifier propagated to PSU authorisation steps.
+        auth_session_store: Store used by PSU authorisation steps.
+
+    Returns:
+        Step results for this group in group-local order.
+    """
+    group_steps, _ = _execute_v1_step_sequence(
+        manifest_steps,
+        context=setup_context,
+        client=client,
+        execution_logger=execution_logger,
+        run_id=run_id,
+        auth_session_store=auth_session_store,
+    )
+    return group_steps
 
 
 def _execute_v1_manifest_step(

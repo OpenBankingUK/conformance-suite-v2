@@ -1,5 +1,6 @@
 import json
 import secrets
+import threading
 from collections.abc import Callable
 from typing import Any, cast
 
@@ -614,6 +615,193 @@ def test_run_manifest_v1_runs_setup_before_execution_groups() -> None:
     assert result.status == "passed"
     assert requested_urls == ["https://example.com/setup", "https://example.com/alpha", "https://example.com/beta"]
     assert [step.name for step in result.steps] == ["setup-discovery", "alpha-step", "beta-step"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_runs_independent_execution_groups_concurrently() -> None:
+    """A blocked group can make progress once a sibling execution group runs."""
+    alpha_started = threading.Event()
+    beta_called = threading.Event()
+    alpha_unblocked: list[bool] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "group concurrency",
+        "steps": [
+            {
+                "id": "alpha-step",
+                "name": "Alpha step",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha":
+            alpha_started.set()
+            alpha_unblocked.append(beta_called.wait(timeout=2.0))
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/beta":
+            alpha_started.wait(timeout=2.0)
+            beta_called.set()
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert alpha_unblocked == [True]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_failure_in_one_group_does_not_suppress_another_group() -> None:
+    """Independent execution groups continue even when one group fails assertions."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "group continuation",
+        "steps": [
+            {
+                "id": "alpha-fail",
+                "name": "Alpha fail",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-pass",
+                "name": "Beta pass",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha":
+            return httpx.Response(500, json={"error": "boom"})
+        if str(request.url) == "https://example.com/beta":
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "failed"
+    outcome_by_name = {step.name: step.status for step in result.steps}
+    assert outcome_by_name == {"alpha-fail": "failed", "beta-pass": "passed"}
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_preserves_sequential_order_within_a_group() -> None:
+    """Steps inside one execution group still run sequentially."""
+    alpha_first_done = threading.Event()
+    alpha_second_observed_first: list[bool] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "intra-group ordering",
+        "steps": [
+            {
+                "id": "alpha-first",
+                "name": "Alpha first",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "alpha-second",
+                "name": "Alpha second",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-step",
+                "name": "Beta step",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if str(request.url) == "https://example.com/alpha-1":
+            alpha_first_done.set()
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/alpha-2":
+            alpha_second_observed_first.append(alpha_first_done.is_set())
+            return httpx.Response(200, json={})
+        if str(request.url) == "https://example.com/beta":
+            return httpx.Response(200, json={})
+        return httpx.Response(404, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert alpha_second_observed_first == [True]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_merges_concurrent_group_results_in_manifest_order() -> None:
+    """Execution-group concurrency still returns step results in manifest order."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "manifest-order merge",
+        "steps": [
+            {
+                "id": "alpha-1",
+                "name": "Alpha 1",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-1",
+                "name": "Beta 1",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta-1"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "alpha-2",
+                "name": "Alpha 2",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-2",
+                "name": "Beta 2",
+                "group": "beta",
+                "request": {"method": "GET", "url": "https://example.com/beta-2"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="env", client=client)
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == ["alpha-1", "beta-1", "alpha-2", "beta-2"]
 
 
 @pytest.mark.unit
