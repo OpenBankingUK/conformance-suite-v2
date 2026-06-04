@@ -22,6 +22,9 @@ class ManifestError(ValueError):
 ManifestSchemaVersion = Literal["v0", "v1"]
 """Manifest schema versions accepted by the parser."""
 
+StepPhase = Literal["setup", "execution"]
+"""Scheduling phase accepted by v1 steps."""
+
 RequestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 """HTTP methods supported by manifest-driven smoke-check requests."""
 
@@ -208,6 +211,11 @@ class ManifestStep:
             participants opt into running it deliberately. Mutually
             exclusive with ``mandatory`` (enforced at parse time so the
             plan precedence rule stays unambiguous).
+        group: Execution group identifier. Defaults to ``"default"``.
+            Steps in different groups may run independently once setup
+            has completed.
+        phase: Scheduling phase for this step. Defaults to
+            ``"execution"``. Setup steps run before grouped execution.
     """
 
     id: str
@@ -217,6 +225,8 @@ class ManifestStep:
     warning: str | None = None
     mandatory: bool = False
     optional: bool = False
+    group: str = "default"
+    phase: StepPhase = "execution"
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -341,6 +351,11 @@ class PsuAuthorizationStep:
         optional: Whether the step is opt-in for the default test plan.
             Same semantics as :class:`ManifestStep`. Mutually exclusive
             with ``mandatory`` (enforced at parse time).
+        group: Execution group identifier. Defaults to ``"default"``.
+            PSU steps in the same group retain sequential ordering.
+        phase: Scheduling phase for this step. Defaults to
+            ``"execution"``. Setup-phase PSU steps execute before grouped
+            execution starts.
     """
 
     id: str
@@ -356,6 +371,8 @@ class PsuAuthorizationStep:
     timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
     mandatory: bool = False
     optional: bool = False
+    group: str = "default"
+    phase: StepPhase = "execution"
 
 
 type V1Step = ManifestStep | PsuAuthorizationStep
@@ -513,6 +530,12 @@ _CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environme
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 """Regex matching any ``${...}`` token for syntax validation."""
 
+_DEFAULT_STEP_GROUP = "default"
+"""Default execution group assigned when a v1 step omits ``group``."""
+
+_DEFAULT_STEP_PHASE: StepPhase = "execution"
+"""Default scheduling phase assigned when a v1 step omits ``phase``."""
+
 
 def validate_header_value(value: str, *, location: str) -> None:
     """Validate an HTTP header field value for transport safety.
@@ -634,7 +657,18 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
     location = f"steps[{index}]"
     _reject_unknown_keys(
         raw_step,
-        allowed_keys={"kind", "id", "name", "request", "assertions", "warning", "mandatory", "optional"},
+        allowed_keys={
+            "kind",
+            "id",
+            "name",
+            "request",
+            "assertions",
+            "warning",
+            "mandatory",
+            "optional",
+            "group",
+            "phase",
+        },
         location=location,
     )
 
@@ -653,6 +687,8 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
     warning = _parse_optional_warning(raw_step, location=location)
     mandatory = _parse_optional_mandatory(raw_step, location=location)
     optional = _parse_optional_optional(raw_step, location=location)
+    group = _parse_optional_group(raw_step, location=location)
+    phase = _parse_optional_phase(raw_step, location=location)
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
 
@@ -667,6 +703,8 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         warning=warning,
         mandatory=mandatory,
         optional=optional,
+        group=group,
+        phase=phase,
     )
 
 
@@ -685,6 +723,8 @@ _PSU_AUTH_ALLOWED_KEYS: set[str] = {
     "timeoutSeconds",
     "mandatory",
     "optional",
+    "group",
+    "phase",
 }
 """Permitted top-level keys on a ``psu-authorization`` v1 step.
 
@@ -773,6 +813,8 @@ def _parse_v1_psu_authorization_step(
 
     mandatory = _parse_optional_mandatory(raw_step, location=location)
     optional = _parse_optional_optional(raw_step, location=location)
+    group = _parse_optional_group(raw_step, location=location)
+    phase = _parse_optional_phase(raw_step, location=location)
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
 
@@ -790,6 +832,8 @@ def _parse_v1_psu_authorization_step(
         timeout_seconds=timeout_seconds,
         mandatory=mandatory,
         optional=optional,
+        group=group,
+        phase=phase,
     )
 
 
@@ -1565,6 +1609,52 @@ def _parse_optional_optional(raw_step: dict[str, JsonValue], *, location: str) -
     return value
 
 
+def _parse_optional_group(raw_step: dict[str, JsonValue], *, location: str) -> str:
+    """Extract and validate the optional execution ``group`` for a v1 step.
+
+    Args:
+        raw_step: Raw JSON object for the step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated group id. Defaults to ``"default"`` when absent.
+
+    Raises:
+        ManifestError: If ``group`` is present but not a valid step-id shaped
+            identifier.
+    """
+    if "group" not in raw_step:
+        return _DEFAULT_STEP_GROUP
+    group = _required_string(raw_step, "group", location=location)
+    _validate_group_id(group, location=location)
+    return group
+
+
+def _parse_optional_phase(raw_step: dict[str, JsonValue], *, location: str) -> StepPhase:
+    """Extract and validate the optional scheduling ``phase`` for a v1 step.
+
+    Args:
+        raw_step: Raw JSON object for the step.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        ``"setup"`` or ``"execution"``. Defaults to ``"execution"`` when
+        absent.
+
+    Raises:
+        ManifestError: If ``phase`` is present but not one of the supported
+            literal values.
+    """
+    if "phase" not in raw_step:
+        return _DEFAULT_STEP_PHASE
+    phase = _required_string(raw_step, "phase", location=location)
+    if phase == "setup":
+        return "setup"
+    if phase == "execution":
+        return "execution"
+    raise ManifestError(f"{location}.phase must be one of: setup, execution (got: {phase!r})")
+
+
 def _required_https_url(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
     """Extract and validate a hardened HTTPS URL from a JSON object.
 
@@ -1657,6 +1747,23 @@ def _validate_step_id(step_id: str, *, location: str) -> None:
     if not _STEP_ID_PATTERN.match(step_id):
         raise ManifestError(
             f"{location}.id '{step_id}' contains invalid characters (must match [A-Za-z0-9][A-Za-z0-9_-]*)"
+        )
+
+
+def _validate_group_id(group: str, *, location: str) -> None:
+    """Validate that an execution group id uses the step-id character set.
+
+    Args:
+        group: Candidate execution group identifier.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        ManifestError: If the group id contains invalid characters.
+    """
+    if not _STEP_ID_PATTERN.match(group):
+        raise ManifestError(
+            f"{location}.group '{group}' contains invalid characters "
+            "(must match [A-Za-z0-9][A-Za-z0-9_-]*)"
         )
 
 
