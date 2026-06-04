@@ -233,6 +233,7 @@ class TestPlanBuilderUi:
         assert response["Location"] == "/runs/run-123/"
         assert mock_start_run.call_count == 1
         plan = mock_start_run.call_args.kwargs["plan"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         assert plan.selected_step_ids() == ["mandatory"]
 
     @patch("conformance.api.ui_views.start_run")
@@ -255,6 +256,7 @@ class TestPlanBuilderUi:
         manifest = mock_start_run.call_args.kwargs["manifest"]
         plan = mock_start_run.call_args.kwargs["plan"]
         suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
         assert plan.selected_step_ids() == ["openid-discovery"]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"

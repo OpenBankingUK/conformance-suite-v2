@@ -105,6 +105,7 @@ def start_run(
     manifest: Manifest | None,
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
+    browser_psu_prompts: bool = False,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -118,6 +119,8 @@ def start_run(
             suite manifest's default plan.
         suite_metadata: Optional catalog metadata when ``manifest`` came from
             config-driven suite resolution.
+        browser_psu_prompts: Whether to mirror raw manual PSU authorisation
+            URLs into transient in-memory run state for browser-launched runs.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -131,6 +134,7 @@ def start_run(
     thread = threading.Thread(
         target=_execute_run,
         args=(record.run_id, config, manifest, plan, suite_metadata),
+        kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
     initial_status = record.to_status_json()
@@ -144,6 +148,8 @@ def _execute_run(
     manifest: Manifest | None,
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
+    *,
+    browser_psu_prompts: bool = False,
 ) -> None:
     """Execute a conformance run in a background thread.
 
@@ -160,6 +166,9 @@ def _execute_run(
             suite manifest's default plan.
         suite_metadata: Optional catalog metadata when ``manifest`` came from
             config-driven suite resolution.
+        browser_psu_prompts: Whether to wrap the execution logger so raw manual
+            PSU authorisation URLs are exposed only as transient browser
+            participant actions.
     """
     run_store.mark_running(run_id)
     try:
@@ -167,7 +176,10 @@ def _execute_run(
         # ``get_run`` returns a shallow copy whose ``execution_logger``
         # reference points at the same live buffer the API exposes; either
         # accessing the live record or the copy yields the same logger.
-        logger_sink = (run_record.execution_logger if run_record is not None else None) or NullExecutionLogger()
+        run_logger = run_record.execution_logger if run_record is not None else None
+        logger_sink: ExecutionLogger = run_logger or NullExecutionLogger()
+        if browser_psu_prompts:
+            logger_sink = BrowserParticipantActionLogger(logger_sink, run_id=run_id, store=run_store)
         effective_manifest = manifest
         effective_plan = plan
         effective_suite_metadata = suite_metadata

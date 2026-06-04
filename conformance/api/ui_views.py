@@ -76,6 +76,7 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
             manifest=preview.manifest,
             plan=preview.selected_plan,
             suite_metadata=preview.suite_metadata,
+            browser_psu_prompts=True,
         )
     except RunConflictError as error:
         return render(

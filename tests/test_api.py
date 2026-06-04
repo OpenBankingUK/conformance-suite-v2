@@ -433,6 +433,7 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
         assert mock_execute.call_args.args[2:] == (None, None, None)
+        assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
@@ -1448,6 +1449,63 @@ class TestExecuteRunDiscardsAuthSessions:
 
         assert auth_session_store.for_run(finishing.run_id) == []
         assert len(auth_session_store.for_run(other_run_id)) == 1
+
+    def test_browser_psu_prompt_flag_wraps_execution_logger(self) -> None:
+        """Browser-launched runs mirror raw PSU URLs into transient run state."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.run_lifecycle import BrowserParticipantActionLogger, _execute_run
+        from conformance.execution_log import ExecutionLogger
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        raw_url = "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-state"
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+
+        def emit_browser_action(
+            config: ModelBankConfig,
+            *,
+            execution_logger: ExecutionLogger,
+        ) -> SmokeCheckResult:
+            """Assert the lifecycle provided the browser logger and emit a PSU URL.
+
+            Args:
+                config: Runtime model-bank configuration passed to the smoke check.
+                execution_logger: Logger supplied by the lifecycle.
+
+            Returns:
+                The fake successful smoke-check result.
+            """
+            assert config.environment == "test-env"
+            assert isinstance(execution_logger, BrowserParticipantActionLogger)
+            execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": raw_url})
+            return fake_result
+
+        with patch(
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            side_effect=emit_browser_action,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None, browser_psu_prompts=True)
+
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.status == "completed"
+        log_bytes = run_store.get_run_log_bytes(record.run_id)
+        assert log_bytes is not None
+        assert raw_url.encode("utf-8") not in log_bytes
 
     def test_manifest_run_passes_runtime_config_to_executor(self) -> None:
         """Manifest runs receive safe config placeholder values from the lifecycle."""
