@@ -262,16 +262,19 @@ class TestPlanBuilderUi:
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
 
     @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_blocks_manual_psu_manifest_without_starting_run(self, mock_start_run: Mock) -> None:
-        """Manual PSU manifests are previewable but not launched by this UI slice."""
+    def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:
+        """Manual PSU manifests can be launched with browser PSU prompts enabled."""
+        mock_start_run.return_value = {"id": "run-psu", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
         manifest = _v1_manifest([_manual_psu_step("psu"), _http_step("token")])
 
         response = Client().post("/plan/launch/", data=_plan_form_data(manifest, selected_step_ids=["psu", "token"]))
 
-        assert response.status_code == 400
-        content = response.content.decode("utf-8")
-        assert "cannot be launched from the browser UI yet" in content
-        mock_start_run.assert_not_called()
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-psu/"
+        assert mock_start_run.call_count == 1
+        plan = mock_start_run.call_args.kwargs["plan"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert plan.selected_step_ids() == ["psu", "token"]
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_renders_conflict_when_run_is_active(self, mock_start_run: Mock) -> None:

@@ -428,8 +428,4 @@ def _launch_blockers(manifest: Manifest) -> tuple[str, ...]:
     Returns:
         Human-readable launch blockers. Empty when browser launch is supported.
     """
-    blockers: list[str] = []
-    for step in manifest.steps:
-        if isinstance(step, PsuAuthorizationStep) and step.mode == "manual":
-            blockers.append(f"Manual PSU authorisation step '{step.id}' cannot be launched from the browser UI yet.")
-    return tuple(blockers)
+    return ()
