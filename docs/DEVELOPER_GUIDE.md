@@ -193,6 +193,8 @@ Generated reports carry the metadata consumed by the validator as top-level fiel
 
 The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy.
 
+Participant config may include optional `approvedReleasePolicyPath` to populate the generated report's advisory `certificationEligibility.approvedRelease` block. CLI config resolves the path relative to the config file directory; API and browser-submitted config resolves it relative to the process working directory. In both cases the path must remain inside that root and point to an existing JSON file. Policy absence and unapproved `tool.version` values both make the participant-side `certificationEligibility.eligible` value `false`, with reasons retained in the report for audit/debugging. This participant self-assessment is useful feedback, but it is not trusted for certification decisions; OBL-side validation still supplies its own policy and recomputes the result.
+
 ## Config-Driven Suite Resolution
 
 Participant configuration can select a bundled manifest catalog entry through an optional `testSuite` object. Existing configs without `testSuite` remain valid model-bank smoke-check configs, and unknown config keys continue to be rejected.
@@ -202,6 +204,7 @@ Participant configuration can select a bundled manifest catalog entry through an
   "environment": "ozone-model-bank",
   "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
   "timeoutSeconds": 10,
+  "approvedReleasePolicyPath": "approved-fcs-releases-example.json",
   "testSuite": {
     "standard": "ob-read-write",
     "specVersion": "v4.0",

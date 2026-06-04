@@ -134,6 +134,7 @@ def _execute_run(
                         environment=config.environment,
                     ),
                     suite_metadata=effective_suite_metadata,
+                    approved_release_policy=config.approved_release_policy,
                 )
             finally:
                 http_client.close()

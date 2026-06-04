@@ -1,8 +1,10 @@
+import json
 import math
 from pathlib import Path
 
 import pytest
 
+from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.json_types import JsonValue
 from conformance.model_bank_config import (
     ConfigError,
@@ -14,6 +16,29 @@ from conformance.model_bank_config import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
+
+
+def _write_approved_release_policy(tmp_path: Path, *, versions: list[str] | None = None) -> Path:
+    """Write an approved-release policy fixture.
+
+    Args:
+        tmp_path: Temporary directory used for the policy file.
+        versions: Optional list of approved tool versions to write.
+
+    Returns:
+        Path to the written policy JSON file.
+    """
+    policy_path = tmp_path / "approved-releases.json"
+    policy_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+                "approvedToolVersions": versions or ["1.2.3"],
+            }
+        ),
+        encoding="utf-8",
+    )
+    return policy_path
 
 
 @pytest.mark.unit
@@ -106,6 +131,89 @@ def test_parse_model_bank_config_keeps_test_suite_optional_for_smoke_checks(tmp_
     )
 
     assert config.test_suite is None
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_loads_approved_release_policy(tmp_path: Path) -> None:
+    policy_path = _write_approved_release_policy(tmp_path, versions=["1.2.3", "4.5.6"])
+
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "approvedReleasePolicyPath": policy_path.name,
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.approved_release_policy is not None
+    assert config.approved_release_policy.approved_tool_versions == ("1.2.3", "4.5.6")
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_non_string_approved_release_policy_path(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="approvedReleasePolicyPath must be a non-empty string"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "approvedReleasePolicyPath": 42,
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_missing_approved_release_policy_file(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="approvedReleasePolicyPath must point to an existing file"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "approvedReleasePolicyPath": "missing.json",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_approved_release_policy_path_escape(tmp_path: Path) -> None:
+    outside_policy = tmp_path.parent / "approved-releases-outside.json"
+    outside_policy.write_text(
+        json.dumps(
+            {
+                "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+                "approvedToolVersions": ["1.2.3"],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ConfigError, match="approvedReleasePolicyPath must resolve inside the config root"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "approvedReleasePolicyPath": "../approved-releases-outside.json",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_wraps_malformed_approved_release_policy(tmp_path: Path) -> None:
+    policy_path = tmp_path / "approved-releases.json"
+    policy_path.write_text("{", encoding="utf-8")
+
+    with pytest.raises(ConfigError, match="Invalid approved-release policy: Invalid JSON approved-release policy"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "approvedReleasePolicyPath": policy_path.name,
+            },
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.unit

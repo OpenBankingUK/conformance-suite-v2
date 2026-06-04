@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
+from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger
 from conformance.model_bank_config import ModelBankConfig
 from conformance.ozone_client import OzoneClientError, OzoneModelBankClient
@@ -76,7 +77,13 @@ def run_model_bank_smoke_check(
                     step_id="openid-discovery",
                     payload={"status": "failed", "message": str(error)},
                 )
-                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+                return _finalise(
+                    config.environment,
+                    steps,
+                    started_at=started_at,
+                    logger_sink=logger_sink,
+                    approved_release_policy=config.approved_release_policy,
+                )
 
             logger_sink.emit(
                 "response-received",
@@ -100,7 +107,13 @@ def run_model_bank_smoke_check(
             )
 
             if config.follow_up_mode == "discovery_only":
-                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+                return _finalise(
+                    config.environment,
+                    steps,
+                    started_at=started_at,
+                    logger_sink=logger_sink,
+                    approved_release_policy=config.approved_release_policy,
+                )
 
             logger_sink.emit("step-started", step_id="jwks", payload={"url": discovery_document.jwks_uri})
             logger_sink.emit(
@@ -129,7 +142,13 @@ def run_model_bank_smoke_check(
                     step_id="jwks",
                     payload={"status": "failed", "message": str(error)},
                 )
-                return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+                return _finalise(
+                    config.environment,
+                    steps,
+                    started_at=started_at,
+                    logger_sink=logger_sink,
+                    approved_release_policy=config.approved_release_policy,
+                )
 
             keys = jwks_response.body.get("keys")
             key_count = len(keys) if isinstance(keys, list) else 0
@@ -153,7 +172,13 @@ def run_model_bank_smoke_check(
                 step_id="jwks",
                 payload={"status": "passed", "statusCode": jwks_response.status_code, "keyCount": key_count},
             )
-            return _finalise(config.environment, steps, started_at=started_at, logger_sink=logger_sink)
+            return _finalise(
+                config.environment,
+                steps,
+                started_at=started_at,
+                logger_sink=logger_sink,
+                approved_release_policy=config.approved_release_policy,
+            )
         finally:
             if owns_client and model_bank_client is not None:
                 model_bank_client.close()
@@ -168,6 +193,7 @@ def _finalise(
     *,
     started_at: datetime,
     logger_sink: ExecutionLogger,
+    approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
     """Build the aggregate result and emit the terminating ``run-completed`` event.
 
@@ -176,11 +202,18 @@ def _finalise(
         steps: Ordered step results collected by the smoke-check run.
         started_at: UTC timestamp captured before execution began.
         logger_sink: Execution-log sink that receives the ``run-completed`` event.
+        approved_release_policy: Optional approved-release policy used by the
+            generated report's certification self-assessment.
 
     Returns:
         Aggregate smoke-check result returned to the caller.
     """
-    result = build_smoke_check_result(environment, steps, started_at=started_at)
+    result = build_smoke_check_result(
+        environment,
+        steps,
+        started_at=started_at,
+        approved_release_policy=approved_release_policy,
+    )
     logger_sink.emit(
         "run-completed",
         payload={

@@ -9,11 +9,14 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
 
+from conformance import approved_releases
+from conformance.approved_releases import ApprovedReleasePolicy as ApprovedReleasePolicy
+from conformance.approved_releases import ApprovedReleasePolicyError
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestError, load_manifest
 from conformance.results import CheckStatus
 
-APPROVED_RELEASE_POLICY_SCHEMA_VERSION = "v1"
+APPROVED_RELEASE_POLICY_SCHEMA_VERSION = approved_releases.APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 """Approved-release policy schema version accepted by the validator."""
 
 VALID_REPORT_STEP_STATUSES = frozenset({"passed", "failed", "warn", "skipped"})
@@ -72,33 +75,6 @@ class SubmittedReport:
     report_version: str
     tool_version: str
     steps: tuple[ReportStep, ...]
-
-
-@dataclass(frozen=True)
-class ApprovedReleasePolicy:
-    """Approved FCS release policy supplied by OBL.
-
-    Attributes:
-        schema_version: Policy schema version. Currently only ``v1`` is
-            accepted so policy evolution can be explicit.
-        approved_tool_versions: Tool versions approved for certification
-            assessment.
-    """
-
-    schema_version: str
-    approved_tool_versions: tuple[str, ...]
-
-    def is_tool_version_approved(self, tool_version: str) -> bool:
-        """Return whether ``tool_version`` is approved by this policy.
-
-        Args:
-            tool_version: Submitted report tool version to check.
-
-        Returns:
-            True when the exact tool version appears in the approved release
-            list; otherwise False.
-        """
-        return tool_version in self.approved_tool_versions
 
 
 @dataclass(frozen=True)
@@ -245,7 +221,10 @@ def load_approved_release_policy(policy_path: Path) -> ApprovedReleasePolicy:
         CertificationValidationError: If the file cannot be read, decoded, or
             parsed as an approved-release policy.
     """
-    return parse_approved_release_policy(_load_json_file(policy_path, label="approved-release policy"))
+    try:
+        return approved_releases.load_approved_release_policy(policy_path)
+    except ApprovedReleasePolicyError as error:
+        raise CertificationValidationError(str(error)) from error
 
 
 def parse_submitted_report(raw_report: object) -> SubmittedReport:
@@ -286,21 +265,10 @@ def parse_approved_release_policy(raw_policy: object) -> ApprovedReleasePolicy:
         CertificationValidationError: If the policy root or required fields
             are missing or malformed.
     """
-    policy = _as_object(raw_policy, location="approved-release policy")
-    schema_version = _required_non_empty_string(policy, "schemaVersion", location="approved-release policy")
-    if schema_version != APPROVED_RELEASE_POLICY_SCHEMA_VERSION:
-        raise CertificationValidationError(
-            "approved-release policy.schemaVersion must be "
-            f"{APPROVED_RELEASE_POLICY_SCHEMA_VERSION!r} (got {schema_version!r})"
-        )
-    return ApprovedReleasePolicy(
-        schema_version=schema_version,
-        approved_tool_versions=_required_string_array(
-            policy,
-            "approvedToolVersions",
-            location="approved-release policy",
-        ),
-    )
+    try:
+        return approved_releases.parse_approved_release_policy(raw_policy)
+    except ApprovedReleasePolicyError as error:
+        raise CertificationValidationError(str(error)) from error
 
 
 def mandatory_step_ids_from_manifest(manifest: Manifest) -> tuple[str, ...]:
@@ -675,31 +643,3 @@ def _required_report_step_status(parent: Mapping[str, object], key: str, *, loca
         allowed_values = ", ".join(sorted(VALID_REPORT_STEP_STATUSES))
         raise CertificationValidationError(f"{location}.{key} must be one of: {allowed_values}")
     return cast(CheckStatus, value)
-
-
-def _required_string_array(parent: Mapping[str, object], key: str, *, location: str) -> tuple[str, ...]:
-    """Extract a required array of non-empty strings.
-
-    Args:
-        parent: Parent JSON object.
-        key: Field name to extract.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        Tuple of stripped non-empty string values.
-
-    Raises:
-        CertificationValidationError: If the field is missing, not an array,
-            or contains a non-string or empty item.
-    """
-    values = _required_array(parent, key, location=location)
-    parsed_values: list[str] = []
-    for index, value in enumerate(values):
-        item_location = f"{location}.{key}[{index}]"
-        if not isinstance(value, str):
-            raise CertificationValidationError(f"{item_location} must be a string")
-        stripped = value.strip()
-        if not stripped:
-            raise CertificationValidationError(f"{item_location} must not be empty")
-        parsed_values.append(stripped)
-    return tuple(parsed_values)

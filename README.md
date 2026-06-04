@@ -80,6 +80,18 @@ The approved-release policy is supplied as JSON so release governance is kept ou
 
 The bundled `config/approved-fcs-releases-example.json` is non-authoritative and contains a placeholder version. Replace it with the exact OBL-approved release versions before using the validator for a real review.
 
+Participant runs can also use the same policy shape for report self-assessment by adding `approvedReleasePolicyPath` to model-bank config JSON:
+
+```json
+{
+	"environment": "ozone-model-bank",
+	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+	"approvedReleasePolicyPath": "approved-fcs-releases-example.json"
+}
+```
+
+The path is resolved inside the config directory for CLI-loaded config files, or the process working directory for API/UI-submitted config JSON. Malformed policy files fail config validation before a run starts. Generated reports always include `certificationEligibility.approvedRelease`; if the policy is absent or does not list the current `tool.version`, the participant-side self-assessment is non-eligible. OBL-side validation remains authoritative and recomputes approved-release status from independently supplied inputs.
+
 Generated report JSON includes stable metadata consumed by the validator:
 
 ```json

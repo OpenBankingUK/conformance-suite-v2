@@ -18,6 +18,7 @@ from conformance.api.auth_session_store import (
     InvalidAuthSessionStateError,
     UnknownAuthSessionError,
 )
+from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.assertions import AssertionResult, evaluate_assertion
 from conformance.context import (
     ExecutionContext,
@@ -110,6 +111,7 @@ def run_manifest(
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
     suite_metadata: SuiteMetadata | None = None,
+    approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -146,6 +148,8 @@ def run_manifest(
             manifest placeholders via the narrow ``${config.*}`` grammar.
         suite_metadata: Optional catalog metadata describing a config-resolved
             suite run. Omit for explicit manifests and legacy smoke checks.
+        approved_release_policy: Optional approved-release policy used by the
+            generated report's participant-side certification self-assessment.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
@@ -170,6 +174,7 @@ def run_manifest(
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
                 suite_metadata=suite_metadata,
+                approved_release_policy=approved_release_policy,
             )
         else:
             result = _run_manifest_v0(
@@ -181,6 +186,7 @@ def run_manifest(
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
                 suite_metadata=suite_metadata,
+                approved_release_policy=approved_release_policy,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -226,6 +232,7 @@ def _run_manifest_v1(
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
     suite_metadata: SuiteMetadata | None,
+    approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with sequential steps and context carry-forward.
 
@@ -257,6 +264,8 @@ def _run_manifest_v1(
             ``${config.*}`` placeholders.
         suite_metadata: Optional catalog metadata to embed in the result for
             config-resolved suite runs.
+        approved_release_policy: Optional approved-release policy used by the
+            generated report's certification self-assessment.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -319,6 +328,7 @@ def _run_manifest_v1(
         started_at=started_at,
         plan=plan,
         suite_metadata=suite_metadata,
+        approved_release_policy=approved_release_policy,
     )
 
 
@@ -1268,6 +1278,7 @@ def _run_manifest_v0(
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
     suite_metadata: SuiteMetadata | None,
+    approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -1291,6 +1302,8 @@ def _run_manifest_v0(
             desugared step placeholder resolution.
         suite_metadata: Optional catalog metadata to embed in the result for
             config-resolved suite runs.
+        approved_release_policy: Optional approved-release policy used by the
+            generated report's certification self-assessment.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -1386,7 +1399,13 @@ def _run_manifest_v0(
                 )
                 steps.append(follow_up_result)
 
-    return build_smoke_check_result(environment, steps, started_at=started_at, suite_metadata=suite_metadata)
+    return build_smoke_check_result(
+        environment,
+        steps,
+        started_at=started_at,
+        suite_metadata=suite_metadata,
+        approved_release_policy=approved_release_policy,
+    )
 
 
 def _extract_v0_follow_up_url(context: ExecutionContext, test: ManifestTest) -> str | None:

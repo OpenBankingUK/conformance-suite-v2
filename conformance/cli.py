@@ -128,6 +128,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                     environment=config.environment,
                 ),
                 suite_metadata=suite_metadata,
+                approved_release_policy=config.approved_release_policy,
             )
         finally:
             http_client.close()

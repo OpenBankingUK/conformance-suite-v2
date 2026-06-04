@@ -161,13 +161,15 @@ The CLI and REST surfaces are covered by `tests/test_cli.py` (`--deselect` flag)
 
 The OBL-side certification validator is covered as a separate internal-tool surface, not through the participant runner CLI:
 
-- `tests/test_results.py` verifies generated reports include top-level `metadata.reportVersion` and `tool.version` while preserving existing result and plan semantics.
+- `tests/test_results.py` verifies generated reports include top-level `metadata.reportVersion`, `tool.version`, and the participant-side `certificationEligibility.approvedRelease` self-assessment while preserving existing result and plan semantics. It covers approved versions, unapproved versions, absent policies, multiple blocking reasons, and mandatory-deselection reason precedence.
 - `tests/test_version.py` verifies `CONFORMANCE_TOOL_VERSION` override, `pyproject.toml` fallback, and the `0+unknown` fallback.
-- `tests/test_certification_validator.py` verifies approved-release policy parsing, mandatory `passed`/`warn` acceptance, mandatory `failed`/`skipped`/missing rejection, malformed report rejection, and Confluence summary rendering.
+- `tests/test_approved_releases.py` verifies shared approved-release policy parsing and loading rules used by both participant report generation and OBL-side validation.
+- `tests/test_model_bank_config.py` verifies `approvedReleasePolicyPath` config loading, missing files, path containment, malformed policy JSON, and type validation.
+- `tests/test_certification_validator.py` verifies approved-release policy parsing wrappers, mandatory `passed`/`warn` acceptance, mandatory `failed`/`skipped`/missing rejection, malformed report rejection, and Confluence summary rendering.
 - `tests/test_certification_cli.py` verifies CLI exit codes for valid reports, validation failures, invalid inputs, and summary-output write failures.
 
 Run the focused validator suite while iterating:
 
 ```bash
-DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py tests/test_certification_validator.py tests/test_certification_cli.py -v
+DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py tests/test_approved_releases.py tests/test_model_bank_config.py tests/test_certification_validator.py tests/test_certification_cli.py -v
 ```
