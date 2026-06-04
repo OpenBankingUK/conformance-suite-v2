@@ -10,7 +10,14 @@ from typing import Literal, cast
 from django import forms
 
 from conformance.json_types import JsonValue
-from conformance.manifest import Manifest, ManifestError, ManifestStep, PsuAuthorizationStep, load_manifest_from_object
+from conformance.manifest import (
+    Manifest,
+    ManifestError,
+    ManifestStep,
+    PsuAuthorizationStep,
+    StepPhase,
+    load_manifest_from_object,
+)
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan, TestPlanEntry
@@ -30,6 +37,8 @@ class PlanStepRow:
         id: Stable manifest step identifier.
         name: Human-readable manifest step name.
         kind: Manifest step kind displayed to participants.
+        group: Execution group label shown in the plan preview.
+        phase: Scheduling phase shown in the plan preview.
         mandatory: Whether the manifest marks the step as certification mandatory.
         optional: Whether the manifest marks the step as opt-in optional.
         default_selected: Whether the default plan selects the step before form input.
@@ -42,6 +51,8 @@ class PlanStepRow:
     id: str
     name: str
     kind: StepKind
+    group: str
+    phase: StepPhase
     mandatory: bool
     optional: bool
     default_selected: bool
@@ -393,6 +404,8 @@ def _build_step_rows(*, manifest: Manifest, default_plan: TestPlan, selected_pla
                 id=step.id,
                 name=step.name,
                 kind=_step_kind(step),
+                group=step.group,
+                phase=step.phase,
                 mandatory=step.mandatory,
                 optional=step.optional,
                 default_selected=default_entry.selected,

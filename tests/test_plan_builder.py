@@ -26,13 +26,22 @@ SUITE_CONFIG: dict[str, JsonValue] = {
 }
 
 
-def _http_step(step_id: str, *, mandatory: bool = False, optional: bool = False) -> dict[str, JsonValue]:
+def _http_step(
+    step_id: str,
+    *,
+    mandatory: bool = False,
+    optional: bool = False,
+    phase: str = "execution",
+    group: str = "default",
+) -> dict[str, JsonValue]:
     """Build a minimal v1 HTTP step for plan-builder tests.
 
     Args:
         step_id: Stable manifest step id.
         mandatory: Whether the step is certification mandatory.
         optional: Whether the step is opt-in optional.
+        phase: Scheduling phase declared by the manifest step.
+        group: Execution group declared by the manifest step.
 
     Returns:
         A JSON object representing a valid v1 HTTP step.
@@ -47,6 +56,8 @@ def _http_step(step_id: str, *, mandatory: bool = False, optional: bool = False)
         step["mandatory"] = True
     if optional:
         step["optional"] = True
+    step["phase"] = phase
+    step["group"] = group
     return step
 
 
@@ -79,6 +90,8 @@ def _manual_psu_step(step_id: str) -> dict[str, JsonValue]:
         "authorizationEndpoint": "https://auth.example.com/authorize",
         "clientId": "client-123",
         "redirectUri": "https://conformance.example.com/callback",
+        "phase": "setup",
+        "group": "consent",
         "mandatory": True,
     }
 
@@ -146,10 +159,10 @@ def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
     assert preview.config.environment == "test-env"
     assert preview.manifest.name == "Plan builder manifest"
     assert preview.launch_supported is True
-    assert [(row.id, row.name, row.kind) for row in preview.rows] == [
-        ("mandatory", "Step mandatory", "http"),
-        ("standard", "Step standard", "http"),
-        ("optional", "Step optional", "http"),
+    assert [(row.id, row.name, row.kind, row.phase, row.group) for row in preview.rows] == [
+        ("mandatory", "Step mandatory", "http", "execution", "default"),
+        ("standard", "Step standard", "http", "execution", "default"),
+        ("optional", "Step optional", "http", "execution", "default"),
     ]
     optional_row = preview.rows[2]
     assert optional_row.default_selected is False
@@ -322,6 +335,8 @@ def test_manual_psu_step_previews_and_allows_browser_launch() -> None:
     preview = _validated_preview(form)
 
     assert preview.rows[0].kind == "psu-authorization"
+    assert preview.rows[0].phase == "setup"
+    assert preview.rows[0].group == "consent"
     assert preview.rows[0].selected_after_form is True
     assert preview.launch_supported is True
     assert preview.launch_blockers == ()
