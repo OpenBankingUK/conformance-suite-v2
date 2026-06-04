@@ -2,6 +2,7 @@ from types import MappingProxyType
 
 import pytest
 
+from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.results import StepResult
 
 
@@ -96,18 +97,25 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
 
 
 @pytest.mark.unit
-def test_eligibility_block_eligible_when_all_mandatory_pass() -> None:
+def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Eligible when at least one mandatory step ran and all passed."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
 
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.2.3")
     started = datetime.now(UTC)
     steps = [
         StepResult(name="m1", status="passed", message="ok", mandatory=True),
         StepResult(name="opt", status="failed", message="boom", mandatory=False),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(
+        "env",
+        steps,
+        started_at=started,
+        approved_release_policy=_approved_policy("1.2.3"),
+    ).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is True
     assert block["mandatoryTotal"] == 1
@@ -117,18 +125,25 @@ def test_eligibility_block_eligible_when_all_mandatory_pass() -> None:
 
 
 @pytest.mark.unit
-def test_eligibility_block_warn_on_mandatory_is_non_blocking() -> None:
+def test_eligibility_block_warn_on_mandatory_is_non_blocking(monkeypatch: pytest.MonkeyPatch) -> None:
     """A WARN on a mandatory step does not block eligibility (PRD)."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
 
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.2.3")
     started = datetime.now(UTC)
     steps = [
         StepResult(name="m1", status="passed", message="ok", mandatory=True),
         StepResult(name="m2", status="warn", message="deprecated", mandatory=True),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(
+        "env",
+        steps,
+        started_at=started,
+        approved_release_policy=_approved_policy("1.2.3"),
+    ).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is True
     assert block["mandatoryWarn"] == 1
@@ -186,6 +201,127 @@ def test_eligibility_block_no_mandatory_means_not_eligible() -> None:
     assert "No mandatory steps" in str(block["reason"])
 
 
+@pytest.mark.unit
+def test_eligibility_approves_tool_version_listed_in_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Approved policy plus passing mandatory coverage makes the report eligible."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "4.5.6")
+    started = datetime.now(UTC)
+
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        approved_release_policy=_approved_policy("4.5.6"),
+    ).to_json_object()
+
+    block = rendered["certificationEligibility"]
+    assert isinstance(block, dict)
+    assert block["eligible"] is True
+    assert "reason" not in block
+    assert "reasons" not in block
+    assert block["approvedRelease"] == {
+        "checked": True,
+        "approved": True,
+        "toolVersion": "4.5.6",
+        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+    }
+    assert rendered["tool"] == {"version": "4.5.6"}
+
+
+@pytest.mark.unit
+def test_eligibility_rejects_tool_version_absent_from_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Unapproved tool versions block participant-side eligibility."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "4.5.6")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        approved_release_policy=_approved_policy("9.9.9"),
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Tool version is not in the approved-release policy: 4.5.6"
+    assert block["reasons"] == ["Tool version is not in the approved-release policy: 4.5.6"]
+    assert block["approvedRelease"] == {
+        "checked": True,
+        "approved": False,
+        "toolVersion": "4.5.6",
+        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+    }
+
+
+@pytest.mark.unit
+def test_eligibility_rejects_absent_approved_release_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Missing approved-release policy is explicit and non-eligible."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "4.5.6")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Approved-release policy was not supplied"
+    assert block["reasons"] == ["Approved-release policy was not supplied"]
+    assert block["approvedRelease"] == {
+        "checked": False,
+        "approved": False,
+        "toolVersion": "4.5.6",
+    }
+
+
+@pytest.mark.unit
+def test_eligibility_collects_multiple_blocking_reasons(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The legacy reason is the highest-priority entry from all blockers."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "4.5.6")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [
+            StepResult(name="m1", status="failed", message="boom", mandatory=True),
+            StepResult(name="m2", status="skipped", message="prereq failed", mandatory=True),
+        ],
+        started_at=started,
+        approved_release_policy=_approved_policy("9.9.9"),
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "1 mandatory step(s) failed"
+    assert block["reasons"] == [
+        "1 mandatory step(s) failed",
+        "1 mandatory step(s) skipped due to earlier failures",
+        "Tool version is not in the approved-release policy: 4.5.6",
+    ]
+
+
 # ─── TestPlan deselection eligibility precedence ─────────────────────────────
 
 
@@ -224,6 +360,7 @@ def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None
     assert block["reason"] == "Mandatory steps were deselected from the plan"
     assert block["mandatoryDeselected"] == 1
     assert block["mandatoryDeselectedStepIds"] == ["m"]
+    assert str(block["reasons"][0]) == "Mandatory steps were deselected from the plan"
 
 
 @pytest.mark.unit
@@ -248,6 +385,21 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     block = rendered["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["reason"] == "Mandatory steps were deselected from the plan"
+
+
+def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
+    """Build an approved-release policy for result tests.
+
+    Args:
+        approved_tool_versions: Tool versions accepted by the policy.
+
+    Returns:
+        Approved-release policy with the current schema version.
+    """
+    return ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=approved_tool_versions,
+    )
 
 
 @pytest.mark.unit
