@@ -274,6 +274,7 @@ At runtime, the engine guarantees:
 6. A failure in one execution group does not suppress another independent execution group.
 7. Result ordering remains deterministic by manifest order, even when logs interleave due to concurrency.
 8. Execution-group concurrency is bounded by an internal worker cap (currently 32) so participant-authored manifests cannot create unbounded thread counts.
+9. Execution groups run from isolated post-setup context snapshots. `${steps...}` placeholders are guaranteed to resolve only for setup-phase steps and earlier steps in the same execution group. Cross-group or otherwise missing-step references fail placeholder resolution (`failed`), while `skipped` is reserved for predecessors that exist but produced no response.
 
 Selection remains plan-driven: deselected steps do not execute and do not produce `StepResult` entries.
 

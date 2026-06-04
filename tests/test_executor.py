@@ -1343,6 +1343,55 @@ def test_run_manifest_v1_unresolvable_field_still_fails_not_skips() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_cross_group_placeholder_reference_fails_not_skips() -> None:
+    """Cross-group placeholder references fail resolution rather than skipping.
+
+    Execution groups run from isolated post-setup context snapshots. A step in
+    one execution group therefore cannot resolve `${steps...}` placeholders
+    from a sibling execution group, even when the referenced step appears
+    earlier in manifest order.
+    """
+    requested_urls: list[str] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "cross-group-placeholder",
+        "steps": [
+            {
+                "id": "alpha-source",
+                "name": "Alpha source",
+                "group": "alpha",
+                "request": {"method": "GET", "url": "https://example.com/alpha"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "beta-dependent",
+                "name": "Beta dependent",
+                "group": "beta",
+                "request": {
+                    "method": "GET",
+                    "url": "${steps.alpha-source.response.body.next_url}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requested_urls.append(str(request.url))
+        return httpx.Response(200, json={"next_url": "https://example.com/follow-up"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert requested_urls == ["https://example.com/alpha"]
+    assert result.steps[0].status == "passed"
+    assert result.steps[1].status == "failed"
+    assert "Placeholder resolution failed" in result.steps[1].message
+    assert "not found in execution context" in result.steps[1].message
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_run_completes_all_steps_despite_failures() -> None:
     """The run continues through all steps even when some fail."""
     raw_manifest: dict[str, JsonValue] = {
