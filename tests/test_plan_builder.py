@@ -39,6 +39,21 @@ PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+AIS_SLICE_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-slice",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 
 def _http_step(
     step_id: str,
@@ -224,6 +239,41 @@ def test_blank_manifest_resolves_psu_auth_starter_suite() -> None:
 
 
 @pytest.mark.unit
+def test_blank_manifest_resolves_ais_slice_suite() -> None:
+    """A blank manifest with an AIS ``testSuite`` resolves the AIS catalog entry."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_SLICE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "select",
+            "selected_step_ids": [
+                "openid-discovery",
+                "jwks-fetch",
+                "psu-authorization",
+                "token-exchange",
+                "account-access-consent",
+                "accounts-list",
+            ],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is not None
+    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
+    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
+    assert preview.selected_plan.selected_step_ids() == [
+        "openid-discovery",
+        "jwks-fetch",
+        "psu-authorization",
+        "token-exchange",
+        "account-access-consent",
+        "accounts-list",
+    ]
+    assert preview.launch_supported is True
+
+
+@pytest.mark.unit
 def test_explicit_manifest_overrides_config_selected_suite() -> None:
     """Pasted manifest JSON remains the plan-builder authoring override."""
     explicit_manifest = _v1_manifest([_http_step("explicit")])
@@ -374,3 +424,23 @@ def test_manual_psu_step_previews_and_allows_browser_launch() -> None:
     assert preview.rows[0].selected_after_form is True
     assert preview.launch_supported is True
     assert preview.launch_blockers == ()
+
+
+@pytest.mark.unit
+def test_ais_suite_preview_marks_mandatory_selection_and_launch_support() -> None:
+    """AIS suite previews remain browser-launchable and flag deselected mandatory steps."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_SLICE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": ["accounts-list"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.launch_supported is True
+    assert preview.launch_blockers == ()
+    assert preview.certification_eligible_by_selection is False
+    assert preview.selected_plan.deselected_mandatory_step_ids() == ["accounts-list"]

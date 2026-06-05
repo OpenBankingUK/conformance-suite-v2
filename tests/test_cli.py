@@ -62,6 +62,41 @@ def _write_suite_config(tmp_path: Path) -> Path:
     return config_path
 
 
+def _write_ais_suite_config(tmp_path: Path) -> Path:
+    """Write a config that selects the bundled v4 AIS certification slice.
+
+    Args:
+        tmp_path: Temporary directory used for config and output paths.
+
+    Returns:
+        Path to the written config file.
+    """
+    config_path = tmp_path / "ais-suite-config.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "suite-env",
+                "discoveryUrl": "https://suite.example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "executionLogPath": str(tmp_path / "log.ndjson"),
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v4.0",
+                    "profile": "fapi1-advanced",
+                    "suite": "ais-certification-slice",
+                },
+                "oauth": {
+                    "clientId": "test-client-id",
+                    "redirectUri": "https://conformance.example.com/callback",
+                    "resourceBaseUrl": "https://resource.example.com",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    return config_path
+
+
 @pytest.mark.unit
 def test_cli_writes_result_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     config_path = tmp_path / "model-bank.json"
@@ -307,6 +342,75 @@ def test_cli_explicit_manifest_overrides_config_selected_suite(monkeypatch: pyte
     assert requested_urls == ["https://explicit.example.com/status"]
     result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
     assert [step["name"] for step in result["steps"]] == ["explicit"]
+
+
+@pytest.mark.unit
+def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """CLI launches the bundled AIS slice from config without an explicit manifest.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace manifest execution.
+        tmp_path: Temporary directory used for config and output files.
+    """
+    config_path = _write_ais_suite_config(tmp_path)
+    stdout = _TtyStringIO()
+    stderr = _TtyStringIO()
+
+    def fake_run_manifest(*args: object, **kwargs: object) -> SmokeCheckResult:
+        """Capture the resolved manifest inputs and return a passing result.
+
+        Args:
+            *args: Positional arguments accepted by ``cli.run_manifest``.
+            **kwargs: Keyword arguments accepted by ``cli.run_manifest``.
+
+        Returns:
+            Passing smoke-check result for the CLI to serialise.
+        """
+        manifest = args[0]
+        assert [step.id for step in manifest.steps] == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+        ]
+        plan = kwargs["plan"]
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+        ]
+        runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
+        suite_metadata = kwargs["suite_metadata"]
+        assert runtime_config.oauth_resource_base_url == "https://resource.example.com"
+        assert suite_metadata is not None
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
+        now = datetime.now(UTC)
+        return SmokeCheckResult(
+            environment="suite-env",
+            status="passed",
+            started_at=now,
+            finished_at=now,
+            steps=(),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "run_manifest", fake_run_manifest)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    exit_code = cli.run([str(config_path)])
+
+    assert exit_code == 0
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert result["status"] == "passed"
 
 
 @pytest.mark.unit
