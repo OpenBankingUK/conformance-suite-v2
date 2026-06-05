@@ -201,7 +201,7 @@ def _manifest_json(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tu
         steps.append(_manifest_step(step_id=step_id, mandatory=True, optional=False))
     for step_id in optional_step_ids:
         steps.append(_manifest_step(step_id=step_id, mandatory=False, optional=True))
-    return {"schemaVersion": "v1", "name": "validator", "steps": steps}
+    return {"schemaVersion": "v1", "name": "validator", "certificationCoverage": "complete", "steps": steps}
 
 
 def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObject:
@@ -237,3 +237,164 @@ def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+# ─── Packet B: certification coverage gating ─────────────────────────────────
+
+
+@pytest.mark.unit
+def test_validate_report_rejects_partial_coverage_manifest() -> None:
+    """A partial-coverage manifest fails OBL validation even when all mandatory steps pass.
+
+    This is the OBL-side analogue of the participant-side eligibility check:
+    a manifest not explicitly marked ``certificationCoverage: complete``
+    cannot validate as certification-ready regardless of step outcomes or
+    approved-release policy.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "manifest_coverage_partial" in result.reasons
+    assert result.manifest_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_validate_report_omitted_coverage_defaults_to_partial_and_fails() -> None:
+    """A v1 manifest with no ``certificationCoverage`` key defaults to partial and fails.
+
+    Omitting the field is treated identically to an explicit ``partial`` declaration
+    so that old or third-party manifests cannot inadvertently become certifiable.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "no-coverage-key",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "manifest_coverage_partial" in result.reasons
+    assert result.manifest_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_validate_report_complete_coverage_is_valid_when_steps_pass() -> None:
+    """A complete-coverage manifest with all mandatory steps passing validates successfully."""
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "manifest_coverage_partial" not in result.reasons
+    assert result.manifest_coverage == "complete"
+
+
+@pytest.mark.unit
+def test_validate_report_partial_coverage_reason_in_confluence_summary() -> None:
+    """Partial coverage blocker is surfaced in the Confluence summary text."""
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    summary = render_confluence_summary(result)
+
+    assert "Certification report validation: FAIL" in summary
+    assert "Certification coverage: partial" in summary
+    assert "Manifest is not marked as complete certification coverage" in summary
+
+
+@pytest.mark.unit
+def test_validate_report_coverage_included_in_json_output() -> None:
+    """The ``certificationCoverage`` audit block is present in the JSON validation result."""
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    rendered = result.to_json_object()
+
+    coverage_block = rendered["certificationCoverage"]
+    assert isinstance(coverage_block, dict)
+    assert coverage_block["value"] == "complete"
+
+
+@pytest.mark.unit
+def test_validate_report_smoke_suite_manifests_cannot_certify() -> None:
+    """Bundled discovery-JWKS smoke suite manifests cannot pass OBL certification validation.
+
+    Each bundled manifest must declare ``certificationCoverage: partial`` and the
+    validator must reject them even if every mandatory step passes.  This test
+    ensures the certification-safety correction introduced in Packet B is wired
+    end-to-end for the actual shipped manifest files.
+    """
+    from pathlib import Path
+
+    from conformance.manifest import load_manifest
+
+    suites_dir = Path(__file__).resolve().parents[1] / "conformance" / "suites"
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.0.0",),
+    )
+
+    for manifest_file in sorted(suites_dir.glob("*.json")):
+        manifest = load_manifest(manifest_file)
+
+        assert manifest.certification_coverage == "partial", (
+            f"{manifest_file.name} must declare certificationCoverage: partial"
+        )
+
+        if not any(step.mandatory for step in manifest.steps):
+            # Manifests with no mandatory steps raise CertificationValidationError
+            # (the existing pre-coverage hard error) — skip OBL validation check.
+            continue
+
+        step_outcomes: tuple[tuple[str, CheckStatus], ...] = tuple(
+            (step.id, "passed") for step in manifest.steps if step.mandatory
+        )
+        report = _report(tool_version="1.0.0", steps=step_outcomes)
+
+        result = validate_report(report=report, manifest=manifest, policy=policy)
+
+        assert result.valid is False, (
+            f"Smoke suite manifest {manifest_file.name} must not validate as certification-ready"
+        )
+        assert "manifest_coverage_partial" in result.reasons

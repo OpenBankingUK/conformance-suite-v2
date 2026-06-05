@@ -181,7 +181,7 @@ def _manifest_json(*, mandatory_step_ids: tuple[str, ...]) -> JsonObject:
                 "assertions": [{"type": "http_status", "expected": 200}],
             }
         )
-    return {"schemaVersion": "v1", "name": "validator-cli", "steps": steps}
+    return {"schemaVersion": "v1", "name": "validator-cli", "certificationCoverage": "complete", "steps": steps}
 
 
 def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> JsonObject:

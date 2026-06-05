@@ -219,18 +219,37 @@ Participant configuration can select a bundled manifest catalog entry through an
 }
 ```
 
-The first supported catalog keys are intentionally narrow:
+The supported catalog keys are:
 
-| `standard` | `specVersion` | `profile` | `suite` | Scope |
-| --- | --- | --- | --- | --- |
-| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. |
+| `standard` | `specVersion` | `profile` | `suite` | Scope | OAuth config required |
+| --- | --- | --- | --- | --- | --- |
+| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
+| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
+
+**All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit.
+
+The `psu-auth-starter` suite requires an `oauth` section in the participant config:
+
+```json
+{
+  "oauth": {
+    "clientId": "your-client-id-here",
+    "redirectUri": "https://conformance.example.com/callback"
+  }
+}
+```
+
+The redirect URI must be an HTTPS URL. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifest value in the `psu-auth-starter` JSON (`https://conformance.example.com/callback`) is a static example placeholder.
+
+See `config/model-bank-suite-example.json` (smoke suite) and `config/model-bank-psu-auth-starter-example.json` (starter suite) for complete config examples.
 
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The current `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up, which keeps version/suite selection in participant config while leaving runtime values in the single config file.
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` in the PSU authorisation step.
 
-Manifest access to config is deliberately allow-listed. The only supported config placeholders are `${config.discoveryUrl}` and `${config.environment}`, accepted in the same URL/header/body leaves as existing step placeholders. Parser validation accepts those config placeholders without weakening strict forward-reference checks for `${steps.<id>...}` placeholders. TLS paths, private-key material, future credential fields, request objects, and arbitrary nested config traversal are intentionally not exposed through placeholders.
+Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, and `${config.oauth.redirectUri}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
 
 CLI precedence is:
 
@@ -246,7 +265,7 @@ The browser plan builder at `/plan/` supports two authoring modes. Paste config 
 
 Suite-resolved runs add safe suite metadata to participant-visible result JSON and the `run-started` execution-log payload: `standard`, `specVersion`, `profile`, `suite`, `catalogId`, and `manifestResource`. Smoke checks and explicit-manifest runs keep their existing shape unless suite metadata is known.
 
-This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks` entries are not full Open Banking Read/Write v3.1.11 or v4.0 certification suites; full Read/Write coverage should be added later as manifest-authoring work once the target Ozone v4 scope is confirmed.
+This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks` and `psu-auth-starter` entries are not full Open Banking Read/Write v3.1.11 or v4.0 certification suites; full Read/Write coverage will be added as a subsequent manifest-authoring milestone once the target Ozone v4 scope is confirmed.
 
 ## Group-Aware Manifest Execution (v1)
 

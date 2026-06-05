@@ -47,8 +47,17 @@ def _runtime_config_context() -> ExecutionContext:
     )
 
 
-@pytest.mark.unit
-class TestRecordStep:
+def _oauth_context() -> ExecutionContext:
+    """Build a context carrying OAuth non-secret config values alongside base fields."""
+    return ExecutionContext(
+        config=RuntimeConfig(
+            discovery_url="https://config.example.com/.well-known/openid-configuration",
+            environment="sandbox",
+            oauth_client_id="my-client-id",
+            oauth_redirect_uri="https://app.example.com/callback",
+        )
+    )
+
     def test_records_step_into_new_context(self) -> None:
         ctx = ExecutionContext()
         request = RequestRecord(method="GET", url="https://example.com/api")
@@ -127,7 +136,7 @@ class TestRecordStep:
         )
 
         with pytest.raises(TypeError):
-            ctx.steps["new"] = StepRecord(  # type: ignore[index]
+            ctx.steps["new"] = StepRecord(
                 request=RequestRecord(method="GET", url="https://evil.com"),
                 response=None,
             )
@@ -217,6 +226,22 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("env=${config.environment}", ctx)
         assert result == "env=sandbox"
 
+    def test_resolves_config_oauth_client_id(self) -> None:
+        ctx = _oauth_context()
+        result = resolve_placeholders("client_id=${config.oauth.clientId}", ctx)
+        assert result == "client_id=my-client-id"
+
+    def test_resolves_config_oauth_redirect_uri(self) -> None:
+        ctx = _oauth_context()
+        result = resolve_placeholders("${config.oauth.redirectUri}", ctx)
+        assert result == "https://app.example.com/callback"
+
+    def test_resolves_oauth_alongside_other_placeholders(self) -> None:
+        ctx = _oauth_context()
+        template = "client=${config.oauth.clientId}&redirect=${config.oauth.redirectUri}"
+        result = resolve_placeholders(template, ctx)
+        assert result == "client=my-client-id&redirect=https://app.example.com/callback"
+
 
 @pytest.mark.unit
 class TestResolvePlaceholdersErrors:
@@ -293,6 +318,24 @@ class TestResolvePlaceholdersErrors:
         ctx = _runtime_config_context()
         with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
             resolve_placeholders("${config.tls.clientPrivateKeyPath}", ctx)
+
+    def test_unknown_oauth_sub_field_is_rejected(self) -> None:
+        """Fields not on the oauth allow-list must fail with 'Unsupported config placeholder'."""
+        ctx = _oauth_context()
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
+            resolve_placeholders("${config.oauth.clientSecret}", ctx)
+
+    def test_oauth_client_id_unavailable_when_oauth_config_absent(self) -> None:
+        """${config.oauth.clientId} must fail when RuntimeConfig has no oauth fields."""
+        ctx = _runtime_config_context()
+        with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
+            resolve_placeholders("${config.oauth.clientId}", ctx)
+
+    def test_oauth_redirect_uri_unavailable_when_oauth_config_absent(self) -> None:
+        """${config.oauth.redirectUri} must fail when RuntimeConfig has no oauth fields."""
+        ctx = _runtime_config_context()
+        with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
+            resolve_placeholders("${config.oauth.redirectUri}", ctx)
 
     def test_config_placeholder_requires_runtime_config(self) -> None:
         ctx = ExecutionContext()

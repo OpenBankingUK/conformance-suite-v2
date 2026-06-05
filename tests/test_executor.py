@@ -13,7 +13,7 @@ from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import PsuAuthorizationStep, parse_manifest
 
 
@@ -2292,6 +2292,7 @@ def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility(
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
         "name": "mandatory-mix",
+        "certificationCoverage": "complete",
         "steps": [
             {
                 "id": "core",
@@ -2441,6 +2442,195 @@ def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
     }
     assert execution_logger.events()[0].payload["suite"] == expected_suite
     assert result.to_json_object()["suite"] == expected_suite
+
+
+@pytest.mark.integration
+def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+    """End-to-end mocked execution of the bundled ``psu-auth-starter`` catalog suite.
+
+    Resolves the actual bundled manifest, builds a full default plan, executes
+    with mocked HTTP for the two HTTP steps and an intercepted auth-session for
+    the PSU step, and verifies that suite metadata, certification coverage,
+    masking, and plan rows are all coherent.
+
+    The test proves:
+
+    - The catalog resolves to the expected manifest and metadata.
+    - All three plan rows (openid-discovery, jwks-fetch, psu-authorization) are
+      selected by the default plan.
+    - HTTP steps receive mocked 200 responses with the required JSON fields.
+    - The PSU step completes via a fake captured auth code injected on first poll.
+    - The result is NOT certification-eligible because coverage is ``partial``.
+    - The ``certificationCoverage`` block carries ``value: "partial"``.
+    - PSU authorization URL ``client_id`` is masked in the execution log.
+    - Suite metadata is surfaced in the ``run-started`` log event and result JSON.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace ``conformance.executor.time``
+            with a deterministic fake so the PSU polling loop exits promptly
+            without calling real ``time.sleep``.
+    """
+    import types
+
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.context import RuntimeConfig
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+    from conformance.test_plan import TestPlan
+
+    # 1. Resolve the real bundled catalog entry.
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="psu-auth-starter",
+    )
+    resolved = resolve_suite(selection)
+    manifest = resolved.manifest
+    metadata = resolved.metadata
+
+    assert metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
+    assert metadata.suite == "psu-auth-starter"
+    assert manifest.certification_coverage == "partial"
+
+    # 2. Build a full default plan — all three steps should be selected.
+    plan = TestPlan.default_plan_from_manifest(manifest)
+    assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
+
+    # 3. Wire auth session store and intercept register() to capture the state.
+    auth_store = AuthSessionStore()
+    run_id = "e2e-psu-starter"
+    _registered_states: list[str] = []
+    _original_register = auth_store.register
+
+    def _intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Delegate to the real register and record the generated state token.
+
+        Args:
+            run_id_inner: Parent run identifier passed through to the store.
+            state: Optional caller-supplied state; ``None`` causes the store
+                to generate one via ``secrets.token_urlsafe``.
+
+        Returns:
+            The newly registered :class:`AuthSession`.
+        """
+        session = _original_register(run_id_inner, state=state)
+        _registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", _intercepting_register)
+
+    # 4. Replace ``conformance.executor.time`` with a fake that:
+    #    - ``monotonic`` advances by 0.5 s per call so the deadline (0 + 180 s)
+    #      is never breached after just one poll.
+    #    - ``sleep`` injects the auth code on the first call so the PSU step
+    #      finds a captured session and completes immediately.
+    _tick = [0.0]
+    _code_injected = [False]
+
+    def _fake_monotonic() -> float:
+        """Return a deterministically advancing monotonic timestamp.
+
+        Returns:
+            Current fake monotonic time in seconds.
+        """
+        v = _tick[0]
+        _tick[0] += 0.5
+        return v
+
+    def _fake_sleep(_seconds: float) -> None:
+        """Inject the auth code on the first poll so the PSU step completes.
+
+        Args:
+            _seconds: Sleep duration requested by the executor (ignored).
+        """
+        if _registered_states and not _code_injected[0]:
+            _code_injected[0] = True
+            auth_store.capture_code(_registered_states[-1], "psu-auth-code-e2e")
+
+    fake_time = types.SimpleNamespace(monotonic=_fake_monotonic, sleep=_fake_sleep)
+    monkeypatch.setattr("conformance.executor.time", fake_time)
+
+    # 5. Prepare a mock HTTP transport.
+    discovery_body = {
+        "issuer": "https://aspsp.example.com",
+        "authorization_endpoint": "https://aspsp.example.com/authorize",
+        "token_endpoint": "https://aspsp.example.com/token",
+        "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+    }
+    jwks_body = {"keys": [{"kty": "RSA", "kid": "key-1"}]}
+
+    def _mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked responses for the bundled suite HTTP steps.
+
+        Args:
+            request: Outbound HTTP request from the executor under test.
+
+        Returns:
+            Mocked response appropriate for the requested URL path.
+        """
+        if "jwks.json" in str(request.url):
+            return httpx.Response(200, json=jwks_body)
+        return httpx.Response(200, json=discovery_body)
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_client_id="test-client-id",
+        oauth_redirect_uri="https://conformance.example.com/callback",
+    )
+
+    # 6. Execute the manifest end-to-end.
+    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(_mock_handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=metadata,
+            runtime_config=runtime_config,
+            run_id=run_id,
+            auth_session_store=auth_store,
+            plan=plan,
+        )
+
+    # 7. Assert plan coherence: all three steps present in result.
+    result_obj = result.to_json_object()
+    assert isinstance(result_obj.get("steps"), list)
+    # StepResult.name carries the step id (used as both identifier and display name).
+    step_ids = [cast(JsonObject, s)["name"] for s in cast(list[JsonValue], result_obj["steps"])]
+    assert "openid-discovery" in step_ids
+    assert "jwks-fetch" in step_ids
+    assert "psu-authorization" in step_ids
+
+    # 8. Assert partial coverage blocks certification eligibility.
+    eligibility = cast(JsonObject, result_obj.get("certificationEligibility"))
+    assert eligibility is not None
+    assert eligibility["eligible"] is False
+    coverage_block = cast(JsonObject, eligibility.get("certificationCoverage"))
+    assert coverage_block is not None
+    assert coverage_block["value"] == "partial"
+    assert any(
+        "partial" in cast(str, r).lower() or "coverage" in cast(str, r).lower()
+        for r in cast(list[JsonValue], eligibility["reasons"])
+    )
+
+    # 9. Assert suite metadata in result JSON and run-started event.
+    suite_in_result = cast(JsonObject, result_obj.get("suite"))
+    assert suite_in_result is not None
+    assert suite_in_result["catalogId"] == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
+    assert suite_in_result["suite"] == "psu-auth-starter"
+    run_started_events = [e for e in execution_logger.events() if e.type == "run-started"]
+    assert len(run_started_events) == 1
+    run_started_suite = cast(JsonObject, run_started_events[0].payload.get("suite"))
+    assert run_started_suite["catalogId"] == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
+
+    # 10. Assert masking: client_id masked in psu-authorization-url log event.
+    psu_url_events = [e for e in execution_logger.events() if e.type == "psu-authorization-url"]
+    assert len(psu_url_events) == 1
+    # Raw value is "test-client-id"; BufferedExecutionLogger must replace it.
+    assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
 
 
 @pytest.mark.unit

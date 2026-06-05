@@ -578,7 +578,7 @@ Request direction accepts: ``method``, ``url`` (no sub-segments).
 Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
 """
 
-_CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environment)\}")
+_CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri))\}")
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
@@ -1112,7 +1112,8 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
             if token.startswith("${config."):
                 raise ManifestError(
                     f"{location} contains unsupported config placeholder: {token} "
-                    "(allowed: ${config.discoveryUrl}, ${config.environment})"
+                    "(allowed: ${config.discoveryUrl}, ${config.environment}, "
+                    "${config.oauth.clientId}, ${config.oauth.redirectUri})"
                 )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)

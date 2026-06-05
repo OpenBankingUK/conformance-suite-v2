@@ -329,6 +329,7 @@ def _run_manifest_v1(
         plan=plan,
         suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
+        certification_coverage=manifest.certification_coverage,
     )
 
 

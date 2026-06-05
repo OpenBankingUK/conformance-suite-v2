@@ -107,7 +107,19 @@ _SMOKE_SUITE_DESCRIPTION = (
     "Smoke-level OpenID discovery and JWKS checks for the selected Open Banking Read/Write version; "
     "this is not full Read/Write API certification coverage."
 )
-"""Shared description for the first catalog entries, which are intentionally smoke-scoped."""
+"""Shared description for the discovery-jwks catalog entries, which are intentionally smoke-scoped."""
+
+_PSU_AUTH_STARTER_DESCRIPTION = (
+    "OpenID discovery, JWKS fetch, and manual PSU authorisation starter suite for the selected "
+    "Open Banking Read/Write version; this is not full Read/Write API certification coverage. "
+    "The bundled redirectUri (https://conformance.example.com/callback) is a static example; "
+    "participants must register their actual redirect URI with their ASPSP."
+)
+"""Description for the psu-auth-starter catalog entries.
+
+Explicitly states that the suite is non-certifying and that the bundled
+``redirectUri`` placeholder value must be registered with the ASPSP before use.
+"""
 
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
@@ -117,10 +129,22 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         description=_SMOKE_SUITE_DESCRIPTION,
     ),
     _CatalogEntry(
+        key=("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
+        resource_name="ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+        label="Open Banking Read/Write v3.1.11 FAPI 1 Advanced PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
         key=("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
         description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
     ),
 )
 """Bundled suite catalog rows, kept in deterministic key order."""
