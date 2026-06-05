@@ -50,7 +50,7 @@ The supported suite combinations are `ob-read-write` × (`v3.1.11` | `v4.0`) × 
 | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
 | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
 
-The `psu-auth-starter` suite requires an `oauth` section in the participant config with the client identifier registered at the ASPSP and an HTTPS redirect URI also registered with the ASPSP:
+The `psu-auth-starter` suite requires an `oauth` section in the participant config with the client identifier registered at the ASPSP and an HTTPS redirect URI also registered with the ASPSP. The bundled PSU authorisation step resolves both values from this config:
 
 ```json
 {

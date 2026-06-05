@@ -241,13 +241,13 @@ The `psu-auth-starter` suite requires an `oauth` section in the participant conf
 }
 ```
 
-The redirect URI must be an HTTPS URL. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifest value in the `psu-auth-starter` JSON (`https://conformance.example.com/callback`) is a static example placeholder.
+The redirect URI must be an HTTPS URL. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled `psu-auth-starter` manifest resolves its `redirectUri` from `${config.oauth.redirectUri}`.
 
 See `config/model-bank-suite-example.json` (smoke suite) and `config/model-bank-psu-auth-starter-example.json` (starter suite) for complete config examples.
 
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` in the PSU authorisation step.
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step.
 
 Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, and `${config.oauth.redirectUri}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
 

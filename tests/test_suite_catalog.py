@@ -91,7 +91,7 @@ def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_version
     assert psu_step.mode == "manual"
     assert psu_step.authorization_endpoint == "${steps.openid-discovery.response.body.authorization_endpoint}"
     assert psu_step.client_id == "${config.oauth.clientId}"
-    assert psu_step.redirect_uri == "https://conformance.example.com/callback"
+    assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
     assert psu_step.scope == "openid accounts"
 
 

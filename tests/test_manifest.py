@@ -2057,6 +2057,19 @@ def test_parse_v1_psu_step_accepts_placeholder_in_authorization_endpoint() -> No
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_accepts_config_redirect_uri_placeholder() -> None:
+    """PSU redirectUri may use the narrow participant config placeholder."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["redirectUri"] = "${config.oauth.redirectUri}"
+
+    manifest = parse_manifest(raw)
+
+    psu_step = manifest.steps[0]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
+
+
+@pytest.mark.unit
 def test_parse_v1_psu_step_rejects_non_https_authorization_endpoint() -> None:
     """Literal authorisation endpoints are HTTPS-validated at parse time."""
     raw = valid_psu_manifest()
@@ -2066,11 +2079,11 @@ def test_parse_v1_psu_step_rejects_non_https_authorization_endpoint() -> None:
 
 
 @pytest.mark.unit
-def test_parse_v1_psu_step_rejects_placeholder_in_redirect_uri() -> None:
-    """Redirect URI must be a manifest-author-time literal — no placeholders."""
+def test_parse_v1_psu_step_rejects_unsupported_placeholder_in_redirect_uri() -> None:
+    """Redirect URI only permits the narrow participant config placeholder."""
     raw = valid_psu_manifest()
-    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["redirectUri"] = "${steps.discovery.response.body.redirect_uri}"
-    with pytest.raises(ManifestError, match=r"steps\[0\]\.redirectUri must not contain placeholders"):
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["redirectUri"] = "${config.discoveryUrl}"
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.redirectUri may only use"):
         parse_manifest(raw)
 
 

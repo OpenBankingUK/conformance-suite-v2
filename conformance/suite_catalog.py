@@ -112,13 +112,12 @@ _SMOKE_SUITE_DESCRIPTION = (
 _PSU_AUTH_STARTER_DESCRIPTION = (
     "OpenID discovery, JWKS fetch, and manual PSU authorisation starter suite for the selected "
     "Open Banking Read/Write version; this is not full Read/Write API certification coverage. "
-    "The bundled redirectUri (https://conformance.example.com/callback) is a static example; "
-    "participants must register their actual redirect URI with their ASPSP."
+    "The bundled redirectUri is resolved from participant config and must be registered with the ASPSP."
 )
 """Description for the psu-auth-starter catalog entries.
 
 Explicitly states that the suite is non-certifying and that the bundled
-``redirectUri`` placeholder value must be registered with the ASPSP before use.
+``redirectUri`` config value must be registered with the ASPSP before use.
 """
 
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (

@@ -39,7 +39,7 @@
       "mode": "manual",
       "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
       "clientId": "${config.oauth.clientId}",
-      "redirectUri": "https://conformance.example.com/callback",
+      "redirectUri": "${config.oauth.redirectUri}",
       "responseType": "code id_token",
       "scope": "openid accounts",
       "timeoutSeconds": 180,

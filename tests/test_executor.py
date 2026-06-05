@@ -2577,7 +2577,7 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
         discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
         environment="test",
         oauth_client_id="test-client-id",
-        oauth_redirect_uri="https://conformance.example.com/callback",
+        oauth_redirect_uri="https://participant.example.com/callback",
     )
 
     # 6. Execute the manifest end-to-end.
@@ -2629,6 +2629,8 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
     # 10. Assert masking: client_id masked in psu-authorization-url log event.
     psu_url_events = [e for e in execution_logger.events() if e.type == "psu-authorization-url"]
     assert len(psu_url_events) == 1
+    psu_authorization_url = cast(str, psu_url_events[0].payload["url"])
+    assert "redirect_uri=https%3A%2F%2Fparticipant.example.com%2Fcallback" in psu_authorization_url
     # Raw value is "test-client-id"; BufferedExecutionLogger must replace it.
     assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
 

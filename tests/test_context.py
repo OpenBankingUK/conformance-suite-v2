@@ -58,6 +58,9 @@ def _oauth_context() -> ExecutionContext:
         )
     )
 
+
+@pytest.mark.unit
+class TestRecordStep:
     def test_records_step_into_new_context(self) -> None:
         ctx = ExecutionContext()
         request = RequestRecord(method="GET", url="https://example.com/api")
@@ -136,7 +139,7 @@ def _oauth_context() -> ExecutionContext:
         )
 
         with pytest.raises(TypeError):
-            ctx.steps["new"] = StepRecord(
+            ctx.steps["new"] = StepRecord(  # type: ignore[index]  # Intentional runtime immutability probe.
                 request=RequestRecord(method="GET", url="https://evil.com"),
                 response=None,
             )

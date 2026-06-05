@@ -590,6 +590,7 @@ def _execute_v1_psu_step_inner(
     try:
         resolved_authorization_endpoint = resolve_placeholders(manifest_step.authorization_endpoint, context)
         resolved_client_id = resolve_placeholders(manifest_step.client_id, context)
+        resolved_redirect_uri = resolve_placeholders(manifest_step.redirect_uri, context)
         resolved_state = resolve_placeholders(manifest_step.state, context) if manifest_step.state is not None else None
         resolved_request_object = (
             resolve_placeholders(manifest_step.request_object, context)
@@ -635,7 +636,7 @@ def _execute_v1_psu_step_inner(
             resolved_authorization_endpoint,
             label=f"Step '{manifest_step.id}' authorizationEndpoint",
         )
-        validate_https_url(manifest_step.redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
+        validate_https_url(resolved_redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
     except HttpsUrlValidationError as error:
         request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
@@ -675,7 +676,7 @@ def _execute_v1_psu_step_inner(
     authorization_url = build_authorization_url(
         endpoint=resolved_authorization_endpoint,
         client_id=resolved_client_id,
-        redirect_uri=manifest_step.redirect_uri,
+        redirect_uri=resolved_redirect_uri,
         response_type=manifest_step.response_type,
         scope=manifest_step.scope,
         state=session.state,
@@ -712,6 +713,7 @@ def _execute_v1_psu_step_inner(
             request_record=request_record,
             request_evidence=request_evidence,
             registered_state=session.state,
+            redirect_uri=resolved_redirect_uri,
         )
 
     deadline = clock() + manifest_step.timeout_seconds
@@ -759,6 +761,7 @@ def _execute_headless_psu_authorization(
     request_record: RequestRecord,
     request_evidence: dict[str, JsonValue],
     registered_state: str,
+    redirect_uri: str,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a headless PSU authorisation redirect exchange.
 
@@ -775,6 +778,8 @@ def _execute_headless_psu_authorization(
         request_record: Request record for the authorisation URL.
         request_evidence: Mutable request evidence attached to failures.
         registered_state: State value registered for this PSU step.
+        redirect_uri: Resolved and validated redirect URI expected in the
+            ASPSP redirect target.
 
     Returns:
         A tuple of the PSU step result and updated execution context.
@@ -833,7 +838,7 @@ def _execute_headless_psu_authorization(
             record_step(context, manifest_step.id, request_record, None),
         )
 
-    if not redirect_matches_registered_uri(location=location, redirect_uri=manifest_step.redirect_uri):
+    if not redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri):
         return (
             _attach_evidence(
                 StepResult(

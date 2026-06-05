@@ -340,9 +340,10 @@ class PsuAuthorizationStep:
             query parameter. Placeholders permitted.
         redirect_uri: Registered redirect URI sent as the ``redirect_uri``
             query parameter and used to match the ASPSP redirect in
-            headless mode. Validated as HTTPS at parse time; placeholders
-            are **not** permitted (defence in depth — a redirect URI must
-            be known at manifest-author time, never derived at runtime).
+            headless mode. Literal values are validated as HTTPS at parse
+            time. The only permitted placeholder is the narrow participant
+            config value ``${config.oauth.redirectUri}``, which is resolved
+            and HTTPS-validated again at runtime.
         response_type: OAuth 2.0 ``response_type`` value. Defaults to
             ``"code id_token"`` (FAPI 1 Advanced hybrid flow). Placeholders
             are **not** permitted — this is a static FAPI-defined value.
@@ -842,21 +843,19 @@ def _parse_v1_psu_authorization_step(
     client_id = _required_string(raw_step, "clientId", location=location)
     _validate_placeholder_syntax(client_id, location=f"{location}.clientId", seen_ids=seen_ids)
 
-    # ``redirectUri`` deliberately rejects placeholders: a redirect URI is
-    # a registered, manifest-author-time value. Allowing runtime derivation
-    # would widen the open-redirect attack surface in headless mode where
-    # the executor matches the ASPSP-returned ``Location`` against this
-    # value.
     redirect_uri = _required_string(raw_step, "redirectUri", location=location)
     if _PLACEHOLDER_FIND_PATTERN.search(redirect_uri):
-        raise ManifestError(
-            f"{location}.redirectUri must not contain placeholders "
-            "(redirect URIs are registered, manifest-author-time values)"
-        )
-    try:
-        validate_https_url(redirect_uri, label=f"{location}.redirectUri")
-    except HttpsUrlValidationError as error:
-        raise ManifestError(str(error)) from error
+        _validate_placeholder_syntax(redirect_uri, location=f"{location}.redirectUri", seen_ids=seen_ids)
+        if redirect_uri != "${config.oauth.redirectUri}":
+            raise ManifestError(
+                f"{location}.redirectUri may only use the config placeholder "
+                "${config.oauth.redirectUri} or a literal HTTPS URL"
+            )
+    else:
+        try:
+            validate_https_url(redirect_uri, label=f"{location}.redirectUri")
+        except HttpsUrlValidationError as error:
+            raise ManifestError(str(error)) from error
 
     response_type = _parse_psu_optional_string(
         raw_step, key="responseType", default=_PSU_AUTH_DEFAULT_RESPONSE_TYPE, location=location
