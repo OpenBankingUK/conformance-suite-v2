@@ -2734,6 +2734,198 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
     assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
 
 
+@pytest.mark.integration
+def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_logs(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bundled AIS slice executes token exchange with masked execution evidence.
+
+    Uses the real catalog manifest, deselects the later consent/resource steps
+    so the test stays scoped to chunk 4, injects a captured PSU auth code on
+    the first poll, and verifies both the on-wire form-urlencoded request and
+    the masked result/log artifacts.
+
+    Args:
+        monkeypatch: Pytest fixture used to install deterministic fake time for
+            the manual PSU polling loop.
+    """
+    import types
+
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+    from conformance.test_plan import TestPlan
+
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-slice",
+    )
+    resolved = resolve_suite(selection)
+    manifest = resolved.manifest
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
+        ["account-access-consent", "accounts-list"]
+    )
+
+    assert plan.selected_step_ids() == [
+        "openid-discovery",
+        "jwks-fetch",
+        "psu-authorization",
+        "token-exchange",
+    ]
+
+    auth_store = AuthSessionStore()
+    run_id = "e2e-ais-token"
+    registered_states: list[str] = []
+    original_register = auth_store.register
+
+    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Delegate to the real store and record the generated auth state.
+
+        Args:
+            run_id_inner: Run identifier passed through by the executor.
+            state: Optional caller-supplied state token.
+
+        Returns:
+            Newly registered auth session.
+        """
+        session = original_register(run_id_inner, state=state)
+        registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", intercepting_register)
+
+    tick = [0.0]
+    code_injected = [False]
+
+    def fake_monotonic() -> float:
+        """Return deterministic monotonic time for PSU polling.
+
+        Returns:
+            Current fake monotonic timestamp.
+        """
+        value = tick[0]
+        tick[0] += 0.5
+        return value
+
+    def fake_sleep(_seconds: float) -> None:
+        """Inject a synthetic captured authorization code on first poll.
+
+        Args:
+            _seconds: Requested sleep interval, ignored by the fake.
+        """
+        if registered_states and not code_injected[0]:
+            code_injected[0] = True
+            auth_store.capture_code(registered_states[-1], "ais-auth-code-e2e")
+
+    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
+
+    captured_requests: list[httpx.Request] = []
+    discovery_body = {
+        "issuer": "https://aspsp.example.com",
+        "authorization_endpoint": "https://aspsp.example.com/authorize",
+        "token_endpoint": "https://aspsp.example.com/token",
+        "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+        "response_types_supported": ["code id_token"],
+    }
+    jwks_body = {"keys": [{"kty": "RSA", "kid": "key-1"}]}
+    token_body = {
+        "access_token": "ais-access-token",
+        "id_token": "ais-id-token",
+        "token_type": "Bearer",
+        "expires_in": 300,
+    }
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked responses for discovery, JWKS, and token exchange.
+
+        Args:
+            request: Outbound HTTP request from the executor.
+
+        Returns:
+            Mocked JSON response for the requested endpoint.
+        """
+        captured_requests.append(request)
+        if str(request.url) == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(200, json=discovery_body)
+        if str(request.url) == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json=jwks_body)
+        return httpx.Response(200, json=token_body)
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="ais-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+    )
+
+    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=resolved.metadata,
+            runtime_config=runtime_config,
+            run_id=run_id,
+            auth_session_store=auth_store,
+            plan=plan,
+        )
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == [
+        "openid-discovery",
+        "jwks-fetch",
+        "psu-authorization",
+        "token-exchange",
+    ]
+
+    token_request = captured_requests[-1]
+    assert token_request.method == "POST"
+    assert str(token_request.url) == "https://aspsp.example.com/token"
+    assert token_request.headers["content-type"] == "application/x-www-form-urlencoded"
+    wire_body = token_request.content.decode("ascii")
+    assert "grant_type=authorization_code" in wire_body
+    assert "code=ais-auth-code-e2e" in wire_body
+    assert "client_id=ais-client-id" in wire_body
+    assert "redirect_uri=https%3A%2F%2Fparticipant.example.com%2Fcallback" in wire_body
+
+    serialised_result = json.dumps(result.to_json_object(), sort_keys=True)
+    assert "ais-auth-code-e2e" not in serialised_result
+    assert "ais-access-token" not in serialised_result
+    assert "ais-id-token" not in serialised_result
+
+    token_request_events = [
+        event for event in execution_logger.events() if event.type == "request-sent" and event.step_id == "token-exchange"
+    ]
+    assert len(token_request_events) == 1
+    assert token_request_events[0].payload["form"] == {
+        "grant_type": "authorization_code",
+        "code": "***",
+        "redirect_uri": "https://participant.example.com/callback",
+        "client_id": "ais-client-id",
+    }
+
+    token_response_events = [
+        event
+        for event in execution_logger.events()
+        if event.type == "response-received" and event.step_id == "token-exchange"
+    ]
+    assert len(token_response_events) == 1
+    assert token_response_events[0].payload == {
+        "statusCode": 200,
+        "url": "https://aspsp.example.com/token",
+    }
+
+    ndjson = execution_logger.to_ndjson_bytes().decode("utf-8")
+    assert "ais-auth-code-e2e" not in ndjson
+    assert "ais-access-token" not in ndjson
+    assert "ais-id-token" not in ndjson
+
+
 @pytest.mark.unit
 def test_run_manifest_request_sent_masks_authorization_header() -> None:
     """request-sent event masks Authorization header values by default."""

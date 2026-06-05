@@ -162,6 +162,52 @@ def test_buffered_logger_masks_sensitive_headers_by_default() -> None:
 
 
 @pytest.mark.unit
+def test_buffered_logger_masks_token_exchange_form_and_response_payloads() -> None:
+    """Token-exchange request/response events mask form credentials and tokens."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    logger.emit(
+        "request-sent",
+        step_id="token-exchange",
+        payload={
+            "form": {
+                "grant_type": "authorization_code",
+                "code": "super-secret-code",  # pragma: allowlist secret
+                "client_assertion": "signed-client-assertion",
+            },
+            "headers": {"Authorization": "Bearer very-secret-token"},
+        },
+    )
+    logger.emit(
+        "response-received",
+        step_id="token-exchange",
+        payload={
+            "statusCode": 200,
+            "body": {
+                "access_token": "access-token-secret",
+                "id_token": "id-token-secret",
+                "token_type": "Bearer",
+            },
+        },
+    )
+
+    request_payload = logger.events()[0].payload
+    response_payload = logger.events()[1].payload
+
+    assert request_payload["form"] == {
+        "grant_type": "authorization_code",
+        "code": "***",
+        "client_assertion": "***",
+    }
+    assert request_payload["headers"] == {"Authorization": "***"}
+    assert response_payload["body"] == {
+        "access_token": "***",
+        "id_token": "***",
+        "token_type": "Bearer",
+    }
+
+
+@pytest.mark.unit
 def test_buffered_logger_developer_mode_skips_masking() -> None:
     logger = BufferedExecutionLogger(run_id="r", developer_mode=True)
     logger.emit(
