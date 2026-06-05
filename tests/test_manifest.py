@@ -313,7 +313,7 @@ def test_parse_v1_manifest_rejects_missing_rule_specific_fields(
     ("raw_assertion", "message"),
     [
         (
-            {"type": "json_field", "path": "issuer", "rule": "equals", "value": {"bad": {1, 2}}},
+            {"type": "json_field", "path": "issuer", "rule": "equals", "value": cast(JsonValue, {"bad": {1, 2}})},
             r"steps\[0\]\.assertions\[0\]\.value must be valid JSON-compatible data",
         ),
         (
@@ -321,7 +321,7 @@ def test_parse_v1_manifest_rejects_missing_rule_specific_fields(
                 "type": "json_field",
                 "path": "issuer",
                 "rule": "one_of",
-                "values": ["https://example.com", {"bad": {1, 2}}],
+                "values": ["https://example.com", cast(JsonValue, {"bad": {1, 2}})],
             },
             r"steps\[0\]\.assertions\[0\]\.values\[1\] must be valid JSON-compatible data",
         ),
