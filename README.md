@@ -95,6 +95,39 @@ Browser-launched runs can also drive manual PSU authorisation manifests. While a
 
 Both bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit.
 
+The bundled `psu-auth-starter` manifests also act as the first authoring proof for the expanded generic response-assertion vocabulary. They stay deliberately partial, but now demonstrate response-header checks plus richer JSON rules on the discovery and JWKS responses: `header` assertions (`present`, `absent`, `equals`, `contains`) and `json_field` rules including `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, and `all_items_have_field`.
+
+For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-example.json` shows the same generic style against discovery/JWKS endpoints. Representative assertion fragments look like this:
+
+```json
+{
+	"type": "header",
+	"name": "content-type",
+	"rule": "contains",
+	"value": "application/json"
+}
+```
+
+```json
+{
+	"type": "json_field",
+	"path": "keys",
+	"rule": "all_items_have_field",
+	"field": "kty"
+}
+```
+
+```json
+{
+	"type": "json_field",
+	"path": "token_endpoint_auth_method",
+	"rule": "one_of",
+	"values": ["private_key_jwt", "tls_client_auth"]
+}
+```
+
+This is still an enabling layer for suite authors. It does not publish full Read/Write certification coverage, and no bundled suite should be treated as certifying until Standards author the complete mandatory manifest coverage separately.
+
 ## Certification report validation
 
 OBL reviewers can validate a submitted result JSON against the manifest used for the run and an approved-release policy:

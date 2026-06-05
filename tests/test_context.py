@@ -61,7 +61,10 @@ def _oauth_context() -> ExecutionContext:
 
 @pytest.mark.unit
 class TestRecordStep:
+    """Verify execution-context step capture remains immutable."""
+
     def test_records_step_into_new_context(self) -> None:
+        """Recording a step stores the request and response in a new context."""
         ctx = ExecutionContext()
         request = RequestRecord(method="GET", url="https://example.com/api")
         response = ResponseRecord(status_code=200, body={"key": "value"})
@@ -76,6 +79,7 @@ class TestRecordStep:
         assert "step-1" not in ctx.steps
 
     def test_records_step_without_response(self) -> None:
+        """Recording a transport failure leaves the response slot empty."""
         ctx = ExecutionContext()
         request = RequestRecord(method="GET", url="https://example.com/api")
 
@@ -84,6 +88,7 @@ class TestRecordStep:
         assert new_ctx.steps["step-1"].response is None
 
     def test_preserves_existing_steps(self) -> None:
+        """Adding a new step must not drop previously recorded steps."""
         ctx = ExecutionContext(
             steps={
                 "existing": StepRecord(
@@ -101,6 +106,7 @@ class TestRecordStep:
         assert "new-step" in new_ctx.steps
 
     def test_preserves_runtime_config(self) -> None:
+        """Recording steps must preserve safe runtime config placeholders."""
         ctx = _runtime_config_context()
         request = RequestRecord(method="GET", url="https://example.com/api")
 
@@ -110,6 +116,7 @@ class TestRecordStep:
         assert resolve_placeholders("${config.environment}", new_ctx) == "sandbox"
 
     def test_steps_isolated_from_caller_mutation(self) -> None:
+        """ExecutionContext must copy the incoming steps mapping."""
         mutable_dict: dict[str, StepRecord] = {
             "step-a": StepRecord(
                 request=RequestRecord(method="GET", url="https://example.com/a"),
@@ -129,6 +136,7 @@ class TestRecordStep:
         assert list(ctx.steps.keys()) == ["step-a"]
 
     def test_steps_rejects_in_place_mutation(self) -> None:
+        """ExecutionContext.steps must reject top-level mutation attempts."""
         ctx = ExecutionContext(
             steps={
                 "step-a": StepRecord(
@@ -143,6 +151,39 @@ class TestRecordStep:
                 request=RequestRecord(method="GET", url="https://evil.com"),
                 response=None,
             )
+
+
+@pytest.mark.unit
+class TestResponseRecordHeaders:
+    """Verify captured response headers are isolated and case-insensitive."""
+
+    def test_copies_headers_from_mutable_source(self) -> None:
+        """Mutating the source header dict must not affect the stored record."""
+        headers = {"X-Trace-ID": "trace-123"}
+
+        record = ResponseRecord(status_code=200, headers=headers, body={"ok": True})
+        headers["X-Trace-ID"] = "mutated"
+
+        assert record.headers["x-trace-id"] == "trace-123"
+
+    def test_headers_are_case_insensitive(self) -> None:
+        """Header lookup must ignore case to match HTTP semantics."""
+        record = ResponseRecord(
+            status_code=200,
+            headers={"Content-Type": "application/json", "X-Trace-ID": "trace-123"},
+            body={"ok": True},
+        )
+
+        assert record.headers["content-type"] == "application/json"
+        assert record.headers["CONTENT-TYPE"] == "application/json"
+        assert "x-trace-id" in record.headers
+
+    def test_headers_reject_in_place_mutation(self) -> None:
+        """Stored response headers must be immutable."""
+        record = ResponseRecord(status_code=200, headers={"X-Trace-ID": "trace-123"}, body={})
+
+        with pytest.raises(TypeError):
+            record.headers["x-new"] = "value"  # type: ignore[index]  # Intentional immutability probe.
 
 
 @pytest.mark.unit

@@ -406,7 +406,7 @@ class BufferedExecutionLogger(ExecutionLogger):
                 # ``headers`` is mapped str→str by upstream callers; the
                 # cast is safe because mask_headers only reads .items().
                 str_headers = {str(name): str(header_value) for name, header_value in value.items()}
-                masked[key] = dict(mask_headers(str_headers))
+                masked[key] = cast("JsonObject", mask_headers(str_headers))
             elif event_type == "psu-authorization-url" and key == "url" and isinstance(value, str):
                 masked[key] = mask_url_query(value, SENSITIVE_JSON_KEYS)
             elif event_type == "psu-authorization-url" and key in {"client_id", "request_object"}:

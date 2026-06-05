@@ -8,6 +8,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
 
+from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
 
 
@@ -63,27 +64,33 @@ class ResponseRecord:
 
     Attributes:
         status_code: HTTP status code returned.
+        headers: Immutable response headers with case-insensitive lookup.
         body: Deep copy of the parsed JSON object response body, wrapped in a
             shallow read-only proxy. Top-level keys cannot be added or removed;
             nested containers inside the body are not frozen.
     """
 
     status_code: int
+    headers: FrozenHeaders = field(default_factory=FrozenHeaders)
     body: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
 
-    def __init__(self, *, status_code: int, body: JsonObject) -> None:
-        """Deep-copy and wrap the body dict to isolate it from external mutation.
+    def __init__(self, *, status_code: int, body: JsonObject, headers: Mapping[str, str] | None = None) -> None:
+        """Deep-copy response data to isolate the stored record from mutation.
 
         A deep copy is taken so that mutations to the original ``body`` argument
         after construction do not affect the stored record.  The copy is then
         wrapped in a ``MappingProxyType`` to prevent top-level key mutations.
-        Nested containers remain mutable if a caller obtains a direct reference.
+        Response headers are also copied into an immutable case-insensitive
+        mapping so later assertion and placeholder code can resolve names
+        without depending on source header casing.
 
         Args:
             status_code: HTTP status code returned.
             body: Parsed JSON object response body.
+            headers: Optional response headers to capture.
         """
         object.__setattr__(self, "status_code", status_code)
+        object.__setattr__(self, "headers", freeze_headers(headers))
         object.__setattr__(self, "body", MappingProxyType(copy.deepcopy(body)))
 
 
