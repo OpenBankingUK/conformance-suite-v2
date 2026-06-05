@@ -209,7 +209,7 @@ def send_json(
         return JsonHttpResponse(
             url=str(response.url),
             status_code=response.status_code,
-            headers=freeze_headers(response.headers),
+            headers=response.headers,
             body={},
         )
 
@@ -231,7 +231,7 @@ def send_json(
     return JsonHttpResponse(
         url=str(response.url),
         status_code=response.status_code,
-        headers=freeze_headers(response.headers),
+        headers=response.headers,
         body=json_body_parsed,
     )
 
