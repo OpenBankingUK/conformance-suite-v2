@@ -1604,16 +1604,18 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
             required rule-specific fields.
     """
     rule = _required_header_rule(raw_assertion, location=location)
-    if rule == "equals" or rule == "contains":
-        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "name", "rule", "value"}, location=location)
-        value = _required_header_rule_value(raw_assertion, rule=rule, location=location)
-    else:
-        _reject_unknown_keys_with_singular_message(
-            raw_assertion,
-            allowed_keys={"type", "name", "rule"},
-            location=location,
-        )
-        value = None
+    value: str | None
+    match rule:
+        case "equals" | "contains":
+            _reject_unknown_keys(raw_assertion, allowed_keys={"type", "name", "rule", "value"}, location=location)
+            value = _required_header_rule_value(raw_assertion, rule=rule, location=location)
+        case _:
+            _reject_unknown_keys_with_singular_message(
+                raw_assertion,
+                allowed_keys={"type", "name", "rule"},
+                location=location,
+            )
+            value = None
 
     name = _required_string(raw_assertion, "name", location=location)
     if not _HEADER_NAME_PATTERN.fullmatch(name):

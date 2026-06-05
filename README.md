@@ -120,9 +120,9 @@ For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-examp
 ```json
 {
 	"type": "json_field",
-	"path": "response_mode",
+	"path": "token_endpoint_auth_method",
 	"rule": "one_of",
-	"values": ["fragment", "query.jwt"]
+	"values": ["private_key_jwt", "tls_client_auth"]
 }
 ```
 
