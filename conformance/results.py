@@ -320,12 +320,9 @@ def _build_eligibility(
     # 1. Deselected-mandatory — step never ran so cannot demonstrate coverage.
     # 2. Failed / skipped mandatory steps.
     # 3. No mandatory steps declared.
-    # 4. Unapproved tool version (policy-level check).
-    # 5. Missing approved-release policy (advisory self-assessment).
-    # 6. Partial manifest coverage — manifest metadata property. Listed last so
-    #    more specific, actionable execution reasons take the primary slot when
-    #    multiple blockers are present, but the coverage state is always surfaced
-    #    for audit when the manifest has not been marked complete.
+    # 4. Partial manifest coverage — manifest-level certification boundary.
+    # 5. Unapproved tool version (policy-level check).
+    # 6. Missing approved-release policy (advisory self-assessment).
     if mandatory_deselected:
         reasons.append("Mandatory steps were deselected from the plan")
     if mandatory_failed:
@@ -334,12 +331,12 @@ def _build_eligibility(
         reasons.append(f"{mandatory_skipped} mandatory step(s) skipped due to earlier failures")
     if not mandatory_total:
         reasons.append("No mandatory steps declared")
+    if certification_coverage != "complete":
+        reasons.append("Manifest is not marked as complete certification coverage")
     if approved_release_policy is not None and not approved_release_policy.is_tool_version_approved(tool_version):
         reasons.append(f"Tool version is not in the approved-release policy: {tool_version}")
     if approved_release_policy is None:
         reasons.append("Approved-release policy was not supplied")
-    if certification_coverage != "complete":
-        reasons.append("Manifest is not marked as complete certification coverage")
 
     block: JsonObject = {
         "eligible": not reasons,

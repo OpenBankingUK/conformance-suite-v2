@@ -552,6 +552,33 @@ def test_eligibility_partial_coverage_blocks_even_when_all_mandatory_pass(monkey
 
 
 @pytest.mark.unit
+def test_eligibility_partial_coverage_reason_precedes_missing_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Partial coverage is the primary reason when a policy could not make the run eligible."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        certification_coverage="partial",
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Manifest is not marked as complete certification coverage"
+    assert block["reasons"] == [
+        "Manifest is not marked as complete certification coverage",
+        "Approved-release policy was not supplied",
+    ]
+
+
+@pytest.mark.unit
 def test_eligibility_default_coverage_is_partial(monkeypatch: pytest.MonkeyPatch) -> None:
     """Omitting ``certification_coverage`` defaults to ``partial`` and blocks eligibility.
 
