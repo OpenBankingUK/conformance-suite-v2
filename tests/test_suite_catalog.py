@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 
 import conformance.suite_catalog as suite_catalog
-from conformance.manifest import ManifestStep, PsuAuthorizationStep
+from conformance.manifest import HeaderAssertion, JsonFieldAssertion, ManifestStep, PsuAuthorizationStep
 from conformance.model_bank_config import SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
 
@@ -93,6 +93,29 @@ def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_version
     assert psu_step.client_id == "${config.oauth.clientId}"
     assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
     assert psu_step.scope == "openid accounts"
+
+    discovery_assertions = discovery_step.assertions
+    jwks_assertions = jwks_step.assertions
+    assert any(
+        isinstance(assertion, HeaderAssertion)
+        and assertion.name == "content-type"
+        and assertion.rule == "contains"
+        and assertion.value == "application/json"
+        for assertion in discovery_assertions
+    )
+    assert any(
+        isinstance(assertion, JsonFieldAssertion)
+        and assertion.path == "response_types_supported"
+        and assertion.rule == "non_empty_array"
+        for assertion in discovery_assertions
+    )
+    assert any(
+        isinstance(assertion, JsonFieldAssertion)
+        and assertion.path == "keys"
+        and assertion.rule == "all_items_have_field"
+        and assertion.field == "kty"
+        for assertion in jwks_assertions
+    )
 
 
 @pytest.mark.unit

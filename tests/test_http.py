@@ -6,7 +6,7 @@ from unittest.mock import patch
 import httpx
 import pytest
 
-from conformance.http import JsonHttpClientError, build_json_http_client, send_json
+from conformance.http import JsonHttpClientError, JsonHttpResponse, build_json_http_client, send_json
 
 
 @pytest.mark.unit
@@ -151,6 +151,45 @@ class TestSendJsonHeaderMerging:
 
 
 @pytest.mark.unit
+class TestSendJsonResponseHeaders:
+    """Verify that send_json preserves response headers safely."""
+
+    def test_response_headers_are_case_insensitive_and_immutable(self) -> None:
+        """Returned response headers must support case-insensitive lookup."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Return a JSON response with mixed-case headers."""
+            return httpx.Response(
+                200,
+                headers={"Content-Type": "application/json", "X-Trace-ID": "trace-123"},
+                json={"ok": True},
+            )
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = send_json(client, "GET", "https://example.com/resource")
+
+        assert result.headers["content-type"] == "application/json"
+        assert result.headers["CONTENT-TYPE"] == "application/json"
+        assert result.headers["x-trace-id"] == "trace-123"
+        with pytest.raises(TypeError):
+            result.headers["x-new"] = "value"  # type: ignore[index]  # Intentional immutability probe.
+
+    def test_json_http_response_copies_headers_from_source_mapping(self) -> None:
+        """Constructed responses must not alias the caller's mutable header dict."""
+        source_headers = {"X-Trace-ID": "trace-123"}
+
+        response = JsonHttpResponse(
+            url="https://example.com/resource",
+            status_code=200,
+            headers=source_headers,
+            body={"ok": True},
+        )
+        source_headers["X-Trace-ID"] = "mutated"
+
+        assert response.headers["x-trace-id"] == "trace-123"
+
+
+@pytest.mark.unit
 class TestSendJsonMethodCaseInsensitive:
     """Verify that send_json normalises the HTTP method to uppercase.
 
@@ -200,12 +239,13 @@ class TestSendJsonNoContentResponses:
 
         def handler(_request: httpx.Request) -> httpx.Response:
             """Return a no-content response with no body."""
-            return httpx.Response(status_code)
+            return httpx.Response(status_code, headers={"ETag": '"abc123"'})
 
         with httpx.Client(transport=httpx.MockTransport(handler)) as client:
             result = send_json(client, "DELETE", "https://example.com/resource/1")
 
         assert result.status_code == status_code
+        assert result.headers["etag"] == '"abc123"'
         assert result.body == {}
 
     @pytest.mark.parametrize("status_code", [204, 205, 304])

@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
 
 import httpx
 
+from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
 
 # HTTP statuses that RFC 9110 defines as carrying no message body.
@@ -45,19 +46,44 @@ class JsonHttpClientError(RuntimeError):
         self.status_code = status_code
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, init=False)
 class JsonHttpResponse:
     """Typed JSON response captured for result reporting.
 
     Attributes:
-        url: Response URL reported by `httpx` for the returned response.
-        status_code: HTTP status code returned by the endpoint.
-        body: Parsed JSON object body.
+        url (str): Response URL reported by `httpx` for the returned response.
+        status_code (int): HTTP status code returned by the endpoint.
+        body (JsonObject): Parsed JSON object body.
+        headers (FrozenHeaders): Immutable response headers with
+            case-insensitive lookup.
     """
 
     url: str
     status_code: int
     body: JsonObject
+    headers: FrozenHeaders
+
+    def __init__(
+        self,
+        *,
+        url: str,
+        status_code: int,
+        body: JsonObject,
+        headers: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+    ) -> None:
+        """Initialise a typed JSON response with frozen headers.
+
+        Args:
+            url: Response URL reported by `httpx`.
+            status_code: HTTP status code returned by the endpoint.
+            body: Parsed JSON object body.
+            headers: Source response headers copied into an immutable,
+                case-insensitive mapping.
+        """
+        object.__setattr__(self, "url", url)
+        object.__setattr__(self, "status_code", status_code)
+        object.__setattr__(self, "body", body)
+        object.__setattr__(self, "headers", freeze_headers(headers))
 
 
 def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
@@ -180,7 +206,12 @@ def send_json(
     # status-only assertions (e.g. DELETE → 204). ``json_field`` assertions
     # against an empty object will correctly fail with "field is missing".
     if response.status_code in _NO_CONTENT_STATUS_CODES:
-        return JsonHttpResponse(url=str(response.url), status_code=response.status_code, body={})
+        return JsonHttpResponse(
+            url=str(response.url),
+            status_code=response.status_code,
+            headers=freeze_headers(response.headers),
+            body={},
+        )
 
     try:
         response_body: object = response.json()
@@ -197,7 +228,12 @@ def send_json(
         )
 
     json_body_parsed = cast(dict[str, JsonValue], response_body)
-    return JsonHttpResponse(url=str(response.url), status_code=response.status_code, body=json_body_parsed)
+    return JsonHttpResponse(
+        url=str(response.url),
+        status_code=response.status_code,
+        headers=freeze_headers(response.headers),
+        body=json_body_parsed,
+    )
 
 
 def build_json_http_client(

@@ -240,7 +240,8 @@ def test_run_manifest_reports_unexpected_http_error_status_as_assertion_failure(
     assert result.status == "failed"
     assert result.steps[0].status == "failed"
     assert result.steps[0].status_code == 404
-    assert result.steps[0].details == {
+    details = dict(result.steps[0].details)
+    assert details == {
         "assertions": [{"status": "failed", "message": "Expected HTTP status 200, got 404"}],
         "request": {
             "method": "GET",
@@ -248,6 +249,7 @@ def test_run_manifest_reports_unexpected_http_error_status_as_assertion_failure(
         },
         "response": {
             "statusCode": 404,
+            "headers": {"content-length": "19", "content-type": "application/json"},
             "body": {"error": "missing"},
         },
     }
@@ -2112,6 +2114,53 @@ def test_run_manifest_v1_omits_evidence_on_pass() -> None:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_applies_header_and_json_assertions_and_keeps_pass_details_lean() -> None:
+    """Executor passes response headers into assertion evaluation for PASS steps."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "header-pass",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {"method": "GET", "url": "https://example.com/discovery"},
+                "assertions": [
+                    {"type": "http_status", "expected": 200},
+                    {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
+                    {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+                    {"type": "json_field", "path": "issuer", "rule": "equals", "value": "https://example.com"},
+                ],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                "Content-Type": "application/json; charset=utf-8",
+                "X-FAPI-Interaction-Id": "trace-123",
+            },
+            json={"issuer": "https://example.com"},
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "passed"
+    assert step.details == {
+        "assertions": [
+            {"status": "passed", "message": "HTTP status was 200"},
+            {"status": "passed", "message": "Header x-fapi-interaction-id is present"},
+            {"status": "passed", "message": "Header content-type contains the expected value"},
+            {"status": "passed", "message": "JSON field issuer equals https://example.com"},
+        ]
+    }
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_failed_step_includes_masked_request_and_response_evidence() -> None:
     """FAIL step carries masked request body, headers, and response body.
 
@@ -2155,10 +2204,60 @@ def test_run_manifest_v1_failed_step_includes_masked_request_and_response_eviden
         "headers": {"Authorization": "***", "Accept": "application/json"},
         "body": {"client_secret": "***", "scope": "accounts"},
     }
-    assert details["response"] == {
-        "statusCode": 400,
-        "body": {"error": "invalid_client", "access_token": "***"},
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 400
+    assert response["body"] == {"error": "invalid_client", "access_token": "***"}
+    assert response["headers"]["content-type"] == "application/json"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_failed_header_assertion_includes_masked_response_headers() -> None:
+    """FAIL step includes masked response headers in evidence and assertion details."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "header-fail",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {"method": "GET", "url": "https://example.com/token"},
+                "assertions": [
+                    {"type": "header", "name": "cache-control", "rule": "present"},
+                    {"type": "header", "name": "set-cookie", "rule": "absent"},
+                ],
+            }
+        ],
     }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={
+                "Cache-Control": "no-store",
+                "Set-Cookie": "session=super-secret",
+                "X-Trace-Id": "trace-123",
+            },
+            json={"ok": True},
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "failed"
+    details = dict(step.details)
+    assert details["assertions"] == [
+        {"status": "passed", "message": "Header cache-control is present"},
+        {"status": "failed", "message": "Header set-cookie must be absent"},
+    ]
+    assert details["request"] == {"method": "GET", "url": "https://example.com/token"}
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 200
+    assert response["body"] == {"ok": True}
+    assert response["headers"]["cache-control"] == "no-store"
+    assert response["headers"]["set-cookie"] == "***"
+    assert response["headers"]["x-trace-id"] == "trace-123"
 
 
 @pytest.mark.unit
@@ -2235,10 +2334,10 @@ def test_run_manifest_v1_warn_step_includes_evidence() -> None:
     assert step.status == "warn"
     details = dict(step.details)
     assert "request" in details
-    assert details["response"] == {
-        "statusCode": 200,
-        "body": {"ok": True, "access_token": "***"},
-    }
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 200
+    assert response["body"] == {"ok": True, "access_token": "***"}
+    assert response["headers"]["content-type"] == "application/json"
 
 
 @pytest.mark.unit

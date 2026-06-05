@@ -245,6 +245,36 @@ The redirect URI must be an HTTPS URL. `redirectUri` and `clientId` must be regi
 
 See `config/model-bank-suite-example.json` (smoke suite) and `config/model-bank-psu-auth-starter-example.json` (starter suite) for complete config examples.
 
+The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python.
+
+Supported v1 assertion shapes are:
+
+| Assertion type | Rules | Notes |
+| --- | --- | --- |
+| `http_status` | Exact `expected` status code | Existing status assertion. |
+| `header` | `present`, `absent`, `equals`, `contains` | Header names are case-insensitive. |
+| `json_field` | `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, `all_items_have_field` | `required` treats explicit JSON `null` as present; `all_items_have_field` is a lightweight array-of-objects constraint. |
+
+Representative manifest snippets:
+
+```json
+{"type": "json_field", "path": "issuer", "rule": "https_url"}
+```
+
+```json
+{"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1}
+```
+
+```json
+{"type": "json_field", "path": "request_parameter_supported", "rule": "equals", "value": true}
+```
+
+```json
+{"type": "json_field", "path": "token_endpoint_auth_method", "rule": "one_of", "values": ["private_key_jwt", "tls_client_auth"]}
+```
+
+These rules are generic authoring primitives only. They enable Standards-authored certification suites, but they do not by themselves make the current bundled starter suites complete or certifying.
+
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
 Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step.

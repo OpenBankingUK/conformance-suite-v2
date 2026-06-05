@@ -219,6 +219,184 @@ def test_parse_manifest_rejects_unsupported_json_field_rule() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_extended_assertion_vocabulary() -> None:
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {"type": "http_status", "expected": 200},
+        {"type": "json_field", "path": "issuer", "rule": "required"},
+        {"type": "json_field", "path": "issuer", "rule": "absent"},
+        {"type": "json_field", "path": "issuer", "rule": "string"},
+        {"type": "json_field", "path": "expires_in", "rule": "number"},
+        {"type": "json_field", "path": "tls", "rule": "boolean"},
+        {"type": "json_field", "path": "metadata", "rule": "object"},
+        {"type": "json_field", "path": "keys", "rule": "array"},
+        {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},
+        {"type": "json_field", "path": "issuer", "rule": "equals", "value": "https://example.com"},
+        {
+            "type": "json_field",
+            "path": "token_endpoint_auth_method",
+            "rule": "one_of",
+            "values": ["private_key_jwt", "tls_client_auth"],
+        },
+        {"type": "json_field", "path": "keys", "rule": "all_items_have_field", "field": "kid"},
+        {"type": "header", "name": "content-type", "rule": "present"},
+        {"type": "header", "name": "set-cookie", "rule": "absent"},
+        {"type": "header", "name": "cache-control", "rule": "equals", "value": "no-store"},
+        {"type": "header", "name": "x-fapi-interaction-id", "rule": "contains", "value": "abc"},
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    parsed_step = cast("ManifestStep", manifest.steps[0])
+    assert len(parsed_step.assertions) == 17
+    assert parsed_step.assertions[13].type == "header"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_assertion", "message"),
+    [
+        (
+            {"type": "json_field", "path": "issuer", "rule": "equals"},
+            r"steps\[0\]\.assertions\[0\]\.value must be present for json_field rule equals",
+        ),
+        (
+            {"type": "json_field", "path": "issuer", "rule": "one_of"},
+            r"steps\[0\]\.assertions\[0\]\.values must be a non-empty array",
+        ),
+        (
+            {"type": "json_field", "path": "issuer", "rule": "min_items"},
+            r"steps\[0\]\.assertions\[0\]\.minItems must be an integer greater than or equal to 1",
+        ),
+        (
+            {"type": "json_field", "path": "keys", "rule": "all_items_have_field"},
+            r"steps\[0\]\.assertions\[0\]\.field must be a non-empty string",
+        ),
+        (
+            {"type": "header", "name": "content-type", "rule": "equals"},
+            r"steps\[0\]\.assertions\[0\]\.value must be a non-empty string for header rule equals",
+        ),
+        (
+            {"type": "header", "name": "cache-control", "rule": "contains"},
+            r"steps\[0\]\.assertions\[0\]\.value must be a non-empty string for header rule contains",
+        ),
+    ],
+)
+def test_parse_v1_manifest_rejects_missing_rule_specific_fields(
+    raw_assertion: dict[str, JsonValue],
+    message: str,
+) -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Rule specific field validation",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/resource",
+                },
+                "assertions": [raw_assertion],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=message):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_assertion", "message"),
+    [
+        (
+            {"type": "json_field", "path": "issuer", "rule": "equals", "value": {"bad": {1, 2}}},
+            r"steps\[0\]\.assertions\[0\]\.value must be valid JSON-compatible data",
+        ),
+        (
+            {
+                "type": "json_field",
+                "path": "issuer",
+                "rule": "one_of",
+                "values": ["https://example.com", {"bad": {1, 2}}],
+            },
+            r"steps\[0\]\.assertions\[0\]\.values\[1\] must be valid JSON-compatible data",
+        ),
+        (
+            {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 0},
+            r"steps\[0\]\.assertions\[0\]\.minItems must be an integer greater than or equal to 1",
+        ),
+        (
+            {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": True},
+            r"steps\[0\]\.assertions\[0\]\.minItems must be an integer greater than or equal to 1",
+        ),
+        (
+            {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": "2"},
+            r"steps\[0\]\.assertions\[0\]\.minItems must be an integer greater than or equal to 1",
+        ),
+        (
+            {"type": "header", "name": "content-type", "rule": "present", "value": "application/json"},
+            r"Unknown steps\[0\]\.assertions\[0\] field: value",
+        ),
+    ],
+)
+def test_parse_v1_manifest_rejects_invalid_assertion_value_shapes(
+    raw_assertion: dict[str, JsonValue],
+    message: str,
+) -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Assertion value validation",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/resource",
+                },
+                "assertions": [raw_assertion],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=message):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_unsupported_header_rule() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Unsupported header rule",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/resource",
+                },
+                "assertions": [
+                    {"type": "header", "name": "content-type", "rule": "matches"},
+                ],
+            }
+        ],
+    }
+
+    error_pattern = (
+        r"steps\[0\]\.assertions\[0\]\.rule must be one of: "
+        r"present, absent, equals, contains"
+    )
+
+    with pytest.raises(ManifestError, match=error_pattern):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("expected", [True, 99, 600])
 def test_parse_manifest_rejects_invalid_http_status_code(expected: JsonValue) -> None:
     raw_manifest = valid_manifest()

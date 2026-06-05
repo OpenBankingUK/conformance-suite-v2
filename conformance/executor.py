@@ -1339,6 +1339,7 @@ def _execute_v1_step_inner(
     # Record response into context
     response_record = ResponseRecord(
         status_code=response.status_code,
+        headers=response.headers,
         body=response.body,
     )
     new_context = record_step(context, manifest_step.id, request_record, response_record)
@@ -1350,6 +1351,8 @@ def _execute_v1_step_inner(
         "statusCode": response.status_code,
         "body": mask_json_value(dict(response.body)),
     }
+    if response.headers:
+        response_evidence["headers"] = dict(mask_headers(response.headers))
     # Per PRD: response bodies are NOT duplicated into the execution log —
     # they already live in the result-file evidence for non-PASS outcomes.
     # The log records only the status code + URL so the timeline is complete
@@ -1646,7 +1649,13 @@ def _build_assertion_step(
         and per-assertion details.
     """
     assertion_results = tuple(
-        evaluate_assertion(assertion, status_code=response.status_code, body=response.body) for assertion in assertions
+        evaluate_assertion(
+            assertion,
+            status_code=response.status_code,
+            headers=response.headers,
+            body=response.body,
+        )
+        for assertion in assertions
     )
     passed = all(assertion_result.passed for assertion_result in assertion_results)
     details: dict[str, JsonValue] = {

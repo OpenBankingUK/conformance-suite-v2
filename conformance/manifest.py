@@ -43,11 +43,28 @@ StepPhase = Literal["setup", "execution"]
 RequestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 """HTTP methods supported by manifest-driven smoke-check requests."""
 
-AssertionType = Literal["http_status", "json_field"]
-"""Assertion discriminators supported by v0 manifest tests."""
+AssertionType = Literal["http_status", "json_field", "header"]
+"""Assertion discriminators supported by manifest assertions."""
 
-JsonFieldRule = Literal["required", "https_url", "array"]
+JsonFieldRule = Literal[
+    "required",
+    "https_url",
+    "array",
+    "absent",
+    "string",
+    "number",
+    "boolean",
+    "object",
+    "non_empty_array",
+    "min_items",
+    "equals",
+    "one_of",
+    "all_items_have_field",
+]
 """JSON field validation rules supported by manifest assertions."""
+
+HeaderRule = Literal["present", "absent", "equals", "contains"]
+"""HTTP header validation rules supported by manifest assertions."""
 
 FollowUpType = Literal["jwks"]
 """Follow-up request kinds supported by v0 manifest tests."""
@@ -151,14 +168,41 @@ class JsonFieldAssertion:
         type: Assertion discriminator for JSON field checks.
         path: Dot-path to the response JSON field under test.
         rule: Validation rule applied to the JSON field.
+        value: Exact JSON value expected for ``equals`` rules.
+        values: Candidate JSON values accepted by ``one_of`` rules.
+        min_items: Minimum array length required by ``min_items`` rules.
+        field: Field that every array item must contain for
+            ``all_items_have_field`` rules.
     """
 
     type: Literal["json_field"]
     path: str
     rule: JsonFieldRule
+    value: JsonValue | None = None
+    values: tuple[JsonValue, ...] | None = None
+    min_items: int | None = None
+    field: str | None = None
 
 
-ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion
+@dataclass(frozen=True)
+class HeaderAssertion:
+    """Assertion requiring a response header to satisfy a rule.
+
+    Attributes:
+        type: Assertion discriminator for header checks.
+        name: Header field name under test.
+        rule: Validation rule applied to the response header value.
+        value: Expected or required substring for ``equals`` and ``contains``
+            rules.
+    """
+
+    type: Literal["header"]
+    name: str
+    rule: HeaderRule
+    value: str | None = None
+
+
+ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion
 """Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
@@ -1457,7 +1501,7 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         location: Dot-path location string used in error messages.
 
     Returns:
-        A typed assertion dataclass (HttpStatusAssertion or JsonFieldAssertion).
+        A typed assertion dataclass.
 
     Raises:
         ManifestError: If the assertion type is missing, unsupported, or
@@ -1468,16 +1512,113 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected"}, location=location)
         return HttpStatusAssertion(type="http_status", expected=_required_status_code(raw_assertion, location=location))
     if assertion_type == "json_field":
-        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "path", "rule"}, location=location)
-        return JsonFieldAssertion(
-            type="json_field",
-            path=_required_string(raw_assertion, "path", location=location),
-            rule=_required_json_field_rule(raw_assertion, location=location),
-        )
+        return _parse_json_field_assertion(raw_assertion, location=location)
+    if assertion_type == "header":
+        return _parse_header_assertion(raw_assertion, location=location)
     # Defensive: _required_assertion_type already constrains assertion_type to the
     # AssertionType literal, but an explicit raise removes the implicit None
     # fall-through and guards against future literal additions.
     raise ManifestError(f"{location}.type has unexpected value: {assertion_type!r}")
+
+
+def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> JsonFieldAssertion:
+    """Parse a ``json_field`` assertion with rule-specific validation.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated :class:`JsonFieldAssertion`.
+
+    Raises:
+        ManifestError: If the assertion contains unsupported keys or misses
+            required rule-specific fields.
+    """
+    rule = _required_json_field_rule(raw_assertion, location=location)
+    allowed_keys = {"type", "path", "rule"}
+    if rule == "equals":
+        allowed_keys.add("value")
+    elif rule == "one_of":
+        allowed_keys.add("values")
+    elif rule == "min_items":
+        allowed_keys.add("minItems")
+    elif rule == "all_items_have_field":
+        allowed_keys.add("field")
+    _reject_unknown_keys(raw_assertion, allowed_keys=allowed_keys, location=location)
+
+    assertion = JsonFieldAssertion(
+        type="json_field",
+        path=_required_string(raw_assertion, "path", location=location),
+        rule=rule,
+    )
+    if rule == "equals":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            value=_required_json_compatible_value(
+                raw_assertion,
+                key="value",
+                location=location,
+                missing_message=f"{location}.value must be present for json_field rule equals",
+            ),
+        )
+    if rule == "one_of":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            values=_required_json_compatible_values(raw_assertion, location=location),
+        )
+    if rule == "min_items":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            min_items=_required_min_items(raw_assertion, location=location),
+        )
+    if rule == "all_items_have_field":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            field=_required_string(raw_assertion, "field", location=location),
+        )
+    return assertion
+
+
+def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> HeaderAssertion:
+    """Parse a ``header`` assertion with rule-specific validation.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated :class:`HeaderAssertion`.
+
+    Raises:
+        ManifestError: If the assertion contains unsupported keys or misses
+            required rule-specific fields.
+    """
+    rule = _required_header_rule(raw_assertion, location=location)
+    if rule == "equals" or rule == "contains":
+        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "name", "rule", "value"}, location=location)
+        value = _required_header_rule_value(raw_assertion, rule=rule, location=location)
+    else:
+        _reject_unknown_keys_with_singular_message(
+            raw_assertion,
+            allowed_keys={"type", "name", "rule"},
+            location=location,
+        )
+        value = None
+
+    name = _required_string(raw_assertion, "name", location=location)
+    if not _HEADER_NAME_PATTERN.fullmatch(name):
+        raise ManifestError(f"{location}.name is not a valid HTTP header name")
+
+    return HeaderAssertion(type="header", name=name, rule=rule, value=value)
 
 
 def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
@@ -1488,7 +1629,7 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         location: Dot-path location string used in error messages.
 
     Returns:
-        A validated assertion type literal (``http_status`` or ``json_field``).
+        A validated assertion type literal.
 
     Raises:
         ManifestError: If the assertion type is missing or unsupported.
@@ -1498,7 +1639,9 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         return "http_status"
     if assertion_type == "json_field":
         return "json_field"
-    raise ManifestError(f"{location}.type must be one of: http_status, json_field")
+    if assertion_type == "header":
+        return "header"
+    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header")
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:
@@ -1528,7 +1671,7 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
         location: Dot-path location string used in error messages.
 
     Returns:
-        A validated rule literal (``required``, ``https_url``, or ``array``).
+        A validated JSON field rule literal.
 
     Raises:
         ManifestError: If the JSON field rule is missing or unsupported.
@@ -1540,7 +1683,169 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
         return "https_url"
     if rule == "array":
         return "array"
-    raise ManifestError(f"{location}.rule must be one of: required, https_url, array")
+    if rule == "absent":
+        return "absent"
+    if rule == "string":
+        return "string"
+    if rule == "number":
+        return "number"
+    if rule == "boolean":
+        return "boolean"
+    if rule == "object":
+        return "object"
+    if rule == "non_empty_array":
+        return "non_empty_array"
+    if rule == "min_items":
+        return "min_items"
+    if rule == "equals":
+        return "equals"
+    if rule == "one_of":
+        return "one_of"
+    if rule == "all_items_have_field":
+        return "all_items_have_field"
+    raise ManifestError(
+        f"{location}.rule must be one of: required, https_url, array, absent, string, number, boolean, object, "
+        "non_empty_array, min_items, equals, one_of, all_items_have_field"
+    )
+
+
+def _required_header_rule(raw_assertion: dict[str, JsonValue], *, location: str) -> HeaderRule:
+    """Extract and validate the header assertion rule.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated header rule literal.
+
+    Raises:
+        ManifestError: If the header rule is missing or unsupported.
+    """
+    rule = _required_string(raw_assertion, "rule", location=location)
+    if rule == "present":
+        return "present"
+    if rule == "absent":
+        return "absent"
+    if rule == "equals":
+        return "equals"
+    if rule == "contains":
+        return "contains"
+    raise ManifestError(f"{location}.rule must be one of: present, absent, equals, contains")
+
+
+def _required_header_rule_value(
+    raw_assertion: dict[str, JsonValue], *, rule: Literal["equals", "contains"], location: str
+) -> str:
+    """Extract the required string value for a header comparison rule.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        rule: Header rule requiring a comparison value.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The stripped non-empty comparison value.
+
+    Raises:
+        ManifestError: If the value is missing or not a non-empty string.
+    """
+    value = raw_assertion.get("value")
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.value must be a non-empty string for header rule {rule}")
+    return value.strip()
+
+
+def _required_json_compatible_value(
+    raw_assertion: dict[str, JsonValue],
+    *,
+    key: str,
+    location: str,
+    missing_message: str,
+) -> JsonValue:
+    """Extract a required JSON-compatible value from an assertion object.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        key: Key expected to contain the JSON-compatible value.
+        location: Dot-path location string used in error messages.
+        missing_message: Error emitted when the key is absent.
+
+    Returns:
+        A defensive deep copy of the JSON-compatible value.
+
+    Raises:
+        ManifestError: If the key is absent or the value is not JSON-compatible.
+    """
+    if key not in raw_assertion:
+        raise ManifestError(missing_message)
+    value = raw_assertion[key]
+    if not _is_json_compatible_value(value):
+        raise ManifestError(f"{location}.{key} must be valid JSON-compatible data")
+    return copy.deepcopy(value)
+
+
+def _required_json_compatible_values(raw_assertion: dict[str, JsonValue], *, location: str) -> tuple[JsonValue, ...]:
+    """Extract a required non-empty array of JSON-compatible values.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of defensive deep copies of the JSON-compatible values.
+
+    Raises:
+        ManifestError: If the values key is missing, empty, or contains
+            non-JSON-compatible members.
+    """
+    values = raw_assertion.get("values")
+    if not isinstance(values, list) or not values:
+        raise ManifestError(f"{location}.values must be a non-empty array")
+    parsed_values: list[JsonValue] = []
+    for index, value in enumerate(values):
+        if not _is_json_compatible_value(value):
+            raise ManifestError(f"{location}.values[{index}] must be valid JSON-compatible data")
+        parsed_values.append(copy.deepcopy(value))
+    return tuple(parsed_values)
+
+
+def _required_min_items(raw_assertion: dict[str, JsonValue], *, location: str) -> int:
+    """Extract and validate the ``minItems`` threshold for a JSON array rule.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Minimum required array length.
+
+    Raises:
+        ManifestError: If the value is missing or not an integer >= 1.
+    """
+    value = raw_assertion.get("minItems")
+    if not isinstance(value, int) or isinstance(value, bool) or value < 1:
+        raise ManifestError(f"{location}.minItems must be an integer greater than or equal to 1")
+    return value
+
+
+def _is_json_compatible_value(value: object) -> bool:
+    """Return whether an arbitrary Python value can be represented as JSON.
+
+    Args:
+        value: Candidate value to validate.
+
+    Returns:
+        ``True`` when the value is composed only of JSON-compatible scalars,
+        arrays, and objects with string keys.
+    """
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return True
+    if isinstance(value, list):
+        return all(_is_json_compatible_value(item) for item in value)
+    if isinstance(value, dict):
+        return all(isinstance(key, str) and _is_json_compatible_value(item) for key, item in value.items())
+    return False
 
 
 def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str) -> int:
@@ -1841,3 +2146,25 @@ def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[
     if unknown_keys:
         joined_keys = ", ".join(unknown_keys)
         raise ManifestError(f"Unknown {location} field(s): {joined_keys}")
+
+
+def _reject_unknown_keys_with_singular_message(
+    raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str
+) -> None:
+    """Raise on unknown keys using singular wording when exactly one key is present.
+
+    Args:
+        raw_config: The JSON object to validate.
+        allowed_keys: Set of permitted key names.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        ManifestError: If any keys are outside the allowed set.
+    """
+    unknown_keys = sorted(set(raw_config) - allowed_keys)
+    if not unknown_keys:
+        return
+    if len(unknown_keys) == 1:
+        raise ManifestError(f"Unknown {location} field: {unknown_keys[0]}")
+    joined_keys = ", ".join(unknown_keys)
+    raise ManifestError(f"Unknown {location} field(s): {joined_keys}")
