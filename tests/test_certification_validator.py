@@ -339,6 +339,49 @@ def test_validate_report_partial_coverage_reason_in_confluence_summary() -> None
 
 
 @pytest.mark.unit
+def test_validate_report_confluence_summary_orders_partial_coverage_after_primary_blockers() -> None:
+    """Partial coverage is rendered after tool-version and mandatory-step blockers.
+
+    Verifies that _blocking_reason_lines follows the ordering established by
+    _validation_reasons so that more actionable blockers appear first in the
+    Confluence summary when multiple reasons are present.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [
+            _manifest_step(step_id="missing", mandatory=True, optional=False),
+            _manifest_step(step_id="failed", mandatory=True, optional=False),
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("failed", "failed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("2.0.0",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    summary = render_confluence_summary(result)
+
+    assert result.reasons == (
+        "tool_version_not_approved",
+        "mandatory_step_missing",
+        "mandatory_step_failed",
+        "manifest_coverage_partial",
+    )
+    blocking_section = summary.split("Blocking reasons:\n", maxsplit=1)[1]
+    blocking_lines = blocking_section.splitlines()
+    assert blocking_lines == [
+        "- Tool version is not in the approved-release policy: 1.2.3",
+        "- Mandatory step is missing from the submitted report: missing",
+        "- Mandatory step failed in the submitted report: failed",
+        "- Manifest is not marked as complete certification coverage",
+    ]
+
+
+@pytest.mark.unit
 def test_validate_report_coverage_included_in_json_output() -> None:
     """The ``certificationCoverage`` audit block is present in the JSON validation result."""
     manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))

@@ -550,13 +550,15 @@ def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
         Human-readable bullet lines for every blocking reason.
     """
     lines: list[str] = []
-    if "manifest_coverage_partial" in result.reasons:
-        lines.append(f"- {_REASON_LABELS['manifest_coverage_partial']}")
-    if "tool_version_not_approved" in result.reasons:
-        lines.append(f"- {_REASON_LABELS['tool_version_not_approved']}: {result.tool_version}")
-    for step in result.mandatory_steps:
-        if step.reason is not None:
-            lines.append(f"- {_REASON_LABELS[step.reason]}: {step.step_id}")
+    for reason in result.reasons:
+        if reason == "tool_version_not_approved":
+            lines.append(f"- {_REASON_LABELS[reason]}: {result.tool_version}")
+        elif reason == "manifest_coverage_partial":
+            lines.append(f"- {_REASON_LABELS[reason]}")
+        else:
+            for step in result.mandatory_steps:
+                if step.reason == reason:
+                    lines.append(f"- {_REASON_LABELS[reason]}: {step.step_id}")
     return lines
 
 
