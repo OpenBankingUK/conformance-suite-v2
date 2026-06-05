@@ -326,6 +326,14 @@ def test_parse_v1_manifest_rejects_missing_rule_specific_fields(
             r"steps\[0\]\.assertions\[0\]\.values\[1\] must be valid JSON-compatible data",
         ),
         (
+            {"type": "json_field", "path": "issuer", "rule": "equals", "value": float("nan")},
+            r"steps\[0\]\.assertions\[0\]\.value must be valid JSON-compatible data",
+        ),
+        (
+            {"type": "json_field", "path": "issuer", "rule": "one_of", "values": ["https://example.com", float("inf")]},
+            r"steps\[0\]\.assertions\[0\]\.values\[1\] must be valid JSON-compatible data",
+        ),
+        (
             {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 0},
             r"steps\[0\]\.assertions\[0\]\.minItems must be an integer greater than or equal to 1",
         ),

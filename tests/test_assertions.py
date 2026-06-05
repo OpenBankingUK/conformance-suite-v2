@@ -285,6 +285,33 @@ def test_evaluate_equals_json_field_compares_json_value_without_coercion() -> No
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("expected", "actual", "message"),
+    [
+        (True, 1, "JSON field x must equal true"),
+        (1, True, "JSON field x must equal 1"),
+        (False, 0, "JSON field x must equal false"),
+        (0, False, "JSON field x must equal 0"),
+    ],
+)
+def test_evaluate_equals_json_field_distinguishes_booleans_from_numbers(
+    expected: JsonValue,
+    actual: JsonValue,
+    message: str,
+) -> None:
+    assertion = parsed_assertion({"type": "json_field", "path": "x", "rule": "equals", "value": expected})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"x": actual},
+    )
+
+    assert result.passed is False
+    assert result.message == message
+
+
+@pytest.mark.unit
 def test_evaluate_one_of_json_field_checks_json_compatible_candidates() -> None:
     assertion = parsed_assertion(
         {
@@ -305,6 +332,27 @@ def test_evaluate_one_of_json_field_checks_json_compatible_candidates() -> None:
     assert result.message == (
         "JSON field token_endpoint_auth_method must equal one of: private_key_jwt, tls_client_auth"
     )
+
+
+@pytest.mark.unit
+def test_evaluate_one_of_json_field_distinguishes_boolean_and_numeric_candidates() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "json_field",
+            "path": "x",
+            "rule": "one_of",
+            "values": [True, 2],
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"x": 1},
+    )
+
+    assert result.passed is False
+    assert result.message == "JSON field x must equal one of: true, 2"
 
 
 @pytest.mark.unit

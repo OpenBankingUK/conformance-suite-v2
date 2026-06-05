@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import json
+import math
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -1839,8 +1840,12 @@ def _is_json_compatible_value(value: object) -> bool:
         ``True`` when the value is composed only of JSON-compatible scalars,
         arrays, and objects with string keys.
     """
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if value is None or isinstance(value, (str, bool)):
         return True
+    if isinstance(value, int):
+        return True
+    if isinstance(value, float):
+        return math.isfinite(value)
     if isinstance(value, list):
         return all(_is_json_compatible_value(item) for item in value)
     if isinstance(value, dict):

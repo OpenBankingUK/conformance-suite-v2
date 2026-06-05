@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -259,7 +260,7 @@ def _evaluate_json_equals(path: str, value: JsonValue, expected: JsonValue | Non
     Returns:
         Assertion result indicating whether the values are equal.
     """
-    if value == expected:
+    if _json_values_equal(value, expected):
         return AssertionResult(passed=True, message=f"JSON field {path} equals {_format_json_value(expected)}")
     return AssertionResult(passed=False, message=f"JSON field {path} must equal {_format_json_value(expected)}")
 
@@ -277,7 +278,7 @@ def _evaluate_json_one_of(path: str, value: JsonValue, candidates: tuple[JsonVal
     """
     if candidates is None:
         return AssertionResult(passed=False, message=f"JSON field {path} has no allowed values")
-    if value in candidates:
+    if any(_json_values_equal(value, candidate) for candidate in candidates):
         return AssertionResult(
             passed=True,
             message=f"JSON field {path} equals one of: {_format_json_value_list(candidates)}",
@@ -389,6 +390,36 @@ def _format_json_value_list(values: tuple[JsonValue, ...]) -> str:
         Comma-separated representation of the values.
     """
     return ", ".join(_format_json_value(value) for value in values)
+
+
+def _json_values_equal(left: JsonValue, right: JsonValue | None) -> bool:
+    """Compare JSON values without conflating booleans and numbers.
+
+    Python treats ``bool`` as a subclass of ``int``, so bare ``==`` would make
+    ``true`` equal to ``1`` and ``false`` equal to ``0``. Manifest assertions
+    need JSON-style type-aware equality instead.
+
+    Args:
+        left: Actual JSON value resolved from the response.
+        right: Expected JSON-compatible value from the manifest.
+
+    Returns:
+        ``True`` when the values are equal without cross-type boolean/number
+        coercion.
+    """
+    if isinstance(left, bool) or isinstance(right, bool):
+        return isinstance(left, bool) and isinstance(right, bool) and left is right
+    if isinstance(left, float) and math.isnan(left):
+        return isinstance(right, float) and math.isnan(right)
+    if isinstance(right, float) and math.isnan(right):
+        return False
+    if isinstance(left, list) and isinstance(right, list):
+        return len(left) == len(right) and all(
+            _json_values_equal(left_item, right_item) for left_item, right_item in zip(left, right, strict=True)
+        )
+    if isinstance(left, Mapping) and isinstance(right, Mapping):
+        return left.keys() == right.keys() and all(_json_values_equal(left[key], right[key]) for key in left)
+    return left == right
 
 
 class _MissingValue:
