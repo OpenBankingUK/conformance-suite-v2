@@ -37,7 +37,7 @@ SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
 SuiteProfile = Literal["fapi1-advanced"]
 """Supported security profiles for config-selected suite resolution."""
 
-SuiteName = Literal["discovery-jwks"]
+SuiteName = Literal["discovery-jwks", "psu-auth-starter"]
 """Supported versioned conformance suite identifiers."""
 
 
@@ -56,6 +56,28 @@ class SuiteSelection:
     spec_version: SuiteSpecVersion
     profile: SuiteProfile
     suite: SuiteName
+
+
+@dataclass(frozen=True)
+class OAuthConfig:
+    """Narrow set of non-secret OAuth participant config values for manifest placeholders.
+
+    Only non-secret, non-path values are permitted here. Client secrets,
+    private keys, TLS paths, and certificate material must never appear in
+    this dataclass. This constraint ensures that ``${config.oauth.*}``
+    placeholders remain safe for use in bundled manifests distributed with
+    the tool.
+
+    Attributes:
+        client_id: OAuth client identifier registered with the authorisation
+            server. Not a secret; used by FAPI flows in the authorisation
+            request.
+        redirect_uri: HTTPS redirect URI registered with the authorisation
+            server. Must use the HTTPS scheme with a valid DNS hostname.
+    """
+
+    client_id: str
+    redirect_uri: str
 
 
 @dataclass(frozen=True)
@@ -95,6 +117,10 @@ class ModelBankConfig:
             participant-side report eligibility self-assessment. When absent,
             generated reports mark the approved-release criterion as not
             supplied.
+        oauth: Optional narrow OAuth participant config for
+            ``${config.oauth.*}`` placeholder resolution. Contains only
+            non-secret values (``clientId`` and ``redirectUri``). Absent
+            when the participant config omits an ``oauth`` section.
     """
 
     environment: str
@@ -106,6 +132,7 @@ class ModelBankConfig:
     execution_log_path: Path = Path("out/execution-log.ndjson")
     test_suite: SuiteSelection | None = None
     approved_release_policy: ApprovedReleasePolicy | None = None
+    oauth: OAuthConfig | None = None
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -171,6 +198,7 @@ def parse_model_bank_config(
             "executionLogPath",
             "testSuite",
             "approvedReleasePolicyPath",
+            "oauth",
         },
         location="config",
     )
@@ -194,6 +222,7 @@ def parse_model_bank_config(
     )
     test_suite = _parse_test_suite_selection(raw_config)
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
+    oauth = _parse_oauth_config(raw_config)
 
     return ModelBankConfig(
         environment=environment,
@@ -205,6 +234,7 @@ def parse_model_bank_config(
         execution_log_path=execution_log_path,
         test_suite=test_suite,
         approved_release_policy=approved_release_policy,
+        oauth=oauth,
     )
 
 
@@ -288,8 +318,8 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0")
     if profile != "fapi1-advanced":
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
-    if suite != "discovery-jwks":
-        raise ConfigError("testSuite.suite must be one of: discovery-jwks")
+    if suite not in {"discovery-jwks", "psu-auth-starter"}:
+        raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter")
 
     return SuiteSelection(
         standard=cast(SuiteStandard, standard),
@@ -297,6 +327,50 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         profile=cast(SuiteProfile, profile),
         suite=cast(SuiteName, suite),
     )
+
+
+def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
+    """Parse the optional ``oauth`` section of a participant config.
+
+    Only the safe, non-secret fields ``clientId`` and ``redirectUri`` are
+    accepted.  Client secrets, private keys, TLS paths, and JWS signing
+    material are explicitly excluded from this boundary; adding them here
+    would expose credential material through ``${config.oauth.*}``
+    placeholders in bundled manifests.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed ``OAuthConfig``, or ``None`` when the config omits the
+        ``oauth`` section.
+
+    Raises:
+        ConfigError: If ``oauth`` is not a JSON object, contains unknown
+            keys, omits required fields, or ``redirectUri`` is not a valid
+            HTTPS URL.
+    """
+    raw_oauth = raw_config.get("oauth")
+    if raw_oauth is None:
+        return None
+    if not isinstance(raw_oauth, dict):
+        raise ConfigError("oauth must be a JSON object")
+
+    _reject_unknown_keys(
+        raw_oauth,
+        allowed_keys={"clientId", "redirectUri"},
+        location="oauth",
+    )
+
+    client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
+    redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
+    try:
+        validate_https_url(redirect_uri_str, label="oauth.redirectUri")
+    except HttpsUrlValidationError as error:
+        raise ConfigError(str(error)) from error
+
+    return OAuthConfig(client_id=client_id, redirect_uri=redirect_uri_str)
 
 
 def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:

@@ -94,16 +94,26 @@ class RuntimeConfig:
     Only deliberately non-secret, non-path values belong here. This keeps
     ``${config.*}`` placeholders narrow enough for bundled manifests without
     allowing arbitrary traversal of participant configuration such as TLS
-    paths, private-key material, or future credential fields.
+    paths, private-key material, or future credential fields. Client secrets,
+    private keys, and certificate material must never appear here.
 
     Attributes:
         discovery_url: OpenID discovery URL from validated participant config.
         environment: Human-readable environment label from validated
             participant config.
+        oauth_client_id: OAuth client identifier for
+            ``${config.oauth.clientId}`` placeholder resolution. Absent when
+            the participant config omits an ``oauth`` section.
+        oauth_redirect_uri: HTTPS redirect URI registered with the
+            authorisation server, for ``${config.oauth.redirectUri}``
+            placeholder resolution. Absent when the participant config omits
+            an ``oauth`` section.
     """
 
     discovery_url: str
     environment: str
+    oauth_client_id: str | None = None
+    oauth_redirect_uri: str | None = None
 
 
 @dataclass(frozen=True)
@@ -238,6 +248,7 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     ``steps.<id>.request.(method|url)``
     ``steps.<id>.response.(status_code|body.<dot.path>)``
     ``config.(discoveryUrl|environment)``
+    ``config.oauth.(clientId|redirectUri)``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -315,8 +326,21 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
     raise PlaceholderResolutionError(f"Invalid placeholder path segment '{direction}': ${{{dot_path}}}")
 
 
+_ALLOWED_CONFIG_PLACEHOLDERS = (
+    "${config.discoveryUrl}",
+    "${config.environment}",
+    "${config.oauth.clientId}",
+    "${config.oauth.redirectUri}",
+)
+"""Exhaustive allow-list of ``${config.*}`` placeholder paths exposed to manifest steps."""
+
+
 def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_path: str) -> str:
     """Resolve an allow-listed runtime config placeholder.
+
+    The allow-list is deliberately narrow: only non-secret, non-path values are
+    permitted.  Client secrets, private keys, TLS paths, and certificate
+    material must never be added here.
 
     Args:
         segments: Dot-path segments split from the placeholder expression.
@@ -327,25 +351,33 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
         The resolved config value.
 
     Raises:
-        PlaceholderResolutionError: If no runtime config was supplied or the
-            requested config field is not on the allow-list.
+        PlaceholderResolutionError: If no runtime config was supplied, the
+            requested config field is not on the allow-list, or the OAuth
+            config sub-section is absent when an ``oauth.*`` field is requested.
     """
-    if len(segments) != 2:
-        raise PlaceholderResolutionError(
-            f"Unsupported config placeholder: ${{{dot_path}}} "
-            "(allowed: ${config.discoveryUrl}, ${config.environment})"
-        )
+    _allowed_str = ", ".join(_ALLOWED_CONFIG_PLACEHOLDERS)
+    is_simple_field = len(segments) == 2 and segments[1] in {"discoveryUrl", "environment"}
+    is_oauth_field = len(segments) == 3 and segments[1] == "oauth" and segments[2] in {"clientId", "redirectUri"}
+    if not (is_simple_field or is_oauth_field):
+        raise PlaceholderResolutionError(f"Unsupported config placeholder: ${{{dot_path}}} (allowed: {_allowed_str})")
     if context.config is None:
         raise PlaceholderResolutionError(f"Runtime config is not available for placeholder: ${{{dot_path}}}")
 
-    field_name = segments[1]
-    if field_name == "discoveryUrl":
-        return context.config.discovery_url
-    if field_name == "environment":
+    if is_simple_field:
+        if segments[1] == "discoveryUrl":
+            return context.config.discovery_url
         return context.config.environment
-    raise PlaceholderResolutionError(
-        f"Unsupported config placeholder: ${{{dot_path}}} (allowed: ${{config.discoveryUrl}}, ${{config.environment}})"
-    )
+
+    # is_oauth_field — segments[2] is "clientId" or "redirectUri"
+    sub_field = segments[2]
+    if sub_field == "clientId":
+        if context.config.oauth_client_id is None:
+            raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_client_id
+    # sub_field == "redirectUri"
+    if context.config.oauth_redirect_uri is None:
+        raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
+    return context.config.oauth_redirect_uri
 
 
 def _resolve_request_path(request: RequestRecord, field_name: str, remaining: list[str], dot_path: str) -> str:

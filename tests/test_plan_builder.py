@@ -25,6 +25,20 @@ SUITE_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "psu-auth-starter",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+    },
+}
+
 
 def _http_step(
     step_id: str,
@@ -187,6 +201,26 @@ def test_blank_manifest_resolves_config_selected_suite() -> None:
     assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
     assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
     assert preview.selected_plan.selected_step_ids() == ["openid-discovery"]
+
+
+@pytest.mark.unit
+def test_blank_manifest_resolves_psu_auth_starter_suite() -> None:
+    """A blank manifest with a ``psu-auth-starter`` testSuite resolves the PSU auth starter catalog entry."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(PSU_AUTH_STARTER_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "select",
+            "selected_step_ids": ["openid-discovery", "jwks-fetch", "psu-authorization"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is not None
+    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
+    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
+    assert preview.selected_plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
 
 
 @pytest.mark.unit

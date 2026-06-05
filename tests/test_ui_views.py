@@ -31,6 +31,20 @@ SUITE_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "psu-auth-starter",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+    },
+}
+
 
 @pytest.fixture(autouse=True)
 def _reset_global_stores() -> None:
@@ -161,6 +175,23 @@ def _suite_plan_form_data(*, selected_step_ids: list[str] | None = None) -> dict
     """
     return {
         "config_json": json.dumps(SUITE_CONFIG),
+        "manifest_json": "",
+        "selection_mode": "select",
+        "selected_step_ids": selected_step_ids or [],
+    }
+
+
+def _psu_auth_starter_suite_form_data(*, selected_step_ids: list[str] | None = None) -> dict[str, object]:
+    """Build form data that resolves the PSU auth starter suite from config ``testSuite``.
+
+    Args:
+        selected_step_ids: Step ids submitted by checked row checkboxes.
+
+    Returns:
+        Form-encoded payload dictionary for the ``psu-auth-starter`` catalog entry.
+    """
+    return {
+        "config_json": json.dumps(PSU_AUTH_STARTER_CONFIG),
         "manifest_json": "",
         "selection_mode": "select",
         "selected_step_ids": selected_step_ids or [],
@@ -363,6 +394,37 @@ class TestPlanBuilderUi:
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
         assert plan.selected_step_ids() == ["openid-discovery"]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_starts_psu_auth_starter_config_resolved_suite(self, mock_start_run: Mock) -> None:
+        """Launch can start a ``psu-auth-starter`` suite resolved from config.
+
+        Args:
+            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
+        """
+        mock_start_run.return_value = {
+            "id": "run-psu-starter",
+            "status": "pending",
+            "createdAt": "2026-06-03T12:00:00+00:00",
+        }
+
+        response = Client().post(
+            "/plan/launch/",
+            data=_psu_auth_starter_suite_form_data(
+                selected_step_ids=["openid-discovery", "jwks-fetch", "psu-authorization"]
+            ),
+        )
+
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-psu-starter/"
+        assert mock_start_run.call_count == 1
+        manifest = mock_start_run.call_args.kwargs["manifest"]
+        plan = mock_start_run.call_args.kwargs["plan"]
+        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
+        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:

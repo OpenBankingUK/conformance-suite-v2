@@ -22,6 +22,21 @@ class ManifestError(ValueError):
 ManifestSchemaVersion = Literal["v0", "v1"]
 """Manifest schema versions accepted by the parser."""
 
+CertificationCoverage = Literal["partial", "complete"]
+"""Manifest-level certification coverage declaration.
+
+Declares whether a suite provides full certification coverage (``complete``) or
+is intentionally partial / non-certifying (``partial``). Omitting the field from
+a v1 manifest is treated as ``partial`` for safety, so smoke suites and starter
+slices cannot inadvertently pass certification eligibility. V0 manifests always
+receive ``partial`` because v0 is a legacy smoke-check format that predates the
+certification eligibility model.
+
+The value feeds directly into ``certificationEligibility.eligible`` in the result
+JSON and into OBL-side ``validate_report``; a ``partial`` manifest blocks both
+even when all mandatory steps pass and the tool version is approved.
+"""
+
 StepPhase = Literal["setup", "execution"]
 """Scheduling phase accepted by v1 steps."""
 
@@ -325,9 +340,10 @@ class PsuAuthorizationStep:
             query parameter. Placeholders permitted.
         redirect_uri: Registered redirect URI sent as the ``redirect_uri``
             query parameter and used to match the ASPSP redirect in
-            headless mode. Validated as HTTPS at parse time; placeholders
-            are **not** permitted (defence in depth — a redirect URI must
-            be known at manifest-author time, never derived at runtime).
+            headless mode. Literal values are validated as HTTPS at parse
+            time. The only permitted placeholder is the narrow participant
+            config value ``${config.oauth.redirectUri}``, which is resolved
+            and HTTPS-validated again at runtime.
         response_type: OAuth 2.0 ``response_type`` value. Defaults to
             ``"code id_token"`` (FAPI 1 Advanced hybrid flow). Placeholders
             are **not** permitted — this is a static FAPI-defined value.
@@ -392,6 +408,14 @@ class Manifest:
     Attributes:
         schema_version: Manifest schema version accepted by this parser.
         name: Human-readable manifest name.
+        certification_coverage: Whether this manifest declares full
+            certification coverage (``complete``) or is intentionally
+            partial / non-certifying (``partial``). V0 manifests are always
+            ``partial``. V1 manifests default to ``partial`` when the
+            ``certificationCoverage`` root key is omitted. A ``partial``
+            value blocks ``certificationEligibility.eligible`` in the result
+            JSON and OBL-side ``validate_report``, even when all mandatory
+            steps pass and the tool version is approved.
         tests: Ordered manifest tests to execute (v0 only, empty for v1).
         steps: Ordered sequential steps to execute (v1 only, empty for v0).
             Each entry is either a plain HTTP step or a PSU authorisation
@@ -400,6 +424,7 @@ class Manifest:
 
     schema_version: ManifestSchemaVersion
     name: str
+    certification_coverage: CertificationCoverage = "partial"
     tests: tuple[ManifestTest, ...] = ()
     steps: tuple[V1Step, ...] = ()
 
@@ -494,6 +519,36 @@ def _parse_v0_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     )
 
 
+def _parse_certification_coverage(raw_manifest: dict[str, JsonValue], *, location: str) -> CertificationCoverage:
+    """Extract and validate the optional ``certificationCoverage`` root key.
+
+    Defaults to ``"partial"`` when the key is absent so that manifests that
+    pre-date the field (and all v0 manifests) cannot inadvertently satisfy
+    certification eligibility. Only the two literal values ``"partial"`` and
+    ``"complete"`` are accepted; any other string is rejected at parse time.
+
+    Args:
+        raw_manifest: The manifest JSON object to extract from.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        ``"partial"`` when absent or explicitly set to ``"partial"``;
+        ``"complete"`` only when explicitly set to ``"complete"``.
+
+    Raises:
+        ManifestError: If ``certificationCoverage`` is present but is not one
+            of the two accepted values.
+    """
+    if "certificationCoverage" not in raw_manifest:
+        return "partial"
+    value = raw_manifest["certificationCoverage"]
+    if value == "partial":
+        return "partial"
+    if value == "complete":
+        return "complete"
+    raise ManifestError(f"{location}.certificationCoverage must be one of: partial, complete (got: {value!r})")
+
+
 _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 """Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
 
@@ -524,7 +579,7 @@ Request direction accepts: ``method``, ``url`` (no sub-segments).
 Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (at least one segment).
 """
 
-_CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environment)\}")
+_CONFIG_PLACEHOLDER_PATTERN = re.compile(r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri))\}")
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
@@ -584,9 +639,14 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     Raises:
         ManifestError: If required fields are missing or validation fails.
     """
-    _reject_unknown_keys(raw_manifest, allowed_keys={"schemaVersion", "name", "steps"}, location="manifest")
+    _reject_unknown_keys(
+        raw_manifest,
+        allowed_keys={"schemaVersion", "name", "certificationCoverage", "steps"},
+        location="manifest",
+    )
 
     name = _required_string(raw_manifest, "name", location="manifest")
+    certification_coverage = _parse_certification_coverage(raw_manifest, location="manifest")
     raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
 
     seen_ids: set[str] = set()
@@ -599,6 +659,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     return Manifest(
         schema_version="v1",
         name=name,
+        certification_coverage=certification_coverage,
         steps=tuple(steps),
     )
 
@@ -782,21 +843,19 @@ def _parse_v1_psu_authorization_step(
     client_id = _required_string(raw_step, "clientId", location=location)
     _validate_placeholder_syntax(client_id, location=f"{location}.clientId", seen_ids=seen_ids)
 
-    # ``redirectUri`` deliberately rejects placeholders: a redirect URI is
-    # a registered, manifest-author-time value. Allowing runtime derivation
-    # would widen the open-redirect attack surface in headless mode where
-    # the executor matches the ASPSP-returned ``Location`` against this
-    # value.
     redirect_uri = _required_string(raw_step, "redirectUri", location=location)
     if _PLACEHOLDER_FIND_PATTERN.search(redirect_uri):
-        raise ManifestError(
-            f"{location}.redirectUri must not contain placeholders "
-            "(redirect URIs are registered, manifest-author-time values)"
-        )
-    try:
-        validate_https_url(redirect_uri, label=f"{location}.redirectUri")
-    except HttpsUrlValidationError as error:
-        raise ManifestError(str(error)) from error
+        _validate_placeholder_syntax(redirect_uri, location=f"{location}.redirectUri", seen_ids=seen_ids)
+        if redirect_uri != "${config.oauth.redirectUri}":
+            raise ManifestError(
+                f"{location}.redirectUri may only use the config placeholder "
+                "${config.oauth.redirectUri} or a literal HTTPS URL"
+            )
+    else:
+        try:
+            validate_https_url(redirect_uri, label=f"{location}.redirectUri")
+        except HttpsUrlValidationError as error:
+            raise ManifestError(str(error)) from error
 
     response_type = _parse_psu_optional_string(
         raw_step, key="responseType", default=_PSU_AUTH_DEFAULT_RESPONSE_TYPE, location=location
@@ -1052,7 +1111,8 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
             if token.startswith("${config."):
                 raise ManifestError(
                     f"{location} contains unsupported config placeholder: {token} "
-                    "(allowed: ${config.discoveryUrl}, ${config.environment})"
+                    "(allowed: ${config.discoveryUrl}, ${config.environment}, "
+                    "${config.oauth.clientId}, ${config.oauth.redirectUri})"
                 )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)

@@ -1,4 +1,5 @@
 from types import MappingProxyType
+from typing import cast
 
 import pytest
 
@@ -115,6 +116,7 @@ def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
+        certification_coverage="complete",
     ).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is True
@@ -143,6 +145,7 @@ def test_eligibility_block_warn_on_mandatory_is_non_blocking(monkeypatch: pytest
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
+        certification_coverage="complete",
     ).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is True
@@ -217,6 +220,7 @@ def test_eligibility_approves_tool_version_listed_in_policy(monkeypatch: pytest.
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("4.5.6"),
+        certification_coverage="complete",
     ).to_json_object()
 
     block = rendered["certificationEligibility"]
@@ -249,6 +253,7 @@ def test_eligibility_rejects_tool_version_absent_from_policy(monkeypatch: pytest
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("9.9.9"),
+        certification_coverage="complete",
     ).to_json_object()["certificationEligibility"]
 
     assert isinstance(block, dict)
@@ -278,6 +283,7 @@ def test_eligibility_rejects_absent_approved_release_policy(monkeypatch: pytest.
         "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
+        certification_coverage="complete",
     ).to_json_object()["certificationEligibility"]
 
     assert isinstance(block, dict)
@@ -310,6 +316,7 @@ def test_eligibility_collects_multiple_blocking_reasons(monkeypatch: pytest.Monk
         ],
         started_at=started,
         approved_release_policy=_approved_policy("9.9.9"),
+        certification_coverage="complete",
     ).to_json_object()["certificationEligibility"]
 
     assert isinstance(block, dict)
@@ -509,3 +516,160 @@ def test_suite_metadata_serialized_when_supplied() -> None:
         "profile": "fapi1-advanced",
         "suite": "discovery-jwks",
     }
+
+
+# ─── Packet B: certification coverage gating ─────────────────────────────────
+
+
+@pytest.mark.unit
+def test_eligibility_partial_coverage_blocks_even_when_all_mandatory_pass(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Partial coverage blocks eligibility even when all mandatory steps pass and the policy approves the version.
+
+    This is the core certification-safety invariant: a manifest not explicitly
+    marked ``certificationCoverage: complete`` can never satisfy the eligibility
+    check, regardless of execution outcomes or approved-release policy.
+    """
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        approved_release_policy=_approved_policy("1.0.0"),
+        certification_coverage="partial",
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Manifest is not marked as complete certification coverage"
+    assert "Manifest is not marked as complete certification coverage" in cast(list[str], block["reasons"])
+
+
+@pytest.mark.unit
+def test_eligibility_partial_coverage_reason_precedes_missing_policy(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Partial coverage is the primary reason when a policy could not make the run eligible."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        certification_coverage="partial",
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["reason"] == "Manifest is not marked as complete certification coverage"
+    assert block["reasons"] == [
+        "Manifest is not marked as complete certification coverage",
+        "Approved-release policy was not supplied",
+    ]
+
+
+@pytest.mark.unit
+def test_eligibility_default_coverage_is_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Omitting ``certification_coverage`` defaults to ``partial`` and blocks eligibility.
+
+    This preserves the safety-by-default contract: non-manifest callers, v0
+    manifest runs, and callers that do not supply the new parameter all receive
+    a partial-coverage result rather than inadvertently becoming certifiable.
+    """
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    started = datetime.now(UTC)
+
+    block = build_smoke_check_result(
+        "env",
+        [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+        started_at=started,
+        approved_release_policy=_approved_policy("1.0.0"),
+        # certification_coverage intentionally omitted — must default to partial
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert "Manifest is not marked as complete certification coverage" in cast(list[str], block["reasons"])
+
+
+@pytest.mark.unit
+def test_eligibility_coverage_block_present_in_json_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The ``certificationCoverage`` audit block is included in every eligibility result."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    started = datetime.now(UTC)
+
+    for coverage in ("partial", "complete"):
+        block = build_smoke_check_result(
+            "env",
+            [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
+            started_at=started,
+            approved_release_policy=_approved_policy("1.0.0"),
+            certification_coverage=coverage,
+        ).to_json_object()["certificationEligibility"]
+
+        assert isinstance(block, dict)
+        coverage_block = block["certificationCoverage"]
+        assert isinstance(coverage_block, dict)
+        assert coverage_block["value"] == coverage
+
+
+@pytest.mark.unit
+def test_eligibility_smoke_suite_manifests_are_partial(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Bundled discovery-JWKS smoke suite manifests are marked partial and cannot certify.
+
+    Validates the certification-safety correction: smoke suites may run and report
+    but are permanently non-certifiable via the ``certificationCoverage: partial``
+    declaration in their manifest files.
+    """
+    from datetime import UTC, datetime
+    from pathlib import Path
+
+    from conformance.manifest import load_manifest
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    suites_dir = Path(__file__).resolve().parents[1] / "conformance" / "suites"
+
+    for manifest_file in sorted(suites_dir.glob("*.json")):
+        manifest = load_manifest(manifest_file)
+        assert manifest.certification_coverage == "partial", (
+            f"{manifest_file.name} must declare certificationCoverage: partial "
+            "to prevent smoke suites from satisfying the certification eligibility check"
+        )
+
+        steps = [
+            StepResult(name=step.id, status="passed", message="ok", mandatory=step.mandatory) for step in manifest.steps
+        ]
+        started = datetime.now(UTC)
+        block = build_smoke_check_result(
+            "env",
+            steps,
+            started_at=started,
+            approved_release_policy=_approved_policy("1.0.0"),
+            certification_coverage=manifest.certification_coverage,
+        ).to_json_object()["certificationEligibility"]
+
+        assert isinstance(block, dict)
+        assert block["eligible"] is False, f"Smoke suite manifest {manifest_file.name} must not yield eligible=True"
+        assert "Manifest is not marked as complete certification coverage" in cast(list[str], block["reasons"])

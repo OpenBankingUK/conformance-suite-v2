@@ -323,6 +323,20 @@ SUITE_CONFIG = {
     },
 }
 
+PSU_AUTH_STARTER_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "psu-auth-starter",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -473,6 +487,33 @@ class TestCreateRunEndpoint:
         assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch"]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
         assert data["status"] == "pending"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_psu_auth_starter_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """A ``psu-auth-starter`` testSuite config resolves the bundled PSU auth starter manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": PSU_AUTH_STARTER_CONFIG}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
+        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:

@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "name": "FAPI 1 Advanced hybrid PSU authorisation (manual mode example)",
+  "certificationCoverage": "partial",
   "steps": [
     {
       "id": "discovery",

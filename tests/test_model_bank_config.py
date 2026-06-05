@@ -121,6 +121,38 @@ def test_parse_model_bank_config_accepts_supported_test_suite(spec_version: Suit
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0"])
+def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: SuiteSpecVersion, tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": spec_version,
+                "profile": "fapi1-advanced",
+                "suite": "psu-auth-starter",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version=spec_version,
+        profile="fapi1-advanced",
+        suite="psu-auth-starter",
+    )
+    assert config.oauth is not None
+    assert config.oauth.client_id == "my-client-id"
+    assert config.oauth.redirect_uri == "https://example.com/callback"
+
+
+@pytest.mark.unit
 def test_parse_model_bank_config_keeps_test_suite_optional_for_smoke_checks(tmp_path: Path) -> None:
     config = parse_model_bank_config(
         {
@@ -272,7 +304,7 @@ def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path
         ("standard", "ob-business-banking", "testSuite.standard must be one of: ob-read-write"),
         ("specVersion", "v3.1.10", "testSuite.specVersion must be one of: v3.1.11, v4.0"),
         ("profile", "fapi2-security-profile", "testSuite.profile must be one of: fapi1-advanced"),
-        ("suite", "full-read-write", "testSuite.suite must be one of: discovery-jwks"),
+        ("suite", "full-read-write", "testSuite.suite must be one of: discovery-jwks, psu-auth-starter"),
     ],
 )
 def test_parse_model_bank_config_rejects_unsupported_test_suite_values(
@@ -507,4 +539,154 @@ def test_parse_model_bank_config_rejects_unknown_top_level_key(tmp_path: Path) -
             },
             base_dir=tmp_path,
             output_base_dir=tmp_path,
+        )
+
+
+# ---------------------------------------------------------------------------
+# Packet C — narrow OAuth participant config
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
+    """A valid ``oauth`` object with clientId and redirectUri is accepted."""
+    from conformance.model_bank_config import OAuthConfig
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "my-client-001",
+                "redirectUri": "https://app.example.com/callback",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.oauth == OAuthConfig(
+        client_id="my-client-001",
+        redirect_uri="https://app.example.com/callback",
+    )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_keeps_oauth_optional(tmp_path: Path) -> None:
+    """Config without ``oauth`` section must produce ``oauth=None``."""
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.oauth is None
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_non_object_oauth(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth must be a JSON object"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": "my-client-001",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_unknown_oauth_field(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match=r"Unknown oauth field\(s\): clientSecret"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "https://app.example.com/callback",
+                    "clientSecret": "should-not-be-here",  # pragma: allowlist secret
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_missing_oauth_client_id(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.clientId must be a non-empty string"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "redirectUri": "https://app.example.com/callback",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_missing_oauth_redirect_uri(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.redirectUri must be a non-empty string"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_http_oauth_redirect_uri(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.redirectUri must be an HTTPS URL"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "http://app.example.com/callback",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_ip_literal_oauth_redirect_uri(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.redirectUri must use a DNS hostname"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "https://127.0.0.1/callback",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_oauth_redirect_uri_with_credentials(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.redirectUri must not include credentials"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "https://user@app.example.com/callback",
+                },
+            },
+            base_dir=tmp_path,
         )

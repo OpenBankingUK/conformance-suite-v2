@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "v1",
+  "name": "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite",
+  "certificationCoverage": "partial",
+  "steps": [
+    {
+      "id": "openid-discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "${config.discoveryUrl}"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "json_field", "path": "issuer", "rule": "https_url"},
+        {"type": "json_field", "path": "authorization_endpoint", "rule": "https_url"},
+        {"type": "json_field", "path": "token_endpoint", "rule": "https_url"},
+        {"type": "json_field", "path": "jwks_uri", "rule": "https_url"}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "jwks-fetch",
+      "name": "JWKS endpoint",
+      "request": {
+        "method": "GET",
+        "url": "${steps.openid-discovery.response.body.jwks_uri}"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "json_field", "path": "keys", "rule": "array"}
+      ],
+      "mandatory": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization",
+      "name": "PSU authorisation (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "scope": "openid accounts",
+      "timeoutSeconds": 180,
+      "mandatory": true
+    }
+  ]
+}

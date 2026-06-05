@@ -13,7 +13,7 @@ from conformance import approved_releases
 from conformance.approved_releases import ApprovedReleasePolicy as ApprovedReleasePolicy
 from conformance.approved_releases import ApprovedReleasePolicyError
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import Manifest, ManifestError, load_manifest
+from conformance.manifest import CertificationCoverage, Manifest, ManifestError, load_manifest
 from conformance.results import CheckStatus
 
 APPROVED_RELEASE_POLICY_SCHEMA_VERSION = approved_releases.APPROVED_RELEASE_POLICY_SCHEMA_VERSION
@@ -30,6 +30,7 @@ type CertificationValidationReason = Literal[
     "mandatory_step_missing",
     "mandatory_step_failed",
     "mandatory_step_skipped",
+    "manifest_coverage_partial",
 ]
 """Machine-readable blocking reasons emitted by validation results."""
 
@@ -39,6 +40,7 @@ _REASON_LABELS: Mapping[CertificationValidationReason, str] = MappingProxyType(
         "mandatory_step_missing": "Mandatory step is missing from the submitted report",
         "mandatory_step_failed": "Mandatory step failed in the submitted report",
         "mandatory_step_skipped": "Mandatory step was skipped in the submitted report",
+        "manifest_coverage_partial": "Manifest is not marked as complete certification coverage",
     }
 )
 """Human-readable labels for machine-readable validation reasons."""
@@ -129,6 +131,10 @@ class CertificationValidationResult:
         mandatory_steps: Per-step validation outcomes for every mandatory
             manifest step.
         reasons: Unique machine-readable blocking reasons for the result.
+        manifest_coverage: Manifest-level certification coverage declaration
+            sourced from the submitted manifest. A ``partial`` value produces
+            the ``manifest_coverage_partial`` blocking reason and is surfaced
+            in the JSON output for audit purposes.
     """
 
     valid: bool
@@ -138,6 +144,7 @@ class CertificationValidationResult:
     policy_schema_version: str
     mandatory_steps: tuple[MandatoryStepValidation, ...]
     reasons: tuple[CertificationValidationReason, ...]
+    manifest_coverage: CertificationCoverage = "partial"
 
     def to_json_object(self) -> JsonObject:
         """Convert the validation result into JSON-compatible data.
@@ -154,6 +161,7 @@ class CertificationValidationResult:
         return {
             "valid": self.valid,
             "report": {"reportVersion": self.report_version, "toolVersion": self.tool_version},
+            "certificationCoverage": {"value": self.manifest_coverage},
             "approvedRelease": {
                 "approved": self.tool_version_approved,
                 "policySchemaVersion": self.policy_schema_version,
@@ -301,9 +309,9 @@ def validate_report(
         policy: Approved-release policy to check the submitted tool version.
 
     Returns:
-        Structured validation result. The result is invalid when any mandatory
-        step is missing, failed, skipped, or when the tool version is not
-        approved.
+        Structured validation result. The result is invalid when the manifest
+        has partial certification coverage, any mandatory step is missing,
+        failed or skipped, or the tool version is not approved.
 
     Raises:
         CertificationValidationError: If the manifest does not declare any
@@ -313,6 +321,7 @@ def validate_report(
     if not mandatory_step_ids:
         raise CertificationValidationError("manifest does not declare any mandatory certification steps")
 
+    manifest_coverage = manifest.certification_coverage
     report_steps = _report_steps_by_id(report.steps)
     mandatory_step_results = tuple(
         _validate_mandatory_step(step_id=step_id, report_steps=report_steps) for step_id in mandatory_step_ids
@@ -322,6 +331,7 @@ def validate_report(
     reasons = _validation_reasons(
         mandatory_steps=mandatory_step_results,
         tool_version_approved=tool_version_approved,
+        manifest_coverage_partial=(manifest_coverage != "complete"),
     )
     return CertificationValidationResult(
         valid=not reasons,
@@ -331,6 +341,7 @@ def validate_report(
         policy_schema_version=policy.schema_version,
         mandatory_steps=mandatory_step_results,
         reasons=reasons,
+        manifest_coverage=manifest_coverage,
     )
 
 
@@ -352,6 +363,7 @@ def render_confluence_summary(result: CertificationValidationResult) -> str:
         f"Tool version: {result.tool_version} ({approval})",
         f"Report metadata version: {result.report_version}",
         f"Approved-release policy: {result.policy_schema_version}",
+        f"Certification coverage: {result.manifest_coverage}",
         (
             "Mandatory steps: "
             f"{counts['total']} total, {counts['passed']} passed, {counts['warn']} warn, "
@@ -445,22 +457,35 @@ def _validation_reasons(
     *,
     mandatory_steps: tuple[MandatoryStepValidation, ...],
     tool_version_approved: bool,
+    manifest_coverage_partial: bool,
 ) -> tuple[CertificationValidationReason, ...]:
     """Build unique machine-readable reasons for a validation result.
 
     Args:
         mandatory_steps: Per-step mandatory validation outcomes.
         tool_version_approved: Whether the submitted tool version is approved.
+        manifest_coverage_partial: Whether the manifest declares partial
+            (non-complete) certification coverage. When ``True``, the
+            ``manifest_coverage_partial`` reason is appended after step-level
+            blockers so that more actionable reasons occupy the primary slot
+            when multiple blockers are present.
 
     Returns:
         Ordered unique blocking reasons.
     """
     reasons: list[CertificationValidationReason] = []
+    # Coverage is appended last so that more actionable step-level reasons
+    # (tool version, missing/failed/skipped mandatory steps) take the primary
+    # slot in the tuple when multiple blockers are present. When all step-level
+    # checks pass but coverage is partial, this will be the sole and therefore
+    # primary reason.
     if not tool_version_approved:
         reasons.append("tool_version_not_approved")
     for step in mandatory_steps:
         if step.reason is not None and step.reason not in reasons:
             reasons.append(step.reason)
+    if manifest_coverage_partial:
+        reasons.append("manifest_coverage_partial")
     return tuple(reasons)
 
 
@@ -525,11 +550,15 @@ def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
         Human-readable bullet lines for every blocking reason.
     """
     lines: list[str] = []
-    if "tool_version_not_approved" in result.reasons:
-        lines.append(f"- {_REASON_LABELS['tool_version_not_approved']}: {result.tool_version}")
-    for step in result.mandatory_steps:
-        if step.reason is not None:
-            lines.append(f"- {_REASON_LABELS[step.reason]}: {step.step_id}")
+    for reason in result.reasons:
+        if reason == "tool_version_not_approved":
+            lines.append(f"- {_REASON_LABELS[reason]}: {result.tool_version}")
+        elif reason == "manifest_coverage_partial":
+            lines.append(f"- {_REASON_LABELS[reason]}")
+        else:
+            for step in result.mandatory_steps:
+                if step.reason == reason:
+                    lines.append(f"- {_REASON_LABELS[reason]}: {step.step_id}")
     return lines
 
 

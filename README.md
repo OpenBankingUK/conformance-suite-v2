@@ -43,12 +43,48 @@ Participant config can also select a bundled conformance-suite manifest instead 
 }
 ```
 
-The supported combinations are `ob-read-write` `v3.1.11` or `v4.0`, `fapi1-advanced`, and `discovery-jwks`. The bundled manifests use `${config.discoveryUrl}` for the OpenID discovery request and then follow the discovered JWKS URI with ordinary step placeholders. Only `${config.discoveryUrl}` and `${config.environment}` are exposed to manifests; TLS paths, certificates, future secrets, and arbitrary config traversal are not placeholder-addressable.
+The supported suite combinations are `ob-read-write` × (`v3.1.11` | `v4.0`) × `fapi1-advanced` × (`discovery-jwks` | `psu-auth-starter`). **Both bundled suites are explicitly `partial` coverage — neither can satisfy certification eligibility.** A complete certification suite will be published as a separate follow-up.
+
+| Suite name | Steps | OAuth config required |
+|---|---|---|
+| `discovery-jwks` | OpenID discovery + JWKS fetch | No |
+| `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
+
+The `psu-auth-starter` suite requires an `oauth` section in the participant config with the client identifier registered at the ASPSP and an HTTPS redirect URI also registered with the ASPSP. The bundled PSU authorisation step resolves both values from this config:
+
+```json
+{
+	"environment": "ozone-model-bank",
+	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+	"timeoutSeconds": 10,
+	"testSuite": {
+		"standard": "ob-read-write",
+		"specVersion": "v4.0",
+		"profile": "fapi1-advanced",
+		"suite": "psu-auth-starter"
+	},
+	"oauth": {
+		"clientId": "your-client-id-here",
+		"redirectUri": "https://conformance.example.com/callback"
+	},
+	"tls": {
+		"certificatePathRoot": "./certs"
+	},
+	"resultOutputPath": "./out/test-results.json",
+	"executionLogPath": "./out/execution-log.ndjson"
+}
+```
+
+Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, and `${config.oauth.redirectUri}` are exposed to manifests. TLS paths, certificates, private keys, client secrets, and arbitrary config traversal are not placeholder-addressable.
 
 Run a config-selected suite from the CLI by omitting `--manifest`:
 
 ```bash
+# Smoke suite (no OAuth config required)
 uv run python main.py config/model-bank-suite-example.json
+
+# PSU auth starter suite (requires oauth section in config)
+uv run python main.py config/model-bank-psu-auth-starter-example.json
 ```
 
 `--manifest` remains an explicit override for authoring and certification-validation workflows. `--deselect` works with either an explicit manifest or a config-selected `testSuite`, and remains invalid for plain model-bank smoke checks that have neither.
@@ -57,7 +93,7 @@ The REST API follows the same precedence: an inline `manifest` in `POST /api/run
 
 Browser-launched runs can also drive manual PSU authorisation manifests. While a manual PSU step is waiting for the ASPSP callback, the run detail and status views show an `Open authorisation` action for the current step. The raw authorisation URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
 
-Current bundled entries are smoke-level OpenID discovery and JWKS checks. They exercise the config-driven catalog, placeholder, plan, result, and UI rails, but they are not full Open Banking Read/Write v3.1.11 or v4.0 certification coverage.
+Both bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit.
 
 ## Certification report validation
 

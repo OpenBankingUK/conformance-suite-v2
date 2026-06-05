@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "name": "Open Banking Read/Write v3.1.11 FAPI 1 Advanced discovery/JWKS smoke suite",
+  "certificationCoverage": "partial",
   "steps": [
     {
       "id": "openid-discovery",
