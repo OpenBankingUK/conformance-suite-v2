@@ -44,6 +44,8 @@ class FrozenHeaders(Mapping[str, str]):
         Raises:
             KeyError: If the header is not present.
         """
+        if not isinstance(key, str):
+            raise KeyError(key)
         return self._lookup[key.lower()]
 
     def __iter__(self) -> Iterator[str]:
