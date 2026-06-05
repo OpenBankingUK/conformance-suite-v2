@@ -23,9 +23,8 @@ class FrozenHeaders(Mapping[str, str]):
         header_items = _iter_header_items(headers)
         normalized: dict[str, tuple[str, str]] = {}
         for name, value in header_items:
-            lower_name = name.lower()
             if lower_name in normalized:
-                original_name, _old_value = normalized[lower_name]
+                original_name, _ = normalized[lower_name]
                 normalized[lower_name] = (original_name, value)
                 continue
             normalized[lower_name] = (name, value)
