@@ -7,6 +7,7 @@ from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
+from typing import cast
 
 import httpx
 
@@ -1184,7 +1185,7 @@ def _execute_v1_step_inner(
 
     # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
-        request_evidence["headers"] = dict(mask_headers(resolved_headers))
+        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
         for header_name, header_value in resolved_headers.items():
             try:
                 validate_header_value(
@@ -1352,7 +1353,7 @@ def _execute_v1_step_inner(
         "body": mask_json_value(dict(response.body)),
     }
     if response.headers:
-        response_evidence["headers"] = dict(mask_headers(response.headers))
+        response_evidence["headers"] = cast("JsonObject", mask_headers(response.headers))
     # Per PRD: response bodies are NOT duplicated into the execution log —
     # they already live in the result-file evidence for non-PASS outcomes.
     # The log records only the status code + URL so the timeline is complete
