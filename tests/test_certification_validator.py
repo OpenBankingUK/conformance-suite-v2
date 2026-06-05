@@ -16,7 +16,9 @@ from conformance.certification_validator import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, parse_manifest
+from conformance.model_bank_config import SuiteSelection
 from conformance.results import CheckStatus
+from conformance.suite_catalog import resolve_suite
 
 
 @pytest.mark.unit
@@ -397,6 +399,53 @@ def test_validate_report_coverage_included_in_json_output() -> None:
     coverage_block = rendered["certificationCoverage"]
     assert isinstance(coverage_block, dict)
     assert coverage_block["value"] == "complete"
+
+
+@pytest.mark.unit
+def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -> None:
+    """Bundled AIS slice exposes the protected resource step in validator counts."""
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-certification-slice",
+        )
+    )
+    report = _report(
+        tool_version="1.2.3",
+        steps=(
+            ("openid-discovery", "passed"),
+            ("jwks-fetch", "passed"),
+            ("psu-authorization", "passed"),
+            ("token-exchange", "passed"),
+            ("account-access-consent", "passed"),
+            ("accounts-list", "skipped"),
+        ),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=resolved.manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.reasons == ("mandatory_step_skipped", "manifest_coverage_partial")
+    rendered = result.to_json_object()
+    mandatory = rendered["mandatory"]
+    assert isinstance(mandatory, dict)
+    assert mandatory["total"] == 6
+    assert mandatory["passed"] == 5
+    assert mandatory["skipped"] == 1
+    steps = mandatory["steps"]
+    assert isinstance(steps, list)
+    assert steps[-1] == {
+        "stepId": "accounts-list",
+        "status": "skipped",
+        "valid": False,
+        "reason": "mandatory_step_skipped",
+    }
 
 
 @pytest.mark.unit

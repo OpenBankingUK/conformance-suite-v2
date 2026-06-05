@@ -125,7 +125,11 @@
         {"type": "http_status", "expected": 200},
         {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
         {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Account", "rule": "array"}
+        {"type": "json_field", "path": "Data.Account", "rule": "array"},
+        {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "Status"}
       ],
       "mandatory": true
     }

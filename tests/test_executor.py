@@ -2926,6 +2926,350 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
     assert "ais-id-token" not in ndjson
 
 
+@pytest.mark.integration
+def test_ais_certification_slice_accounts_resource_executes_and_counts_mandatory_steps(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Bundled AIS slice completes the first protected accounts resource call.
+
+    Args:
+        monkeypatch: Pytest fixture used to install deterministic fake time for
+            the manual PSU polling loop.
+    """
+    import types
+
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-slice",
+    )
+    resolved = resolve_suite(selection)
+    manifest = resolved.manifest
+
+    auth_store = AuthSessionStore()
+    run_id = "e2e-ais-accounts"
+    registered_states: list[str] = []
+    original_register = auth_store.register
+
+    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Delegate to the real store and record the generated auth state.
+
+        Args:
+            run_id_inner: Run identifier passed through by the executor.
+            state: Optional caller-supplied state token.
+
+        Returns:
+            Newly registered auth session.
+        """
+        session = original_register(run_id_inner, state=state)
+        registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", intercepting_register)
+
+    tick = [0.0]
+    code_injected = [False]
+
+    def fake_monotonic() -> float:
+        """Return deterministic monotonic time for PSU polling.
+
+        Returns:
+            Current fake monotonic timestamp.
+        """
+        value = tick[0]
+        tick[0] += 0.5
+        return value
+
+    def fake_sleep(_seconds: float) -> None:
+        """Inject a synthetic captured authorization code on first poll.
+
+        Args:
+            _seconds: Requested sleep interval, ignored by the fake.
+        """
+        if registered_states and not code_injected[0]:
+            code_injected[0] = True
+            auth_store.capture_code(registered_states[-1], "ais-accounts-auth-code")
+
+    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
+
+    captured_requests: list[httpx.Request] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked responses for the bundled AIS slice.
+
+        Args:
+            request: Outbound HTTP request from the executor.
+
+        Returns:
+            Mocked JSON response for the requested endpoint.
+        """
+        captured_requests.append(request)
+        url = str(request.url)
+        if url == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://aspsp.example.com",
+                    "authorization_endpoint": "https://aspsp.example.com/authorize",
+                    "token_endpoint": "https://aspsp.example.com/token",
+                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+                    "response_types_supported": ["code id_token"],
+                },
+            )
+        if url == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+        if url == "https://aspsp.example.com/token":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "ais-resource-access-token",
+                    "id_token": "ais-resource-id-token",
+                    "token_type": "Bearer",
+                    "expires_in": 300,
+                },
+            )
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        return httpx.Response(
+            200,
+            json={
+                "Data": {
+                    "Account": [
+                        {
+                            "AccountId": "account-123",
+                            "Status": "Enabled",
+                        }
+                    ]
+                }
+            },
+        )
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="ais-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+    )
+
+    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=resolved.metadata,
+            runtime_config=runtime_config,
+            run_id=run_id,
+            auth_session_store=auth_store,
+        )
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == [
+        "openid-discovery",
+        "jwks-fetch",
+        "psu-authorization",
+        "token-exchange",
+        "account-access-consent",
+        "accounts-list",
+    ]
+
+    accounts_request = captured_requests[-1]
+    assert accounts_request.method == "GET"
+    assert str(accounts_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts"
+    assert accounts_request.headers["authorization"] == "Bearer ais-resource-access-token"
+
+    rendered = result.to_json_object()
+    assert rendered["summary"] == {"total": 6, "passed": 6, "failed": 0, "warn": 0, "skipped": 0}
+    eligibility = cast(JsonObject, rendered["certificationEligibility"])
+    assert eligibility["eligible"] is False
+    assert eligibility["mandatoryTotal"] == 6
+    assert eligibility["mandatoryPassed"] == 6
+    assert eligibility["mandatoryFailed"] == 0
+    assert eligibility["mandatorySkipped"] == 0
+
+    accounts_request_events = [
+        event for event in execution_logger.events() if event.type == "request-sent" and event.step_id == "accounts-list"
+    ]
+    assert len(accounts_request_events) == 1
+    assert accounts_request_events[0].payload["headers"] == {
+        "Accept": "application/json",
+        "Authorization": "***",
+    }
+
+
+@pytest.mark.integration
+def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Malformed protected accounts payload fails the bundled AIS resource step.
+
+    Args:
+        monkeypatch: Pytest fixture used to install deterministic fake time for
+            the manual PSU polling loop.
+    """
+    import types
+
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-slice",
+    )
+    resolved = resolve_suite(selection)
+
+    auth_store = AuthSessionStore()
+    registered_states: list[str] = []
+    original_register = auth_store.register
+
+    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Delegate to the real store and record the generated auth state.
+
+        Args:
+            run_id_inner: Run identifier passed through by the executor.
+            state: Optional caller-supplied state token.
+
+        Returns:
+            Newly registered auth session.
+        """
+        session = original_register(run_id_inner, state=state)
+        registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", intercepting_register)
+
+    tick = [0.0]
+    code_injected = [False]
+
+    def fake_monotonic() -> float:
+        """Return deterministic monotonic time for PSU polling.
+
+        Returns:
+            Current fake monotonic timestamp.
+        """
+        value = tick[0]
+        tick[0] += 0.5
+        return value
+
+    def fake_sleep(_seconds: float) -> None:
+        """Inject a synthetic captured authorization code on first poll.
+
+        Args:
+            _seconds: Requested sleep interval, ignored by the fake.
+        """
+        if registered_states and not code_injected[0]:
+            code_injected[0] = True
+            auth_store.capture_code(registered_states[-1], "ais-accounts-auth-code")
+
+    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked responses with a malformed accounts resource payload.
+
+        Args:
+            request: Outbound HTTP request from the executor.
+
+        Returns:
+            Mocked JSON response for the requested endpoint.
+        """
+        url = str(request.url)
+        if url == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://aspsp.example.com",
+                    "authorization_endpoint": "https://aspsp.example.com/authorize",
+                    "token_endpoint": "https://aspsp.example.com/token",
+                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+                    "response_types_supported": ["code id_token"],
+                },
+            )
+        if url == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+        if url == "https://aspsp.example.com/token":
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "ais-resource-access-token",
+                    "id_token": "ais-resource-id-token",
+                    "token_type": "Bearer",
+                    "expires_in": 300,
+                },
+            )
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        return httpx.Response(200, json={"Data": {"Account": [{"Status": "Enabled"}]}})
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="ais-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            resolved.manifest,
+            environment="test",
+            client=client,
+            runtime_config=runtime_config,
+            run_id="e2e-ais-accounts-fail",
+            auth_session_store=auth_store,
+        )
+
+    assert result.status == "failed"
+    assert result.steps[-1].name == "accounts-list"
+    assert result.steps[-1].status == "failed"
+    assert result.steps[-1].mandatory is True
+    details = dict(result.steps[-1].details)
+    assertion_results = details["assertions"]
+    assert isinstance(assertion_results, list)
+    assert len(assertion_results) == 8
+    assert assertion_results[-2] == {
+        "status": "failed",
+        "message": "Every item in JSON field Data.Account must contain field AccountId",
+    }
+    assert assertion_results[-1] == {
+        "status": "passed",
+        "message": "Every item in JSON field Data.Account contains field Status",
+    }
+    assert details["request"] == {
+        "method": "GET",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+        "headers": {
+            "Accept": "application/json",
+            "Authorization": "***",
+        },
+    }
+    response_details = details["response"]
+    assert response_details == {
+        "statusCode": 200,
+        "headers": {
+            "content-length": cast(dict[str, str], response_details["headers"])["content-length"],
+            "content-type": "application/json",
+        },
+        "body": {"Data": {"Account": [{"Status": "Enabled"}]}},
+    }
+
+    eligibility = result.to_json_object()["certificationEligibility"]
+    assert isinstance(eligibility, dict)
+    assert eligibility["eligible"] is False
+    assert eligibility["mandatoryTotal"] == 6
+    assert eligibility["mandatoryFailed"] == 1
+    assert eligibility["mandatorySkipped"] == 0
+
+
 @pytest.mark.unit
 def test_run_manifest_request_sent_masks_authorization_header() -> None:
     """request-sent event masks Authorization header values by default."""
