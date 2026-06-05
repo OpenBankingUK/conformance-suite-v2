@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Manifest-level `certificationCoverage` metadata (`partial | complete`; defaults to `partial` when omitted) lets manifest authors declare whether a suite provides complete certification coverage. Partial coverage blocks `certificationEligibility.eligible` in result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. Existing `discovery-jwks` smoke manifests are explicitly marked `partial`. Tracking issue #43.
+- New `psu-auth-starter` bundled suite slice under `ob-read-write / v3.1.11 | v4.0 / fapi1-advanced`. Explicitly `partial`/non-certifying; covers OpenID discovery endpoint and claim assertions, JWKS fetch, and a manual PSU authorisation setup step using safe non-secret `${config.oauth.clientId}` / `${config.oauth.redirectUri}` placeholders. Preserves existing `discovery-jwks` behavior and catalog IDs. Tracking issue #43.
+- Narrow OAuth participant-config allow-list: `${config.oauth.clientId}` and `${config.oauth.redirectUri}` (HTTPS only) are the only new runtime placeholder keys added by this slice. Private keys, client secrets, TLS paths, and arbitrary config traversal remain unsupported. Tracking issue #43.
+
 ### Security
 
 - PSU authorisation URLs now mask credential-bearing query parameters before being embedded in step results, `details.request.url`, placeholder-addressable execution context request URLs (`${steps.<id>.request.url}`), buffered execution-log events, or API log snapshots. The masking covers OAuth/JAR `request`, `request_object`, and `client_assertion` values (plus the existing credential-key set), while keeping non-sensitive URL context such as the endpoint, `client_id`, `redirect_uri`, `response_type`, `scope`, and `state` visible for debugging.
