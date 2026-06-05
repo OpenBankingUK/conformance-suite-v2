@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "name": "Grouped execution example (setup + independent execution groups)",
+  "certificationCoverage": "partial",
   "steps": [
     {
       "id": "openid-discovery",

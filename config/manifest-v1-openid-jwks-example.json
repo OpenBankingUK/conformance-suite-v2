@@ -1,6 +1,7 @@
 {
     "schemaVersion": "v1",
     "name": "Ozone OpenID discovery and JWKS smoke check (v1)",
+    "certificationCoverage": "partial",
     "steps": [
         {
             "id": "openid-discovery",

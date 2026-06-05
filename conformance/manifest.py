@@ -22,6 +22,21 @@ class ManifestError(ValueError):
 ManifestSchemaVersion = Literal["v0", "v1"]
 """Manifest schema versions accepted by the parser."""
 
+CertificationCoverage = Literal["partial", "complete"]
+"""Manifest-level certification coverage declaration.
+
+Declares whether a suite provides full certification coverage (``complete``) or
+is intentionally partial / non-certifying (``partial``). Omitting the field from
+a v1 manifest is treated as ``partial`` for safety, so smoke suites and starter
+slices cannot inadvertently pass certification eligibility. V0 manifests always
+receive ``partial`` because v0 is a legacy smoke-check format that predates the
+certification eligibility model.
+
+The value feeds directly into ``certificationEligibility.eligible`` in the result
+JSON and into OBL-side ``validate_report``; a ``partial`` manifest blocks both
+even when all mandatory steps pass and the tool version is approved.
+"""
+
 StepPhase = Literal["setup", "execution"]
 """Scheduling phase accepted by v1 steps."""
 
@@ -392,6 +407,14 @@ class Manifest:
     Attributes:
         schema_version: Manifest schema version accepted by this parser.
         name: Human-readable manifest name.
+        certification_coverage: Whether this manifest declares full
+            certification coverage (``complete``) or is intentionally
+            partial / non-certifying (``partial``). V0 manifests are always
+            ``partial``. V1 manifests default to ``partial`` when the
+            ``certificationCoverage`` root key is omitted. A ``partial``
+            value blocks ``certificationEligibility.eligible`` in the result
+            JSON and OBL-side ``validate_report``, even when all mandatory
+            steps pass and the tool version is approved.
         tests: Ordered manifest tests to execute (v0 only, empty for v1).
         steps: Ordered sequential steps to execute (v1 only, empty for v0).
             Each entry is either a plain HTTP step or a PSU authorisation
@@ -400,6 +423,7 @@ class Manifest:
 
     schema_version: ManifestSchemaVersion
     name: str
+    certification_coverage: CertificationCoverage = "partial"
     tests: tuple[ManifestTest, ...] = ()
     steps: tuple[V1Step, ...] = ()
 
@@ -494,6 +518,36 @@ def _parse_v0_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     )
 
 
+def _parse_certification_coverage(raw_manifest: dict[str, JsonValue], *, location: str) -> CertificationCoverage:
+    """Extract and validate the optional ``certificationCoverage`` root key.
+
+    Defaults to ``"partial"`` when the key is absent so that manifests that
+    pre-date the field (and all v0 manifests) cannot inadvertently satisfy
+    certification eligibility. Only the two literal values ``"partial"`` and
+    ``"complete"`` are accepted; any other string is rejected at parse time.
+
+    Args:
+        raw_manifest: The manifest JSON object to extract from.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        ``"partial"`` when absent or explicitly set to ``"partial"``;
+        ``"complete"`` only when explicitly set to ``"complete"``.
+
+    Raises:
+        ManifestError: If ``certificationCoverage`` is present but is not one
+            of the two accepted values.
+    """
+    if "certificationCoverage" not in raw_manifest:
+        return "partial"
+    value = raw_manifest["certificationCoverage"]
+    if value == "partial":
+        return "partial"
+    if value == "complete":
+        return "complete"
+    raise ManifestError(f"{location}.certificationCoverage must be one of: partial, complete (got: {value!r})")
+
+
 _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 """Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
 
@@ -584,9 +638,14 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     Raises:
         ManifestError: If required fields are missing or validation fails.
     """
-    _reject_unknown_keys(raw_manifest, allowed_keys={"schemaVersion", "name", "steps"}, location="manifest")
+    _reject_unknown_keys(
+        raw_manifest,
+        allowed_keys={"schemaVersion", "name", "certificationCoverage", "steps"},
+        location="manifest",
+    )
 
     name = _required_string(raw_manifest, "name", location="manifest")
+    certification_coverage = _parse_certification_coverage(raw_manifest, location="manifest")
     raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
 
     seen_ids: set[str] = set()
@@ -599,6 +658,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     return Manifest(
         schema_version="v1",
         name=name,
+        certification_coverage=certification_coverage,
         steps=tuple(steps),
     )
 

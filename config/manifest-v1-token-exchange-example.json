@@ -1,6 +1,7 @@
 {
   "schemaVersion": "v1",
   "name": "Synthetic token exchange (v1 POST example)",
+  "certificationCoverage": "partial",
   "steps": [
     {
       "id": "discovery",

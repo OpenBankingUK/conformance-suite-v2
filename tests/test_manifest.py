@@ -6,6 +6,7 @@ import pytest
 
 from conformance.json_types import JsonValue
 from conformance.manifest import (
+    CertificationCoverage,
     FormBody,
     JsonBody,
     ManifestError,
@@ -571,6 +572,86 @@ def test_parse_v1_manifest_rejects_unknown_keys_at_root() -> None:
 
     with pytest.raises(ManifestError, match="Unknown manifest field"):
         parse_manifest(raw_manifest)
+
+
+# --- v1 manifest: certificationCoverage metadata ---
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_defaults_coverage_to_partial_when_absent() -> None:
+    """Omitting certificationCoverage must default to partial for safety."""
+    raw_manifest = valid_v1_manifest()
+    assert "certificationCoverage" not in raw_manifest
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.certification_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_explicit_partial_coverage() -> None:
+    """An explicit certificationCoverage: partial is accepted and round-trips correctly."""
+    raw_manifest = valid_v1_manifest()
+    raw_manifest["certificationCoverage"] = "partial"
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.certification_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_complete_coverage() -> None:
+    """certificationCoverage: complete is accepted for a manifest declaring full coverage."""
+    raw_manifest = valid_v1_manifest()
+    raw_manifest["certificationCoverage"] = "complete"
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.certification_coverage == "complete"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_value", ["", "full", "none", "PARTIAL", 1, True, None])
+def test_parse_v1_manifest_rejects_invalid_coverage_value(bad_value: JsonValue) -> None:
+    """certificationCoverage must be exactly partial or complete — any other value is rejected."""
+    raw_manifest = valid_v1_manifest()
+    raw_manifest["certificationCoverage"] = bad_value
+
+    with pytest.raises(ManifestError, match="certificationCoverage must be one of: partial, complete"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v0_manifest_always_has_partial_coverage() -> None:
+    """v0 manifests always default to partial — the field is absent from the schema."""
+    manifest = parse_manifest(valid_manifest())
+
+    assert manifest.certification_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_coverage_type_is_literal() -> None:
+    """The certification_coverage field carries a properly typed CertificationCoverage value."""
+    raw_manifest = valid_v1_manifest()
+    raw_manifest["certificationCoverage"] = "complete"
+
+    manifest = parse_manifest(raw_manifest)
+
+    coverage: CertificationCoverage = manifest.certification_coverage
+    assert coverage in ("partial", "complete")
+
+
+@pytest.mark.unit
+def test_load_bundled_discovery_jwks_suite_is_partial(
+    tmp_path: pytest.TempPathFactory,
+) -> None:
+    """Bundled discovery-jwks suite manifests must be explicitly marked as partial."""
+    suites_dir = REPO_ROOT / "conformance" / "suites"
+    for suite_path in suites_dir.glob("*discovery-jwks*.json"):
+        manifest = load_manifest(suite_path)
+        assert manifest.certification_coverage == "partial", (
+            f"{suite_path.name} must have certificationCoverage: partial"
+        )
 
 
 @pytest.mark.unit
