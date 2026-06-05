@@ -126,6 +126,7 @@ def run(argv: Sequence[str] | None = None) -> int:
                 runtime_config=RuntimeConfig(
                     discovery_url=config.discovery_url,
                     environment=config.environment,
+                    oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
                     oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
                     oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
                 ),

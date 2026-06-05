@@ -108,6 +108,10 @@ class RuntimeConfig:
         discovery_url: OpenID discovery URL from validated participant config.
         environment: Human-readable environment label from validated
             participant config.
+        oauth_resource_base_url: HTTPS resource-server base URL for
+            ``${config.oauth.resourceBaseUrl}`` placeholder resolution.
+            Absent when the participant config omits the optional
+            ``oauth.resourceBaseUrl`` field.
         oauth_client_id: OAuth client identifier for
             ``${config.oauth.clientId}`` placeholder resolution. Absent when
             the participant config omits an ``oauth`` section.
@@ -119,6 +123,7 @@ class RuntimeConfig:
 
     discovery_url: str
     environment: str
+    oauth_resource_base_url: str | None = None
     oauth_client_id: str | None = None
     oauth_redirect_uri: str | None = None
 
@@ -338,6 +343,7 @@ _ALLOWED_CONFIG_PLACEHOLDERS = (
     "${config.environment}",
     "${config.oauth.clientId}",
     "${config.oauth.redirectUri}",
+    "${config.oauth.resourceBaseUrl}",
 )
 """Exhaustive allow-list of ``${config.*}`` placeholder paths exposed to manifest steps."""
 
@@ -364,7 +370,11 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
     """
     _allowed_str = ", ".join(_ALLOWED_CONFIG_PLACEHOLDERS)
     is_simple_field = len(segments) == 2 and segments[1] in {"discoveryUrl", "environment"}
-    is_oauth_field = len(segments) == 3 and segments[1] == "oauth" and segments[2] in {"clientId", "redirectUri"}
+    is_oauth_field = (
+        len(segments) == 3
+        and segments[1] == "oauth"
+        and segments[2] in {"clientId", "redirectUri", "resourceBaseUrl"}
+    )
     if not (is_simple_field or is_oauth_field):
         raise PlaceholderResolutionError(f"Unsupported config placeholder: ${{{dot_path}}} (allowed: {_allowed_str})")
     if context.config is None:
@@ -375,12 +385,16 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
             return context.config.discovery_url
         return context.config.environment
 
-    # is_oauth_field — segments[2] is "clientId" or "redirectUri"
+    # is_oauth_field — segments[2] is "clientId", "redirectUri", or "resourceBaseUrl"
     sub_field = segments[2]
     if sub_field == "clientId":
         if context.config.oauth_client_id is None:
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_client_id
+    if sub_field == "resourceBaseUrl":
+        if context.config.oauth_resource_base_url is None:
+            raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_resource_base_url
     # sub_field == "redirectUri"
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
