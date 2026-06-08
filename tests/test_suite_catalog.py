@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 
 import conformance.suite_catalog as suite_catalog
-from conformance.manifest import FormBody, HeaderAssertion, JsonFieldAssertion, ManifestStep, PsuAuthorizationStep
+from conformance.manifest import FormBody, HeaderAssertion, JsonBody, JsonFieldAssertion, ManifestStep, PsuAuthorizationStep
 from conformance.model_bank_config import SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
 
@@ -144,23 +144,48 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert manifest.schema_version == "v1"
     assert manifest.certification_coverage == "partial"
     assert manifest.name == resolved.metadata.label
-    assert [step.id for step in manifest.steps] == [
+    mandatory_step_ids = [
         "openid-discovery",
         "jwks-fetch",
         "psu-authorization",
         "token-exchange",
         "account-access-consent",
         "accounts-list",
+        "account-detail",
         "account-balances",
         "account-transactions",
+        "transactions-list",
     ]
-    assert [step.mandatory for step in manifest.steps] == [True, True, True, True, True, True, True, True]
+    optional_step_ids = [
+        "balances-list",
+        "account-beneficiaries",
+        "beneficiaries-list",
+        "account-direct-debits",
+        "direct-debits-list",
+        "account-offers",
+        "offers-list",
+        "account-party",
+        "account-parties",
+        "party-list",
+        "account-product",
+        "products-list",
+        "account-scheduled-payments",
+        "scheduled-payments-list",
+        "account-standing-orders",
+        "standing-orders-list",
+        "statements-list",
+    ]
+    assert [step.id for step in manifest.steps] == mandatory_step_ids + optional_step_ids
+    assert [step.id for step in manifest.steps if step.mandatory] == mandatory_step_ids
+    assert [step.id for step in manifest.steps if step.optional] == optional_step_ids
 
     token_exchange_step = cast(ManifestStep, manifest.steps[3])
     consent_step = cast(ManifestStep, manifest.steps[4])
     accounts_step = cast(ManifestStep, manifest.steps[5])
-    balances_step = cast(ManifestStep, manifest.steps[6])
-    transactions_step = cast(ManifestStep, manifest.steps[7])
+    account_detail_step = cast(ManifestStep, manifest.steps[6])
+    balances_step = cast(ManifestStep, manifest.steps[7])
+    transactions_step = cast(ManifestStep, manifest.steps[8])
+    transactions_list_step = cast(ManifestStep, manifest.steps[9])
 
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert isinstance(token_exchange_step.request.body, FormBody)
@@ -175,7 +200,19 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         "Accept": "application/json",
         "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
     }
+    consent_body = consent_step.request.body
+    assert isinstance(consent_body, JsonBody)
+    assert isinstance(consent_body.value, dict)
+    consent_data = consent_body.value["Data"]
+    assert isinstance(consent_data, dict)
+    permissions = consent_data["Permissions"]
+    assert isinstance(permissions, list)
+    assert "ReadTransactionsDetail" in permissions
     assert accounts_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
+    assert account_detail_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
+    )
     assert balances_step.request.url == (
         "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
         "${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances"
@@ -192,18 +229,35 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         "Accept": "application/json",
         "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
     }
+    assert transactions_list_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/transactions"
 
     consent_assertions = consent_step.assertions
     accounts_assertions = accounts_step.assertions
+    account_detail_assertions = account_detail_step.assertions
     balances_assertions = balances_step.assertions
     transactions_assertions = transactions_step.assertions
+    transactions_list_assertions = transactions_list_step.assertions
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.ConsentId" and assertion.rule == "string"
         for assertion in consent_assertions
     )
     assert any(
+        isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Permissions" and assertion.rule == "array"
+        for assertion in consent_assertions
+    )
+    assert any(
+        isinstance(assertion, HeaderAssertion)
+        and assertion.name == "x-fapi-interaction-id"
+        and assertion.rule == "present"
+        for assertion in consent_assertions
+    )
+    assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Account" and assertion.rule == "array"
         for assertion in accounts_assertions
+    )
+    assert any(
+        isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Account" and assertion.rule == "array"
+        for assertion in account_detail_assertions
     )
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Balance" and assertion.rule == "array"
@@ -212,6 +266,10 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Transaction" and assertion.rule == "array"
         for assertion in transactions_assertions
+    )
+    assert any(
+        isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Transaction" and assertion.rule == "array"
+        for assertion in transactions_list_assertions
     )
 
 
