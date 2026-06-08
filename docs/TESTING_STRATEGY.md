@@ -195,7 +195,7 @@ DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py test
 
 ## v4 AIS Slice Iteration
 
-The bundled `ais-certification-slice` spans config validation, bundled-manifest resolution, token exchange, consent creation, protected AIS resource assertions, launch surfaces, and certification eligibility. A focused offline iteration loop for this slice is:
+The bundled `ais-certification-slice` spans config validation, bundled-manifest resolution, array-index placeholder resolution, token exchange, consent creation, account-scoped AIS resource assertions for accounts, balances, and transactions, launch surfaces, and certification eligibility. A focused offline iteration loop for this slice is:
 
 ```bash
 DJANGO_DEBUG=true uv run pytest \

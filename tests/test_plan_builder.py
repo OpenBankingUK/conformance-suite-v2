@@ -253,6 +253,8 @@ def test_blank_manifest_resolves_ais_slice_suite() -> None:
                 "token-exchange",
                 "account-access-consent",
                 "accounts-list",
+                "account-balances",
+                "account-transactions",
             ],
         }
     )
@@ -269,6 +271,8 @@ def test_blank_manifest_resolves_ais_slice_suite() -> None:
         "token-exchange",
         "account-access-consent",
         "accounts-list",
+        "account-balances",
+        "account-transactions",
     ]
     assert preview.launch_supported is True
 

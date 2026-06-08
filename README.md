@@ -49,7 +49,7 @@ Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` p
 |---|---|---|---|
 | `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
 | `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
-| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
+| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
 
 The `psu-auth-starter` and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself. The starter suite uses the first two values; the AIS slice also uses `resourceBaseUrl` for consent creation and protected resource calls.
 
@@ -103,13 +103,17 @@ Browser-launched runs can also drive manual PSU authorisation manifests. While a
 
 All bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit.
 
-The bundled `ais-certification-slice` manifest extends the starter path through three more steps:
+The bundled `ais-certification-slice` manifest extends the starter path through five more steps:
 
 - form-urlencoded token exchange using `${steps.psu-authorization.response.body.code}`
 - `POST /open-banking/v4.0/aisp/account-access-consents`
 - `GET /open-banking/v4.0/aisp/accounts`
+- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances`
+- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions`
 
-The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`, and the accounts response must include a top-level `Data` object plus a non-empty `Data.Account` array with `AccountId` and `Status` fields on each item.
+The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`. The accounts response must include a top-level `Data` object plus a non-empty `Data.Account` array with `AccountId` and `Status` fields on each item. The balances response must include a top-level `Data` object plus a non-empty `Data.Balance` array with `Type`, `Amount`, and `CreditDebitIndicator` fields on each item. The transactions response must include a top-level `Data` object plus a `Data.Transaction` array; when transactions are present, each item must include `TransactionId` and `Amount`.
+
+Manifest placeholders can also traverse JSON arrays using non-negative numeric path segments. The AIS slice uses `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned account into the account-scoped balances and transactions endpoints. Array indices must be in bounds, and response placeholders must still resolve to primitive values rather than whole objects or arrays.
 
 Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
 

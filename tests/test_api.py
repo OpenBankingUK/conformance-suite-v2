@@ -561,6 +561,8 @@ class TestCreateRunEndpoint:
             "token-exchange",
             "account-access-consent",
             "accounts-list",
+            "account-balances",
+            "account-transactions",
         ]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
 

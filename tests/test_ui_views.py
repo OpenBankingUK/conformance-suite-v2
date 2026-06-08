@@ -376,6 +376,8 @@ class TestPlanBuilderUi:
                     "token-exchange",
                     "account-access-consent",
                     "accounts-list",
+                    "account-balances",
+                    "account-transactions",
                 ]
             ),
         )
@@ -385,6 +387,8 @@ class TestPlanBuilderUi:
         assert "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice" in content
         assert "account-access-consent" in content
         assert "accounts-list" in content
+        assert "account-balances" in content
+        assert "account-transactions" in content
 
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
@@ -503,6 +507,8 @@ class TestPlanBuilderUi:
                     "token-exchange",
                     "account-access-consent",
                     "accounts-list",
+                    "account-balances",
+                    "account-transactions",
                 ]
             ),
         )
@@ -522,6 +528,8 @@ class TestPlanBuilderUi:
             "token-exchange",
             "account-access-consent",
             "accounts-list",
+            "account-balances",
+            "account-transactions",
         ]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
 
@@ -652,7 +660,38 @@ class TestRunDetailUi:
             if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
                 return httpx.Response(
                     200,
-                    json={"Data": {"Account": [{"AccountId": "account-1", "Status": "Enabled"}]}},
+                    json={"Data": {"Account": [{"AccountId": "account-123", "Status": "Enabled"}]}},
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/balances":
+                return httpx.Response(
+                    200,
+                    json={
+                        "Data": {
+                            "Balance": [
+                                {
+                                    "Type": "ClosingAvailable",
+                                    "Amount": {"Amount": "123.45", "Currency": "GBP"},
+                                    "CreditDebitIndicator": "Credit",
+                                }
+                            ]
+                        }
+                    },
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions":
+                return httpx.Response(
+                    200,
+                    json={
+                        "Data": {
+                            "Transaction": [
+                                {
+                                    "TransactionId": "txn-123",
+                                    "Amount": {"Amount": "123.45", "Currency": "GBP"},
+                                }
+                            ]
+                        }
+                    },
                     headers={"Content-Type": "application/json"},
                 )
             raise AssertionError(f"Unexpected request URL: {url}")
@@ -681,6 +720,8 @@ class TestRunDetailUi:
                     "token-exchange",
                     "account-access-consent",
                     "accounts-list",
+                    "account-balances",
+                    "account-transactions",
                 ]
             ),
         )
@@ -702,10 +743,10 @@ class TestRunDetailUi:
         result_body = result_response.json()
         assert result_body["status"] == "passed"
         assert result_body["plan"] == {
-            "totalSteps": 6,
-            "selectedSteps": 6,
+            "totalSteps": 8,
+            "selectedSteps": 8,
             "deselectedSteps": 0,
-            "mandatorySelected": 6,
+            "mandatorySelected": 8,
             "mandatoryDeselected": 0,
         }
         assert [step["name"] for step in result_body["steps"]] == [
@@ -715,6 +756,8 @@ class TestRunDetailUi:
             "token-exchange",
             "account-access-consent",
             "accounts-list",
+            "account-balances",
+            "account-transactions",
         ]
 
     def test_launch_post_ais_suite_rejects_unknown_selected_step(self) -> None:

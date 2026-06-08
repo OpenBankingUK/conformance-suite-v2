@@ -249,6 +249,34 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${steps.s1.response.body.count}", ctx)
         assert result == "42"
 
+    def test_resolves_array_index_body_path(self) -> None:
+        """A numeric segment should index into a JSON array intermediate."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={
+                            "Data": {
+                                "Account": [
+                                    {"AccountId": "account-123"},
+                                    {"AccountId": "account-456"},
+                                ]
+                            }
+                        },
+                    ),
+                )
+            }
+        )
+
+        result = resolve_placeholders(
+            "${steps.accounts-list.response.body.Data.Account.0.AccountId}",
+            ctx,
+        )
+
+        assert result == "account-123"
+
     def test_resolves_null_body_value(self) -> None:
         ctx = ExecutionContext(
             steps={
@@ -338,6 +366,111 @@ class TestResolvePlaceholdersErrors:
         )
         with pytest.raises(PlaceholderResolutionError, match="Cannot traverse non-object"):
             resolve_placeholders("${steps.s1.response.body.leaf.deeper}", ctx)
+
+    def test_array_index_out_of_bounds(self) -> None:
+        """Array placeholder indices must fail clearly when the item is missing."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="Array index 1 out of bounds"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.1.AccountId}", ctx)
+
+    def test_array_index_rejects_non_numeric_segment(self) -> None:
+        """Array traversal must not allow object-style field names as indices."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(
+            PlaceholderResolutionError,
+            match="Cannot traverse array with non-numeric segment 'AccountId'",
+        ):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.AccountId}", ctx)
+
+    def test_array_index_rejects_negative_segment(self) -> None:
+        """Negative array indices are not part of the placeholder grammar."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="Cannot traverse array with non-numeric segment '-1'"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.-1.AccountId}", ctx)
+
+    def test_array_index_rejects_digit_like_non_decimal_segment(self) -> None:
+        """Digit-like Unicode segments must still fail as invalid array indices."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="Cannot traverse array with non-numeric segment '²'"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.².AccountId}", ctx)
+
+    def test_array_index_final_object_is_rejected(self) -> None:
+        """An indexed path that ends on an object must still fail as non-primitive."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="not a primitive.*object"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.0}", ctx)
+
+    def test_array_index_final_array_is_rejected(self) -> None:
+        """An indexed path that ends on an array must still fail as non-primitive."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [["account-123"]]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="not a primitive.*array"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.0}", ctx)
 
     def test_invalid_path_too_short(self) -> None:
         ctx = _discovery_context()

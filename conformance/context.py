@@ -449,6 +449,37 @@ def _resolve_response_path(response: ResponseRecord, field_name: str, remaining:
     raise PlaceholderResolutionError(f"Cannot resolve response path: ${{{dot_path}}}")
 
 
+def _resolve_list_segment(items: list[JsonValue], segment: str, dot_path: str) -> JsonValue:
+    """Resolve one dot-path segment against a JSON array.
+
+    Args:
+        items: JSON array currently being traversed.
+        segment: Dot-path segment expected to be a non-negative integer index.
+        dot_path: Full original dot-path for error messages.
+
+    Returns:
+        The JSON value stored at the indexed position.
+
+    Raises:
+        PlaceholderResolutionError: If the segment is not a non-negative
+            integer or the index is outside the array bounds.
+    """
+    if not segment.isdecimal():
+        raise PlaceholderResolutionError(f"Cannot traverse array with non-numeric segment '{segment}': ${{{dot_path}}}")
+
+    try:
+        index = int(segment)
+    except ValueError as exc:
+        raise PlaceholderResolutionError(
+            f"Cannot traverse array with non-numeric segment '{segment}': ${{{dot_path}}}"
+        ) from exc
+
+    if index >= len(items):
+        raise PlaceholderResolutionError(f"Array index {index} out of bounds: ${{{dot_path}}}")
+
+    return items[index]
+
+
 def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_path: str) -> str:
     """Walk a JSON body using dot-path segments to extract a primitive value.
 
@@ -461,16 +492,23 @@ def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_p
         The resolved primitive value coerced to a string.
 
     Raises:
-        PlaceholderResolutionError: If a segment is missing, the traversal
-            encounters a non-object intermediate, or the leaf is non-primitive.
+        PlaceholderResolutionError: If a segment is missing, list traversal
+            uses a non-numeric or out-of-bounds index, traversal encounters a
+            non-container intermediate, or the leaf is non-primitive.
     """
     current: JsonValue | Mapping[str, JsonValue] = body
     for segment in segments:
-        if not isinstance(current, Mapping):
-            raise PlaceholderResolutionError(f"Cannot traverse non-object at '{segment}': ${{{dot_path}}}")
-        if segment not in current:
-            raise PlaceholderResolutionError(f"Path segment '{segment}' not found: ${{{dot_path}}}")
-        current = current[segment]
+        if isinstance(current, Mapping):
+            if segment not in current:
+                raise PlaceholderResolutionError(f"Path segment '{segment}' not found: ${{{dot_path}}}")
+            current = current[segment]
+            continue
+
+        if isinstance(current, list):
+            current = _resolve_list_segment(current, segment, dot_path)
+            continue
+
+        raise PlaceholderResolutionError(f"Cannot traverse non-object at '{segment}': ${{{dot_path}}}")
 
     # If no segments, we'd be resolving the entire body (non-primitive)
     if isinstance(current, (Mapping, list)):

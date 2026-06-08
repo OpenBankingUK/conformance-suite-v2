@@ -554,6 +554,45 @@ def test_parse_v1_manifest_accepts_resource_base_url_placeholder() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_array_index_step_placeholder() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "AIS account resource placeholder",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts resource",
+                "request": {
+                    "method": "GET",
+                    "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "account-balances",
+                "name": "Account balances resource",
+                "request": {
+                    "method": "GET",
+                    "url": (
+                        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+                        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
+                        "/balances"
+                    ),
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert cast("ManifestStep", manifest.steps[1]).request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+        "${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances"
+    )
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
