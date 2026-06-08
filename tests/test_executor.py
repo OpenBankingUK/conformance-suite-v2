@@ -3009,6 +3009,9 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
 
         Returns:
             Mocked JSON response for the requested endpoint.
+
+        Raises:
+            AssertionError: If the executor calls an unexpected endpoint.
         """
         captured_requests.append(request)
         url = str(request.url)
@@ -3066,19 +3069,21 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
                     }
                 },
             )
-        return httpx.Response(
-            200,
-            json={
-                "Data": {
-                    "Transaction": [
-                        {
-                            "TransactionId": "txn-123",
-                            "Amount": {"Amount": "123.45", "Currency": "GBP"},
-                        }
-                    ]
-                }
-            },
-        )
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions":
+            return httpx.Response(
+                200,
+                json={
+                    "Data": {
+                        "Transaction": [
+                            {
+                                "TransactionId": "txn-123",
+                                "Amount": {"Amount": "123.45", "Currency": "GBP"},
+                            }
+                        ]
+                    }
+                },
+            )
+        raise AssertionError(f"Unexpected request URL: {url}")
 
     runtime_config = RuntimeConfig(
         discovery_url="https://aspsp.example.com/.well-known/openid-configuration",

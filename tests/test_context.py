@@ -421,6 +421,23 @@ class TestResolvePlaceholdersErrors:
         with pytest.raises(PlaceholderResolutionError, match="Cannot traverse array with non-numeric segment '-1'"):
             resolve_placeholders("${steps.accounts-list.response.body.Data.Account.-1.AccountId}", ctx)
 
+    def test_array_index_rejects_digit_like_non_decimal_segment(self) -> None:
+        """Digit-like Unicode segments must still fail as invalid array indices."""
+        ctx = ExecutionContext(
+            steps={
+                "accounts-list": StepRecord(
+                    request=RequestRecord(method="GET", url="https://rs.example.com/accounts"),
+                    response=ResponseRecord(
+                        status_code=200,
+                        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+                    ),
+                )
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="Cannot traverse array with non-numeric segment '²'"):
+            resolve_placeholders("${steps.accounts-list.response.body.Data.Account.².AccountId}", ctx)
+
     def test_array_index_final_object_is_rejected(self) -> None:
         """An indexed path that ends on an object must still fail as non-primitive."""
         ctx = ExecutionContext(
