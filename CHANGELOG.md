@@ -9,9 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-- Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
-
 ### Added
+
+- Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
 
 - Dedicated `fapiSigning` participant config for the v4.0 AIS certification baseline. Config-resolved baseline runs can now generate PS256 JAR request objects for PSU authorisation, apply token-endpoint client authentication via `private_key_jwt` or `tls_client_auth`, and sign the account-access-consent JSON body as a detached PS256 JWS. Signing certificate/key material stays outside `${config.*}` placeholders, is loaded only at execution time, and request objects, client assertions, detached JWS values, authorization codes, tokens, and `Authorization` headers remain masked in persisted artifacts. README and Developer Guide now document the supported config shape, masking guarantees, launch-path coverage, and the fact that `ais-certification-baseline` still remains `certificationCoverage: partial`.
 
