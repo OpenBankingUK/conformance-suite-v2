@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import uuid4
 
-from joserfc import jwk, jwt
+from joserfc import jwk, jws, jwt
 from joserfc.errors import InvalidKeyTypeError, JoseError
 
 from conformance.model_bank_config import FapiSigningConfig
@@ -220,6 +220,25 @@ class FapiSigningService:
             jwt_id=jwt_id,
         )
 
+    def sign_detached_json_payload(self, payload: bytes) -> str:
+        """Sign JSON request bytes as a detached Open Banking JWS.
+
+        Args:
+            payload: Exact JSON bytes that will be transmitted on the wire.
+
+        Returns:
+            Detached compact JWS suitable for the ``x-jws-signature`` header.
+
+        Raises:
+            JwtSigningError: If the payload bytes cannot be signed with the
+                configured RSA private key.
+        """
+        return _sign_ps256_detached_jws(
+            self.signing_credentials.signing_private_key_pem,
+            key_id=self.signing_config.key_id,
+            payload=payload,
+        )
+
 
 def _build_token_window(*, clock: Callable[[], datetime], lifetime: timedelta) -> tuple[datetime, datetime]:
     """Build UTC ``iat`` and ``exp`` timestamps for a signed JWT.
@@ -310,3 +329,31 @@ def _sign_ps256_jwt(private_key_pem: bytes, *, key_id: str, claims: dict[str, ob
         )
     except (InvalidKeyTypeError, JoseError, TypeError, ValueError) as error:
         raise JwtSigningError("Unable to sign PS256 JWT with configured FAPI signing key") from error
+
+
+def _sign_ps256_detached_jws(private_key_pem: bytes, *, key_id: str, payload: bytes) -> str:
+    """Sign one detached PS256 JWS over exact request-body bytes.
+
+    Args:
+        private_key_pem: PEM-encoded RSA private key bytes.
+        key_id: JOSE ``kid`` header value to emit.
+        payload: Exact bytes that must be covered by the detached signature.
+
+    Returns:
+        Detached compact JWS with an empty payload segment.
+
+    Raises:
+        JwtSigningError: If the PEM bytes cannot be imported or the JOSE
+            library rejects the signing request.
+    """
+    try:
+        signing_key = jwk.import_key(private_key_pem, key_type="RSA")
+        compact_jws = jws.serialize_compact(
+            {"alg": "PS256", "kid": key_id, "b64": False, "crit": ["b64"]},
+            payload,
+            signing_key,
+            algorithms=["PS256"],
+        )
+        return jws.detach_content(compact_jws)
+    except (InvalidKeyTypeError, JoseError, TypeError, ValueError) as error:
+        raise JwtSigningError("Unable to sign PS256 detached JWS with configured FAPI signing key") from error

@@ -10,7 +10,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from joserfc import jwk, jwt
+from joserfc import jwk, jws, jwt
 
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
@@ -244,3 +244,29 @@ def test_signing_service_rejects_invalid_private_key_without_echoing_contents(tm
 
     assert str(error_info.value) == "Unable to sign PS256 JWT with configured FAPI signing key"
     assert key_marker.decode("ascii") not in str(error_info.value)
+
+
+@pytest.mark.unit
+def test_sign_detached_json_payload_builds_detached_ps256_signature(tmp_path: Path) -> None:
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = _build_signing_config(
+        certificate_root,
+        certificate_path=certificate_path,
+        private_key_path=private_key_path,
+    )
+    service = _build_signing_service(config)
+    payload = b'{"Data":{"Permissions":["ReadAccountsBasic"]},"Risk":{}}'
+
+    detached_signature = service.sign_detached_json_payload(payload)
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=payload,
+    )
+
+    assert detached_signature.split(".")[1] == ""
+    assert verified.headers() == {"alg": "PS256", "kid": "signing-key-001", "b64": False, "crit": ["b64"]}
+    assert verified.payload == payload

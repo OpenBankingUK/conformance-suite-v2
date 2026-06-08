@@ -101,6 +101,42 @@ class TestSendJsonDeleteBody:
         assert result.status_code == 200
         assert received_bodies[0] == b""
 
+    def test_json_body_bytes_preserve_exact_payload(self) -> None:
+        """Pre-serialized JSON bytes are sent unchanged with application/json."""
+        captured: list[httpx.Request] = []
+        payload = b'{"Data":{"Permissions":["ReadAccountsBasic"]},"Risk":{}}'
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Capture the raw request body and headers."""
+            captured.append(request)
+            return httpx.Response(200, json={"ok": True})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = send_json(
+                client,
+                "POST",
+                "https://example.com/resource",
+                json_body_bytes=payload,
+            )
+
+        assert result.status_code == 200
+        assert captured[0].headers["content-type"] == "application/json"
+        assert captured[0].content == payload
+
+    def test_rejects_simultaneous_json_object_and_json_bytes(self) -> None:
+        """Supplying both JSON object and JSON bytes raises ValueError."""
+        with (
+            httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client,
+            pytest.raises(ValueError, match="mutually exclusive"),
+        ):
+            send_json(
+                client,
+                "POST",
+                "https://example.com/resource",
+                json_body={"a": 1},
+                json_body_bytes=b'{"a":1}',
+            )
+
 
 @pytest.mark.unit
 class TestSendJsonHeaderMerging:

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import json
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -78,6 +80,9 @@ The manifest is participant-provided input, so group count can be large. This
 cap prevents unbounded thread creation while preserving queue-based execution
 for additional groups.
 """
+
+_OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
+"""Open Banking AIS consent-creation path requiring detached JWS support."""
 
 
 def _attach_evidence(
@@ -554,17 +559,16 @@ def _execute_v1_manifest_step(
             fapi_signing_config=fapi_signing_config,
         )
     else:
-        execute_v1_step_kwargs: dict[str, object] = {
-            "context": context,
-            "client": client,
-            "execution_logger": execution_logger,
-            "run_id": run_id,
-            "auth_session_store": auth_session_store,
-        }
-        if fapi_signing_config is not None or mtls_client_configured:
-            execute_v1_step_kwargs["fapi_signing_config"] = fapi_signing_config
-            execute_v1_step_kwargs["mtls_client_configured"] = mtls_client_configured
-        step_result, new_context = _execute_v1_step(manifest_step, **execute_v1_step_kwargs)
+        step_result, new_context = _execute_v1_step(
+            manifest_step,
+            context=context,
+            client=client,
+            execution_logger=execution_logger,
+            run_id=run_id,
+            auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            mtls_client_configured=mtls_client_configured,
+        )
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
     return step_result, new_context
@@ -610,26 +614,20 @@ def _apply_token_endpoint_auth_policy(
     if fapi_signing_config is None:
         raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
 
-    if fapi_signing_config.token_endpoint_auth_method == "private_key_jwt":
+    if fapi_signing_config.token_endpoint_auth_method == "private_key_jwt":  # noqa: S105 - FAPI auth-method enum, not a secret
         signing_service = FapiSigningService(
             signing_config=fapi_signing_config,
             signing_credentials=load_signing_credentials(fapi_signing_config),
         )
-        client_assertion = signing_service.sign_client_assertion(
-            ClientAssertionSigningInput(audience=resolved_url)
-        )
+        client_assertion = signing_service.sign_client_assertion(ClientAssertionSigningInput(audience=resolved_url))
         authenticated_form_body = dict(resolved_form_body)
-        authenticated_form_body["client_assertion_type"] = (
-            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-        )
+        authenticated_form_body["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
         authenticated_form_body["client_assertion"] = client_assertion.token
         return authenticated_form_body
 
-    if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":
+    if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":  # noqa: S105 - FAPI auth-method enum, not a secret
         if not mtls_client_configured:
-            raise ValueError(
-                "Token endpoint auth policy requires a configured TLS client certificate and private key"
-            )
+            raise ValueError("Token endpoint auth policy requires a configured TLS client certificate and private key")
         return dict(resolved_form_body)
 
     raise ValueError("Unsupported FAPI token endpoint auth method")
@@ -1505,7 +1503,6 @@ def _execute_v1_step_inner(
 
     # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
-        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
         for header_name, header_value in resolved_headers.items():
             try:
                 validate_header_value(
@@ -1600,6 +1597,35 @@ def _execute_v1_step_inner(
             new_context,
         )
 
+    serialized_json_body: bytes | None = None
+    try:
+        resolved_headers, serialized_json_body = _maybe_apply_ob_detached_jws(
+            manifest_step=manifest_step,
+            resolved_url=resolved_url,
+            resolved_headers=resolved_headers,
+            resolved_json_body=resolved_json_body,
+            fapi_signing_config=fapi_signing_config,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method=method, url=resolved_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to apply request signing: {error}",
+                    url=resolved_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    if resolved_headers is not None:
+        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+
     try:
         resolved_form_body = _apply_token_endpoint_auth_policy(
             manifest_step=manifest_step,
@@ -1643,7 +1669,8 @@ def _execute_v1_step_inner(
             method,
             resolved_url,
             headers=resolved_headers,
-            json_body=resolved_json_body,
+            json_body=None if serialized_json_body is not None else resolved_json_body,
+            json_body_bytes=serialized_json_body,
             form_body=resolved_form_body,
         )
     except JsonHttpClientError as error:
@@ -1793,6 +1820,83 @@ def _skipped_step(
         ),
         new_context,
     )
+
+
+def _maybe_apply_ob_detached_jws(
+    *,
+    manifest_step: ManifestStep,
+    resolved_url: str,
+    resolved_headers: dict[str, str] | None,
+    resolved_json_body: JsonValue | None,
+    fapi_signing_config: FapiSigningConfig | None,
+) -> tuple[dict[str, str] | None, bytes | None]:
+    """Add a detached JWS header for supported Open Banking JSON requests.
+
+    Args:
+        manifest_step: Parsed manifest step being executed.
+        resolved_url: Fully resolved request URL.
+        resolved_headers: Resolved outbound request headers.
+        resolved_json_body: Resolved JSON body, if this is a JSON request.
+        fapi_signing_config: Optional validated runtime signing configuration.
+
+    Returns:
+        Tuple of final outbound headers and serialized JSON body bytes.
+
+    Raises:
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the detached JWS cannot be signed.
+        ValueError: If a step selected for detached signing has no JSON body.
+    """
+    if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
+        return resolved_headers, None
+    if fapi_signing_config is None:
+        return resolved_headers, None
+    if resolved_json_body is None:
+        raise ValueError("Detached request signing requires a JSON request body")
+
+    serialized_json_body = _serialize_json_request_body(resolved_json_body)
+    signing_service = FapiSigningService(
+        signing_config=fapi_signing_config,
+        signing_credentials=load_signing_credentials(fapi_signing_config),
+    )
+    detached_signature = signing_service.sign_detached_json_payload(serialized_json_body)
+    validate_header_value(
+        detached_signature,
+        location=f"step '{manifest_step.id}' generated header x-jws-signature",
+    )
+
+    signed_headers = dict(resolved_headers) if resolved_headers is not None else {}
+    signed_headers["x-jws-signature"] = detached_signature
+    return signed_headers, serialized_json_body
+
+
+def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str) -> bool:
+    """Return whether a step should carry an Open Banking detached JWS.
+
+    Args:
+        manifest_step: Parsed manifest step being executed.
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        ``True`` when the step is a JSON write to the AIS account-access-
+        consents endpoint, otherwise ``False``.
+    """
+    if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
+        return False
+    return urlsplit(resolved_url).path == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+
+
+def _serialize_json_request_body(body: JsonValue) -> bytes:
+    """Serialize a resolved JSON request body into exact wire bytes.
+
+    Args:
+        body: Resolved JSON value to serialize.
+
+    Returns:
+        UTF-8 encoded JSON bytes using a deterministic compact form.
+    """
+    return json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
 
 
 def _run_manifest_v0(

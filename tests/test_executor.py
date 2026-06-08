@@ -1,9 +1,9 @@
 import json
 import secrets
 import threading
-from dataclasses import replace
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
@@ -14,6 +14,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+from joserfc import jwk, jws
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -22,7 +23,7 @@ from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
-from conformance.model_bank_config import FapiSigningConfig
+from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
 
 
 def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -2075,9 +2076,7 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
     assert captured_form_body["code"] == "auth-code"
     assert captured_form_body["redirect_uri"] == "https://app.example.com/callback"
     assert captured_form_body["client_id"] == "client-123"
-    assert captured_form_body["client_assertion_type"] == (
-        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-    )
+    assert captured_form_body["client_assertion_type"] == ("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
     assert captured_form_body["client_assertion"]
 
 
@@ -2138,6 +2137,80 @@ def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_p
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(tmp_path: Path) -> None:
+    """Consent creation signs exact JSON bytes and masks the detached JWS header."""
+    observed_requests: list[httpx.Request] = []
+    execution_logger = BufferedExecutionLogger(run_id="consent-signing-run", developer_mode=False)
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent signing",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "headers": {"Authorization": "Bearer access-token"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound consent request and force a failing assertion."""
+        observed_requests.append(request)
+        return httpx.Response(400, json={"error": "invalid_request"})
+
+    manifest = parse_manifest(raw_manifest)
+    signing_config = _executor_signing_config(tmp_path)
+    expected_payload = b'{"Data":{"Permissions":["ReadAccountsBasic","ReadBalances"]},"Risk":{}}'
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            fapi_signing_config=signing_config,
+        )
+
+    observed_request = observed_requests[0]
+    detached_signature = observed_request.headers["x-jws-signature"]
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+    )
+
+    assert result.status == "failed"
+    assert observed_request.content == expected_payload
+    assert detached_signature.split(".")[1] == ""
+    assert verified.headers() == {
+        "alg": "PS256",
+        "kid": "executor-signing-key",
+        "b64": False,
+        "crit": ["b64"],
+    }
+    request_details = cast("dict[str, Any]", result.steps[0].details["request"])
+    assert request_details["body"] == {
+        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+        "Risk": {},
+    }
+    assert request_details["headers"] == {
+        "Authorization": "***",
+        "x-jws-signature": "***",
+    }
+    request_event = next(event for event in execution_logger.events() if event.type == "request-sent")
+    assert request_event.payload["headers"] == request_details["headers"]
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: Path) -> None:
     """TLS client auth fails before dispatch when no mTLS client is configured."""
     request_seen = False
@@ -2172,7 +2245,8 @@ def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: P
         request_seen = True
         return httpx.Response(200, json={"access_token": "access-token"})
 
-    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method="tls_client_auth")
+    tls_client_auth_mode: TokenEndpointClientAuthMode = "tls_client_auth"
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method=tls_client_auth_mode)
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
@@ -2225,7 +2299,8 @@ def test_run_manifest_v1_tls_client_auth_policy_dispatches_with_configured_mtls(
         captured_form_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
         return httpx.Response(200, json={"access_token": "access-token"})
 
-    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method="tls_client_auth")
+    tls_client_auth_mode: TokenEndpointClientAuthMode = "tls_client_auth"
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method=tls_client_auth_mode)
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
@@ -3964,6 +4039,8 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         execution_logger: Any,
         run_id: str,
         auth_session_store: AuthSessionStore,
+        fapi_signing_config: FapiSigningConfig | None = None,
+        mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
         captured["run_id"] = run_id
@@ -3975,6 +4052,8 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            mtls_client_configured=mtls_client_configured,
         )
 
     sentinel_store = _RecordingAuthSessionStore()
@@ -4008,6 +4087,8 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         execution_logger: Any,
         run_id: str,
         auth_session_store: AuthSessionStore,
+        fapi_signing_config: FapiSigningConfig | None = None,
+        mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
         captured["run_id"] = run_id
@@ -4019,6 +4100,8 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            mtls_client_configured=mtls_client_configured,
         )
 
     from conformance import executor as executor_module
