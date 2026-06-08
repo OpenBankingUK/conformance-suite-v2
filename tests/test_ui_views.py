@@ -45,6 +45,21 @@ PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+AIS_SLICE_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-slice",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 
 @pytest.fixture(autouse=True)
 def _reset_global_stores() -> None:
@@ -198,6 +213,23 @@ def _psu_auth_starter_suite_form_data(*, selected_step_ids: list[str] | None = N
     }
 
 
+def _ais_slice_suite_form_data(*, selected_step_ids: list[str] | None = None) -> dict[str, object]:
+    """Build form data that resolves the AIS slice suite from config ``testSuite``.
+
+    Args:
+        selected_step_ids: Step ids submitted by checked row checkboxes.
+
+    Returns:
+        Form-encoded payload dictionary for the AIS catalog entry.
+    """
+    return {
+        "config_json": json.dumps(AIS_SLICE_CONFIG),
+        "manifest_json": "",
+        "selection_mode": "select",
+        "selected_step_ids": selected_step_ids or [],
+    }
+
+
 def _run_id_from_redirect(location: str) -> str:
     """Extract the run id from a Django redirect response.
 
@@ -332,6 +364,28 @@ class TestPlanBuilderUi:
         assert "explicit" in content
         assert "openid-discovery" not in content
 
+    def test_preview_post_resolves_ais_config_only_suite(self) -> None:
+        """POST /plan/preview/ can render the config-selected AIS suite with blank manifest."""
+        response = Client().post(
+            "/plan/preview/",
+            data=_ais_slice_suite_form_data(
+                selected_step_ids=[
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "psu-authorization",
+                    "token-exchange",
+                    "account-access-consent",
+                    "accounts-list",
+                ]
+            ),
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice" in content
+        assert "account-access-consent" in content
+        assert "accounts-list" in content
+
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
         response = Client().post(
@@ -427,6 +481,51 @@ class TestPlanBuilderUi:
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
 
     @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_starts_ais_slice_config_resolved_suite(self, mock_start_run: Mock) -> None:
+        """Launch can start the config-selected AIS suite through shared lifecycle code.
+
+        Args:
+            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
+        """
+        mock_start_run.return_value = {
+            "id": "run-ais-slice",
+            "status": "pending",
+            "createdAt": "2026-06-03T12:00:00+00:00",
+        }
+
+        response = Client().post(
+            "/plan/launch/",
+            data=_ais_slice_suite_form_data(
+                selected_step_ids=[
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "psu-authorization",
+                    "token-exchange",
+                    "account-access-consent",
+                    "accounts-list",
+                ]
+            ),
+        )
+
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-ais-slice/"
+        assert mock_start_run.call_count == 1
+        manifest = mock_start_run.call_args.kwargs["manifest"]
+        plan = mock_start_run.call_args.kwargs["plan"]
+        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+        ]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
+
+    @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:
         """Manual PSU manifests can be launched with browser PSU prompts enabled."""
         mock_start_run.return_value = {"id": "run-psu", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
@@ -498,6 +597,135 @@ class TestPlanBuilderUi:
 @pytest.mark.integration
 class TestRunDetailUi:
     """Browser coverage for run detail and partial views."""
+
+    def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        """Browser launch can run the full AIS suite flow with mocked HTTP and callback capture.
+
+        Args:
+            monkeypatch: Pytest fixture used to inject a mock HTTP client.
+        """
+        import httpx
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Return deterministic HTTP responses for each AIS suite step.
+
+            Args:
+                request: HTTP request issued by the conformance runner.
+
+            Returns:
+                Mock HTTP response for the requested endpoint.
+            """
+            url = str(request.url)
+            if url == "https://example.com/.well-known/openid-configuration":
+                return httpx.Response(
+                    200,
+                    json={
+                        "issuer": "https://example.com",
+                        "authorization_endpoint": "https://example.com/authorize",
+                        "token_endpoint": "https://example.com/token",
+                        "jwks_uri": "https://example.com/jwks",
+                        "response_types_supported": ["code id_token"],
+                    },
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://example.com/jwks":
+                return httpx.Response(
+                    200,
+                    json={"keys": [{"kty": "RSA", "kid": "test-key"}]},
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://example.com/token":
+                return httpx.Response(
+                    200,
+                    json={"access_token": "ais-access-token", "token_type": "Bearer", "expires_in": 300},
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+                return httpx.Response(
+                    201,
+                    json={"Data": {"ConsentId": "consent-123"}, "Risk": {}},
+                    headers={"Content-Type": "application/json"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+                return httpx.Response(
+                    200,
+                    json={"Data": {"Account": [{"AccountId": "account-1", "Status": "Enabled"}]}},
+                    headers={"Content-Type": "application/json"},
+                )
+            raise AssertionError(f"Unexpected request URL: {url}")
+
+        def fake_build_json_http_client(**_kwargs: object) -> httpx.Client:
+            """Build a mock HTTP client for the browser-launched AIS run.
+
+            Args:
+                **_kwargs: Ignored production HTTP client settings.
+
+            Returns:
+                HTTPX client backed by the mock transport.
+            """
+            return httpx.Client(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr("conformance.api.run_lifecycle.build_json_http_client", fake_build_json_http_client)
+
+        client = Client()
+        launch_response = client.post(
+            "/plan/launch/",
+            data=_ais_slice_suite_form_data(
+                selected_step_ids=[
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "psu-authorization",
+                    "token-exchange",
+                    "account-access-consent",
+                    "accounts-list",
+                ]
+            ),
+        )
+
+        assert launch_response.status_code == 302
+        run_id = _run_id_from_redirect(launch_response["Location"])
+        authorisation_url = _wait_for_participant_action(run_id)
+        state = _query_parameter(authorisation_url, "state")
+        callback_response = client.get("/callback/", {"state": state, "code": "ais-auth-code-123"})
+
+        assert callback_response.status_code == 200
+        _wait_for_terminal_run(run_id)
+
+        detail_response = client.get(f"/runs/{run_id}/")
+        result_response = client.get(f"/runs/{run_id}/result.json")
+
+        assert detail_response.status_code == 200
+        assert result_response.status_code == 200
+        result_body = result_response.json()
+        assert result_body["status"] == "passed"
+        assert result_body["plan"] == {
+            "totalSteps": 6,
+            "selectedSteps": 6,
+            "deselectedSteps": 0,
+            "mandatorySelected": 6,
+            "mandatoryDeselected": 0,
+        }
+        assert [step["name"] for step in result_body["steps"]] == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+        ]
+
+    def test_launch_post_ais_suite_rejects_unknown_selected_step(self) -> None:
+        """Browser launch rejects unknown step ids for the config-selected AIS suite."""
+        response = Client().post(
+            "/plan/launch/",
+            data=_ais_slice_suite_form_data(selected_step_ids=["ghost-step"]),
+        )
+
+        assert response.status_code == 400
+        assert "Unknown step id(s) in selection: ghost-step" in response.content.decode("utf-8")
 
     def test_browser_launch_manual_psu_flow_renders_callback_and_clears_action(self) -> None:
         """Browser launch renders manual PSU action until callback completion."""

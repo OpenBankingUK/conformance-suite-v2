@@ -1,0 +1,137 @@
+{
+  "schemaVersion": "v1",
+  "name": "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice",
+  "certificationCoverage": "partial",
+  "steps": [
+    {
+      "id": "openid-discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "${config.discoveryUrl}"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "issuer", "rule": "string"},
+        {"type": "json_field", "path": "issuer", "rule": "https_url"},
+        {"type": "json_field", "path": "authorization_endpoint", "rule": "https_url"},
+        {"type": "json_field", "path": "token_endpoint", "rule": "https_url"},
+        {"type": "json_field", "path": "jwks_uri", "rule": "https_url"},
+        {"type": "json_field", "path": "response_types_supported", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "response_types_supported", "rule": "min_items", "minItems": 1}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "jwks-fetch",
+      "name": "JWKS endpoint",
+      "request": {
+        "method": "GET",
+        "url": "${steps.openid-discovery.response.body.jwks_uri}"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "keys", "rule": "array"},
+        {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},
+        {"type": "json_field", "path": "keys", "rule": "all_items_have_field", "field": "kty"}
+      ],
+      "mandatory": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization",
+      "name": "PSU authorisation (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "scope": "openid accounts",
+      "timeoutSeconds": 180,
+      "mandatory": true
+    },
+    {
+      "id": "token-exchange",
+      "name": "OAuth token exchange",
+      "request": {
+        "method": "POST",
+        "url": "${steps.openid-discovery.response.body.token_endpoint}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "${steps.psu-authorization.response.body.code}",
+            "redirect_uri": "${config.oauth.redirectUri}",
+            "client_id": "${config.oauth.clientId}"
+          }
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "access_token", "rule": "string"},
+        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
+        {"type": "json_field", "path": "expires_in", "rule": "number"}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "account-access-consent",
+      "name": "Account access consent creation",
+      "request": {
+        "method": "POST",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+        },
+        "body": {
+          "Data": {
+            "Permissions": [
+              "ReadAccountsBasic",
+              "ReadBalances",
+              "ReadTransactionsBasic"
+            ]
+          },
+          "Risk": {}
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 201},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "Data.ConsentId", "rule": "string"},
+        {"type": "json_field", "path": "Risk", "rule": "object"}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "accounts-list",
+      "name": "Accounts resource",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "Data", "rule": "object"},
+        {"type": "json_field", "path": "Data.Account", "rule": "array"},
+        {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "Status"}
+      ],
+      "mandatory": true
+    }
+  ]
+}

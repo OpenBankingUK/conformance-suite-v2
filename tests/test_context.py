@@ -53,6 +53,7 @@ def _oauth_context() -> ExecutionContext:
         config=RuntimeConfig(
             discovery_url="https://config.example.com/.well-known/openid-configuration",
             environment="sandbox",
+            oauth_resource_base_url="https://rs.example.com",
             oauth_client_id="my-client-id",
             oauth_redirect_uri="https://app.example.com/callback",
         )
@@ -280,11 +281,21 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${config.oauth.redirectUri}", ctx)
         assert result == "https://app.example.com/callback"
 
+    def test_resolves_config_oauth_resource_base_url(self) -> None:
+        ctx = _oauth_context()
+        result = resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
+        assert result == "https://rs.example.com"
+
     def test_resolves_oauth_alongside_other_placeholders(self) -> None:
         ctx = _oauth_context()
-        template = "client=${config.oauth.clientId}&redirect=${config.oauth.redirectUri}"
+        template = (
+            "client=${config.oauth.clientId}&redirect=${config.oauth.redirectUri}"
+            "&resource=${config.oauth.resourceBaseUrl}"
+        )
         result = resolve_placeholders(template, ctx)
-        assert result == "client=my-client-id&redirect=https://app.example.com/callback"
+        assert result == (
+            "client=my-client-id&redirect=https://app.example.com/callback&resource=https://rs.example.com"
+        )
 
 
 @pytest.mark.unit
@@ -380,6 +391,25 @@ class TestResolvePlaceholdersErrors:
         ctx = _runtime_config_context()
         with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
             resolve_placeholders("${config.oauth.redirectUri}", ctx)
+
+    def test_oauth_resource_base_url_unavailable_when_oauth_config_absent(self) -> None:
+        """${config.oauth.resourceBaseUrl} must fail when RuntimeConfig has no oauth fields."""
+        ctx = _runtime_config_context()
+        with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
+            resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
+
+    def test_oauth_resource_base_url_unavailable_when_field_omitted(self) -> None:
+        """${config.oauth.resourceBaseUrl} must identify the omitted optional field."""
+        ctx = ExecutionContext(
+            config=RuntimeConfig(
+                discovery_url="https://config.example.com/.well-known/openid-configuration",
+                environment="sandbox",
+                oauth_client_id="my-client-id",
+                oauth_redirect_uri="https://app.example.com/callback",
+            )
+        )
+        with pytest.raises(PlaceholderResolutionError, match="oauth.resourceBaseUrl is not available"):
+            resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
 
     def test_config_placeholder_requires_runtime_config(self) -> None:
         ctx = ExecutionContext()

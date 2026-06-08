@@ -56,6 +56,30 @@ def test_certification_cli_prints_summary_and_returns_one_for_validation_failure
 
 
 @pytest.mark.unit
+def test_certification_cli_returns_one_for_partial_coverage_manifest(
+    capsys: pytest.CaptureFixture[str],
+    tmp_path: Path,
+) -> None:
+    report_path, manifest_path, policy_path = _write_inputs(
+        tmp_path,
+        tool_version="1.2.3",
+        policy_versions=("1.2.3",),
+        steps=(("discovery", "passed"),),
+        certification_coverage="partial",
+    )
+
+    exit_code = certification_cli.run(
+        [str(report_path), "--manifest", str(manifest_path), "--approved-releases", str(policy_path)]
+    )
+
+    assert exit_code == 1
+    output = capsys.readouterr().out
+    assert output.startswith("Certification report validation: FAIL\n")
+    assert "Certification coverage: partial" in output
+    assert "Manifest is not marked as complete certification coverage" in output
+
+
+@pytest.mark.unit
 def test_certification_cli_returns_two_for_invalid_input(
     caplog: pytest.LogCaptureFixture,
     capsys: pytest.CaptureFixture[str],
@@ -153,12 +177,19 @@ def _write_inputs(
     tool_version: str,
     policy_versions: tuple[str, ...],
     steps: tuple[tuple[str, CheckStatus], ...],
+    certification_coverage: str = "complete",
 ) -> tuple[Path, Path, Path]:
     report_path = tmp_path / "report.json"
     manifest_path = tmp_path / "manifest.json"
     policy_path = tmp_path / "policy.json"
     _write_json(report_path, _report_json(tool_version=tool_version, steps=steps))
-    _write_json(manifest_path, _manifest_json(mandatory_step_ids=tuple(step_id for step_id, _status in steps)))
+    _write_json(
+        manifest_path,
+        _manifest_json(
+            mandatory_step_ids=tuple(step_id for step_id, _status in steps),
+            certification_coverage=certification_coverage,
+        ),
+    )
     _write_json(
         policy_path,
         {
@@ -169,7 +200,7 @@ def _write_inputs(
     return report_path, manifest_path, policy_path
 
 
-def _manifest_json(*, mandatory_step_ids: tuple[str, ...]) -> JsonObject:
+def _manifest_json(*, mandatory_step_ids: tuple[str, ...], certification_coverage: str = "complete") -> JsonObject:
     steps: list[JsonValue] = []
     for step_id in mandatory_step_ids:
         steps.append(
@@ -181,7 +212,12 @@ def _manifest_json(*, mandatory_step_ids: tuple[str, ...]) -> JsonObject:
                 "assertions": [{"type": "http_status", "expected": 200}],
             }
         )
-    return {"schemaVersion": "v1", "name": "validator-cli", "certificationCoverage": "complete", "steps": steps}
+    return {
+        "schemaVersion": "v1",
+        "name": "validator-cli",
+        "certificationCoverage": certification_coverage,
+        "steps": steps,
+    }
 
 
 def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> JsonObject:

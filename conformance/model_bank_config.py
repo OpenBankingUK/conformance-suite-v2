@@ -37,7 +37,7 @@ SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
 SuiteProfile = Literal["fapi1-advanced"]
 """Supported security profiles for config-selected suite resolution."""
 
-SuiteName = Literal["discovery-jwks", "psu-auth-starter"]
+SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice"]
 """Supported versioned conformance suite identifiers."""
 
 
@@ -74,10 +74,14 @@ class OAuthConfig:
             request.
         redirect_uri: HTTPS redirect URI registered with the authorisation
             server. Must use the HTTPS scheme with a valid DNS hostname.
+        resource_base_url: Optional HTTPS AIS protected-resource base URL used
+            by bundled manifests before manifest-owned Open Banking API paths.
+            Callers must not include the ``/open-banking/...`` path prefix.
     """
 
     client_id: str
     redirect_uri: str
+    resource_base_url: str | None = None
 
 
 @dataclass(frozen=True)
@@ -119,8 +123,9 @@ class ModelBankConfig:
             supplied.
         oauth: Optional narrow OAuth participant config for
             ``${config.oauth.*}`` placeholder resolution. Contains only
-            non-secret values (``clientId`` and ``redirectUri``). Absent
-            when the participant config omits an ``oauth`` section.
+            non-secret values (``clientId``, ``redirectUri``, and optional
+            ``resourceBaseUrl``). Absent when the participant config omits an
+            ``oauth`` section.
     """
 
     environment: str
@@ -318,8 +323,20 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0")
     if profile != "fapi1-advanced":
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
-    if suite not in {"discovery-jwks", "psu-auth-starter"}:
-        raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter")
+    if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice"}:
+        raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice")
+    supported_selections = {
+        ("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
+        ("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
+    }
+    if (standard, spec_version, profile, suite) not in supported_selections:
+        raise ConfigError(
+            "testSuite combination is not supported: "
+            f"standard={standard}, specVersion={spec_version}, profile={profile}, suite={suite}"
+        )
 
     return SuiteSelection(
         standard=cast(SuiteStandard, standard),
@@ -332,11 +349,11 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
 def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
     """Parse the optional ``oauth`` section of a participant config.
 
-    Only the safe, non-secret fields ``clientId`` and ``redirectUri`` are
-    accepted.  Client secrets, private keys, TLS paths, and JWS signing
-    material are explicitly excluded from this boundary; adding them here
-    would expose credential material through ``${config.oauth.*}``
-    placeholders in bundled manifests.
+    Only the safe, non-secret fields ``clientId``, ``redirectUri``, and
+    optional ``resourceBaseUrl`` are accepted. Client secrets, private keys,
+    TLS paths, and JWS signing material are explicitly excluded from this
+    boundary; adding them here would expose credential material through
+    ``${config.oauth.*}`` placeholders in bundled manifests.
 
     Args:
         raw_config: Top-level raw configuration dictionary from the JSON
@@ -348,8 +365,8 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
 
     Raises:
         ConfigError: If ``oauth`` is not a JSON object, contains unknown
-            keys, omits required fields, or ``redirectUri`` is not a valid
-            HTTPS URL.
+            keys, omits required fields, or one of the URL fields is not a
+            valid HTTPS URL.
     """
     raw_oauth = raw_config.get("oauth")
     if raw_oauth is None:
@@ -359,18 +376,23 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
 
     _reject_unknown_keys(
         raw_oauth,
-        allowed_keys={"clientId", "redirectUri"},
+        allowed_keys={"clientId", "redirectUri", "resourceBaseUrl"},
         location="oauth",
     )
 
     client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
     redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
+    resource_base_url = _optional_https_url_at(raw_oauth, "resourceBaseUrl", location="oauth")
     try:
         validate_https_url(redirect_uri_str, label="oauth.redirectUri")
     except HttpsUrlValidationError as error:
         raise ConfigError(str(error)) from error
 
-    return OAuthConfig(client_id=client_id, redirect_uri=redirect_uri_str)
+    return OAuthConfig(
+        client_id=client_id,
+        redirect_uri=redirect_uri_str,
+        resource_base_url=resource_base_url,
+    )
 
 
 def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
@@ -514,6 +536,35 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
     except HttpsUrlValidationError as error:
         raise ConfigError(str(error)) from error
     return value
+
+
+def _optional_https_url_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str | None:
+    """Extract and validate an optional HTTPS URL from a nested config dict.
+
+    Args:
+        raw_config: Raw nested configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        The validated HTTPS URL string, or ``None`` when the key is absent.
+
+    Raises:
+        ConfigError: If the key is present but not a non-empty string or not a
+            valid HTTPS URL.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{location}.{key} must be a non-empty string")
+
+    stripped_value = value.strip()
+    try:
+        validate_https_url(stripped_value, label=f"{location}.{key}")
+    except HttpsUrlValidationError as error:
+        raise ConfigError(str(error)) from error
+    return stripped_value
 
 
 def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, default: float) -> float:

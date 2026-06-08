@@ -529,6 +529,31 @@ def test_parse_v1_manifest_accepts_single_step_without_placeholders() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_resource_base_url_placeholder() -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "AIS resource placeholder",
+        "steps": [
+            {
+                "id": "accounts",
+                "name": "Accounts resource",
+                "request": {
+                    "method": "GET",
+                    "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert cast("ManifestStep", manifest.steps[0]).request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
+    )
+
+
+@pytest.mark.unit
 def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",

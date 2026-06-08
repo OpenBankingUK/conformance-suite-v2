@@ -227,23 +227,27 @@ The supported catalog keys are:
 | `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and first protected AIS resource validation. | Yes |
 
-**All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit.
+**All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit. The AIS entry is intentionally documented as a proof slice only; do not relabel it as complete certification coverage without Standards confirmation and matching validator coverage.
 
-The `psu-auth-starter` suite requires an `oauth` section in the participant config:
+The `psu-auth-starter` suite requires an `oauth` section in the participant config, and the `ais-certification-slice` adds a protected-resource base URL:
 
 ```json
 {
   "oauth": {
     "clientId": "your-client-id-here",
-    "redirectUri": "https://conformance.example.com/callback"
+    "redirectUri": "https://conformance.example.com/callback",
+    "resourceBaseUrl": "https://resource.example.com"
   }
 }
 ```
 
-The redirect URI must be an HTTPS URL. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled `psu-auth-starter` manifest resolves its `redirectUri` from `${config.oauth.redirectUri}`.
+The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS slice resolves protected resource URLs from `${config.oauth.resourceBaseUrl}`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself.
 
-See `config/model-bank-suite-example.json` (smoke suite) and `config/model-bank-psu-auth-starter-example.json` (starter suite) for complete config examples.
+The bundled AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already available outside manifest placeholders. Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, or client assertions through config placeholders just to make token exchange or protected-resource calls work.
+
+See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), and `config/model-bank-ais-certification-slice-example.json` (v4 AIS slice) for complete config examples.
 
 The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python.
 
@@ -277,9 +281,17 @@ These rules are generic authoring primitives only. They enable Standards-authore
 
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step.
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step. The `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and a protected accounts-resource call rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
 
-Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, and `${config.oauth.redirectUri}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
+Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
+
+The AIS slice is the current authoring reference for a small certification-grade flow in one bundled manifest:
+
+- token exchange reuses existing form-urlencoded request support rather than custom OAuth engine code
+- protected-resource requests use ordinary HTTP steps plus generic assertions over JSON structure
+- masking must still hide authorization `code`, bearer tokens, `Authorization` header values, client assertions, and request objects in every persisted artifact
+
+When extending this area, keep new assertion or manifest vocabulary domain-agnostic. Open Banking-specific semantics belong in bundled manifests and tests, not in hardcoded executor branches.
 
 CLI precedence is:
 
@@ -295,7 +307,7 @@ The browser plan builder at `/plan/` supports two authoring modes. Paste config 
 
 Suite-resolved runs add safe suite metadata to participant-visible result JSON and the `run-started` execution-log payload: `standard`, `specVersion`, `profile`, `suite`, `catalogId`, and `manifestResource`. Smoke checks and explicit-manifest runs keep their existing shape unless suite metadata is known.
 
-This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks` and `psu-auth-starter` entries are not full Open Banking Read/Write v3.1.11 or v4.0 certification suites; full Read/Write coverage will be added as a subsequent manifest-authoring milestone once the target Ozone v4 scope is confirmed.
+This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks`, `psu-auth-starter`, and `ais-certification-slice` entries are not full Open Banking Read/Write certification suites; the AIS entry is a conservative v4.0 proof slice until Standards confirm complete mandatory coverage.
 
 ## Group-Aware Manifest Execution (v1)
 

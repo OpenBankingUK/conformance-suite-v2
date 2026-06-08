@@ -4,7 +4,9 @@ from typing import cast
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.results import StepResult
+from conformance.model_bank_config import SuiteSelection
+from conformance.results import CheckStatus, StepResult
+from conformance.suite_catalog import resolve_suite
 
 
 @pytest.mark.unit
@@ -399,6 +401,62 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     reasons = block["reasons"]
     assert isinstance(reasons, list)
     assert "No mandatory steps declared" not in reasons
+
+
+@pytest.mark.unit
+def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps() -> None:
+    """Bundled AIS slice keeps mandatory accounting stable for result evidence."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-certification-slice",
+        )
+    )
+    status_by_step: dict[str, CheckStatus] = {
+        "openid-discovery": "passed",
+        "jwks-fetch": "warn",
+        "psu-authorization": "passed",
+        "token-exchange": "passed",
+        "account-access-consent": "failed",
+        "accounts-list": "skipped",
+    }
+    steps = [
+        StepResult(
+            name=step.id,
+            status=status_by_step[step.id],
+            message=step.id,
+            mandatory=step.mandatory,
+        )
+        for step in resolved.manifest.steps
+    ]
+
+    block = build_smoke_check_result(
+        "env",
+        steps,
+        started_at=datetime.now(UTC),
+        certification_coverage=resolved.manifest.certification_coverage,
+        suite_metadata=resolved.metadata,
+    ).to_json_object()["certificationEligibility"]
+
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["mandatoryTotal"] == 6
+    assert block["mandatoryPassed"] == 3
+    assert block["mandatoryWarn"] == 1
+    assert block["mandatoryFailed"] == 1
+    assert block["mandatorySkipped"] == 1
+    reasons = block["reasons"]
+    assert isinstance(reasons, list)
+    assert "1 mandatory step(s) failed" in reasons
+    assert "1 mandatory step(s) skipped due to earlier failures" in reasons
+    assert "Manifest is not marked as complete certification coverage" in reasons
+    assert "Approved-release policy was not supplied" in reasons
 
 
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:

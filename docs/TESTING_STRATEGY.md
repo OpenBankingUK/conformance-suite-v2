@@ -192,3 +192,27 @@ Run the focused validator suite while iterating:
 ```bash
 DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py tests/test_approved_releases.py tests/test_model_bank_config.py tests/test_certification_validator.py tests/test_certification_cli.py -v
 ```
+
+## v4 AIS Slice Iteration
+
+The bundled `ais-certification-slice` spans config validation, bundled-manifest resolution, token exchange, consent creation, protected AIS resource assertions, launch surfaces, and certification eligibility. A focused offline iteration loop for this slice is:
+
+```bash
+DJANGO_DEBUG=true uv run pytest \
+  tests/test_model_bank_config.py \
+  tests/test_context.py \
+  tests/test_suite_catalog.py \
+  tests/test_manifest.py \
+  tests/test_executor.py \
+  tests/test_masking.py \
+  tests/test_cli.py \
+  tests/test_api.py \
+  tests/test_plan_builder.py \
+  tests/test_ui_views.py \
+  tests/test_results.py \
+  tests/test_certification_validator.py \
+  tests/test_certification_cli.py \
+  -m "unit or integration" -v
+```
+
+Keep live Ozone coverage gated behind the existing `ozone` marker and required environment variables. Until the target v4.0 environment is confirmed, local proof for this slice remains the mocked/offline suite above plus the final `make check` run.

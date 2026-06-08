@@ -120,6 +120,14 @@ Explicitly states that the suite is non-certifying and that the bundled
 ``redirectUri`` config value must be registered with the ASPSP before use.
 """
 
+_AIS_CERTIFICATION_SLICE_DESCRIPTION = (
+    "Certification-grade Open Banking Read/Write v4.0 AIS slice covering discovery, JWKS, manual PSU "
+    "authorisation, token exchange, account-access consent creation, and a protected accounts resource "
+    "check. The bundled suite remains partial coverage and must not be treated as full Read/Write API "
+    "certification."
+)
+"""Description for the partial v4 AIS conformance proof-point suite."""
+
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
         key=("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
@@ -132,6 +140,12 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         resource_name="ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
         label="Open Banking Read/Write v3.1.11 FAPI 1 Advanced PSU auth starter suite",
         description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice",
+        description=_AIS_CERTIFICATION_SLICE_DESCRIPTION,
     ),
     _CatalogEntry(
         key=("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),

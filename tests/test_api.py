@@ -337,6 +337,21 @@ PSU_AUTH_STARTER_CONFIG = {
     },
 }
 
+AIS_SLICE_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-slice",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -516,6 +531,40 @@ class TestCreateRunEndpoint:
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_ais_slice_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """A v4 AIS ``testSuite`` config resolves the bundled AIS slice manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": AIS_SLICE_CONFIG}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+        ]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
         """Inline API manifests remain explicit overrides for authoring workflows.
 
@@ -601,6 +650,22 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args is not None
         plan = mock_execute.call_args.args[3]
         assert plan.selected_step_ids() == ["openid-discovery"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_rejects_deselect_unknown_step_id_for_ais_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """Unknown step ids are rejected for config-selected AIS runs.
+
+        Args:
+            mock_execute: Patched lifecycle worker that must not run.
+        """
+        client = Client()
+        body = {"config": AIS_SLICE_CONFIG, "deselectStepIds": ["ghost-step"]}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "Plan validation failed" in response.json()["error"]
+        mock_execute.assert_not_called()
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
