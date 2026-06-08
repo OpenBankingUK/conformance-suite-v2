@@ -44,6 +44,12 @@ StepPhase = Literal["setup", "execution"]
 RequestMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 """HTTP methods supported by manifest-driven smoke-check requests."""
 
+GeneratedRequestObjectSource = Literal["fapi-signing"]
+"""Source selectors for generated PSU request-object directives."""
+
+TokenEndpointAuthSource = Literal["fapi-signing"]
+"""Source selectors for token-endpoint auth directives on HTTP steps."""
+
 AssertionType = Literal["http_status", "json_field", "header"]
 """Assertion discriminators supported by manifest assertions."""
 
@@ -131,6 +137,36 @@ class ManifestRequest:
     url: str
     headers: dict[str, str] | None = None
     body: ManifestBody | None = None
+
+
+@dataclass(frozen=True)
+class GeneratedRequestObject:
+    """Directive instructing the executor to sign a JAR request object.
+
+    Attributes:
+        source: Runtime signing source used to build the PS256 request object.
+    """
+
+    source: GeneratedRequestObjectSource
+
+
+RequestObjectValue = str | GeneratedRequestObject
+"""Accepted PSU ``requestObject`` manifest values.
+
+Legacy manifests may continue to supply an opaque string JWT directly.
+Newer manifests may instead declare a typed runtime-generated directive.
+"""
+
+
+@dataclass(frozen=True)
+class TokenEndpointAuthPolicy:
+    """Directive instructing an HTTP token exchange to use runtime auth config.
+
+    Attributes:
+        source: Runtime signing/auth configuration source to apply.
+    """
+
+    source: TokenEndpointAuthSource
 
 
 @dataclass(frozen=True)
@@ -276,6 +312,10 @@ class ManifestStep:
             has completed.
         phase: Scheduling phase for this step. Defaults to
             ``"execution"``. Setup steps run before grouped execution.
+        token_endpoint_auth_policy: Optional directive indicating that the
+            executor should apply token-endpoint client authentication using
+            runtime FAPI signing configuration rather than literal manifest
+            form fields.
     """
 
     id: str
@@ -287,6 +327,7 @@ class ManifestStep:
     optional: bool = False
     group: str = "default"
     phase: StepPhase = "execution"
+    token_endpoint_auth_policy: TokenEndpointAuthPolicy | None = None
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -402,9 +443,10 @@ class PsuAuthorizationStep:
             (no placeholders), the value must be at least 32 characters
             to mirror the store's minimum entropy requirement.
         request_object: Optional signed JWT carried as the ``request``
-            query parameter (RFC 9101 JAR). Treated as an opaque string;
-            placeholders permitted so the JWT can be produced by an
-            upstream signing step.
+            query parameter (RFC 9101 JAR). Legacy manifests may supply an
+            opaque string JWT; newer manifests may instead declare a typed
+            runtime-generated directive. String values permit placeholders so
+            the JWT can be produced by an upstream signing step.
         timeout_seconds: Per-step deadline in seconds. Defaults to 120;
             must be between 1 and 600 inclusive.
         mandatory: Whether the step is required for certification
@@ -428,7 +470,7 @@ class PsuAuthorizationStep:
     response_type: str = _PSU_AUTH_DEFAULT_RESPONSE_TYPE
     scope: str = _PSU_AUTH_DEFAULT_SCOPE
     state: str | None = None
-    request_object: str | None = None
+    request_object: RequestObjectValue | None = None
     timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
     mandatory: bool = False
     optional: bool = False
@@ -776,6 +818,7 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
             "optional",
             "group",
             "phase",
+            "tokenEndpointAuthPolicy",
         },
         location=location,
     )
@@ -797,6 +840,11 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
     optional = _parse_optional_optional(raw_step, location=location)
     group = _parse_optional_group(raw_step, location=location)
     phase = _parse_optional_phase(raw_step, location=location)
+    token_endpoint_auth_policy = _parse_optional_token_endpoint_auth_policy(
+        raw_step,
+        location=location,
+        seen_ids=seen_ids,
+    )
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
 
@@ -813,6 +861,7 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         optional=optional,
         group=group,
         phase=phase,
+        token_endpoint_auth_policy=token_endpoint_auth_policy,
     )
 
 
@@ -1028,12 +1077,14 @@ def _parse_psu_optional_state(raw_step: dict[str, JsonValue], *, location: str, 
 
 def _parse_psu_optional_request_object(
     raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]
-) -> str | None:
+) -> RequestObjectValue | None:
     """Parse the optional ``requestObject`` field on a PSU authorisation step.
 
-    The value is treated as an opaque JWT string. Placeholders are permitted
-    so the JWT can be produced by an upstream signing step. No structural
-    validation of the JWT body is performed at parse time.
+    Two backward-compatible shapes are accepted:
+
+    * a legacy opaque JWT string, optionally containing placeholders, and
+    * a typed ``{"source": "fapi-signing"}`` directive that tells the
+      executor to generate a PS256 JAR request object at runtime.
 
     Args:
         raw_step: Raw JSON object for the PSU step.
@@ -1041,21 +1092,103 @@ def _parse_psu_optional_request_object(
         seen_ids: Set of step ids already parsed (for forward-ref detection).
 
     Returns:
-        The stripped JWT string, or ``None`` if the key was absent.
+        The stripped JWT string, a typed generated-request-object directive,
+        or ``None`` if the key was absent.
 
     Raises:
         ManifestError: If ``requestObject`` is present but is not a
-            non-empty string, contains a malformed placeholder, or
-            references a forward step.
+            supported string/object shape, contains malformed placeholders,
+            references a forward step, or declares an unknown directive.
     """
     if "requestObject" not in raw_step:
         return None
     value = raw_step["requestObject"]
-    if not isinstance(value, str) or not value.strip():
-        raise ManifestError(f"{location}.requestObject must be a non-empty string when present")
-    request_object = value.strip()
-    _validate_placeholder_syntax(request_object, location=f"{location}.requestObject", seen_ids=seen_ids)
-    return request_object
+    if isinstance(value, str):
+        if not value.strip():
+            raise ManifestError(f"{location}.requestObject must be a non-empty string when present")
+        request_object = value.strip()
+        _validate_placeholder_syntax(request_object, location=f"{location}.requestObject", seen_ids=seen_ids)
+        return request_object
+    if not isinstance(value, dict):
+        raise ManifestError(
+            f"{location}.requestObject must be either a non-empty string or a JSON object directive when present"
+        )
+    return _parse_generated_request_object(value, location=f"{location}.requestObject", seen_ids=seen_ids)
+
+
+def _parse_generated_request_object(
+    raw_request_object: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+) -> GeneratedRequestObject:
+    """Parse a typed runtime-generated PSU ``requestObject`` directive.
+
+    Args:
+        raw_request_object: Raw JSON object representing the directive.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Returns:
+        Parsed generated-request-object directive.
+
+    Raises:
+        ManifestError: If the directive contains unknown keys, malformed
+            placeholders, or an unsupported source selector.
+    """
+    _reject_unknown_keys(raw_request_object, allowed_keys={"source"}, location=location)
+    source = _required_string(raw_request_object, "source", location=location)
+    _validate_constant_manifest_string(source, location=f"{location}.source", seen_ids=seen_ids)
+    if source != "fapi-signing":
+        raise ManifestError(f"{location}.source must be 'fapi-signing'")
+    return GeneratedRequestObject(source="fapi-signing")
+
+
+def _parse_optional_token_endpoint_auth_policy(
+    raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+) -> TokenEndpointAuthPolicy | None:
+    """Parse the optional token-endpoint auth directive on an HTTP step.
+
+    Args:
+        raw_step: Raw JSON object for the HTTP step.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Returns:
+        Parsed token-endpoint auth policy, or ``None`` if absent.
+
+    Raises:
+        ManifestError: If the directive is not a JSON object, contains
+            unknown keys, malformed placeholders, or an unsupported source.
+    """
+    if "tokenEndpointAuthPolicy" not in raw_step:
+        return None
+    raw_policy = raw_step["tokenEndpointAuthPolicy"]
+    if not isinstance(raw_policy, dict):
+        raise ManifestError(f"{location}.tokenEndpointAuthPolicy must be a JSON object when present")
+    _reject_unknown_keys(raw_policy, allowed_keys={"source"}, location=f"{location}.tokenEndpointAuthPolicy")
+    source = _required_string(raw_policy, "source", location=f"{location}.tokenEndpointAuthPolicy")
+    _validate_constant_manifest_string(
+        source,
+        location=f"{location}.tokenEndpointAuthPolicy.source",
+        seen_ids=seen_ids,
+    )
+    if source != "fapi-signing":
+        raise ManifestError(f"{location}.tokenEndpointAuthPolicy.source must be 'fapi-signing'")
+    return TokenEndpointAuthPolicy(source="fapi-signing")
+
+
+def _validate_constant_manifest_string(value: str, *, location: str, seen_ids: set[str]) -> None:
+    """Reject placeholders inside constant manifest discriminator fields.
+
+    Args:
+        value: Constant manifest string field under validation.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Raises:
+        ManifestError: If the string contains any placeholder token.
+    """
+    _validate_placeholder_syntax(value, location=location, seen_ids=seen_ids)
+    if _PLACEHOLDER_FIND_PATTERN.search(value):
+        raise ManifestError(f"{location} must not contain placeholders")
 
 
 def _parse_psu_timeout_seconds(raw_step: dict[str, JsonValue], *, location: str) -> int:
