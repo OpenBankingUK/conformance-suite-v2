@@ -221,12 +221,12 @@ Participant configuration can select a bundled manifest catalog entry through an
 
 The supported catalog keys are:
 
-| `standard` | `specVersion` | `profile` | `suite` | Scope | OAuth config required |
+| `standard` | `specVersion` | `profile` | `suite` | Scope | Participant config required |
 | --- | --- | --- | --- | --- | --- |
 | `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
-| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-baseline` | Certifiable-track AIS baseline: discovery, JWKS, PSU authorisation, token exchange, consent creation, and the current mandatory default core AIS resource flow, with optional/conditional AIS rows available as opt-in plan entries. | Yes |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Preserved certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and account-scoped AIS resource validation for accounts, balances, and transactions. | Yes |
+| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri` |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-baseline` | Certifiable-track AIS baseline: discovery, JWKS, PSU authorisation, token exchange, consent creation, and the current mandatory default core AIS resource flow, with optional/conditional AIS rows available as opt-in plan entries. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Preserved certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and account-scoped AIS resource validation for accounts, balances, and transactions. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
 
@@ -248,7 +248,29 @@ The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` an
 
 Step-response placeholders can traverse JSON arrays with non-negative numeric path segments. The bundled v4 AIS baseline and slice use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned `AccountId` from `GET /accounts` into account-scoped resource calls. Negative indices, out-of-bounds indices, and placeholders that terminate on whole objects or arrays remain invalid.
 
-The bundled AIS baseline and slice assume the participant's existing OAuth/FAPI client-authentication and certificate setup is already available outside manifest placeholders. Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, or client assertions through config placeholders just to make token exchange or protected-resource calls work.
+The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE signing and token-endpoint auth policy selection:
+
+```jsonc
+{
+  "fapiSigning": {
+    "certificatePathRoot": "./certs",
+    "signingCertificatePath": "dummy-signing.crt",
+    "signingPrivateKeyPath": "dummy-signing.key", // pragma: allowlist secret
+    "kid": "your-signing-kid-here",
+    "clientAssertionIssuer": "your-client-id-here",
+    "clientAssertionSubject": "your-client-id-here",
+    "tokenEndpointAuthMethod": "private_key_jwt"
+  }
+}
+```
+
+`certificatePathRoot` is a separate trust boundary from `tls.certificatePathRoot` and is revalidated at both config-parse time and runtime credential loading. Signing certificate and key bytes stay on disk until execution time, must remain under the configured root, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
+
+The baseline manifest uses this block in three places: PSU authorisation can generate a PS256 request object from `{"source": "fapi-signing"}`, token exchange can apply `tokenEndpointAuthPolicy: {"source": "fapi-signing"}` to emit either `private_key_jwt` form fields or `tls_client_auth` pre-dispatch validation, and account-access consent creation signs the exact JSON payload into a detached `x-jws-signature` header. The preserved AIS slice remains the older proof flow and does not opt into these directives.
+
+When `tokenEndpointAuthMethod` is `private_key_jwt`, the executor adds `client_assertion_type` and `client_assertion` to the existing form-urlencoded token request while preserving `grant_type`, `code`, `redirect_uri`, and `client_id`. When it is `tls_client_auth`, the executor requires an mTLS client configured in `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` and fails before dispatch if that client is absent.
+
+Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, client assertions, or detached JWS values through config placeholders just to make token exchange or protected-resource calls work.
 
 See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), `config/model-bank-ais-certification-baseline-example.json` (v4 AIS baseline), and `config/model-bank-ais-certification-slice-example.json` (preserved v4 AIS proof slice) for complete config examples.
 
@@ -286,14 +308,15 @@ These entries live in the application package under `conformance/suites/` so Doc
 
 Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step. The preserved `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and core account-scoped resource coverage. The `ais-certification-baseline` builds on the same placeholder model with a broader mandatory default flow plus optional/conditional AIS rows, still rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
 
-Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
+Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}`. `fapiSigning` values, TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, client assertions, and detached JWS values are intentionally not exposed through placeholders.
 
 The v4 AIS manifests are the current authoring reference for catalog-backed certification-track flows:
 
 - token exchange reuses existing form-urlencoded request support rather than custom OAuth engine code
+- the baseline can now generate PS256 request-object JWTs, emit token-endpoint client assertions, and sign consent JSON as detached `x-jws-signature` without exposing signing config to manifest placeholders
 - protected-resource requests use ordinary HTTP steps plus generic assertions over JSON structure
 - the baseline keeps broader optional or conditional AIS coverage in manifest data rather than Python branches, and those rows stay opt-in unless explicitly selected
-- masking must still hide authorization `code`, bearer tokens, `Authorization` header values, client assertions, and request objects in every persisted artifact
+- masking must still hide authorization `code`, bearer tokens, `Authorization` header values, client assertions, request objects, and detached JWS values in every persisted artifact
 
 When extending this area, keep new assertion or manifest vocabulary domain-agnostic. Open Banking-specific semantics belong in bundled manifests and tests, not in hardcoded executor branches.
 
@@ -307,7 +330,7 @@ CLI precedence is:
 
 REST API precedence matches the CLI. `POST /api/runs/` uses an inline `manifest` when present, otherwise resolves `config.testSuite`, otherwise falls back to the smoke check. `deselectStepIds` is accepted for inline or suite-resolved manifests and rejected for smoke checks. Suite resolution and invalid deselection failures use the existing HTTP 400 convention; the single-active-run guard still returns 409 for run conflicts.
 
-The browser plan builder at `/plan/` supports two authoring modes. Paste config plus manifest JSON to preview an explicit manifest, or leave the manifest textarea blank and provide a config with `testSuite` to preview the resolved bundled suite. The preview shows the suite label/version metadata for config-resolved plans and launches through the same shared run lifecycle as the REST API. Browser posts remain Django-form mediated and CSRF-protected.
+The browser plan builder at `/plan/` supports two authoring modes. Paste config plus manifest JSON to preview an explicit manifest, or leave the manifest textarea blank and provide a config with `testSuite` to preview the resolved bundled suite. The preview shows the suite label/version metadata for config-resolved plans and launches through the same shared run lifecycle as the REST API. Browser posts remain Django-form mediated and CSRF-protected. CLI, REST API, and browser plan/run flows all pass the validated `fapiSigning` config through to runtime execution for config-resolved suites.
 
 Suite-resolved runs add safe suite metadata to participant-visible result JSON and the `run-started` execution-log payload: `standard`, `specVersion`, `profile`, `suite`, `catalogId`, and `manifestResource`. Smoke checks and explicit-manifest runs keep their existing shape unless suite metadata is known.
 
