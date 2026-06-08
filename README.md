@@ -53,6 +53,8 @@ The supported suite combinations are `ob-read-write` × (`v3.1.11` | `v4.0`) × 
 
 The `psu-auth-starter` and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. The starter suite uses the first two values; the AIS slice also uses `resourceBaseUrl` for consent creation and protected resource calls.
 
+The AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already in place for token and protected-resource calls. Certificate paths, private keys, client secrets, signing keys, request objects, and client assertions are not supplied through suite placeholders or the `oauth` config block.
+
 ```json
 {
 	"environment": "ozone-model-bank",

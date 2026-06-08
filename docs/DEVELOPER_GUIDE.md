@@ -245,6 +245,8 @@ The `psu-auth-starter` suite requires an `oauth` section in the participant conf
 
 The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS slice resolves protected resource URLs from `${config.oauth.resourceBaseUrl}`.
 
+The bundled AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already available outside manifest placeholders. Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, or client assertions through config placeholders just to make token exchange or protected-resource calls work.
+
 See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), and `config/model-bank-ais-certification-slice-example.json` (v4 AIS slice) for complete config examples.
 
 The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python.
