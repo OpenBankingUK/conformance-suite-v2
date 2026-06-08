@@ -423,8 +423,10 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
         "jwks-fetch": "warn",
         "psu-authorization": "passed",
         "token-exchange": "passed",
-        "account-access-consent": "failed",
-        "accounts-list": "skipped",
+        "account-access-consent": "passed",
+        "accounts-list": "passed",
+        "account-balances": "failed",
+        "account-transactions": "skipped",
     }
     steps = [
         StepResult(
@@ -446,8 +448,8 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
 
     assert isinstance(block, dict)
     assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 6
-    assert block["mandatoryPassed"] == 3
+    assert block["mandatoryTotal"] == 8
+    assert block["mandatoryPassed"] == 5
     assert block["mandatoryWarn"] == 1
     assert block["mandatoryFailed"] == 1
     assert block["mandatorySkipped"] == 1

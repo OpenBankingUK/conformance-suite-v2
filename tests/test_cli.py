@@ -380,6 +380,8 @@ def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
             "token-exchange",
             "account-access-consent",
             "accounts-list",
+            "account-balances",
+            "account-transactions",
         ]
         plan = cast(TestPlan, kwargs["plan"])
         assert plan.selected_step_ids() == [
@@ -389,6 +391,8 @@ def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
             "token-exchange",
             "account-access-consent",
             "accounts-list",
+            "account-balances",
+            "account-transactions",
         ]
         runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
         suite_metadata = cast(SuiteMetadata, kwargs["suite_metadata"])

@@ -420,7 +420,9 @@ def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -
             ("psu-authorization", "passed"),
             ("token-exchange", "passed"),
             ("account-access-consent", "passed"),
-            ("accounts-list", "skipped"),
+            ("accounts-list", "passed"),
+            ("account-balances", "passed"),
+            ("account-transactions", "skipped"),
         ),
     )
     policy = ApprovedReleasePolicy(
@@ -435,13 +437,13 @@ def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -
     rendered = result.to_json_object()
     mandatory = rendered["mandatory"]
     assert isinstance(mandatory, dict)
-    assert mandatory["total"] == 6
-    assert mandatory["passed"] == 5
+    assert mandatory["total"] == 8
+    assert mandatory["passed"] == 7
     assert mandatory["skipped"] == 1
     steps = mandatory["steps"]
     assert isinstance(steps, list)
     assert steps[-1] == {
-        "stepId": "accounts-list",
+        "stepId": "account-transactions",
         "status": "skipped",
         "valid": False,
         "reason": "mandatory_step_skipped",
