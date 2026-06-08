@@ -2081,6 +2081,98 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("conflicting_fields", "expected_reserved_fields"),
+    [
+        pytest.param(
+            {"client_assertion": "manifest-client-assertion"},
+            "client_assertion",
+            id="client-assertion",
+        ),
+        pytest.param(
+            {
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            },
+            "client_assertion_type",
+            id="client-assertion-type",
+        ),
+        pytest.param(
+            {
+                "client_assertion": "manifest-client-assertion",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            },
+            "client_assertion, client_assertion_type",
+            id="both-fields",
+        ),
+    ],
+)
+def test_run_manifest_v1_private_key_jwt_token_auth_policy_rejects_manifest_client_assertion_fields(
+    tmp_path: Path,
+    conflicting_fields: dict[str, str],
+    expected_reserved_fields: str,
+) -> None:
+    """Token-endpoint auth policy fails fast when manifests supply reserved assertion fields.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold signing credentials.
+        conflicting_fields: Manifest-authored token form fields that must be
+            rejected when runtime FAPI signing owns client authentication.
+        expected_reserved_fields: Deterministic error-message suffix naming the
+            conflicting form fields.
+    """
+    request_seen = False
+    raw_form_fields: dict[str, JsonValue] = {
+        "grant_type": "authorization_code",
+        "code": "auth-code",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+        **conflicting_fields,
+    }
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt token auth conflict",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": raw_form_fields,
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply token endpoint client authentication: "
+        "Token endpoint auth policy reserves these form fields for runtime FAPI signing: "
+        f"{expected_reserved_fields}"
+    )
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_path: Path) -> None:
     """Generated client assertions are masked in step evidence and log events."""
     raw_manifest: dict[str, JsonValue] = {

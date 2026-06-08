@@ -630,7 +630,19 @@ def _apply_token_endpoint_auth_policy(
     if fapi_signing_config is None:
         raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
 
-    if fapi_signing_config.token_endpoint_auth_method == "private_key_jwt":  # noqa: S105 - FAPI auth-method enum, not a secret
+    if (
+        fapi_signing_config.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - FAPI auth-method enum, not a secret
+    ):
+        conflicting_fields = [
+            field_name
+            for field_name in ("client_assertion", "client_assertion_type")
+            if field_name in resolved_form_body
+        ]
+        if conflicting_fields:
+            reserved_fields = ", ".join(conflicting_fields)
+            raise ValueError(
+                f"Token endpoint auth policy reserves these form fields for runtime FAPI signing: {reserved_fields}"
+            )
         signing_service = FapiSigningService(
             signing_config=fapi_signing_config,
             signing_credentials=load_signing_credentials(fapi_signing_config),
