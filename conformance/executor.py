@@ -85,6 +85,22 @@ _OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-conse
 """Open Banking AIS consent-creation path requiring detached JWS support."""
 
 
+def _normalize_url_path_for_match(path: str) -> str:
+    """Normalize a URL path for endpoint eligibility checks.
+
+    Args:
+        path: Raw parsed URL path component.
+
+    Returns:
+        A canonical absolute path with repeated separators collapsed and any
+        trailing slash removed, except for the root path.
+    """
+    normalized_segments = [segment for segment in path.split("/") if segment]
+    if not normalized_segments:
+        return "/"
+    return "/" + "/".join(normalized_segments)
+
+
 def _attach_evidence(
     step: StepResult,
     *,
@@ -1888,7 +1904,7 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
-    return urlsplit(resolved_url).path == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+    return _normalize_url_path_for_match(urlsplit(resolved_url).path) == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
 
 
 def _serialize_json_request_body(body: JsonValue) -> bytes:

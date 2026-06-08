@@ -2212,6 +2212,60 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_path_separator(
+    tmp_path: Path,
+) -> None:
+    """Consent creation still signs when the resolved URL path contains doubled slashes."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent signing with doubled slash",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com//open-banking/v4.0/aisp/account-access-consents/",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound consent request for doubled-slash URL coverage.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing consent response.
+        """
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    expected_payload = b'{"Data":{"Permissions":["ReadAccountsBasic","ReadBalances"]},"Risk":{}}'
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert observed_requests[0].content == expected_payload
+    assert "x-jws-signature" in observed_requests[0].headers
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manifest_opt_in(tmp_path: Path) -> None:
     """Consent creation stays unsigned unless the manifest request opts into detached JWS."""
     observed_requests: list[httpx.Request] = []

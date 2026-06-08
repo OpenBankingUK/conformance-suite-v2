@@ -58,7 +58,7 @@ The `ais-certification-baseline` suite also accepts a dedicated `fapiSigning` bl
 
 `private_key_jwt` uses the signing key to add `client_assertion_type` and `client_assertion` form fields at token exchange time. `tls_client_auth` reuses the existing `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` settings for the outbound mTLS client and still keeps all signing and client-auth inputs outside the manifest placeholder allow-list.
 
-```json
+```jsonc
 {
 	"environment": "ozone-model-bank",
 	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
