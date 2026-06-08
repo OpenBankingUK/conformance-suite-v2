@@ -486,8 +486,9 @@ def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_p
         The resolved primitive value coerced to a string.
 
     Raises:
-        PlaceholderResolutionError: If a segment is missing, the traversal
-            encounters a non-object intermediate, or the leaf is non-primitive.
+        PlaceholderResolutionError: If a segment is missing, list traversal
+            uses a non-numeric or out-of-bounds index, traversal encounters a
+            non-container intermediate, or the leaf is non-primitive.
     """
     current: JsonValue | Mapping[str, JsonValue] = body
     for segment in segments:

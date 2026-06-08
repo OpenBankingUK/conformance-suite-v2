@@ -2929,7 +2929,7 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
 
 
 @pytest.mark.integration
-def test_ais_certification_slice_account_balances_resource_executes_and_counts_mandatory_steps(
+def test_ais_certification_slice_account_balances_and_transactions_resources_execute_and_count_mandatory_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Bundled AIS slice completes the balances and transactions resource calls.
