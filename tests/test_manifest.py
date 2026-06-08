@@ -2679,17 +2679,17 @@ def test_parse_v1_http_step_rejects_secret_bearing_config_placeholder_in_detache
 
 
 @pytest.mark.unit
-def test_parse_v1_http_step_rejects_detached_jws_on_get_request() -> None:
-    """Detached-JWS directives are invalid on GET requests."""
+def test_parse_v1_http_step_rejects_detached_jws_on_unsupported_method() -> None:
+    """Detached-JWS directives are invalid outside supported write methods."""
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
-        "name": "bad-detached-jws-get",
+        "name": "bad-detached-jws-delete",
         "steps": [
             {
                 "id": "accounts",
                 "name": "Accounts",
                 "request": {
-                    "method": "GET",
+                    "method": "DELETE",
                     "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
                     "detachedJws": {"source": "fapi-signing"},
                 },
@@ -2700,7 +2700,7 @@ def test_parse_v1_http_step_rejects_detached_jws_on_get_request() -> None:
 
     with pytest.raises(
         ManifestError,
-        match=r"steps\[0\]\.request\.detachedJws is only valid on POST, PUT, PATCH, or DELETE requests",
+        match=r"steps\[0\]\.request\.detachedJws is only valid on POST, PUT, or PATCH requests",
     ):
         parse_manifest(raw_manifest)
 

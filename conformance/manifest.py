@@ -1308,12 +1308,13 @@ def _parse_optional_detached_jws(
 
     Raises:
         ManifestError: If the directive shape is invalid, uses an unsupported
-            source, applies to a GET request, or contains invalid placeholders.
+            source, applies to an unsupported HTTP method, or contains invalid
+            placeholders.
     """
     if "detachedJws" not in raw_request:
         return None
-    if method == "GET":
-        raise ManifestError(f"{location}.detachedJws is only valid on POST, PUT, PATCH, or DELETE requests")
+    if method not in {"POST", "PUT", "PATCH"}:
+        raise ManifestError(f"{location}.detachedJws is only valid on POST, PUT, or PATCH requests")
 
     raw_policy = raw_request["detachedJws"]
     policy_location = f"{location}.detachedJws"
