@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
+
 ### Added
 
 - The bundled `ob-read-write / v4.0 / fapi1-advanced / ais-certification-baseline` manifest now expands beyond the proof slice using bundled offline reference snapshots from the public v4.0 Account and Transaction OpenAPI and previous public conformance-suite rule/permission sources. The baseline remains deliberately `certificationCoverage: partial`: mandatory defaults now cover account detail plus bulk transactions alongside the existing consent/accounts/balances/account-transactions flow, while optional/conditional AIS resources are present as opt-in plan rows and are not selected by default. README and Developer Guide now distinguish this certifiable-track baseline from the preserved `ais-certification-slice` proof flow and point participants to the new baseline example config.
