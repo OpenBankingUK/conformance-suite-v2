@@ -24,6 +24,7 @@ from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
 from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
+from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
 
 def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -2251,6 +2252,101 @@ def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_p
 
 
 @pytest.mark.unit
+def test_run_manifest_reuses_signing_credentials_across_signed_http_steps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executor loads runtime signing credentials once across signed HTTP steps.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+        monkeypatch: Fixture used to replace the credential loader with a counting wrapper.
+    """
+    load_count = 0
+    real_loader = load_signing_credentials
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "shared signing credentials",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            },
+        ],
+    }
+
+    def counting_loader(signing_config: FapiSigningConfig) -> SigningCredentials:
+        """Count executor credential loads while delegating to the real loader.
+
+        Args:
+            signing_config: Validated signing configuration to load.
+
+        Returns:
+            Loaded runtime signing credentials.
+        """
+        nonlocal load_count
+        load_count += 1
+        return real_loader(signing_config)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return passing responses for the signed consent and token steps.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing mock response for the requested endpoint.
+        """
+        if str(request.url) == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    monkeypatch.setattr("conformance.executor.load_signing_credentials", counting_loader)
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == ["consent", "token"]
+    assert load_count == 1
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(tmp_path: Path) -> None:
     """Consent creation signs exact JSON bytes and masks the detached JWS header."""
     observed_requests: list[httpx.Request] = []
@@ -4360,6 +4456,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         run_id: str,
         auth_session_store: AuthSessionStore,
         fapi_signing_config: FapiSigningConfig | None = None,
+        fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
@@ -4373,6 +4470,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             run_id=run_id,
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
         )
 
@@ -4408,6 +4506,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         run_id: str,
         auth_session_store: AuthSessionStore,
         fapi_signing_config: FapiSigningConfig | None = None,
+        fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
@@ -4421,6 +4520,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             run_id=run_id,
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
         )
 
