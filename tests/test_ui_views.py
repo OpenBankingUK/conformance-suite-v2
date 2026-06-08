@@ -5,16 +5,19 @@ from __future__ import annotations
 import html
 import json
 import time
+from pathlib import Path
 from typing import cast
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
+import httpx
 import pytest
 from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.json_types import JsonValue
+from tests.test_executor import _executor_signing_config
 
 VALID_CONFIG: dict[str, JsonValue] = {
     "environment": "test-env",
@@ -52,6 +55,21 @@ AIS_SLICE_CONFIG: dict[str, JsonValue] = {
         "specVersion": "v4.0",
         "profile": "fapi1-advanced",
         "suite": "ais-certification-slice",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
+AIS_BASELINE_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-baseline",
     },
     "oauth": {
         "clientId": "test-client-id",
@@ -224,6 +242,41 @@ def _ais_slice_suite_form_data(*, selected_step_ids: list[str] | None = None) ->
     """
     return {
         "config_json": json.dumps(AIS_SLICE_CONFIG),
+        "manifest_json": "",
+        "selection_mode": "select",
+        "selected_step_ids": selected_step_ids or [],
+    }
+
+
+def _ais_baseline_suite_form_data(
+    tmp_path: Path,
+    *,
+    selected_step_ids: list[str] | None = None,
+) -> dict[str, object]:
+    """Build form data that resolves the AIS baseline suite with FAPI signing config.
+
+    Args:
+        tmp_path: Temporary directory used to materialise signing PEM files.
+        selected_step_ids: Step ids submitted by checked row checkboxes.
+
+    Returns:
+        Form-encoded payload dictionary for the AIS baseline catalog entry.
+    """
+    signing_config = _executor_signing_config(tmp_path)
+    config = {
+        **AIS_BASELINE_CONFIG,
+        "fapiSigning": {
+            "certificatePathRoot": str(signing_config.certificate_path_root),
+            "signingCertificatePath": str(signing_config.signing_certificate_path),
+            "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
+            "kid": signing_config.key_id,
+            "clientAssertionIssuer": signing_config.client_assertion_issuer,
+            "clientAssertionSubject": signing_config.client_assertion_subject,
+            "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
+        },
+    }
+    return {
+        "config_json": json.dumps(config),
         "manifest_json": "",
         "selection_mode": "select",
         "selected_step_ids": selected_step_ids or [],
@@ -534,6 +587,68 @@ class TestPlanBuilderUi:
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
 
     @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_starts_ais_baseline_config_resolved_suite(
+        self,
+        mock_start_run: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """Launch passes validated FAPI signing config into the AIS baseline run.
+
+        Args:
+            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
+            tmp_path: Temporary directory used to materialise signing PEM files.
+        """
+        mock_start_run.return_value = {
+            "id": "run-ais-baseline",
+            "status": "pending",
+            "createdAt": "2026-06-03T12:00:00+00:00",
+        }
+
+        response = Client().post(
+            "/plan/launch/",
+            data=_ais_baseline_suite_form_data(
+                tmp_path,
+                selected_step_ids=[
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "psu-authorization",
+                    "token-exchange",
+                    "account-access-consent",
+                    "accounts-list",
+                    "account-detail",
+                    "account-balances",
+                    "account-transactions",
+                    "transactions-list",
+                ],
+            ),
+        )
+
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-ais-baseline/"
+        assert mock_start_run.call_count == 1
+        config = mock_start_run.call_args.kwargs["config"]
+        manifest = mock_start_run.call_args.kwargs["manifest"]
+        plan = mock_start_run.call_args.kwargs["plan"]
+        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert config.fapi_signing is not None
+        assert config.fapi_signing.key_id == "executor-signing-key"
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+            "account-detail",
+            "account-balances",
+            "account-transactions",
+            "transactions-list",
+        ]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
+
+    @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:
         """Manual PSU manifests can be launched with browser PSU prompts enabled."""
         mock_start_run.return_value = {"id": "run-psu", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
@@ -605,6 +720,248 @@ class TestPlanBuilderUi:
 @pytest.mark.integration
 class TestRunDetailUi:
     """Browser coverage for run detail and partial views."""
+
+    def test_browser_launch_ais_baseline_flow_masks_fapi_artifacts(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ) -> None:
+        """Browser AIS baseline runs sign PSU/token exchanges and mask durable artifacts.
+
+        Args:
+            monkeypatch: Pytest fixture used to inject a mock HTTP client.
+            tmp_path: Temporary directory used to materialise signing PEM files.
+        """
+        captured_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Return deterministic HTTP responses for each AIS baseline step.
+
+            Args:
+                request: HTTP request issued by the conformance runner.
+
+            Returns:
+                Mock HTTP response for the requested endpoint.
+
+            Raises:
+                AssertionError: If the browser flow issues an unexpected request.
+            """
+            captured_requests.append(request)
+            url = str(request.url)
+            json_headers = {"Content-Type": "application/json"}
+            if url == "https://example.com/.well-known/openid-configuration":
+                return httpx.Response(
+                    200,
+                    json={
+                        "issuer": "https://example.com",
+                        "authorization_endpoint": "https://example.com/authorize",
+                        "token_endpoint": "https://example.com/token",
+                        "jwks_uri": "https://example.com/jwks",
+                        "response_types_supported": ["code id_token"],
+                    },
+                    headers=json_headers,
+                )
+            if url == "https://example.com/jwks":
+                return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "test-key"}]}, headers=json_headers)
+            if url == "https://example.com/token":
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "browser-baseline-access-token",
+                        "id_token": "browser-baseline-id-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                    headers=json_headers,
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+                return httpx.Response(
+                    201,
+                    json={"Data": {"ConsentId": "consent-123", "Permissions": ["ReadTransactionsDetail"]}, "Risk": {}},
+                    headers={**json_headers, "x-fapi-interaction-id": "consent-123"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+                return httpx.Response(
+                    200,
+                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
+                    headers={**json_headers, "x-fapi-interaction-id": "accounts-123"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123":
+                return httpx.Response(
+                    200,
+                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
+                    headers={**json_headers, "x-fapi-interaction-id": "account-123"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances":
+                return httpx.Response(
+                    200,
+                    json={
+                        "Data": {
+                            "Balance": [
+                                {
+                                    "Type": "ClosingAvailable",
+                                    "Amount": {"Amount": "10.00", "Currency": "GBP"},
+                                    "CreditDebitIndicator": "Credit",
+                                }
+                            ]
+                        }
+                    },
+                    headers={**json_headers, "x-fapi-interaction-id": "balances-123"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
+                return httpx.Response(
+                    200,
+                    json={
+                        "Data": {
+                            "Transaction": [
+                                {
+                                    "AccountId": "acct-123",
+                                    "CreditDebitIndicator": "Debit",
+                                    "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                    "Amount": {"Amount": "3.14", "Currency": "GBP"},
+                                }
+                            ]
+                        }
+                    },
+                    headers={**json_headers, "x-fapi-interaction-id": "account-transactions-123"},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/transactions":
+                return httpx.Response(
+                    200,
+                    json={
+                        "Data": {
+                            "Transaction": [
+                                {
+                                    "AccountId": "acct-123",
+                                    "CreditDebitIndicator": "Credit",
+                                    "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                    "Amount": {"Amount": "1.00", "Currency": "GBP"},
+                                }
+                            ]
+                        }
+                    },
+                    headers={**json_headers, "x-fapi-interaction-id": "transactions-123"},
+                )
+            raise AssertionError(f"Unexpected request URL: {url}")
+
+        def fake_build_json_http_client(**_kwargs: object) -> httpx.Client:
+            """Build a mock HTTP client for the browser-launched AIS baseline run.
+
+            Args:
+                **_kwargs: Ignored production HTTP client settings.
+
+            Returns:
+                HTTPX client backed by the mock transport.
+            """
+            return httpx.Client(transport=httpx.MockTransport(handler))
+
+        monkeypatch.setattr("conformance.api.run_lifecycle.build_json_http_client", fake_build_json_http_client)
+
+        client = Client()
+        launch_response = client.post(
+            "/plan/launch/",
+            data=_ais_baseline_suite_form_data(
+                tmp_path,
+                selected_step_ids=[
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "psu-authorization",
+                    "token-exchange",
+                    "account-access-consent",
+                    "accounts-list",
+                    "account-detail",
+                    "account-balances",
+                    "account-transactions",
+                    "transactions-list",
+                ],
+            ),
+        )
+
+        assert launch_response.status_code == 302
+        run_id = _run_id_from_redirect(launch_response["Location"])
+        authorisation_url = _wait_for_participant_action(run_id)
+        raw_request_object = _query_parameter(authorisation_url, "request")
+        state = _query_parameter(authorisation_url, "state")
+        callback_response = client.get("/callback/", {"state": state, "code": "browser-baseline-auth-code"})
+
+        assert callback_response.status_code == 200
+        _wait_for_terminal_run(run_id)
+
+        result_response = client.get(f"/runs/{run_id}/result.json")
+        log_response = client.get(f"/runs/{run_id}/log.ndjson")
+
+        assert result_response.status_code == 200
+        assert log_response.status_code == 200
+
+        result_body = result_response.json()
+        token_form_fields = parse_qs(captured_requests[2].content.decode("ascii"), keep_blank_values=True)
+        raw_client_assertion = token_form_fields["client_assertion"][0]
+        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
+        result_json = json.dumps(result_body, sort_keys=True)
+        ndjson = log_response.content.decode("utf-8")
+
+        assert result_body["status"] == "passed"
+        assert result_body["summary"] == {"total": 10, "passed": 10, "failed": 0, "warn": 0, "skipped": 0}
+        assert result_body["plan"] == {
+            "totalSteps": 27,
+            "selectedSteps": 10,
+            "deselectedSteps": 17,
+            "mandatorySelected": 10,
+            "mandatoryDeselected": 0,
+        }
+        assert result_body["suite"] == {
+            "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
+            "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "standard": "ob-read-write",
+            "specVersion": "v4.0",
+            "profile": "fapi1-advanced",
+            "suite": "ais-certification-baseline",
+        }
+        assert result_body["certificationEligibility"]["reason"] == (
+            "Manifest is not marked as complete certification coverage"
+        )
+        assert [(request.method, str(request.url)) for request in captured_requests] == [
+            ("GET", "https://example.com/.well-known/openid-configuration"),
+            ("GET", "https://example.com/jwks"),
+            ("POST", "https://example.com/token"),
+            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
+        ]
+        assert token_form_fields["grant_type"] == ["authorization_code"]
+        assert token_form_fields["code"] == ["browser-baseline-auth-code"]
+        assert token_form_fields["client_id"] == ["test-client-id"]
+        assert token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
+        assert token_form_fields["client_assertion_type"] == ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+        assert raw_client_assertion
+        assert raw_request_object
+        assert resource_authorization_headers == ["Bearer browser-baseline-access-token"] * 6
+
+        assert "browser-baseline-auth-code" not in result_json
+        assert "browser-baseline-access-token" not in result_json
+        assert "browser-baseline-id-token" not in result_json
+        assert raw_request_object not in result_json
+        assert raw_client_assertion not in result_json
+        assert "signingCertificatePath" not in result_json
+        assert "signingPrivateKeyPath" not in result_json
+        assert "request=***" in result_json
+
+        assert "browser-baseline-auth-code" not in ndjson
+        assert "browser-baseline-access-token" not in ndjson
+        assert "browser-baseline-id-token" not in ndjson
+        assert raw_request_object not in ndjson
+        assert raw_client_assertion not in ndjson
+        assert '"code": "***"' in ndjson
+        assert '"client_assertion": "***"' in ndjson
+        assert '"request_object": "***"' in ndjson
+        assert '"Authorization": "***"' in ndjson
+        assert "signingCertificatePath" not in ndjson
+        assert "signingPrivateKeyPath" not in ndjson
 
     def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(
         self,

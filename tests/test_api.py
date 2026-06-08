@@ -585,16 +585,34 @@ class TestCreateRunEndpoint:
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
 
     @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_ais_baseline_config_resolved_suite(self, mock_execute: Mock) -> None:
+    def test_creates_run_with_ais_baseline_config_resolved_suite(
+        self,
+        mock_execute: Mock,
+        tmp_path: Path,
+    ) -> None:
         """A v4 AIS baseline ``testSuite`` config resolves the bundled baseline manifest.
 
         Args:
             mock_execute: Patched lifecycle worker used to inspect run inputs.
+            tmp_path: Temporary directory used to materialise signing PEM files.
         """
         client = Client()
+        signing_config = _executor_signing_config(tmp_path)
+        baseline_config = {
+            **AIS_BASELINE_CONFIG,
+            "fapiSigning": {
+                "certificatePathRoot": str(signing_config.certificate_path_root),
+                "signingCertificatePath": str(signing_config.signing_certificate_path),
+                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
+                "kid": signing_config.key_id,
+                "clientAssertionIssuer": signing_config.client_assertion_issuer,
+                "clientAssertionSubject": signing_config.client_assertion_subject,
+                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
+            },
+        }
         response = client.post(
             "/api/runs/",
-            data=json.dumps({"config": AIS_BASELINE_CONFIG}),
+            data=json.dumps({"config": baseline_config}),
             content_type="application/json",
         )
 
@@ -604,9 +622,13 @@ class TestCreateRunEndpoint:
             timeout_seconds=1.0,
         )
         assert mock_execute.call_args is not None
+        config = mock_execute.call_args.args[1]
         manifest = mock_execute.call_args.args[2]
         plan = mock_execute.call_args.args[3]
         suite_metadata = mock_execute.call_args.args[4]
+        assert config.fapi_signing is not None
+        assert config.fapi_signing.key_id == signing_config.key_id
+        assert config.fapi_signing.token_endpoint_auth_method == signing_config.token_endpoint_auth_method
         assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
         assert plan.selected_step_ids() == [
             "openid-discovery",
@@ -1091,6 +1113,9 @@ class TestPsuAuthorizationApiRun:
         assert "baseline-auth-code" not in serialised_result
         assert "baseline-access-token" not in serialised_result
         assert "baseline-id-token" not in serialised_result
+        assert "signingCertificatePath" not in serialised_result
+        assert "signingPrivateKeyPath" not in serialised_result
+        assert "request=***" in serialised_result
 
         log_response = client.get(f"/api/runs/{run_id}/log/")
         assert log_response.status_code == 200
@@ -1098,6 +1123,11 @@ class TestPsuAuthorizationApiRun:
         assert "baseline-auth-code" not in ndjson
         assert "baseline-access-token" not in ndjson
         assert "baseline-id-token" not in ndjson
+        assert '"client_assertion": "***"' in ndjson
+        assert '"request_object": "***"' in ndjson
+        assert '"Authorization": "***"' in ndjson
+        assert "signingCertificatePath" not in ndjson
+        assert "signingPrivateKeyPath" not in ndjson
         assert '"code": "***"' in ndjson
 
 
