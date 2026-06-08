@@ -461,6 +461,57 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     assert "Approved-release policy was not supplied" in reasons
 
 
+@pytest.mark.unit
+def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Passing baseline mandatory steps still cannot certify while coverage is partial."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-certification-baseline",
+        )
+    )
+    steps = [
+        StepResult(name=step.id, status="passed", message=step.id, mandatory=step.mandatory)
+        for step in resolved.manifest.steps
+        if step.mandatory
+    ]
+
+    rendered = build_smoke_check_result(
+        "env",
+        steps,
+        started_at=datetime.now(UTC),
+        approved_release_policy=_approved_policy("1.0.0"),
+        certification_coverage=resolved.manifest.certification_coverage,
+        suite_metadata=resolved.metadata,
+    ).to_json_object()
+
+    block = rendered["certificationEligibility"]
+    assert isinstance(block, dict)
+    assert block["eligible"] is False
+    assert block["mandatoryTotal"] == 10
+    assert block["mandatoryPassed"] == 10
+    assert block["reason"] == "Manifest is not marked as complete certification coverage"
+    assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
+    assert rendered["suite"] == {
+        "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
+        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-baseline",
+    }
+
+
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
     """Build an approved-release policy for result tests.
 

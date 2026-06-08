@@ -37,7 +37,7 @@ SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
 SuiteProfile = Literal["fapi1-advanced"]
 """Supported security profiles for config-selected suite resolution."""
 
-SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice"]
+SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"]
 """Supported versioned conformance suite identifiers."""
 
 
@@ -323,14 +323,18 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0")
     if profile != "fapi1-advanced":
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
-    if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice"}:
-        raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice")
+    if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"}:
+        raise ConfigError(
+            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
+            "ais-certification-slice, ais-certification-baseline"
+        )
     supported_selections = {
         ("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
         ("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
         ("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
         ("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
         ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-baseline"),
     }
     if (standard, spec_version, profile, suite) not in supported_selections:
         raise ConfigError(

@@ -3,6 +3,7 @@ import time
 from collections.abc import Callable
 from unittest.mock import Mock, patch
 
+import httpx
 import pytest
 from django.test import Client
 
@@ -352,6 +353,21 @@ AIS_SLICE_CONFIG = {
     },
 }
 
+AIS_BASELINE_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-certification-baseline",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -565,6 +581,44 @@ class TestCreateRunEndpoint:
             "account-transactions",
         ]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_ais_baseline_config_resolved_suite(self, mock_execute: Mock) -> None:
+        """A v4 AIS baseline ``testSuite`` config resolves the bundled baseline manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+        """
+        client = Client()
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": AIS_BASELINE_CONFIG}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "psu-authorization",
+            "token-exchange",
+            "account-access-consent",
+            "accounts-list",
+            "account-detail",
+            "account-balances",
+            "account-transactions",
+            "transactions-list",
+        ]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
@@ -801,6 +855,231 @@ class TestPsuAuthorizationApiRun:
         assert log_response.status_code == 200
         events = [json.loads(line) for line in log_response.content.decode("utf-8").splitlines()]
         assert "psu-authorization-url" in [event["type"] for event in events]
+
+    def test_baseline_suite_run_passes_after_synthetic_callback_and_stays_partial(self) -> None:
+        """The baseline suite executes token and resource steps but remains non-eligible while partial."""
+        client = Client()
+        captured_requests: list[httpx.Request] = []
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            """Return mocked responses for the baseline suite's HTTP calls.
+
+            Args:
+                request: Outbound HTTP request issued by the async API run.
+
+            Returns:
+                Mocked JSON response that satisfies the baseline manifest.
+
+            Raises:
+                AssertionError: If the test receives an unexpected request.
+            """
+            captured_requests.append(request)
+            url = str(request.url)
+            json_headers = {"content-type": "application/json"}
+            if url == "https://example.com/.well-known/openid-configuration":
+                return httpx.Response(
+                    200,
+                    headers=json_headers,
+                    json={
+                        "issuer": "https://example.com",
+                        "authorization_endpoint": "https://example.com/authorize",
+                        "token_endpoint": "https://example.com/token",
+                        "jwks_uri": "https://example.com/jwks",
+                        "response_types_supported": ["code id_token"],
+                    },
+                )
+            if url == "https://example.com/jwks":
+                return httpx.Response(200, headers=json_headers, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+            if url == "https://example.com/token":
+                return httpx.Response(
+                    200,
+                    headers=json_headers,
+                    json={
+                        "access_token": "baseline-access-token",
+                        "id_token": "baseline-id-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+                return httpx.Response(
+                    201,
+                    headers={**json_headers, "x-fapi-interaction-id": "consent-123"},
+                    json={
+                        "Data": {
+                            "ConsentId": "consent-123",
+                            "Permissions": ["ReadTransactionsDetail"],
+                        },
+                        "Risk": {},
+                    },
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+                return httpx.Response(
+                    200,
+                    headers={**json_headers, "x-fapi-interaction-id": "accounts-123"},
+                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123":
+                return httpx.Response(
+                    200,
+                    headers={**json_headers, "x-fapi-interaction-id": "account-123"},
+                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances":
+                return httpx.Response(
+                    200,
+                    headers={**json_headers, "x-fapi-interaction-id": "balances-123"},
+                    json={
+                        "Data": {
+                            "Balance": [
+                                {
+                                    "Type": "ClosingAvailable",
+                                    "Amount": {"Amount": "10.00", "Currency": "GBP"},
+                                    "CreditDebitIndicator": "Credit",
+                                }
+                            ]
+                        }
+                    },
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
+                return httpx.Response(
+                    200,
+                    headers={**json_headers, "x-fapi-interaction-id": "account-transactions-123"},
+                    json={
+                        "Data": {
+                            "Transaction": [
+                                {
+                                    "AccountId": "acct-123",
+                                    "CreditDebitIndicator": "Debit",
+                                    "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                    "Amount": {"Amount": "3.14", "Currency": "GBP"},
+                                }
+                            ]
+                        }
+                    },
+                )
+            if url == "https://resource.example.com/open-banking/v4.0/aisp/transactions":
+                return httpx.Response(
+                    200,
+                    headers={**json_headers, "x-fapi-interaction-id": "transactions-123"},
+                    json={
+                        "Data": {
+                            "Transaction": [
+                                {
+                                    "AccountId": "acct-123",
+                                    "CreditDebitIndicator": "Credit",
+                                    "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                    "Amount": {"Amount": "1.00", "Currency": "GBP"},
+                                }
+                            ]
+                        }
+                    },
+                )
+            raise AssertionError(f"Unexpected request: {request.method} {url}")
+
+        def completed_result(run_id: str) -> dict[str, object] | None:
+            """Return result JSON once the asynchronous run has completed.
+
+            Args:
+                run_id: API run identifier to poll.
+
+            Returns:
+                Result JSON dictionary when available, otherwise ``None`` while
+                the run is still pending or running.
+
+            Raises:
+                AssertionError: If the result endpoint reports an unexpected
+                    terminal or internal-error response.
+            """
+            result_response = client.get(f"/api/runs/{run_id}/result/")
+            if result_response.status_code == 200:
+                body = result_response.json()
+                assert isinstance(body, dict)
+                return body
+            if result_response.status_code == 409:
+                return None
+            raise AssertionError(
+                f"Unexpected result response {result_response.status_code}: {result_response.content!r}"
+            )
+
+        with (
+            httpx.Client(transport=httpx.MockTransport(handler)) as fake_client,
+            patch("conformance.api.run_lifecycle.build_json_http_client", return_value=fake_client),
+        ):
+            create_response = client.post(
+                "/api/runs/",
+                data=json.dumps({"config": AIS_BASELINE_CONFIG}),
+                content_type="application/json",
+            )
+            assert create_response.status_code == 201
+            run_id = create_response.json()["id"]
+
+            session = _wait_for_value(
+                lambda: auth_session_store.for_run(run_id)[0] if auth_session_store.for_run(run_id) else None,
+                timeout_seconds=2.0,
+            )
+            callback_response = client.get("/callback/", {"state": session.state, "code": "baseline-auth-code"})
+            assert callback_response.status_code == 200
+
+            result = _wait_for_value(lambda: completed_result(run_id), timeout_seconds=4.0)
+
+        assert result["status"] == "passed"
+        assert result["summary"] == {"total": 10, "passed": 10, "failed": 0, "warn": 0, "skipped": 0}
+        assert result["suite"] == {
+            "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
+            "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "standard": "ob-read-write",
+            "specVersion": "v4.0",
+            "profile": "fapi1-advanced",
+            "suite": "ais-certification-baseline",
+        }
+        assert result["plan"] == {
+            "totalSteps": 27,
+            "selectedSteps": 10,
+            "deselectedSteps": 17,
+            "mandatorySelected": 10,
+            "mandatoryDeselected": 0,
+        }
+        eligibility = result["certificationEligibility"]
+        assert isinstance(eligibility, dict)
+        assert eligibility["eligible"] is False
+        assert eligibility["mandatoryTotal"] == 10
+        assert eligibility["mandatoryPassed"] == 10
+        assert eligibility["reason"] == "Manifest is not marked as complete certification coverage"
+
+        assert [(request.method, str(request.url)) for request in captured_requests] == [
+            ("GET", "https://example.com/.well-known/openid-configuration"),
+            ("GET", "https://example.com/jwks"),
+            ("POST", "https://example.com/token"),
+            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
+        ]
+        token_wire_body = captured_requests[2].content.decode("ascii")
+        assert "grant_type=authorization_code" in token_wire_body
+        assert "code=baseline-auth-code" in token_wire_body
+        assert "client_id=test-client-id" in token_wire_body
+        assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in token_wire_body
+        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
+        assert resource_authorization_headers == ["Bearer baseline-access-token"] * 6
+
+        serialised_result = json.dumps(result, sort_keys=True)
+        assert "baseline-auth-code" not in serialised_result
+        assert "baseline-access-token" not in serialised_result
+        assert "baseline-id-token" not in serialised_result
+
+        log_response = client.get(f"/api/runs/{run_id}/log/")
+        assert log_response.status_code == 200
+        ndjson = log_response.content.decode("utf-8")
+        assert "baseline-auth-code" not in ndjson
+        assert "baseline-access-token" not in ndjson
+        assert "baseline-id-token" not in ndjson
+        assert '"code": "***"' in ndjson
 
 
 @pytest.mark.integration

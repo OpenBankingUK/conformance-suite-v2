@@ -1,0 +1,33 @@
+{
+  "standard": "ob-read-write",
+  "specVersion": "v4.0",
+  "retrievedAt": "2026-06-08",
+  "hashNote": "sha256Chunks joins to the SHA-256 digest of the bundled file after line-end whitespace normalization.",
+  "sources": [
+    {
+      "file": "account-info-openapi.json",
+      "description": "Open Banking Read/Write v4.0.0 Account and Transaction API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.0/dist/openapi/account-info-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0.0",
+      "sha256Chunks": ["abd5a0de", "9e111a72", "88ed6c77", "5bec81cf", "b92af069", "625712d4", "63560f14", "d3d9fb4d"]
+    },
+    {
+      "file": "legacy-ob_4.0_accounts_transactions_fca.json",
+      "description": "Previous public conformance-suite v4.0 accounts/transactions FCA manifest used as candidate rule-selection input.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/develop/manifests/ob_4.0_accounts_transactions_fca.json",
+      "repository": "OpenBankingUK/conformance-suite",
+      "ref": "develop",
+      "sha256Chunks": ["6b0b06ee", "1d3656e3", "1a486f62", "c609e98c", "578a3474", "0e0bf7d0", "4de5a397", "b5b909cf"]
+    },
+    {
+      "file": "legacy-permission.go",
+      "description": "Previous public conformance-suite AIS permission-to-endpoint mapping used as candidate permission input.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/develop/pkg/model/permission.go",
+      "repository": "OpenBankingUK/conformance-suite",
+      "ref": "develop",
+      "sha256Chunks": ["525aec8b", "a2a4a6fd", "af55012b", "f2ba79e8", "ee3d56a4", "03abb070", "a719838c", "1d5ecd39"]
+    }
+  ],
+  "certificationNote": "These bundled sources support derived partial baseline coverage only. They are not a Standards-approved mandatory matrix or sign-off for certificationCoverage=complete."
+}
