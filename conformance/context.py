@@ -449,6 +449,33 @@ def _resolve_response_path(response: ResponseRecord, field_name: str, remaining:
     raise PlaceholderResolutionError(f"Cannot resolve response path: ${{{dot_path}}}")
 
 
+def _resolve_list_segment(items: list[JsonValue], segment: str, dot_path: str) -> JsonValue:
+    """Resolve one dot-path segment against a JSON array.
+
+    Args:
+        items: JSON array currently being traversed.
+        segment: Dot-path segment expected to be a non-negative integer index.
+        dot_path: Full original dot-path for error messages.
+
+    Returns:
+        The JSON value stored at the indexed position.
+
+    Raises:
+        PlaceholderResolutionError: If the segment is not a non-negative
+            integer or the index is outside the array bounds.
+    """
+    if not segment.isdigit():
+        raise PlaceholderResolutionError(
+            f"Cannot traverse array with non-numeric segment '{segment}': ${{{dot_path}}}"
+        )
+
+    index = int(segment)
+    if index >= len(items):
+        raise PlaceholderResolutionError(f"Array index {index} out of bounds: ${{{dot_path}}}")
+
+    return items[index]
+
+
 def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_path: str) -> str:
     """Walk a JSON body using dot-path segments to extract a primitive value.
 
@@ -466,11 +493,17 @@ def _resolve_body_path(body: Mapping[str, JsonValue], segments: list[str], dot_p
     """
     current: JsonValue | Mapping[str, JsonValue] = body
     for segment in segments:
-        if not isinstance(current, Mapping):
-            raise PlaceholderResolutionError(f"Cannot traverse non-object at '{segment}': ${{{dot_path}}}")
-        if segment not in current:
-            raise PlaceholderResolutionError(f"Path segment '{segment}' not found: ${{{dot_path}}}")
-        current = current[segment]
+        if isinstance(current, Mapping):
+            if segment not in current:
+                raise PlaceholderResolutionError(f"Path segment '{segment}' not found: ${{{dot_path}}}")
+            current = current[segment]
+            continue
+
+        if isinstance(current, list):
+            current = _resolve_list_segment(current, segment, dot_path)
+            continue
+
+        raise PlaceholderResolutionError(f"Cannot traverse non-object at '{segment}': ${{{dot_path}}}")
 
     # If no segments, we'd be resolving the entire body (non-primitive)
     if isinstance(current, (Mapping, list)):
