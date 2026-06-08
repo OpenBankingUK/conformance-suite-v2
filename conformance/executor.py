@@ -39,6 +39,7 @@ from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     FormBody,
+    GeneratedRequestObject,
     JsonBody,
     Manifest,
     ManifestAssertion,
@@ -51,6 +52,7 @@ from conformance.manifest import (
     validate_header_value,
 )
 from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
+from conformance.model_bank_config import FapiSigningConfig
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
@@ -58,6 +60,8 @@ from conformance.psu_authorization import (
     synthesize_psu_response,
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
+from conformance.signing_service import FapiSigningService, JwtSigningError, RequestObjectSigningInput
 from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -122,6 +126,7 @@ def run_manifest(
     run_id: str | None = None,
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
+    fapi_signing_config: FapiSigningConfig | None = None,
     suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
@@ -158,6 +163,10 @@ def run_manifest(
             singleton) must pass it explicitly.
         runtime_config: Optional safe participant config values available to
             manifest placeholders via the narrow ``${config.*}`` grammar.
+        fapi_signing_config: Optional validated FAPI signing configuration
+            used only at execution time for generated PSU request-object JWTs.
+            Kept separate from ``runtime_config`` so signing keys and paths do
+            not become available to manifest placeholders.
         suite_metadata: Optional catalog metadata describing a config-resolved
             suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
@@ -185,6 +194,7 @@ def run_manifest(
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
+                fapi_signing_config=fapi_signing_config,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
@@ -243,6 +253,7 @@ def _run_manifest_v1(
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
+    fapi_signing_config: FapiSigningConfig | None,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
@@ -277,6 +288,8 @@ def _run_manifest_v1(
             PSU authorisation callbacks. Threaded to per-step executors.
         runtime_config: Optional safe participant config values available to
             ``${config.*}`` placeholders.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate runtime FAPI request-object JWTs for PSU steps.
         suite_metadata: Optional catalog metadata to embed in the result for
             config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
@@ -309,6 +322,7 @@ def _run_manifest_v1(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
     )
     steps.extend(setup_steps)
 
@@ -320,6 +334,7 @@ def _run_manifest_v1(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
     )
     steps.extend(execution_steps)
 
@@ -342,6 +357,7 @@ def _execute_v1_step_sequence(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -353,6 +369,8 @@ def _execute_v1_step_sequence(
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -367,6 +385,7 @@ def _execute_v1_step_sequence(
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
         )
         steps.append(step_result)
     return steps, context
@@ -381,6 +400,7 @@ def _execute_v1_execution_groups_concurrently(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -396,6 +416,8 @@ def _execute_v1_execution_groups_concurrently(
         execution_logger: Structured execution-log sink.
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -416,6 +438,7 @@ def _execute_v1_execution_groups_concurrently(
                     execution_logger,
                     run_id,
                     auth_session_store,
+                    fapi_signing_config,
                 )
             )
 
@@ -435,6 +458,7 @@ def _execute_v1_group(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -445,6 +469,8 @@ def _execute_v1_group(
         execution_logger: Structured execution-log sink.
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
 
     Returns:
         Step results for this group in group-local order.
@@ -456,6 +482,7 @@ def _execute_v1_group(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
     )
     return group_steps
 
@@ -468,6 +495,7 @@ def _execute_v1_manifest_step(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -479,6 +507,8 @@ def _execute_v1_manifest_step(
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -491,6 +521,7 @@ def _execute_v1_manifest_step(
             run_id=run_id,
             auth_session_store=auth_session_store,
             execution_logger=execution_logger,
+            fapi_signing_config=fapi_signing_config,
         )
     else:
         step_result, new_context = _execute_v1_step(
@@ -514,6 +545,7 @@ def _execute_v1_psu_step(
     run_id: str,
     auth_session_store: AuthSessionStore,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None = None,
     clock: Callable[[], float] | None = None,
     sleep: Callable[[float], None] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
@@ -527,6 +559,9 @@ def _execute_v1_psu_step(
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
         execution_logger: Structured execution-log sink.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate a runtime request-object JWT when the PSU step requests
+            ``{"source": "fapi-signing"}``.
         clock: Optional monotonic clock used for deadline checks. Defaults
             to :func:`time.monotonic`; injectable for tests.
         sleep: Optional sleep function used between polls. Defaults to
@@ -545,6 +580,7 @@ def _execute_v1_psu_step(
         run_id=run_id,
         auth_session_store=auth_session_store,
         execution_logger=execution_logger,
+        fapi_signing_config=fapi_signing_config,
         clock=effective_clock,
         sleep=effective_sleep,
     )
@@ -564,6 +600,7 @@ def _execute_v1_psu_step_inner(
     run_id: str,
     auth_session_store: AuthSessionStore,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None,
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[StepResult, ExecutionContext]:
@@ -577,6 +614,8 @@ def _execute_v1_psu_step_inner(
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
         execution_logger: Structured execution-log sink.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate a runtime request-object JWT when required.
         clock: Monotonic clock used for deadline checks.
         sleep: Sleep function used between polls.
 
@@ -593,11 +632,6 @@ def _execute_v1_psu_step_inner(
         resolved_client_id = resolve_placeholders(manifest_step.client_id, context)
         resolved_redirect_uri = resolve_placeholders(manifest_step.redirect_uri, context)
         resolved_state = resolve_placeholders(manifest_step.state, context) if manifest_step.state is not None else None
-        resolved_request_object = (
-            resolve_placeholders(manifest_step.request_object, context)
-            if manifest_step.request_object is not None
-            else None
-        )
     except MissingPredecessorResponseError as error:
         return _skipped_step(
             manifest_step.id,
@@ -666,6 +700,64 @@ def _execute_v1_psu_step_inner(
                     name=manifest_step.id,
                     status="failed",
                     message=f"Unable to register PSU authorisation session: {error}",
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    try:
+        resolved_request_object = _resolve_psu_request_object(
+            manifest_step=manifest_step,
+            context=context,
+            fapi_signing_config=fapi_signing_config,
+            authorization_endpoint=resolved_authorization_endpoint,
+            client_id=resolved_client_id,
+            redirect_uri=resolved_redirect_uri,
+            state=session.state,
+        )
+    except MissingPredecessorResponseError as error:
+        return _skipped_step(
+            manifest_step.id,
+            context=context,
+            method="GET",
+            url=resolved_result_url,
+            error=error,
+            request_evidence=request_evidence,
+            execution_logger=execution_logger,
+        )
+    except PlaceholderResolutionError as error:
+        execution_logger.emit(
+            "placeholder-error",
+            step_id=manifest_step.id,
+            payload={"location": "psu-authorization.requestObject", "message": str(error)},
+        )
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to build PSU request object: {error}",
                     url=resolved_result_url,
                 ),
                 request_evidence=request_evidence,
@@ -747,6 +839,119 @@ def _execute_v1_psu_step_inner(
         ),
         record_step(context, manifest_step.id, request_record, None),
     )
+
+
+def _resolve_psu_request_object(
+    *,
+    manifest_step: PsuAuthorizationStep,
+    context: ExecutionContext,
+    fapi_signing_config: FapiSigningConfig | None,
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+) -> str | None:
+    """Resolve or generate the PSU request object for one authorisation step.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step being executed.
+        context: Current execution context used for placeholder resolution.
+        fapi_signing_config: Optional validated signing configuration for
+            runtime-generated request objects.
+        authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
+        client_id: Resolved OAuth client identifier.
+        redirect_uri: Resolved registered redirect URI.
+        state: Registered auth-session state that must be embedded into the
+            request object when generated.
+
+    Returns:
+        Literal or generated request-object JWT, or ``None`` when the PSU step
+        does not declare one.
+
+    Raises:
+        MissingPredecessorResponseError: If a string request object depends on
+            a prior step response that was unavailable.
+        PlaceholderResolutionError: If a string request object contains an
+            invalid placeholder reference.
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the request object cannot be signed.
+        ValueError: If the manifest requests runtime signing but no validated
+            FAPI signing config was supplied.
+    """
+    request_object = manifest_step.request_object
+    if request_object is None:
+        return None
+    if isinstance(request_object, str):
+        return resolve_placeholders(request_object, context)
+    return _generate_psu_request_object(
+        generated_request_object=request_object,
+        fapi_signing_config=fapi_signing_config,
+        authorization_endpoint=authorization_endpoint,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=manifest_step.response_type,
+        scope=manifest_step.scope,
+        state=state,
+    )
+
+
+def _generate_psu_request_object(
+    *,
+    generated_request_object: GeneratedRequestObject,
+    fapi_signing_config: FapiSigningConfig | None,
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    response_type: str,
+    scope: str,
+    state: str,
+) -> str:
+    """Generate a signed PSU request-object JWT from validated runtime config.
+
+    Args:
+        generated_request_object: Typed manifest directive naming the runtime
+            request-object source.
+        fapi_signing_config: Optional validated signing configuration for the
+            current participant run.
+        authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
+        client_id: Resolved OAuth client identifier.
+        redirect_uri: Resolved registered redirect URI.
+        response_type: Static OAuth response type from the PSU step.
+        scope: Static OAuth scope from the PSU step.
+        state: Registered auth-session state that must be embedded into the
+            request object.
+
+    Returns:
+        Compact PS256 JWT ready for the OAuth ``request`` query parameter.
+
+    Raises:
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the request object cannot be signed.
+        ValueError: If the runtime signing directive cannot be satisfied.
+    """
+    if generated_request_object.source != "fapi-signing":
+        raise ValueError("Unsupported PSU requestObject source")
+    if fapi_signing_config is None:
+        raise ValueError("Generated PSU requestObject requires participant fapiSigning config")
+
+    signing_service = FapiSigningService(
+        signing_config=fapi_signing_config,
+        signing_credentials=load_signing_credentials(fapi_signing_config),
+    )
+    signed_request_object = signing_service.sign_request_object(
+        RequestObjectSigningInput(
+            issuer=fapi_signing_config.client_assertion_issuer,
+            audience=authorization_endpoint,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            response_type=response_type,
+            scope=scope,
+            state=state,
+        )
+    )
+    return signed_request_object.token
 
 
 def _execute_headless_psu_authorization(

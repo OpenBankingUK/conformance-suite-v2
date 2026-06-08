@@ -3,10 +3,16 @@ import secrets
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -14,7 +20,8 @@ from conformance.context import ExecutionContext, RequestRecord, ResponseRecord,
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import PsuAuthorizationStep, parse_manifest
+from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.model_bank_config import FapiSigningConfig
 
 
 def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -29,6 +36,65 @@ def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
     return ApprovedReleasePolicy(
         schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
         approved_tool_versions=tuple(approved_tool_versions),
+    )
+
+
+def _write_executor_signing_pair(certificate_root: Path, *, stem: str) -> tuple[Path, Path]:
+    """Write a temporary RSA signing keypair for PSU executor tests.
+
+    Args:
+        certificate_root: Directory that will receive the generated PEM files.
+        stem: File-stem prefix used for the certificate and key filenames.
+
+    Returns:
+        Tuple of ``(certificate_path, private_key_path)``.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, stem)])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.now(UTC) - timedelta(minutes=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=1))
+        .sign(private_key, hashes.SHA256())
+    )
+
+    certificate_path = certificate_root / f"{stem}.crt"
+    private_key_path = certificate_root / f"{stem}.key"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    private_key_path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    return certificate_path, private_key_path
+
+
+def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
+    """Build a valid FAPI signing config for PSU executor tests.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated PEM files.
+
+    Returns:
+        Parsed FAPI signing configuration pointing at the generated keypair.
+    """
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_executor_signing_pair(certificate_root, stem="executor-signing")
+    return FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=certificate_path,
+        signing_private_key_path=private_key_path,
+        key_id="executor-signing-key",
+        client_assertion_issuer="client-issuer",
+        client_assertion_subject="client-subject",
+        token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
     )
 
 
@@ -3981,6 +4047,98 @@ def test_psu_manual_step_records_masked_request_url_for_placeholders() -> None:
     assert "request=***" in request_url
     assert "inline.assertion" not in request_url
     assert "signed.request.jwt" not in request_url
+
+
+@pytest.mark.unit
+def test_psu_manual_step_generates_and_masks_signed_request_object(tmp_path: Path) -> None:
+    """Manual PSU mode signs a generated request object and masks persisted artifacts.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    store = AuthSessionStore()
+    step = _psu_manual_step(request_object=GeneratedRequestObject(source="fapi-signing"))
+
+    def capture_once() -> None:
+        if store.get("run-psu-signed-manual", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-manual", developer_mode=False)
+
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-psu-signed-manual",
+        auth_session_store=store,
+        execution_logger=execution_logger,
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+        fapi_signing_config=_executor_signing_config(tmp_path),
+    )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert "request=***" in result.url
+    assert context.steps["psu"].request.url == result.url
+
+    psu_url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
+    assert len(psu_url_events) == 1
+    event_payload = psu_url_events[0].payload
+    assert event_payload["request_object"] == "***"
+    raw_url = cast(str, event_payload["url"])
+    assert "request=***" in raw_url
+    assert "response_type=code+id_token" in raw_url
+
+    rendered = json.dumps(result.to_json_object())
+    assert "request=ey" not in rendered
+
+
+@pytest.mark.unit
+def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect(tmp_path: Path) -> None:
+    """Headless PSU mode sends a generated JAR request and masks persisted evidence.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    state = "h" * 32
+    observed_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+        )
+
+    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-headless", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state, request_object=GeneratedRequestObject(source="fapi-signing")),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-psu-signed-headless",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=execution_logger,
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert "request=***" in result.url
+    assert context.steps["psu"].response is not None
+    assert context.steps["psu"].response.body["code"] == "headless-code"
+    assert len(observed_urls) == 1
+    assert "request=ey" in observed_urls[0]
+    assert "request=***" not in observed_urls[0]
+
+    psu_url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
+    assert len(psu_url_events) == 1
+    assert psu_url_events[0].payload["request_object"] == "***"
+    assert "request=***" in cast(str, psu_url_events[0].payload["url"])
 
 
 @pytest.mark.unit

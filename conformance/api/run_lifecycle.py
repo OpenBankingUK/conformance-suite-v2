@@ -220,6 +220,7 @@ def _execute_run(
                         oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
                         oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
                     ),
+                    fapi_signing_config=config.fapi_signing,
                     suite_metadata=effective_suite_metadata,
                     approved_release_policy=config.approved_release_policy,
                 )
