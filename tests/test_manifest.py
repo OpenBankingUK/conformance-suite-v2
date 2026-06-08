@@ -573,7 +573,11 @@ def test_parse_v1_manifest_accepts_array_index_step_placeholder() -> None:
                 "name": "Account balances resource",
                 "request": {
                     "method": "GET",
-                    "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+                    "url": (
+                        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+                        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
+                        "/balances"
+                    ),
                 },
                 "assertions": [{"type": "http_status", "expected": 200}],
             },

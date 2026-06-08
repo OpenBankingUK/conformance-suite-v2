@@ -465,9 +465,7 @@ def _resolve_list_segment(items: list[JsonValue], segment: str, dot_path: str) -
             integer or the index is outside the array bounds.
     """
     if not segment.isdigit():
-        raise PlaceholderResolutionError(
-            f"Cannot traverse array with non-numeric segment '{segment}': ${{{dot_path}}}"
-        )
+        raise PlaceholderResolutionError(f"Cannot traverse array with non-numeric segment '{segment}': ${{{dot_path}}}")
 
     index = int(segment)
     if index >= len(items):

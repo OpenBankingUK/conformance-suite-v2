@@ -227,7 +227,7 @@ The supported catalog keys are:
 | `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | Yes |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and first protected AIS resource validation. | Yes |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and account-scoped AIS resource validation for accounts, balances, and transactions. | Yes |
 
 **All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit. The AIS entry is intentionally documented as a proof slice only; do not relabel it as complete certification coverage without Standards confirmation and matching validator coverage.
 
@@ -244,6 +244,8 @@ The `psu-auth-starter` suite requires an `oauth` section in the participant conf
 ```
 
 The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS slice resolves protected resource URLs from `${config.oauth.resourceBaseUrl}`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself.
+
+Step-response placeholders can traverse JSON arrays with non-negative numeric path segments. The bundled v4 AIS slice uses `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned `AccountId` from `GET /accounts` into the account-scoped `/balances` and `/transactions` calls. Negative indices, out-of-bounds indices, and placeholders that terminate on whole objects or arrays remain invalid.
 
 The bundled AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already available outside manifest placeholders. Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, or client assertions through config placeholders just to make token exchange or protected-resource calls work.
 

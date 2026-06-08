@@ -398,7 +398,10 @@ class TestResolvePlaceholdersErrors:
             }
         )
 
-        with pytest.raises(PlaceholderResolutionError, match="Cannot traverse array with non-numeric segment 'AccountId'"):
+        with pytest.raises(
+            PlaceholderResolutionError,
+            match="Cannot traverse array with non-numeric segment 'AccountId'",
+        ):
             resolve_placeholders("${steps.accounts-list.response.body.Data.Account.AccountId}", ctx)
 
     def test_array_index_rejects_negative_segment(self) -> None:
