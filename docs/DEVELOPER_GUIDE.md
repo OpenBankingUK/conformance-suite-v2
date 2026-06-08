@@ -243,7 +243,7 @@ The `psu-auth-starter` suite requires an `oauth` section in the participant conf
 }
 ```
 
-The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS slice resolves protected resource URLs from `${config.oauth.resourceBaseUrl}`.
+The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS slice resolves protected resource URLs from `${config.oauth.resourceBaseUrl}`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself.
 
 The bundled AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already available outside manifest placeholders. Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, or client assertions through config placeholders just to make token exchange or protected-resource calls work.
 
@@ -281,7 +281,7 @@ These rules are generic authoring primitives only. They enable Standards-authore
 
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step. The `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and a protected accounts-resource call rooted at `${config.oauth.resourceBaseUrl}`.
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step. The `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and a protected accounts-resource call rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
 
 Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}`. TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, and client assertions are intentionally not exposed through placeholders.
 

@@ -74,8 +74,9 @@ class OAuthConfig:
             request.
         redirect_uri: HTTPS redirect URI registered with the authorisation
             server. Must use the HTTPS scheme with a valid DNS hostname.
-        resource_base_url: Optional HTTPS AIS resource-server base URL used by
-            bundled manifests for protected resource and consent endpoints.
+        resource_base_url: Optional HTTPS AIS protected-resource base URL used
+            by bundled manifests before manifest-owned Open Banking API paths.
+            Callers must not include the ``/open-banking/...`` path prefix.
     """
 
     client_id: str
@@ -324,6 +325,18 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
     if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice"}:
         raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice")
+    supported_selections = {
+        ("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
+        ("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
+        ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
+    }
+    if (standard, spec_version, profile, suite) not in supported_selections:
+        raise ConfigError(
+            "testSuite combination is not supported: "
+            f"standard={standard}, specVersion={spec_version}, profile={profile}, suite={suite}"
+        )
 
     return SuiteSelection(
         standard=cast(SuiteStandard, standard),

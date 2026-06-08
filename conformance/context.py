@@ -108,10 +108,10 @@ class RuntimeConfig:
         discovery_url: OpenID discovery URL from validated participant config.
         environment: Human-readable environment label from validated
             participant config.
-        oauth_resource_base_url: HTTPS resource-server base URL for
-            ``${config.oauth.resourceBaseUrl}`` placeholder resolution.
-            Absent when the participant config omits the optional
-            ``oauth.resourceBaseUrl`` field.
+        oauth_resource_base_url: HTTPS protected-resource base URL for
+            ``${config.oauth.resourceBaseUrl}`` placeholder resolution before
+            manifest-owned Open Banking API paths. Absent when the participant
+            config omits the optional ``oauth.resourceBaseUrl`` field.
         oauth_client_id: OAuth client identifier for
             ``${config.oauth.clientId}`` placeholder resolution. Absent when
             the participant config omits an ``oauth`` section.
@@ -391,6 +391,10 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
         return context.config.oauth_client_id
     if sub_field == "resourceBaseUrl":
         if context.config.oauth_resource_base_url is None:
+            if context.config.oauth_client_id is not None or context.config.oauth_redirect_uri is not None:
+                raise PlaceholderResolutionError(
+                    f"oauth.resourceBaseUrl is not available for placeholder: ${{{dot_path}}}"
+                )
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_resource_base_url
     # sub_field == "redirectUri"

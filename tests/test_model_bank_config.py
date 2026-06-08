@@ -153,24 +153,21 @@ def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: Su
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0"])
-def test_parse_model_bank_config_accepts_ais_certification_slice_suite(
-    spec_version: SuiteSpecVersion, tmp_path: Path
-) -> None:
+def test_parse_model_bank_config_accepts_ais_certification_slice_suite(tmp_path: Path) -> None:
     config = parse_model_bank_config(
         {
             "environment": "ozone-model-bank",
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
             "testSuite": {
                 "standard": "ob-read-write",
-                "specVersion": spec_version,
+                "specVersion": "v4.0",
                 "profile": "fapi1-advanced",
                 "suite": "ais-certification-slice",
             },
             "oauth": {
                 "clientId": "my-client-id",
                 "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com/open-banking/v4.0/aisp",
+                "resourceBaseUrl": "https://rs.example.com",
             },
         },
         base_dir=tmp_path,
@@ -178,12 +175,35 @@ def test_parse_model_bank_config_accepts_ais_certification_slice_suite(
 
     assert config.test_suite == SuiteSelection(
         standard="ob-read-write",
-        spec_version=spec_version,
+        spec_version="v4.0",
         profile="fapi1-advanced",
         suite="ais-certification-slice",
     )
     assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com/open-banking/v4.0/aisp"
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_v3_ais_certification_slice_suite(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="testSuite combination is not supported"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v3.1.11",
+                    "profile": "fapi1-advanced",
+                    "suite": "ais-certification-slice",
+                },
+                "oauth": {
+                    "clientId": "my-client-id",
+                    "redirectUri": "https://example.com/callback",
+                    "resourceBaseUrl": "https://rs.example.com",
+                },
+            },
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.unit
@@ -597,7 +617,7 @@ def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
             "oauth": {
                 "clientId": "my-client-001",
                 "redirectUri": "https://app.example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com/open-banking/v4.0/aisp",
+                "resourceBaseUrl": "https://rs.example.com",
             },
         },
         base_dir=tmp_path,
@@ -606,7 +626,7 @@ def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
     assert config.oauth == OAuthConfig(
         client_id="my-client-001",
         redirect_uri="https://app.example.com/callback",
-        resource_base_url="https://rs.example.com/open-banking/v4.0/aisp",
+        resource_base_url="https://rs.example.com",
     )
 
 
@@ -683,7 +703,7 @@ def test_parse_model_bank_config_rejects_http_oauth_resource_base_url(tmp_path: 
                 "oauth": {
                     "clientId": "my-client-001",
                     "redirectUri": "https://app.example.com/callback",
-                    "resourceBaseUrl": "http://rs.example.com/open-banking/v4.0/aisp",
+                    "resourceBaseUrl": "http://rs.example.com",
                 },
             },
             base_dir=tmp_path,

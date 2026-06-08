@@ -43,15 +43,15 @@ Participant config can also select a bundled conformance-suite manifest instead 
 }
 ```
 
-The supported suite combinations are `ob-read-write` × (`v3.1.11` | `v4.0`) × `fapi1-advanced` × (`discovery-jwks` | `psu-auth-starter` | `ais-certification-slice`). **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The new AIS entry is a certification-grade proof slice for the v4.0 Read/Write flow, not a full certification manifest.
+Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` profile, with the explicit version/suite combinations shown below. **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The new AIS entry is a certification-grade proof slice for the v4.0 Read/Write flow only, not a full certification manifest.
 
-| Suite name | Steps | OAuth config required |
-|---|---|---|
-| `discovery-jwks` | OpenID discovery + JWKS fetch | No |
-| `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
-| `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
+| Spec version | Suite name | Steps | OAuth config required |
+|---|---|---|---|
+| `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
+| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
+| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
 
-The `psu-auth-starter` and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. The starter suite uses the first two values; the AIS slice also uses `resourceBaseUrl` for consent creation and protected resource calls.
+The `psu-auth-starter` and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself. The starter suite uses the first two values; the AIS slice also uses `resourceBaseUrl` for consent creation and protected resource calls.
 
 The AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already in place for token and protected-resource calls. Certificate paths, private keys, client secrets, signing keys, request objects, and client assertions are not supplied through suite placeholders or the `oauth` config block.
 
