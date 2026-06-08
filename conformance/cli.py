@@ -131,6 +131,10 @@ def run(argv: Sequence[str] | None = None) -> int:
                     oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
                 ),
                 fapi_signing_config=config.fapi_signing,
+                mtls_client_configured=(
+                    config.tls.client_certificate_path is not None
+                    and config.tls.client_private_key_path is not None
+                ),
                 suite_metadata=suite_metadata,
                 approved_release_policy=config.approved_release_policy,
             )

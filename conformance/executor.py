@@ -61,7 +61,12 @@ from conformance.psu_authorization import (
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
-from conformance.signing_service import FapiSigningService, JwtSigningError, RequestObjectSigningInput
+from conformance.signing_service import (
+    ClientAssertionSigningInput,
+    FapiSigningService,
+    JwtSigningError,
+    RequestObjectSigningInput,
+)
 from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -127,6 +132,7 @@ def run_manifest(
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
     fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
     suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
@@ -167,6 +173,9 @@ def run_manifest(
             used only at execution time for generated PSU request-object JWTs.
             Kept separate from ``runtime_config`` so signing keys and paths do
             not become available to manifest placeholders.
+        mtls_client_configured: Whether the shared HTTP client was configured
+            with an mTLS client certificate and private key. Used to fail
+            ``tls_client_auth`` token steps clearly before dispatch.
         suite_metadata: Optional catalog metadata describing a config-resolved
             suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
@@ -195,6 +204,7 @@ def run_manifest(
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
                 fapi_signing_config=fapi_signing_config,
+                mtls_client_configured=mtls_client_configured,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
@@ -254,6 +264,7 @@ def _run_manifest_v1(
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
     fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
@@ -290,6 +301,8 @@ def _run_manifest_v1(
             ``${config.*}`` placeholders.
         fapi_signing_config: Optional validated signing configuration used to
             generate runtime FAPI request-object JWTs for PSU steps.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
         suite_metadata: Optional catalog metadata to embed in the result for
             config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
@@ -323,6 +336,7 @@ def _run_manifest_v1(
         run_id=run_id,
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
+        mtls_client_configured=mtls_client_configured,
     )
     steps.extend(setup_steps)
 
@@ -335,6 +349,7 @@ def _run_manifest_v1(
         run_id=run_id,
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
+        mtls_client_configured=mtls_client_configured,
     )
     steps.extend(execution_steps)
 
@@ -358,6 +373,7 @@ def _execute_v1_step_sequence(
     run_id: str,
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -371,6 +387,8 @@ def _execute_v1_step_sequence(
             register and await callbacks.
         fapi_signing_config: Optional validated signing configuration used by
             PSU steps that generate request-object JWTs at runtime.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -386,6 +404,7 @@ def _execute_v1_step_sequence(
             run_id=run_id,
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
+            mtls_client_configured=mtls_client_configured,
         )
         steps.append(step_result)
     return steps, context
@@ -401,6 +420,7 @@ def _execute_v1_execution_groups_concurrently(
     run_id: str,
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -418,6 +438,8 @@ def _execute_v1_execution_groups_concurrently(
         auth_session_store: Store used by PSU authorisation steps.
         fapi_signing_config: Optional validated signing configuration used by
             PSU steps that generate request-object JWTs at runtime.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -439,6 +461,7 @@ def _execute_v1_execution_groups_concurrently(
                     run_id,
                     auth_session_store,
                     fapi_signing_config,
+                    mtls_client_configured,
                 )
             )
 
@@ -459,6 +482,7 @@ def _execute_v1_group(
     run_id: str,
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -471,6 +495,8 @@ def _execute_v1_group(
         auth_session_store: Store used by PSU authorisation steps.
         fapi_signing_config: Optional validated signing configuration used by
             PSU steps that generate request-object JWTs at runtime.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Step results for this group in group-local order.
@@ -483,6 +509,7 @@ def _execute_v1_group(
         run_id=run_id,
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
+        mtls_client_configured=mtls_client_configured,
     )
     return group_steps
 
@@ -496,6 +523,7 @@ def _execute_v1_manifest_step(
     run_id: str,
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -509,6 +537,8 @@ def _execute_v1_manifest_step(
             register and await callbacks.
         fapi_signing_config: Optional validated signing configuration used by
             PSU steps that generate request-object JWTs at runtime.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -524,17 +554,85 @@ def _execute_v1_manifest_step(
             fapi_signing_config=fapi_signing_config,
         )
     else:
-        step_result, new_context = _execute_v1_step(
-            manifest_step,
-            context=context,
-            client=client,
-            execution_logger=execution_logger,
-            run_id=run_id,
-            auth_session_store=auth_session_store,
-        )
+        execute_v1_step_kwargs: dict[str, object] = {
+            "context": context,
+            "client": client,
+            "execution_logger": execution_logger,
+            "run_id": run_id,
+            "auth_session_store": auth_session_store,
+        }
+        if fapi_signing_config is not None or mtls_client_configured:
+            execute_v1_step_kwargs["fapi_signing_config"] = fapi_signing_config
+            execute_v1_step_kwargs["mtls_client_configured"] = mtls_client_configured
+        step_result, new_context = _execute_v1_step(manifest_step, **execute_v1_step_kwargs)
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
     return step_result, new_context
+
+
+def _apply_token_endpoint_auth_policy(
+    *,
+    manifest_step: ManifestStep,
+    resolved_form_body: dict[str, str] | None,
+    fapi_signing_config: FapiSigningConfig | None,
+    resolved_url: str,
+    mtls_client_configured: bool,
+) -> dict[str, str] | None:
+    """Apply runtime FAPI token-endpoint auth to a resolved form request.
+
+    Args:
+        manifest_step: Parsed HTTP step that may declare token-endpoint auth.
+        resolved_form_body: Placeholder-resolved form fields, or ``None`` when
+            the step is not form-encoded.
+        fapi_signing_config: Optional validated FAPI signing configuration.
+        resolved_url: Placeholder-resolved token endpoint URL.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
+
+    Returns:
+        Final form field mapping to dispatch, or ``None`` when the step has no
+        form body and no auth policy.
+
+    Raises:
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the private-key JWT client assertion cannot be
+            signed.
+        ValueError: If the policy is unsupported or cannot be satisfied.
+    """
+    if manifest_step.token_endpoint_auth_policy is None:
+        return None if resolved_form_body is None else dict(resolved_form_body)
+
+    if manifest_step.token_endpoint_auth_policy.source != "fapi-signing":
+        raise ValueError("Unsupported token endpoint auth policy source")
+    if resolved_form_body is None:
+        raise ValueError("Token endpoint auth policy requires a form-encoded request body")
+    if fapi_signing_config is None:
+        raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
+
+    if fapi_signing_config.token_endpoint_auth_method == "private_key_jwt":
+        signing_service = FapiSigningService(
+            signing_config=fapi_signing_config,
+            signing_credentials=load_signing_credentials(fapi_signing_config),
+        )
+        client_assertion = signing_service.sign_client_assertion(
+            ClientAssertionSigningInput(audience=resolved_url)
+        )
+        authenticated_form_body = dict(resolved_form_body)
+        authenticated_form_body["client_assertion_type"] = (
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        )
+        authenticated_form_body["client_assertion"] = client_assertion.token
+        return authenticated_form_body
+
+    if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":
+        if not mtls_client_configured:
+            raise ValueError(
+                "Token endpoint auth policy requires a configured TLS client certificate and private key"
+            )
+        return dict(resolved_form_body)
+
+    raise ValueError("Unsupported FAPI token endpoint auth method")
 
 
 def _execute_v1_psu_step(
@@ -1219,6 +1317,8 @@ def _execute_v1_step(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -1240,14 +1340,23 @@ def _execute_v1_step(
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks. Ignored by plain HTTP steps
             (Phase 1 wiring only).
+        fapi_signing_config: Optional validated signing configuration used by
+            runtime token-endpoint authentication policies.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
 
     Returns:
         A tuple of the step result and the updated execution context.
     """
-    del run_id, auth_session_store  # Plain HTTP steps don't consume these (yet).
+    del run_id, auth_session_store  # Plain HTTP steps don't consume these directly.
     execution_logger.emit("step-started", step_id=manifest_step.id)
     step_result, new_context = _execute_v1_step_inner(
-        manifest_step, context=context, client=client, execution_logger=execution_logger
+        manifest_step,
+        context=context,
+        client=client,
+        execution_logger=execution_logger,
+        fapi_signing_config=fapi_signing_config,
+        mtls_client_configured=mtls_client_configured,
     )
     execution_logger.emit(
         "step-completed",
@@ -1267,6 +1376,8 @@ def _execute_v1_step_inner(
     context: ExecutionContext,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
 
@@ -1279,6 +1390,10 @@ def _execute_v1_step_inner(
         context: Current execution context with earlier step records.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink for per-stage events.
+        fapi_signing_config: Optional validated signing configuration used by
+            runtime token-endpoint authentication policies.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1465,11 +1580,6 @@ def _execute_v1_step_inner(
                 ),
                 new_context,
             )
-    if resolved_json_body is not None:
-        request_evidence["body"] = mask_json_value(resolved_json_body)
-    elif resolved_form_body is not None:
-        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
-
     # Validate resolved URL is HTTPS
     try:
         validate_https_url(resolved_url, label=f"Step '{manifest_step.id}' request URL")
@@ -1489,6 +1599,36 @@ def _execute_v1_step_inner(
             ),
             new_context,
         )
+
+    try:
+        resolved_form_body = _apply_token_endpoint_auth_policy(
+            manifest_step=manifest_step,
+            resolved_form_body=resolved_form_body,
+            fapi_signing_config=fapi_signing_config,
+            resolved_url=resolved_url,
+            mtls_client_configured=mtls_client_configured,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method=method, url=resolved_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to apply token endpoint client authentication: {error}",
+                    url=resolved_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    if resolved_json_body is not None:
+        request_evidence["body"] = mask_json_value(resolved_json_body)
+    elif resolved_form_body is not None:
+        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
 
     # Execute HTTP request
     request_record = RequestRecord(method=method, url=resolved_url)
@@ -1737,6 +1877,8 @@ def _run_manifest_v0(
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=None,
+            mtls_client_configured=False,
         )
         steps.append(step_result)
 
@@ -1783,6 +1925,8 @@ def _run_manifest_v0(
                     execution_logger=execution_logger,
                     run_id=run_id,
                     auth_session_store=auth_session_store,
+                    fapi_signing_config=None,
+                    mtls_client_configured=False,
                 )
                 steps.append(follow_up_result)
 

@@ -1,6 +1,7 @@
 import json
 import secrets
 import threading
+from dataclasses import replace
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
@@ -2023,6 +2024,225 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
     serialised = str(result.steps[0])
     assert secret_sentinel not in serialised
     assert "client_secret" not in serialised
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion(tmp_path: Path) -> None:
+    """Token-endpoint auth policy appends private-key JWT form fields."""
+    captured_form_body: dict[str, str] = {}
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt token auth",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_form_body
+        captured_form_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert captured_form_body["grant_type"] == "authorization_code"
+    assert captured_form_body["code"] == "auth-code"
+    assert captured_form_body["redirect_uri"] == "https://app.example.com/callback"
+    assert captured_form_body["client_id"] == "client-123"
+    assert captured_form_body["client_assertion_type"] == (
+        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    )
+    assert captured_form_body["client_assertion"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_path: Path) -> None:
+    """Generated client assertions are masked in step evidence and log events."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt masking",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+    execution_logger = BufferedExecutionLogger(run_id="token-auth-run", developer_mode=False)
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(400, json={"error": "invalid_client"}))
+    ) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    request_details = cast("dict[str, Any]", result.steps[0].details["request"])
+    assert request_details["form"] == {
+        "grant_type": "authorization_code",
+        "code": "***",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        "client_assertion": "***",
+    }
+    request_event = next(event for event in execution_logger.events() if event.type == "request-sent")
+    assert request_event.payload["form"] == request_details["form"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: Path) -> None:
+    """TLS client auth fails before dispatch when no mTLS client is configured."""
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "tls-client-auth missing mtls",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method="tls_client_auth")
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=tls_signing_config,
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply token endpoint client authentication: "
+        "Token endpoint auth policy requires a configured TLS client certificate and private key"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_tls_client_auth_policy_dispatches_with_configured_mtls(tmp_path: Path) -> None:
+    """TLS client auth preserves the existing token form body when mTLS is present."""
+    captured_form_body: dict[str, str] = {}
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "tls-client-auth configured",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_form_body
+        captured_form_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method="tls_client_auth")
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=tls_signing_config,
+            mtls_client_configured=True,
+        )
+
+    assert result.status == "passed"
+    assert captured_form_body == {
+        "grant_type": "authorization_code",
+        "code": "auth-code",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+    }
 
 
 @pytest.mark.unit
