@@ -1041,6 +1041,7 @@ class TestPsuAuthorizationApiRun:
             "mandatoryDeselected": 0,
         }
         eligibility = result["certificationEligibility"]
+        assert isinstance(eligibility, dict)
         assert eligibility["eligible"] is False
         assert eligibility["mandatoryTotal"] == 10
         assert eligibility["mandatoryPassed"] == 10

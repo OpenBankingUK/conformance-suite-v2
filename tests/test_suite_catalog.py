@@ -5,12 +5,28 @@ from typing import cast
 import pytest
 
 import conformance.suite_catalog as suite_catalog
-from conformance.manifest import FormBody, HeaderAssertion, JsonBody, JsonFieldAssertion, ManifestStep, PsuAuthorizationStep
+from conformance.manifest import (
+    FormBody,
+    HeaderAssertion,
+    JsonBody,
+    JsonFieldAssertion,
+    ManifestStep,
+    PsuAuthorizationStep,
+)
 from conformance.model_bank_config import SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
 
 
 def _selection(spec_version: SuiteSpecVersion = "v4.0", suite_name: str = "discovery-jwks") -> SuiteSelection:
+    """Build a suite-selection value for bundled catalog tests.
+
+    Args:
+        spec_version: Catalog spec version to resolve.
+        suite_name: Bundled suite identifier under test.
+
+    Returns:
+        Suite selection object matching the requested catalog entry.
+    """
     return SuiteSelection(
         standard="ob-read-write",
         spec_version=spec_version,
