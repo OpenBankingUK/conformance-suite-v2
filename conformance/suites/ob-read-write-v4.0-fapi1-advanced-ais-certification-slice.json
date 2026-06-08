@@ -132,6 +132,30 @@
         {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "Status"}
       ],
       "mandatory": true
+    },
+    {
+      "id": "account-balances",
+      "name": "Account balances resource",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "Data", "rule": "object"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "array"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "non_empty_array"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "min_items", "minItems": 1},
+        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"}
+      ],
+      "mandatory": true
     }
   ]
 }

@@ -2764,7 +2764,9 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
     )
     resolved = resolve_suite(selection)
     manifest = resolved.manifest
-    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["account-access-consent", "accounts-list"])
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
+        ["account-access-consent", "accounts-list", "account-balances"]
+    )
 
     assert plan.selected_step_ids() == [
         "openid-discovery",
@@ -2927,10 +2929,10 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
 
 
 @pytest.mark.integration
-def test_ais_certification_slice_accounts_resource_executes_and_counts_mandatory_steps(
+def test_ais_certification_slice_account_balances_resource_executes_and_counts_mandatory_steps(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bundled AIS slice completes the first protected accounts resource call.
+    """Bundled AIS slice completes the first protected balances resource call.
 
     Args:
         monkeypatch: Pytest fixture used to install deterministic fake time for
@@ -3035,14 +3037,29 @@ def test_ais_certification_slice_accounts_resource_executes_and_counts_mandatory
             )
         if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
             return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+            return httpx.Response(
+                200,
+                json={
+                    "Data": {
+                        "Account": [
+                            {
+                                "AccountId": "account-123",
+                                "Status": "Enabled",
+                            }
+                        ]
+                    }
+                },
+            )
         return httpx.Response(
             200,
             json={
                 "Data": {
-                    "Account": [
+                    "Balance": [
                         {
-                            "AccountId": "account-123",
-                            "Status": "Enabled",
+                            "Type": "ClosingAvailable",
+                            "Amount": {"Amount": "123.45", "Currency": "GBP"},
+                            "CreditDebitIndicator": "Credit",
                         }
                     ]
                 }
@@ -3078,29 +3095,36 @@ def test_ais_certification_slice_accounts_resource_executes_and_counts_mandatory
         "token-exchange",
         "account-access-consent",
         "accounts-list",
+        "account-balances",
     ]
 
-    accounts_request = captured_requests[-1]
+    accounts_request = captured_requests[-2]
+    balances_request = captured_requests[-1]
     assert accounts_request.method == "GET"
     assert str(accounts_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts"
     assert accounts_request.headers["authorization"] == "Bearer ais-resource-access-token"
+    assert balances_request.method == "GET"
+    assert str(balances_request.url) == (
+        "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/balances"
+    )
+    assert balances_request.headers["authorization"] == "Bearer ais-resource-access-token"
 
     rendered = result.to_json_object()
-    assert rendered["summary"] == {"total": 6, "passed": 6, "failed": 0, "warn": 0, "skipped": 0}
+    assert rendered["summary"] == {"total": 7, "passed": 7, "failed": 0, "warn": 0, "skipped": 0}
     eligibility = cast(JsonObject, rendered["certificationEligibility"])
     assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 6
-    assert eligibility["mandatoryPassed"] == 6
+    assert eligibility["mandatoryTotal"] == 7
+    assert eligibility["mandatoryPassed"] == 7
     assert eligibility["mandatoryFailed"] == 0
     assert eligibility["mandatorySkipped"] == 0
 
-    accounts_request_events = [
+    balances_request_events = [
         event
         for event in execution_logger.events()
-        if event.type == "request-sent" and event.step_id == "accounts-list"
+        if event.type == "request-sent" and event.step_id == "account-balances"
     ]
-    assert len(accounts_request_events) == 1
-    assert accounts_request_events[0].payload["headers"] == {
+    assert len(balances_request_events) == 1
+    assert balances_request_events[0].payload["headers"] == {
         "Accept": "application/json",
         "Authorization": "***",
     }
@@ -3231,10 +3255,11 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
         )
 
     assert result.status == "failed"
-    assert result.steps[-1].name == "accounts-list"
-    assert result.steps[-1].status == "failed"
-    assert result.steps[-1].mandatory is True
-    details = dict(result.steps[-1].details)
+
+    accounts_step = next(step for step in result.steps if step.name == "accounts-list")
+    assert accounts_step.status == "failed"
+    assert accounts_step.mandatory is True
+    details = dict(accounts_step.details)
     assertion_results = details["assertions"]
     assert isinstance(assertion_results, list)
     assert len(assertion_results) == 8
@@ -3265,11 +3290,28 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
         "body": {"Data": {"Account": [{"Status": "Enabled"}]}},
     }
 
+    balances_step = result.steps[-1]
+    assert balances_step.name == "account-balances"
+    assert balances_step.status == "failed"
+    assert balances_step.mandatory is True
+    assert balances_step.message == (
+        "Placeholder resolution failed: Path segment 'AccountId' not found: "
+        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
+    )
+    assert dict(balances_step.details) == {
+        "request": {
+            "method": "GET",
+            "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+            "${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+        }
+    }
+
     eligibility = result.to_json_object()["certificationEligibility"]
     assert isinstance(eligibility, dict)
     assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 6
-    assert eligibility["mandatoryFailed"] == 1
+    assert eligibility["mandatoryTotal"] == 7
+    assert eligibility["mandatoryPassed"] == 5
+    assert eligibility["mandatoryFailed"] == 2
     assert eligibility["mandatorySkipped"] == 0
 
 
