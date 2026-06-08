@@ -184,6 +184,37 @@ def test_parse_model_bank_config_accepts_ais_certification_slice_suite(tmp_path:
 
 
 @pytest.mark.unit
+def test_parse_model_bank_config_accepts_ais_certification_baseline_suite(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": "v4.0",
+                "profile": "fapi1-advanced",
+                "suite": "ais-certification-baseline",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-baseline",
+    )
+    assert config.oauth is not None
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+
+
+@pytest.mark.unit
 def test_parse_model_bank_config_rejects_v3_ais_certification_slice_suite(tmp_path: Path) -> None:
     with pytest.raises(ConfigError, match="testSuite combination is not supported"):
         parse_model_bank_config(
@@ -195,6 +226,29 @@ def test_parse_model_bank_config_rejects_v3_ais_certification_slice_suite(tmp_pa
                     "specVersion": "v3.1.11",
                     "profile": "fapi1-advanced",
                     "suite": "ais-certification-slice",
+                },
+                "oauth": {
+                    "clientId": "my-client-id",
+                    "redirectUri": "https://example.com/callback",
+                    "resourceBaseUrl": "https://rs.example.com",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_v3_ais_certification_baseline_suite(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="testSuite combination is not supported"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v3.1.11",
+                    "profile": "fapi1-advanced",
+                    "suite": "ais-certification-baseline",
                 },
                 "oauth": {
                     "clientId": "my-client-id",

@@ -128,6 +128,14 @@ _AIS_CERTIFICATION_SLICE_DESCRIPTION = (
 )
 """Description for the partial v4 AIS conformance proof-point suite."""
 
+_AIS_CERTIFICATION_BASELINE_DESCRIPTION = (
+    "Certification-track Open Banking Read/Write v4.0 AIS baseline suite covering the current certifiable "
+    "foundation for discovery, JWKS, manual PSU authorisation, token exchange, consent creation, and core "
+    "account-resource checks. The bundled suite remains partial coverage until the Standards-approved v4 AIS "
+    "mandatory matrix is fully applied."
+)
+"""Description for the partial v4 AIS certification baseline suite."""
+
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
         key=("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
@@ -140,6 +148,12 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         resource_name="ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
         label="Open Banking Read/Write v3.1.11 FAPI 1 Advanced PSU auth starter suite",
         description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-baseline"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline",
+        description=_AIS_CERTIFICATION_BASELINE_DESCRIPTION,
     ),
     _CatalogEntry(
         key=("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
