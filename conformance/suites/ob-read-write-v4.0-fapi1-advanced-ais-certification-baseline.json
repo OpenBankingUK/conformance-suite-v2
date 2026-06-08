@@ -49,6 +49,9 @@
       "clientId": "${config.oauth.clientId}",
       "redirectUri": "${config.oauth.redirectUri}",
       "responseType": "code id_token",
+      "requestObject": {
+        "source": "fapi-signing"
+      },
       "scope": "openid accounts",
       "timeoutSeconds": 180,
       "mandatory": true
@@ -71,6 +74,9 @@
             "client_id": "${config.oauth.clientId}"
           }
         }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
       },
       "assertions": [
         {"type": "http_status", "expected": 200},

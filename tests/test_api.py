@@ -1,6 +1,7 @@
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from unittest.mock import Mock, patch
 
 import httpx
@@ -12,6 +13,7 @@ from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.execution_log import BufferedExecutionLogger
+from tests.test_executor import _executor_signing_config
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -856,10 +858,23 @@ class TestPsuAuthorizationApiRun:
         events = [json.loads(line) for line in log_response.content.decode("utf-8").splitlines()]
         assert "psu-authorization-url" in [event["type"] for event in events]
 
-    def test_baseline_suite_run_passes_after_synthetic_callback_and_stays_partial(self) -> None:
+    def test_baseline_suite_run_passes_after_synthetic_callback_and_stays_partial(self, tmp_path: Path) -> None:
         """The baseline suite executes token and resource steps but remains non-eligible while partial."""
         client = Client()
         captured_requests: list[httpx.Request] = []
+        signing_config = _executor_signing_config(tmp_path)
+        baseline_config = {
+            **AIS_BASELINE_CONFIG,
+            "fapiSigning": {
+                "certificatePathRoot": str(signing_config.certificate_path_root),
+                "signingCertificatePath": str(signing_config.signing_certificate_path),
+                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
+                "kid": signing_config.key_id,
+                "clientAssertionIssuer": signing_config.client_assertion_issuer,
+                "clientAssertionSubject": signing_config.client_assertion_subject,
+                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
+            },
+        }
 
         def handler(request: httpx.Request) -> httpx.Response:
             """Return mocked responses for the baseline suite's HTTP calls.
@@ -1010,7 +1025,7 @@ class TestPsuAuthorizationApiRun:
         ):
             create_response = client.post(
                 "/api/runs/",
-                data=json.dumps({"config": AIS_BASELINE_CONFIG}),
+                data=json.dumps({"config": baseline_config}),
                 content_type="application/json",
             )
             assert create_response.status_code == 201
@@ -1065,6 +1080,10 @@ class TestPsuAuthorizationApiRun:
         assert "code=baseline-auth-code" in token_wire_body
         assert "client_id=test-client-id" in token_wire_body
         assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in token_wire_body
+        assert (
+            "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer" in token_wire_body
+        )
+        assert "client_assertion=" in token_wire_body
         resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
         assert resource_authorization_headers == ["Bearer baseline-access-token"] * 6
 
