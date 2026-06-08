@@ -513,6 +513,12 @@ class TestResolvePlaceholdersErrors:
         with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
             resolve_placeholders("${config.oauth.clientSecret}", ctx)
 
+    def test_fapi_signing_placeholder_is_rejected(self) -> None:
+        """Dedicated signing config must stay outside the runtime placeholder allow-list."""
+        ctx = _oauth_context()
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
+            resolve_placeholders("${config.fapiSigning.kid}", ctx)
+
     def test_oauth_client_id_unavailable_when_oauth_config_absent(self) -> None:
         """${config.oauth.clientId} must fail when RuntimeConfig has no oauth fields."""
         ctx = _runtime_config_context()
