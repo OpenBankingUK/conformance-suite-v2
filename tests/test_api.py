@@ -952,6 +952,7 @@ class TestPsuAuthorizationApiRun:
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Debit",
                                     "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "3.14", "Currency": "GBP"},
                                 }
                             ]
@@ -969,6 +970,7 @@ class TestPsuAuthorizationApiRun:
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Credit",
                                     "Status": "Booked",
+                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "1.00", "Currency": "GBP"},
                                 }
                             ]

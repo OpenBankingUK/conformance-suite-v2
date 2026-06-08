@@ -220,6 +220,7 @@
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "AccountId"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"}
       ],
       "mandatory": true
@@ -244,6 +245,7 @@
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "AccountId"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"}
       ],
       "mandatory": true

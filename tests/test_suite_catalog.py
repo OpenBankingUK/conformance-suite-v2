@@ -284,7 +284,21 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         for assertion in transactions_assertions
     )
     assert any(
+        isinstance(assertion, JsonFieldAssertion)
+        and assertion.path == "Data.Transaction"
+        and assertion.rule == "all_items_have_field"
+        and assertion.field == "BookingDateTime"
+        for assertion in transactions_assertions
+    )
+    assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Transaction" and assertion.rule == "array"
+        for assertion in transactions_list_assertions
+    )
+    assert any(
+        isinstance(assertion, JsonFieldAssertion)
+        and assertion.path == "Data.Transaction"
+        and assertion.rule == "all_items_have_field"
+        and assertion.field == "BookingDateTime"
         for assertion in transactions_list_assertions
     )
 
