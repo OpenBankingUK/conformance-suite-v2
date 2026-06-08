@@ -5,7 +5,7 @@ import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.model_bank_config import SuiteSelection
-from conformance.results import StepResult
+from conformance.results import CheckStatus, StepResult
 from conformance.suite_catalog import resolve_suite
 
 
@@ -418,7 +418,7 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
             suite="ais-certification-slice",
         )
     )
-    status_by_step = {
+    status_by_step: dict[str, CheckStatus] = {
         "openid-discovery": "passed",
         "jwks-fetch": "warn",
         "psu-authorization": "passed",
@@ -429,7 +429,7 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     steps = [
         StepResult(
             name=step.id,
-            status=cast(str, status_by_step[step.id]),
+            status=status_by_step[step.id],
             message=step.id,
             mandatory=step.mandatory,
         )

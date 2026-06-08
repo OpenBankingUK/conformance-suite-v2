@@ -371,9 +371,7 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
     _allowed_str = ", ".join(_ALLOWED_CONFIG_PLACEHOLDERS)
     is_simple_field = len(segments) == 2 and segments[1] in {"discoveryUrl", "environment"}
     is_oauth_field = (
-        len(segments) == 3
-        and segments[1] == "oauth"
-        and segments[2] in {"clientId", "redirectUri", "resourceBaseUrl"}
+        len(segments) == 3 and segments[1] == "oauth" and segments[2] in {"clientId", "redirectUri", "resourceBaseUrl"}
     )
     if not (is_simple_field or is_oauth_field):
         raise PlaceholderResolutionError(f"Unsupported config placeholder: ${{{dot_path}}} (allowed: {_allowed_str})")

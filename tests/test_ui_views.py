@@ -598,7 +598,10 @@ class TestPlanBuilderUi:
 class TestRunDetailUi:
     """Browser coverage for run detail and partial views."""
 
-    def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
         """Browser launch can run the full AIS suite flow with mocked HTTP and callback capture.
 
         Args:

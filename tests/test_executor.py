@@ -2764,9 +2764,7 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
     )
     resolved = resolve_suite(selection)
     manifest = resolved.manifest
-    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
-        ["account-access-consent", "accounts-list"]
-    )
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["account-access-consent", "accounts-list"])
 
     assert plan.selected_step_ids() == [
         "openid-discovery",
@@ -2899,7 +2897,9 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
     assert "ais-id-token" not in serialised_result
 
     token_request_events = [
-        event for event in execution_logger.events() if event.type == "request-sent" and event.step_id == "token-exchange"
+        event
+        for event in execution_logger.events()
+        if event.type == "request-sent" and event.step_id == "token-exchange"
     ]
     assert len(token_request_events) == 1
     assert token_request_events[0].payload["form"] == {
@@ -3095,7 +3095,9 @@ def test_ais_certification_slice_accounts_resource_executes_and_counts_mandatory
     assert eligibility["mandatorySkipped"] == 0
 
     accounts_request_events = [
-        event for event in execution_logger.events() if event.type == "request-sent" and event.step_id == "accounts-list"
+        event
+        for event in execution_logger.events()
+        if event.type == "request-sent" and event.step_id == "accounts-list"
     ]
     assert len(accounts_request_events) == 1
     assert accounts_request_events[0].payload["headers"] == {
@@ -3253,6 +3255,7 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
         },
     }
     response_details = details["response"]
+    assert isinstance(response_details, dict)
     assert response_details == {
         "statusCode": 200,
         "headers": {

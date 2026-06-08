@@ -323,9 +323,7 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
     if profile != "fapi1-advanced":
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
     if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice"}:
-        raise ConfigError(
-            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice"
-        )
+        raise ConfigError("testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice")
 
     return SuiteSelection(
         standard=cast(SuiteStandard, standard),

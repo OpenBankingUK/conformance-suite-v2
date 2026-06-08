@@ -13,7 +13,10 @@ from conformance.api.auth_session_store import auth_session_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.context import RuntimeConfig
 from conformance.execution_log import ExecutionLogger
+from conformance.manifest import Manifest
 from conformance.results import SmokeCheckResult
+from conformance.suite_catalog import SuiteMetadata
+from conformance.test_plan import TestPlan
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
@@ -369,7 +372,7 @@ def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
         Returns:
             Passing smoke-check result for the CLI to serialise.
         """
-        manifest = args[0]
+        manifest = cast(Manifest, args[0])
         assert [step.id for step in manifest.steps] == [
             "openid-discovery",
             "jwks-fetch",
@@ -378,7 +381,7 @@ def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
             "account-access-consent",
             "accounts-list",
         ]
-        plan = kwargs["plan"]
+        plan = cast(TestPlan, kwargs["plan"])
         assert plan.selected_step_ids() == [
             "openid-discovery",
             "jwks-fetch",
@@ -388,7 +391,7 @@ def test_cli_resolves_ais_config_selected_suite_when_manifest_is_omitted(
             "accounts-list",
         ]
         runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
-        suite_metadata = kwargs["suite_metadata"]
+        suite_metadata = cast(SuiteMetadata, kwargs["suite_metadata"])
         assert runtime_config.oauth_resource_base_url == "https://resource.example.com"
         assert suite_metadata is not None
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"

@@ -175,15 +175,11 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     consent_assertions = consent_step.assertions
     accounts_assertions = accounts_step.assertions
     assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "Data.ConsentId"
-        and assertion.rule == "string"
+        isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.ConsentId" and assertion.rule == "string"
         for assertion in consent_assertions
     )
     assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "Data.Account"
-        and assertion.rule == "array"
+        isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Account" and assertion.rule == "array"
         for assertion in accounts_assertions
     )
 
