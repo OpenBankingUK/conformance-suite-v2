@@ -43,15 +43,16 @@ Participant config can also select a bundled conformance-suite manifest instead 
 }
 ```
 
-Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` profile, with the explicit version/suite combinations shown below. **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The new AIS entry is a certification-grade proof slice for the v4.0 Read/Write flow only, not a full certification manifest.
+Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` profile, with the explicit version/suite combinations shown below. **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The v4.0 AIS catalog now has two bundled tracks: `ais-certification-baseline` is the certifiable-track baseline suite, and `ais-certification-slice` is the older preserved proof slice. Neither should be treated as complete certification coverage until Standards confirm the mandatory matrix and the manifest is promoted accordingly.
 
 | Spec version | Suite name | Steps | OAuth config required |
 |---|---|---|---|
 | `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
 | `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
+| `v4.0` | `ais-certification-baseline` | Discovery + JWKS + manual PSU authorisation + token exchange + consent creation + mandatory core AIS resource coverage, with optional/conditional AIS rows available as opt-in plan entries | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
 | `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
 
-The `psu-auth-starter` and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifest appends `/open-banking/v4.0/aisp/...` itself. The starter suite uses the first two values; the AIS slice also uses `resourceBaseUrl` for consent creation and protected resource calls.
+The `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves. The starter suite uses the first two values; both AIS suites also use `resourceBaseUrl` for consent creation and protected resource calls.
 
 The AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already in place for token and protected-resource calls. Certificate paths, private keys, client secrets, signing keys, request objects, and client assertions are not supplied through suite placeholders or the `oauth` config block.
 
@@ -90,8 +91,12 @@ uv run python main.py config/model-bank-suite-example.json
 # PSU auth starter suite (requires oauth section in config)
 uv run python main.py config/model-bank-psu-auth-starter-example.json
 
-# AIS certification-grade slice (requires oauth.clientId, oauth.redirectUri,
-# and oauth.resourceBaseUrl)
+# AIS certification baseline (recommended v4 AIS catalog entry; requires
+# oauth.clientId, oauth.redirectUri, and oauth.resourceBaseUrl)
+uv run python main.py config/model-bank-ais-certification-baseline-example.json
+
+# AIS certification proof slice (older partial reference flow; requires the
+# same oauth settings)
 uv run python main.py config/model-bank-ais-certification-slice-example.json
 ```
 
@@ -101,19 +106,23 @@ The REST API follows the same precedence: an inline `manifest` in `POST /api/run
 
 Browser-launched runs can also drive manual PSU authorisation manifests. While a manual PSU step is waiting for the ASPSP callback, the run detail and status views show an `Open authorisation` action for the current step. The raw authorisation URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
 
-All bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit.
+All bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit. This still applies to both v4 AIS entries: the baseline suite is the certifiable-track working set, while the older slice remains a deliberately partial proof flow.
 
-The bundled `ais-certification-slice` manifest extends the starter path through five more steps:
+The bundled `ais-certification-baseline` manifest builds on the preserved slice path with a broader v4.0 AIS working set. Its mandatory default flow covers:
 
 - form-urlencoded token exchange using `${steps.psu-authorization.response.body.code}`
 - `POST /open-banking/v4.0/aisp/account-access-consents`
 - `GET /open-banking/v4.0/aisp/accounts`
+- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}`
 - `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances`
 - `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions`
+- `GET /open-banking/v4.0/aisp/transactions`
 
-The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`. The accounts response must include a top-level `Data` object plus a non-empty `Data.Account` array with `AccountId` and `Status` fields on each item. The balances response must include a top-level `Data` object plus a non-empty `Data.Balance` array with `Type`, `Amount`, and `CreditDebitIndicator` fields on each item. The transactions response must include a top-level `Data` object plus a `Data.Transaction` array; when transactions are present, each item must include `TransactionId` and `Amount`.
+The baseline manifest also bundles additional optional or conditional AIS resource rows as opt-in plan entries. Those rows are available for local execution and authoring review, but they are not selected by default. The older `ais-certification-slice` manifest is kept unchanged as the narrower proof flow that stops after consent creation plus accounts, balances, and account-scoped transactions.
 
-Manifest placeholders can also traverse JSON arrays using non-negative numeric path segments. The AIS slice uses `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned account into the account-scoped balances and transactions endpoints. Array indices must be in bounds, and response placeholders must still resolve to primitive values rather than whole objects or arrays.
+The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`. The accounts responses must include a top-level `Data` object plus an account array with `AccountId` and `Status` fields on each item. The balances responses must include a top-level `Data` object plus a balance array with `Type`, `Amount`, and `CreditDebitIndicator` fields on each item. The account-scoped and top-level transactions responses must include a top-level `Data` object plus a `Data.Transaction` array; when transactions are present, each item must include `TransactionId` and `Amount`.
+
+Manifest placeholders can also traverse JSON arrays using non-negative numeric path segments. Both bundled v4 AIS manifests use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned account into account-scoped resource endpoints. Array indices must be in bounds, and response placeholders must still resolve to primitive values rather than whole objects or arrays.
 
 Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
 
