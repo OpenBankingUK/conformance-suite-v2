@@ -1529,6 +1529,9 @@ def _execute_v1_step_inner(
                 new_context,
             )
 
+    if resolved_headers is not None:
+        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+
     # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
         for header_name, header_value in resolved_headers.items():
@@ -1605,6 +1608,12 @@ def _execute_v1_step_inner(
                 ),
                 new_context,
             )
+
+    if resolved_json_body is not None:
+        request_evidence["body"] = mask_json_value(resolved_json_body)
+    elif resolved_form_body is not None:
+        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
+
     # Validate resolved URL is HTTPS
     try:
         validate_https_url(resolved_url, label=f"Step '{manifest_step.id}' request URL")

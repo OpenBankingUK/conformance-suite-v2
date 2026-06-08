@@ -1773,6 +1773,15 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
     assert result.steps[1].status == "failed"
     assert "Resolved header validation failed" in (result.steps[1].message or "")
     assert "non-transportable character" in (result.steps[1].message or "")
+    assert dict(result.steps[1].details) == {
+        "request": {
+            "method": "POST",
+            "url": "https://example.com/api",
+            "headers": {
+                "Authorization": "***",
+            },
+        }
+    }
 
 
 @pytest.mark.unit
@@ -2170,6 +2179,19 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_rejects_manifest_clie
         "Token endpoint auth policy reserves these form fields for runtime FAPI signing: "
         f"{expected_reserved_fields}"
     )
+    assert dict(result.steps[0].details) == {
+        "request": {
+            "method": "POST",
+            "url": "https://auth.example.com/token",
+            "form": {
+                "grant_type": "authorization_code",
+                "code": "***",
+                "redirect_uri": "https://app.example.com/callback",
+                "client_id": "client-123",
+                **{key: ("***" if key in {"client_assertion"} else value) for key, value in conflicting_fields.items()},
+            },
+        }
+    }
 
 
 @pytest.mark.unit
