@@ -50,6 +50,9 @@ GeneratedRequestObjectSource = Literal["fapi-signing"]
 TokenEndpointAuthSource = Literal["fapi-signing"]
 """Source selectors for token-endpoint auth directives on HTTP steps."""
 
+DetachedJwsSource = Literal["fapi-signing"]
+"""Source selectors for detached JWS directives on HTTP requests."""
+
 AssertionType = Literal["http_status", "json_field", "header"]
 """Assertion discriminators supported by manifest assertions."""
 
@@ -131,12 +134,15 @@ class ManifestRequest:
         headers: Optional string-valued headers to send with the request.
         body: Optional typed body (JSON or form-urlencoded). Allowed on
             POST/PUT/PATCH/DELETE; rejected on GET at parse time.
+        detached_jws: Optional directive requesting runtime detached JWS
+            signing for this exact request.
     """
 
     method: RequestMethod
     url: str
     headers: dict[str, str] | None = None
     body: ManifestBody | None = None
+    detached_jws: DetachedJwsPolicy | None = None
 
 
 @dataclass(frozen=True)
@@ -167,6 +173,18 @@ class TokenEndpointAuthPolicy:
     """
 
     source: TokenEndpointAuthSource
+
+
+@dataclass(frozen=True)
+class DetachedJwsPolicy:
+    """Directive instructing an HTTP request to add a detached JWS header.
+
+    Attributes:
+        source: Runtime signing configuration source used to build the
+            detached JWS.
+    """
+
+    source: DetachedJwsSource
 
 
 @dataclass(frozen=True)
@@ -1231,19 +1249,24 @@ def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_
 
     Args:
         raw_request: Raw JSON object expected to contain ``method``, ``url``,
-            and optionally ``headers`` and ``body``.
+            and optionally ``headers``, ``body``, and ``detachedJws``.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
 
     Returns:
-        Validated request with method, URL, optional headers, and optional body
-        (body may contain placeholders in string leaves).
+        Validated request with method, URL, optional headers, optional body,
+        and optional detached JWS policy (body may contain placeholders in
+        string leaves).
 
     Raises:
         ManifestError: If required fields are missing, invalid, or placeholders
             reference forward steps.
     """
-    _reject_unknown_keys(raw_request, allowed_keys={"method", "url", "headers", "body"}, location=location)
+    _reject_unknown_keys(
+        raw_request,
+        allowed_keys={"method", "url", "headers", "body", "detachedJws"},
+        location=location,
+    )
     method = _required_v1_method(raw_request, location=location)
     url = _required_string(raw_request, "url", location=location)
 
@@ -1262,7 +1285,47 @@ def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_
     # Parse optional body
     body = _parse_v1_body(raw_request, method=method, location=location, seen_ids=seen_ids)
 
-    return ManifestRequest(method=method, url=url, headers=headers, body=body)
+    detached_jws = _parse_optional_detached_jws(raw_request, method=method, location=location, seen_ids=seen_ids)
+
+    return ManifestRequest(method=method, url=url, headers=headers, body=body, detached_jws=detached_jws)
+
+
+def _parse_optional_detached_jws(
+    raw_request: dict[str, JsonValue], *, method: RequestMethod, location: str, seen_ids: set[str]
+) -> DetachedJwsPolicy | None:
+    """Parse the optional detached-JWS policy for a request.
+
+    Args:
+        raw_request: Raw request JSON object potentially containing
+            ``detachedJws``.
+        method: Parsed HTTP method for the request.
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Returns:
+        Parsed detached-JWS policy, or ``None`` when the request does not opt
+        into detached signing.
+
+    Raises:
+        ManifestError: If the directive shape is invalid, uses an unsupported
+            source, applies to a GET request, or contains invalid placeholders.
+    """
+    if "detachedJws" not in raw_request:
+        return None
+    if method == "GET":
+        raise ManifestError(f"{location}.detachedJws is only valid on POST, PUT, PATCH, or DELETE requests")
+
+    raw_policy = raw_request["detachedJws"]
+    policy_location = f"{location}.detachedJws"
+    if not isinstance(raw_policy, dict):
+        raise ManifestError(f"{policy_location} must be a JSON object when present")
+    _reject_unknown_keys(raw_policy, allowed_keys={"source"}, location=policy_location)
+
+    source = _required_string(raw_policy, "source", location=policy_location)
+    _validate_placeholder_syntax(source, location=f"{policy_location}.source", seen_ids=seen_ids)
+    if source != "fapi-signing":
+        raise ManifestError(f"{policy_location}.source must be 'fapi-signing'")
+    return DetachedJwsPolicy(source="fapi-signing")
 
 
 def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:

@@ -7,6 +7,7 @@ import pytest
 from conformance.json_types import JsonValue
 from conformance.manifest import (
     CertificationCoverage,
+    DetachedJwsPolicy,
     FormBody,
     GeneratedRequestObject,
     JsonBody,
@@ -2543,6 +2544,33 @@ def test_parse_v1_http_step_accepts_token_endpoint_auth_policy() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_http_step_accepts_detached_jws_policy() -> None:
+    """HTTP consent requests may opt into runtime detached-JWS signing."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-policy",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+
+
+@pytest.mark.unit
 def test_parse_v1_http_step_rejects_invalid_token_endpoint_auth_policy_type() -> None:
     """The token-endpoint auth directive must be an object when present."""
     raw_manifest: dict[str, JsonValue] = {
@@ -2562,6 +2590,117 @@ def test_parse_v1_http_step_rejects_invalid_token_endpoint_auth_policy_type() ->
     with pytest.raises(
         ManifestError,
         match=r"steps\[0\]\.tokenEndpointAuthPolicy must be a JSON object when present",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_invalid_detached_jws_policy_type() -> None:
+    """The detached-JWS directive must be an object when present."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-policy",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": "fapi-signing",
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws must be a JSON object when present",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_unknown_detached_jws_source() -> None:
+    """Detached-JWS directives are closed-shape and closed-value."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-source",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "hand-rolled"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws\.source must be 'fapi-signing'",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_secret_bearing_config_placeholder_in_detached_jws_source() -> None:
+    """Detached-JWS directives must not widen the safe config placeholder boundary."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-placeholder",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "${config.fapiSigning.kid}"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws\.source contains unsupported config placeholder",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_detached_jws_on_get_request() -> None:
+    """Detached-JWS directives are invalid on GET requests."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-get",
+        "steps": [
+            {
+                "id": "accounts",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "detachedJws": {"source": "fapi-signing"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws is only valid on POST, PUT, PATCH, or DELETE requests",
     ):
         parse_manifest(raw_manifest)
 

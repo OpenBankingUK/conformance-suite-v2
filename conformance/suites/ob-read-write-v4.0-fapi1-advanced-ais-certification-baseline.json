@@ -93,6 +93,9 @@
       "request": {
         "method": "POST",
         "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"

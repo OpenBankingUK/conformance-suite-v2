@@ -1843,15 +1843,19 @@ def _maybe_apply_ob_detached_jws(
         Tuple of final outbound headers and serialized JSON body bytes.
 
     Raises:
+        ValueError: If the manifest opted into detached JWS but runtime
+            signing config is missing, the step targets an unsupported URL,
+            or the step has no JSON body.
         SigningCredentialError: If runtime signing credentials cannot be read
             or validated.
         JwtSigningError: If the detached JWS cannot be signed.
-        ValueError: If a step selected for detached signing has no JSON body.
     """
-    if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
+    if manifest_step.request.detached_jws is None:
         return resolved_headers, None
     if fapi_signing_config is None:
-        return resolved_headers, None
+        raise ValueError("Detached request signing requires fapiSigning configuration")
+    if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
+        raise ValueError("Detached request signing is only supported for account-access-consents requests")
     if resolved_json_body is None:
         raise ValueError("Detached request signing requires a JSON request body")
 
@@ -1879,8 +1883,8 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
         resolved_url: Fully resolved request URL.
 
     Returns:
-        ``True`` when the step is a JSON write to the AIS account-access-
-        consents endpoint, otherwise ``False``.
+        ``True`` when the step targets the AIS account-access-consents
+        endpoint and is an eligible write method, otherwise ``False``.
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
