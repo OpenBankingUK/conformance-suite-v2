@@ -4251,6 +4251,78 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
     }
 
 
+@pytest.mark.unit
+def test_run_manifest_v1_resolves_semantic_token_placeholder_namespace() -> None:
+    """Protected-resource steps resolve Authorization tokens via semantic token ids."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-runtime",
+        "steps": [
+            {
+                "id": "token-exchange",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "abc",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "producesTokenId": "ais-resource-detail",
+            },
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {
+                        "Accept": "application/json",
+                        "Authorization": "Bearer ${tokens.ais-resource-detail.access_token}",
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "requiredTokenId": "ais-resource-detail",
+            },
+        ],
+    }
+
+    captured_requests: list[httpx.Request] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return token and protected-resource responses for semantic token test.
+
+        Args:
+            request: Outbound HTTP request from the executor.
+
+        Returns:
+            Mock JSON response for the requested endpoint.
+
+        Raises:
+            AssertionError: If the executor issues an unexpected request URL.
+        """
+        captured_requests.append(request)
+        if str(request.url) == "https://auth.example.com/token":
+            return httpx.Response(200, json={"access_token": "resource-token-123"})
+        if str(request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+            return httpx.Response(200, json={"Data": {"Account": []}})
+        raise AssertionError(f"Unexpected request URL: {request.url}")
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    assert len(captured_requests) == 2
+    assert captured_requests[1].headers["authorization"] == "Bearer resource-token-123"
+
+
 @pytest.mark.integration
 def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
     monkeypatch: pytest.MonkeyPatch,

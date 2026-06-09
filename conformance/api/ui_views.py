@@ -7,7 +7,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
-from conformance.api.plan_builder import PlanBuilderForm, PlanPreview
+from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
 from conformance.json_types import JsonObject
@@ -233,7 +233,7 @@ def _plan_context(
         failure details.
     """
     preview = form.preview
-    context: dict[str, object] = {"form": form, "preview": preview}
+    context: dict[str, object] = {"form": form, "preview": preview, **guided_flow_context(form)}
     if preview is not None:
         context["preview_counts"] = preview_step_counts(preview)
     if launch_error is not None:

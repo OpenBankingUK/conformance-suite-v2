@@ -2639,6 +2639,159 @@ def test_parse_v1_http_step_accepts_token_endpoint_auth_policy() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_http_step_accepts_semantic_token_bindings() -> None:
+    """HTTP steps may bind token production and consumption to semantic token ids."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-bindings",
+        "steps": [
+            {
+                "id": "token-exchange",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {"grant_type": "authorization_code", "code": "abc", "client_id": "client-123"},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "producesTokenId": "ais-resource-detail",
+            },
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer ${tokens.ais-resource-detail.access_token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "requiredTokenId": "ais-resource-detail",
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    token_step = cast("ManifestStep", manifest.steps[0])
+    consumer_step = cast("ManifestStep", manifest.steps[1])
+    assert token_step.produces_token_id == "ais-resource-detail"  # noqa: S105 - semantic token id fixture
+    assert consumer_step.required_token_id == "ais-resource-detail"  # noqa: S105 - semantic token id fixture
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_infers_required_token_id_from_authorization_header() -> None:
+    """Required token id is inferred when Authorization uses a token placeholder."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-inference",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer ${tokens.ais-resource-basic.access_token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    consumer_step = cast("ManifestStep", manifest.steps[0])
+    assert consumer_step.required_token_id == "ais-resource-basic"  # noqa: S105 - semantic token id fixture
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_mismatched_required_token_id() -> None:
+    """requiredTokenId must match the Authorization token placeholder id."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-mismatch",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer ${tokens.ais-resource-basic.access_token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "requiredTokenId": "ais-resource-detail",
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.requiredTokenId must match Authorization token placeholder id 'ais-resource-basic'",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_required_token_id_without_token_placeholder() -> None:
+    """requiredTokenId requires an explicit token placeholder in Authorization."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-missing-header-binding",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer literal-token"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "requiredTokenId": "ais-resource-detail",
+            }
+        ],
+    }
+
+    expected_match = (
+        r"steps\[0\]\.requiredTokenId requires Authorization header value "
+        r"'Bearer \$\{tokens\.ais-resource-detail\.access_token\}'"
+    )
+    with pytest.raises(ManifestError, match=expected_match):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_unsupported_token_placeholder_shape() -> None:
+    """Token placeholders only allow access_token field resolution."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "semantic-token-bad-placeholder",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer ${tokens.ais-resource-detail.id_token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.headers\.Authorization contains unsupported token placeholder",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_http_step_accepts_detached_jws_policy() -> None:
     """HTTP consent requests may opt into runtime detached-JWS signing."""
     raw_manifest: dict[str, JsonValue] = {

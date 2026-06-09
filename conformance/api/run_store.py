@@ -10,7 +10,7 @@ from __future__ import annotations
 import dataclasses
 import threading
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Literal
 
@@ -22,6 +22,9 @@ RunStatus = Literal["pending", "running", "completed", "failed"]
 
 ParticipantActionType = Literal["psu-authorization-url"]
 """Browser participant action kinds supported by the run store."""
+
+ParticipantActionStatus = Literal["pending", "completed"]
+"""Lifecycle states for browser participant actions."""
 
 _TERMINAL_STATUSES: tuple[RunStatus, ...] = ("completed", "failed")
 """Lifecycle states beyond which a run will not transition again."""
@@ -45,13 +48,17 @@ class ParticipantAction:
         type: Discriminator for the pending participant action shape.
         step_id: Manifest step that produced the participant action.
         url: Raw PSU authorisation URL to render while awaiting consent.
+        status: Current action lifecycle state.
         created_at: UTC timestamp when the action became pending.
+        completed_at: UTC timestamp when the action completed, or None.
     """
 
     type: ParticipantActionType
     step_id: str
     url: str
+    status: ParticipantActionStatus
     created_at: datetime
+    completed_at: datetime | None = None
 
 
 @dataclass
@@ -66,10 +73,12 @@ class RunRecord:
         finished_at: UTC timestamp when execution ended, or None.
         result: Structured JSON result object, populated on completion.
         error: Human-readable error message if the run failed internally.
-        participant_action: In-memory browser action currently required from
-            the participant. This is deliberately omitted from status JSON,
-            results, and logs because it can contain a raw PSU authorisation
-            request object.
+        participant_actions: In-memory browser actions keyed by ``step_id``.
+            Values include pending/completed state and are deliberately
+            omitted from status JSON, results, and logs because they can
+            contain raw PSU authorisation request objects.
+        participant_action: Backward-compatible alias for the oldest pending
+            participant action, or ``None`` when no action is pending.
         execution_logger: Per-run structured execution log buffer. The
             engine appends events here during the run; the API exposes
             the buffer's bytes via the run-log endpoint. ``None`` only
@@ -83,6 +92,7 @@ class RunRecord:
     finished_at: datetime | None = None
     result: JsonObject | None = None
     error: str | None = None
+    participant_actions: dict[str, ParticipantAction] = field(default_factory=dict)
     participant_action: ParticipantAction | None = None
     execution_logger: BufferedExecutionLogger | None = None
 
@@ -157,7 +167,7 @@ class RunStore:
             return self._snapshot_record_locked(record) if record is not None else None
 
     def get_participant_action(self, run_id: str) -> ParticipantAction | None:
-        """Snapshot the active browser participant action for a run.
+        """Snapshot the oldest pending browser participant action for a run.
 
         Args:
             run_id: The unique run identifier.
@@ -170,7 +180,27 @@ class RunStore:
             record = self._runs.get(run_id)
             if record is None:
                 return None
-            return self._snapshot_participant_action(record.participant_action)
+            return self._snapshot_participant_action(self._first_pending_action_locked(record))
+
+    def get_participant_actions(self, run_id: str) -> list[ParticipantAction]:
+        """Snapshot all browser participant actions for a run.
+
+        Args:
+            run_id: The unique run identifier.
+
+        Returns:
+            Detached participant actions sorted by creation time then step ID,
+            or an empty list when the run is unknown or has no actions.
+        """
+        with self._lock:
+            record = self._runs.get(run_id)
+            if record is None:
+                return []
+            snapshot_actions = self._snapshot_participant_actions(record.participant_actions)
+            return sorted(
+                snapshot_actions.values(),
+                key=lambda item: (item.created_at, item.step_id),
+            )
 
     def set_participant_action(self, run_id: str, *, step_id: str, url: str) -> None:
         """Store a pending raw PSU authorisation URL for browser launch.
@@ -186,18 +216,22 @@ class RunStore:
         """
         with self._lock:
             record = self._runs[run_id]
-            record.participant_action = ParticipantAction(
+            record.participant_actions[step_id] = ParticipantAction(
                 type="psu-authorization-url",
                 step_id=step_id,
                 url=url,
+                status="pending",
                 created_at=datetime.now(UTC),
             )
+            self._sync_legacy_participant_action_locked(record)
 
     def clear_participant_action(self, run_id: str, *, step_id: str | None = None) -> None:
-        """Clear a pending browser participant action.
+        """Clear or complete browser participant actions.
 
-        When ``step_id`` is provided, only a matching action is removed. Run
-        terminal cleanup passes no step ID so any active action is discarded.
+        When ``step_id`` is provided, the matching action is marked
+        ``completed`` so the browser UI can still render completion state.
+        Run terminal cleanup passes no step ID so all action state is
+        discarded.
 
         Args:
             run_id: The unique run identifier.
@@ -205,11 +239,18 @@ class RunStore:
         """
         with self._lock:
             record = self._runs.get(run_id)
-            if record is None or record.participant_action is None:
+            if record is None:
                 return
-            if step_id is not None and record.participant_action.step_id != step_id:
+            if step_id is None:
+                record.participant_actions.clear()
+                record.participant_action = None
                 return
-            record.participant_action = None
+            action = record.participant_actions.get(step_id)
+            if action is None:
+                return
+            action.status = "completed"
+            action.completed_at = datetime.now(UTC)
+            self._sync_legacy_participant_action_locked(record)
 
     def get_run_log_bytes(self, run_id: str) -> bytes | None:
         """Snapshot the run's execution log as NDJSON bytes.
@@ -258,6 +299,7 @@ class RunStore:
             record.status = "completed"
             record.finished_at = datetime.now(UTC)
             record.result = result
+            record.participant_actions.clear()
             record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
@@ -276,6 +318,7 @@ class RunStore:
             record.status = "failed"
             record.finished_at = datetime.now(UTC)
             record.error = error
+            record.participant_actions.clear()
             record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
@@ -321,10 +364,50 @@ class RunStore:
         Returns:
             A shallow copy of the record with a detached participant action.
         """
+        snapshot_actions = self._snapshot_participant_actions(record.participant_actions)
+        legacy_action = self._snapshot_participant_action(self._first_pending_action_locked(record))
         return dataclasses.replace(
             record,
-            participant_action=self._snapshot_participant_action(record.participant_action),
+            participant_actions=snapshot_actions,
+            participant_action=legacy_action,
         )
+
+    def _first_pending_action_locked(self, record: RunRecord) -> ParticipantAction | None:
+        """Return the oldest pending action for backward-compatible callers.
+
+        Args:
+            record: Live run record stored under ``self._lock``.
+
+        Returns:
+            The oldest pending participant action, or ``None`` when none are
+            pending.
+        """
+        pending_actions = [action for action in record.participant_actions.values() if action.status == "pending"]
+        if not pending_actions:
+            return None
+        return min(pending_actions, key=lambda action: (action.created_at, action.step_id))
+
+    def _sync_legacy_participant_action_locked(self, record: RunRecord) -> None:
+        """Synchronise the legacy ``participant_action`` compatibility alias.
+
+        Args:
+            record: Live run record stored under ``self._lock``.
+        """
+        record.participant_action = self._first_pending_action_locked(record)
+
+    def _snapshot_participant_actions(
+        self,
+        actions: dict[str, ParticipantAction],
+    ) -> dict[str, ParticipantAction]:
+        """Create detached snapshots for all participant actions.
+
+        Args:
+            actions: Live participant actions keyed by step id.
+
+        Returns:
+            Detached participant action snapshots keyed by step id.
+        """
+        return {step_id: dataclasses.replace(action) for step_id, action in actions.items()}
 
     def _snapshot_participant_action(self, action: ParticipantAction | None) -> ParticipantAction | None:
         """Create a detached participant action snapshot.

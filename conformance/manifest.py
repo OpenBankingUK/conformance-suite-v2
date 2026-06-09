@@ -344,6 +344,12 @@ class ManifestStep:
             executor should apply token-endpoint client authentication using
             runtime FAPI signing configuration rather than literal manifest
             form fields.
+        required_token_id: Optional semantic auth requirement id required by
+            this step when it consumes a protected-resource bearer token.
+            This binds the step to ``${tokens.<id>.access_token}`` header
+            placeholders without coupling consumers to token step ids.
+        produces_token_id: Optional semantic auth requirement id minted by
+            this step when its response carries an ``access_token``.
     """
 
     id: str
@@ -356,6 +362,8 @@ class ManifestStep:
     group: str = "default"
     phase: StepPhase = "execution"
     token_endpoint_auth_policy: TokenEndpointAuthPolicy | None = None
+    required_token_id: str | None = None
+    produces_token_id: str | None = None
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -672,6 +680,9 @@ def _parse_certification_coverage(raw_manifest: dict[str, JsonValue], *, locatio
 _STEP_ID_CHAR_CLASS = r"[A-Za-z0-9][A-Za-z0-9_-]*"
 """Character class for valid step/test IDs (excludes dot to avoid resolver ambiguity)."""
 
+_TOKEN_ID_PATTERN = re.compile(r"^" + _STEP_ID_CHAR_CLASS + r"$")
+"""Pattern for semantic runtime token identifiers used by ``tokens`` placeholders."""
+
 _HEADER_NAME_PATTERN = re.compile(r"^[A-Za-z0-9!#$%&'*+\-.^_`|~]+$")
 """RFC 7230 token pattern for valid HTTP header field names."""
 
@@ -703,6 +714,9 @@ _CONFIG_PLACEHOLDER_PATTERN = re.compile(
     r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|openBankingIntentId|resourceBaseUrl))\}"
 )
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
+
+_TOKEN_PLACEHOLDER_PATTERN = re.compile(r"\$\{tokens\.([A-Za-z0-9][A-Za-z0-9_-]*)\.access_token\}")
+"""Regex matching semantic token placeholders accepted in v1 manifests."""
 
 _PLACEHOLDER_FIND_PATTERN = re.compile(r"\$\{[^}]*\}")
 """Regex matching any ``${...}`` token for syntax validation."""
@@ -852,6 +866,8 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
             "group",
             "phase",
             "tokenEndpointAuthPolicy",
+            "requiredTokenId",
+            "producesTokenId",
         },
         location=location,
     )
@@ -879,6 +895,20 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         location=location,
         seen_ids=seen_ids,
     )
+    required_token_id = _parse_optional_token_id(raw_step, key="requiredTokenId", location=location, seen_ids=seen_ids)
+    produces_token_id = _parse_optional_token_id(raw_step, key="producesTokenId", location=location, seen_ids=seen_ids)
+    inferred_required_token_id = _required_token_id_from_authorization_header(request=request)
+    if required_token_id is None:
+        required_token_id = inferred_required_token_id
+    elif inferred_required_token_id is not None and inferred_required_token_id != required_token_id:
+        raise ManifestError(
+            f"{location}.requiredTokenId must match Authorization token placeholder id '{inferred_required_token_id}'"
+        )
+    if required_token_id is not None and inferred_required_token_id is None:
+        raise ManifestError(
+            f"{location}.requiredTokenId requires Authorization header value "
+            f"'Bearer ${{tokens.{required_token_id}.access_token}}'"
+        )
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
 
@@ -896,7 +926,74 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         group=group,
         phase=phase,
         token_endpoint_auth_policy=token_endpoint_auth_policy,
+        required_token_id=required_token_id,
+        produces_token_id=produces_token_id,
     )
+
+
+def _parse_optional_token_id(
+    raw_step: dict[str, JsonValue],
+    *,
+    key: str,
+    location: str,
+    seen_ids: set[str],
+) -> str | None:
+    """Parse an optional semantic token identifier from a v1 HTTP step.
+
+    Args:
+        raw_step: Raw JSON object for the HTTP step.
+        key: Field name to parse (``requiredTokenId`` or ``producesTokenId``).
+        location: Dot-path location string used in error messages.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Returns:
+        Parsed semantic token id, or ``None`` when absent.
+
+    Raises:
+        ManifestError: If present but not a non-empty string, contains
+            placeholders, or violates the token-id character policy.
+    """
+    if key not in raw_step:
+        return None
+    raw_value = raw_step[key]
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise ManifestError(f"{location}.{key} must be a non-empty string when present")
+    token_id = raw_value.strip()
+    _validate_constant_manifest_string(token_id, location=f"{location}.{key}", seen_ids=seen_ids)
+    if _TOKEN_ID_PATTERN.fullmatch(token_id) is None:
+        raise ManifestError(
+            f"{location}.{key} must match pattern {_STEP_ID_CHAR_CLASS!r} "
+            "(letters/digits, optional internal '_' or '-')"
+        )
+    return token_id
+
+
+def _required_token_id_from_authorization_header(*, request: ManifestRequest) -> str | None:
+    """Extract a semantic token id from a bearer Authorization header.
+
+    Args:
+        request: Parsed HTTP request to inspect.
+
+    Returns:
+        Token id from ``Bearer ${tokens.<id>.access_token}``, or ``None``
+        when no such placeholder is present.
+    """
+    if request.headers is None:
+        return None
+    authorization_value: str | None = None
+    for header_name, header_value in request.headers.items():
+        if header_name.lower() == "authorization":
+            authorization_value = header_value
+            break
+    if authorization_value is None:
+        return None
+    match = re.fullmatch(r"\s*Bearer\s+(\$\{tokens\.[A-Za-z0-9][A-Za-z0-9_-]*\.access_token\})\s*", authorization_value)
+    if match is None:
+        return None
+    token_match = _TOKEN_PLACEHOLDER_PATTERN.fullmatch(match.group(1))
+    if token_match is None:
+        return None
+    return token_match.group(1)
 
 
 _PSU_AUTH_ALLOWED_KEYS: set[str] = {
@@ -1402,6 +1499,8 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
         token = match.group(0)
         if _CONFIG_PLACEHOLDER_PATTERN.fullmatch(token) is not None:
             continue
+        if _TOKEN_PLACEHOLDER_PATTERN.fullmatch(token) is not None:
+            continue
         valid_match = _STEP_PLACEHOLDER_PATTERN.fullmatch(token)
         if valid_match is None:
             if token.startswith("${config."):
@@ -1411,6 +1510,11 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
                     "${config.oauth.clientId}, ${config.oauth.redirectUri}, "
                     "${config.oauth.openBankingIntentId}, "
                     "${config.oauth.resourceBaseUrl})"
+                )
+            if token.startswith("${tokens."):
+                raise ManifestError(
+                    f"{location} contains unsupported token placeholder: {token} "
+                    "(allowed: ${tokens.<tokenId>.access_token})"
                 )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)

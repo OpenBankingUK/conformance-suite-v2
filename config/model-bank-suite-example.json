@@ -5,6 +5,7 @@
     "testSuite": {
         "standard": "ob-read-write",
         "specVersion": "v4.0",
+        "api": "ais",
         "profile": "fapi1-advanced",
         "suite": "discovery-jwks"
     },

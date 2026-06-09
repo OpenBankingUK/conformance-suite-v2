@@ -34,6 +34,7 @@ from conformance.context import (
     ResponseRecord,
     RuntimeConfig,
     record_step,
+    record_token,
     resolve_in_structure,
     resolve_placeholders,
 )
@@ -1899,6 +1900,11 @@ def _execute_v1_step_inner(
         body=response.body,
     )
     new_context = record_step(context, manifest_step.id, request_record, response_record)
+    new_context = _record_runtime_token_if_present(
+        context=new_context,
+        manifest_step=manifest_step,
+        response_record=response_record,
+    )
 
     # Build masked response evidence — attached to non-PASS step results so
     # participants can debug failed assertions without OBL assistance while
@@ -1943,6 +1949,34 @@ def _execute_v1_step_inner(
         _attach_evidence(step_result, request_evidence=request_evidence, response_evidence=response_evidence),
         new_context,
     )
+
+
+def _record_runtime_token_if_present(
+    *,
+    context: ExecutionContext,
+    manifest_step: ManifestStep,
+    response_record: ResponseRecord,
+) -> ExecutionContext:
+    """Record a semantic runtime token when a step produces one.
+
+    Args:
+        context: Execution context after recording the HTTP step response.
+        manifest_step: Executed HTTP step that may declare ``produces_token_id``.
+        response_record: Captured response record for the executed step.
+
+    Returns:
+        Updated context carrying the semantic token mapping when the step
+        declares ``produces_token_id`` and the response body contains a
+        non-empty string ``access_token``; otherwise returns ``context``
+        unchanged.
+    """
+    token_id = manifest_step.produces_token_id
+    if token_id is None:
+        return context
+    access_token = response_record.body.get("access_token")
+    if not isinstance(access_token, str) or not access_token:
+        return context
+    return record_token(context, token_id=token_id, access_token=access_token)
 
 
 def _skipped_step(

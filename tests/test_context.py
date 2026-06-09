@@ -8,7 +8,9 @@ from conformance.context import (
     ResponseRecord,
     RuntimeConfig,
     StepRecord,
+    TokenRecord,
     record_step,
+    record_token,
     resolve_placeholders,
 )
 from conformance.json_types import JsonValue
@@ -340,6 +342,31 @@ class TestResolvePlaceholdersHappyPaths:
             "&resource=https://rs.example.com"
         )
 
+    def test_resolves_semantic_token_access_token(self) -> None:
+        """Token placeholders resolve by semantic token id."""
+        context = ExecutionContext(
+            tokens={
+                "ais-resource": TokenRecord(access_token="token-123")  # noqa: S106 - synthetic test token literal
+            }
+        )
+
+        result = resolve_placeholders("Bearer ${tokens.ais-resource.access_token}", context)
+
+        assert result == "Bearer token-123"
+
+    def test_record_token_preserves_existing_steps(self) -> None:
+        """Recording a semantic token keeps existing recorded steps intact."""
+        context = _discovery_context()
+
+        updated = record_token(
+            context,
+            token_id="ais-resource",  # noqa: S106 - synthetic test token namespace id
+            access_token="token-456",  # noqa: S106 - synthetic test token literal
+        )
+
+        assert "openid-discovery" in updated.steps
+        assert updated.tokens["ais-resource"].access_token == "token-456"  # noqa: S105 - synthetic test token
+
 
 @pytest.mark.unit
 class TestResolvePlaceholdersErrors:
@@ -357,6 +384,22 @@ class TestResolvePlaceholdersErrors:
         ctx = _discovery_context()
         with pytest.raises(PlaceholderResolutionError, match="not a primitive.*object"):
             resolve_placeholders("${steps.openid-discovery.response.body.nested}", ctx)
+
+    def test_missing_semantic_token_id(self) -> None:
+        """Unknown semantic token ids must fail placeholder resolution."""
+        with pytest.raises(PlaceholderResolutionError, match="Token 'missing-token' not found"):
+            resolve_placeholders("${tokens.missing-token.access_token}", ExecutionContext())
+
+    def test_rejects_unknown_semantic_token_field(self) -> None:
+        """Token placeholders only expose the access_token field."""
+        context = ExecutionContext(
+            tokens={
+                "ais-resource": TokenRecord(access_token="token-123")  # noqa: S106 - synthetic test token literal
+            }
+        )
+
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported token field 'id_token'"):
+            resolve_placeholders("${tokens.ais-resource.id_token}", context)
 
     def test_non_primitive_resolution_array(self) -> None:
         ctx = ExecutionContext(

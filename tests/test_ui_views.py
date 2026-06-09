@@ -368,6 +368,12 @@ class TestPlanBuilderUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "Test plan builder" in content
+        assert "Guided flow" in content
+        assert "Model bank example" in content
+        assert "Ozone OBIE pre-production" in content
+        assert "Custom environment" in content
+        assert "Specification version" in content
+        assert "API family" in content
         assert "Config JSON" in content
         assert "Manifest JSON" in content
         assert 'href="/health/"' in content
@@ -458,6 +464,43 @@ class TestPlanBuilderUi:
         assert "accounts-list" in content
         assert "account-balances" in content
         assert "account-transactions" in content
+
+    def test_preview_post_resolves_guided_suite_selection(self) -> None:
+        """POST /plan/preview/ can build config from guided selector fields."""
+        response = Client().post(
+            "/plan/preview/",
+            data={
+                "config_json": "",
+                "manifest_json": "",
+                "guided_environment": "guided-ui-env",
+                "guided_discovery_url": "https://example.com/.well-known/openid-configuration",
+                "guided_spec_version": "v4.0.1",
+                "guided_api": "ais",
+                "guided_suite": "ais-certification-slice",
+                "guided_client_id": "guided-client-id",
+                "guided_redirect_uri": "https://conformance.example.com/callback",
+                "guided_resource_base_url": "https://resource.example.com",
+                "selection_mode": "select",
+                "selected_step_ids": [
+                    "openid-discovery",
+                    "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
+                    "psu-authorization",
+                    "token-exchange",
+                    "accounts-list",
+                    "account-balances",
+                    "account-transactions",
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        content = html.unescape(response.content.decode("utf-8"))
+        assert "Open Banking Read/Write v4.0.1 FAPI 1 Advanced AIS certification slice" in content
+        assert "Generated config" in content
+        assert '"specVersion": "v4.0.1"' in content
+        assert "guided-ui-env" in content
 
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
@@ -1196,8 +1239,9 @@ class TestRunDetailUi:
         assert status_response.status_code == 200
         detail_content = html.unescape(detail_response.content.decode("utf-8"))
         status_content = html.unescape(status_response.content.decode("utf-8"))
-        assert "Action required" in detail_content
+        assert "Authorisation actions" in detail_content
         assert "Step psu is waiting for PSU authorisation." in status_content
+        assert "Pending" in status_content
         assert f'href="{authorisation_url}"' in status_content
         assert 'target="_blank"' in status_content
         assert 'rel="noreferrer noopener"' in status_content
@@ -1210,7 +1254,7 @@ class TestRunDetailUi:
         cleared_response = client.get(f"/runs/{run_id}/status/")
         assert cleared_response.status_code == 200
         cleared_content = cleared_response.content.decode("utf-8")
-        assert "Action required" not in cleared_content
+        assert "Authorisation actions" not in cleared_content
         assert "Open authorisation" not in cleared_content
 
         log_response = client.get(f"/runs/{run_id}/log.json")
@@ -1283,12 +1327,34 @@ class TestRunDetailUi:
 
         assert response.status_code == 200
         content = response.content.decode("utf-8")
-        assert "Action required" in content
+        assert "Authorisation actions" in content
         assert "Step psu is waiting for PSU authorisation." in content
+        assert "Pending" in content
         assert "Open authorisation" in content
         assert f'href="{authorisation_url}"' in content
         assert 'target="_blank"' in content
         assert 'rel="noreferrer noopener"' in content
+
+    def test_status_partial_renders_multiple_actions_with_completion_state(self) -> None:
+        """The status partial renders one link per pending action and completion labels."""
+        record = run_store.create_run()
+        first_url = "https://auth.example.com/authorize?state=first"
+        second_url = "https://auth.example.com/authorize?state=second"
+        run_store.set_participant_action(record.run_id, step_id="psu-first", url=first_url)
+        run_store.set_participant_action(record.run_id, step_id="psu-second", url=second_url)
+        run_store.clear_participant_action(record.run_id, step_id="psu-first")
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Authorisation actions" in content
+        assert "Step psu-first is waiting for PSU authorisation." in content
+        assert "Step psu-second is waiting for PSU authorisation." in content
+        assert "Completed" in content
+        assert "Pending" in content
+        assert f'href="{second_url}"' in content
+        assert f'href="{first_url}"' not in content
 
     def test_status_partial_omits_psu_authorisation_action_when_absent(self) -> None:
         """The status partial hides manual PSU controls when no action is pending."""
@@ -1298,7 +1364,7 @@ class TestRunDetailUi:
 
         assert response.status_code == 200
         content = response.content.decode("utf-8")
-        assert "Action required" not in content
+        assert "Authorisation actions" not in content
         assert "Open authorisation" not in content
         assert 'target="_blank"' not in content
 

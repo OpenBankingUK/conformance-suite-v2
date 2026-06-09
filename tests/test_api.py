@@ -132,8 +132,25 @@ class TestRunStore:
 
         snapshot = store.get_run(record.run_id)
         assert snapshot is not None
+        assert "psu" in snapshot.participant_actions
+        assert snapshot.participant_actions["psu"].status == "pending"
         assert snapshot.participant_action is not None
         assert snapshot.participant_action.url == self.RAW_PSU_AUTHORIZATION_URL
+
+    def test_participant_actions_support_multiple_pending_entries(self) -> None:
+        """Runs can hold multiple pending browser actions at the same time."""
+        store = RunStore()
+        record = store.create_run()
+        first_url = "https://auth.example.com/authorize?state=first"
+        second_url = "https://auth.example.com/authorize?state=second"
+
+        store.set_participant_action(record.run_id, step_id="psu-first", url=first_url)
+        store.set_participant_action(record.run_id, step_id="psu-second", url=second_url)
+
+        actions = store.get_participant_actions(record.run_id)
+        assert len(actions) == 2
+        assert {action.step_id for action in actions} == {"psu-first", "psu-second"}
+        assert {action.status for action in actions} == {"pending"}
 
     def test_participant_action_snapshot_is_not_live_mutable_state(self) -> None:
         """Run snapshots detach participant actions from the live store."""
@@ -173,19 +190,28 @@ class TestRunStore:
         assert self.RAW_PSU_AUTHORIZATION_URL not in json.dumps(completed.result)
 
     def test_clear_participant_action_removes_matching_pending_action(self) -> None:
-        """Callback and matching step-completion hooks can clear the active action."""
+        """Matching step-completion hooks mark action state as completed."""
         store = RunStore()
         record = store.create_run()
-        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+        first_url = "https://auth.example.com/authorize?state=first"
+        second_url = "https://auth.example.com/authorize?state=second"
+        store.set_participant_action(record.run_id, step_id="psu-first", url=first_url)
+        store.set_participant_action(record.run_id, step_id="psu-second", url=second_url)
 
         store.clear_participant_action(record.run_id, step_id="token")
         assert store.get_participant_action(record.run_id) is not None
 
-        store.clear_participant_action(record.run_id, step_id="psu")
-        assert store.get_participant_action(record.run_id) is None
+        store.clear_participant_action(record.run_id, step_id="psu-first")
+        actions = {action.step_id: action for action in store.get_participant_actions(record.run_id)}
+        assert actions["psu-first"].status == "completed"
+        assert actions["psu-second"].status == "pending"
+        assert store.get_participant_action(record.run_id) is not None
         snapshot = store.get_run(record.run_id)
         assert snapshot is not None
-        assert snapshot.participant_action is None
+        assert snapshot.participant_actions["psu-first"].status == "completed"
+
+        store.clear_participant_action(record.run_id, step_id="psu-second")
+        assert store.get_participant_action(record.run_id) is None
 
     def test_clear_participant_action_without_step_id_clears_active_action(self) -> None:
         """Run-level cleanup hooks can clear the active browser action."""
@@ -196,6 +222,7 @@ class TestRunStore:
         store.clear_participant_action(record.run_id)
 
         assert store.get_participant_action(record.run_id) is None
+        assert store.get_participant_actions(record.run_id) == []
 
     def test_terminal_transitions_clear_participant_action(self) -> None:
         """Completed and failed runs must not retain raw browser PSU URLs."""
@@ -258,7 +285,7 @@ class TestBrowserParticipantActionLogger:
         assert [event.type for event in wrapped.events()] == ["psu-authorization-url"]
 
     def test_matching_step_completion_clears_action(self) -> None:
-        """Only the step that raised the browser action clears it on completion."""
+        """Only the matching step completion marks the action completed."""
         store = RunStore()
         record = store.create_run()
         wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
@@ -270,6 +297,8 @@ class TestBrowserParticipantActionLogger:
 
         logger.emit("step-completed", step_id="psu", payload={"status": "passed"})
         assert store.get_participant_action(record.run_id) is None
+        action = store.get_participant_actions(record.run_id)[0]
+        assert action.status == "completed"
 
     def test_callback_received_clears_action(self) -> None:
         """Callback capture clears the active browser action."""
@@ -282,6 +311,7 @@ class TestBrowserParticipantActionLogger:
         logger.emit("auth-callback-received", payload={"state": "state", "code": "auth-code"})
 
         assert store.get_participant_action(record.run_id) is None
+        assert store.get_participant_actions(record.run_id) == []
 
     def test_terminal_events_clear_action(self) -> None:
         """Run-level terminal events clear any active browser action."""

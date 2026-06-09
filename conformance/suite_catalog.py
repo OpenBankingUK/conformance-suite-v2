@@ -132,6 +132,14 @@ _AIS_CERTIFICATION_SLICE_DESCRIPTION = (
 )
 """Description for the partial v4 AIS conformance proof-point suite."""
 
+_AIS_CERTIFICATION_SLICE_V401_DESCRIPTION = (
+    "Certification-grade Open Banking Read/Write v4.0.1 AIS slice covering discovery, JWKS, manual PSU "
+    "authorisation, token exchange, account-access consent creation, and a protected accounts resource "
+    "check. The bundled suite remains partial coverage and must not be treated as full Read/Write API "
+    "certification."
+)
+"""Description for the partial v4.0.1 AIS conformance proof-point suite."""
+
 _AIS_CERTIFICATION_BASELINE_DESCRIPTION = (
     "Certification-track Open Banking Read/Write v4.0 AIS baseline suite covering the current certifiable "
     "foundation for discovery, JWKS, manual PSU authorisation, token exchange, consent creation, and core "
@@ -139,6 +147,14 @@ _AIS_CERTIFICATION_BASELINE_DESCRIPTION = (
     "mandatory matrix is fully applied."
 )
 """Description for the partial v4 AIS certification baseline suite."""
+
+_AIS_CERTIFICATION_BASELINE_V401_DESCRIPTION = (
+    "Certification-track Open Banking Read/Write v4.0.1 AIS baseline suite covering the current certifiable "
+    "foundation for discovery, JWKS, manual PSU authorisation, token exchange, consent creation, and core "
+    "account-resource checks. The bundled suite remains partial coverage until the Standards-approved v4 AIS "
+    "mandatory matrix is fully applied."
+)
+"""Description for the partial v4.0.1 AIS certification baseline suite."""
 
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
@@ -175,6 +191,102 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-cbpii-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced CBPII discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced CBPII PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "pis", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced PIS discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced PIS PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-vrp-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced VRP discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced VRP PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-baseline"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced AIS certification baseline",
+        description=_AIS_CERTIFICATION_BASELINE_V401_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-slice"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced AIS certification slice",
+        description=_AIS_CERTIFICATION_SLICE_V401_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-cbpii-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced CBPII discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced CBPII PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-pis-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced PIS discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced PIS PSU auth starter suite",
+        description=_PSU_AUTH_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "discovery-jwks"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-vrp-discovery-jwks.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced VRP discovery/JWKS smoke suite",
+        description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "psu-auth-starter"),
+        resource_name="ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json",
+        label="Open Banking Read/Write v4.0.1 FAPI 1 Advanced VRP PSU auth starter suite",
         description=_PSU_AUTH_STARTER_DESCRIPTION,
     ),
 )
@@ -239,8 +351,11 @@ def _metadata_from_entry(entry: _CatalogEntry) -> SuiteMetadata:
         Public metadata for API/UI/CLI display and later result metadata.
     """
     standard, spec_version, profile, api, suite = entry.key
+    catalog_id = "/".join((standard, spec_version, profile, suite))
+    if api != "ais":
+        catalog_id = "/".join((standard, spec_version, profile, api, suite))
     return SuiteMetadata(
-        catalog_id="/".join((standard, spec_version, profile, suite)),
+        catalog_id=catalog_id,
         label=entry.label,
         standard=standard,
         spec_version=spec_version,

@@ -12,8 +12,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Config-selected suites now use a normalized suite-selection contract with an explicit `testSuite.api` family. Existing configs that omit the new field continue to resolve through the current AIS-backed bundled suites, suite metadata now exposes `api`, and existing catalog IDs remain stable while future OBL v4.0.1, PIS/CBPII/VRP, and cVRP catalog entries are phased in.
+- Browser plan preview, API launch surfaces, and CLI suite-resolution flows now share the same expanded OBL version/API suite matrix and plan-level auth inventory model, including stable auth-bundle IDs and explicit selected-step-to-bundle mappings used by runtime token binding.
 - Local runtime entry points now standardise on port `8443`, matching the callback port used by legacy previous-FCS Ozone model-bank registrations such as `https://0.0.0.0:8443/conformancesuite/callback`. This covers `make dev`, `make serve`, Docker port publishing, the container command, container healthcheck, and CI smoke-test health probing.
 - Local debug and Makefile-launched Uvicorn/Docker runs now include `0.0.0.0` in `ALLOWED_HOSTS`, so browser requests and ASPSP redirects using the legacy registered host `0.0.0.0:8443` are accepted instead of raising Django `DisallowedHost`.
+- Browser guided-flow inputs now include a model-bank example selector that fills known environment and discovery values while preserving editable custom endpoint fields.
 
 - Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
 

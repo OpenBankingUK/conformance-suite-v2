@@ -138,6 +138,17 @@ class RuntimeConfig:
 
 
 @dataclass(frozen=True)
+class TokenRecord:
+    """Runtime access-token material addressable by semantic requirement id.
+
+    Attributes:
+        access_token: OAuth access token value bound to one auth requirement.
+    """
+
+    access_token: str
+
+
+@dataclass(frozen=True)
 class ExecutionContext:
     """Immutable execution context accumulating step records.
 
@@ -147,11 +158,14 @@ class ExecutionContext:
 
     Attributes:
         steps: Immutable mapping from step id to captured request/response record.
+        tokens: Immutable mapping from semantic token id to captured token
+            material.
         config: Optional runtime config values allowed in ``${config.*}``
             placeholders.
     """
 
     steps: Mapping[str, StepRecord] = field(default_factory=lambda: MappingProxyType({}))
+    tokens: Mapping[str, TokenRecord] = field(default_factory=lambda: MappingProxyType({}))
     config: RuntimeConfig | None = None
 
     def __post_init__(self) -> None:
@@ -162,6 +176,7 @@ class ExecutionContext:
         mutations are rejected at runtime.
         """
         object.__setattr__(self, "steps", MappingProxyType(dict(self.steps)))
+        object.__setattr__(self, "tokens", MappingProxyType(dict(self.tokens)))
 
 
 _PLACEHOLDER_PATTERN = re.compile(r"\$\{([^}]+)\}")
@@ -190,7 +205,24 @@ def record_step(
     """
     new_steps = dict(context.steps)
     new_steps[step_id] = StepRecord(request=request, response=response)
-    return ExecutionContext(steps=new_steps, config=context.config)
+    return ExecutionContext(steps=new_steps, tokens=context.tokens, config=context.config)
+
+
+def record_token(context: ExecutionContext, token_id: str, access_token: str) -> ExecutionContext:
+    """Return a new context with one semantic token id recorded.
+
+    Args:
+        context: Current execution context (unchanged).
+        token_id: Semantic auth requirement id for the token value.
+        access_token: OAuth access token bound to ``token_id``.
+
+    Returns:
+        A new execution context containing all previous step and token records
+        plus the latest token value for ``token_id``.
+    """
+    new_tokens = dict(context.tokens)
+    new_tokens[token_id] = TokenRecord(access_token=access_token)
+    return ExecutionContext(steps=context.steps, tokens=new_tokens, config=context.config)
 
 
 _TRUNCATION_CONTEXT_CHARS = 20
@@ -268,6 +300,7 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     Supported dot-path grammar:
     ``steps.<id>.request.(method|url)``
     ``steps.<id>.response.(status_code|body.<dot.path>)``
+    ``tokens.<token-id>.access_token``
     ``config.(discoveryUrl|environment)``
     ``config.oauth.(clientId|redirectUri|authorizationEndpoint|resourceBaseUrl)``
 
@@ -325,6 +358,8 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
     segments = dot_path.split(".")
     if segments[0] == "config":
         return _resolve_config_path(segments, context, dot_path)
+    if segments[0] == "tokens":
+        return _resolve_token_path(segments, context, dot_path)
     if len(segments) < 4 or segments[0] != "steps":
         raise PlaceholderResolutionError(f"Invalid placeholder path: ${{{dot_path}}}")
 
@@ -436,6 +471,37 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
     return context.config.oauth_redirect_uri
+
+
+def _resolve_token_path(segments: list[str], context: ExecutionContext, dot_path: str) -> str:
+    """Resolve a semantic token placeholder.
+
+    Supported grammar:
+    ``tokens.<token-id>.access_token``
+
+    Args:
+        segments: Dot-path segments split from the placeholder expression.
+        context: Execution context carrying runtime token records.
+        dot_path: Full original dot-path for error messages.
+
+    Returns:
+        Resolved token field value.
+
+    Raises:
+        PlaceholderResolutionError: If the token placeholder shape is invalid,
+            the token id is unknown, or an unsupported token field is
+            requested.
+    """
+    if len(segments) != 3:
+        raise PlaceholderResolutionError(f"Unsupported token placeholder: ${{{dot_path}}}")
+    token_id = segments[1]
+    field_name = segments[2]
+    if token_id not in context.tokens:
+        raise PlaceholderResolutionError(f"Token '{token_id}' not found in execution context")
+    token_record = context.tokens[token_id]
+    if field_name != "access_token":
+        raise PlaceholderResolutionError(f"Unsupported token field '{field_name}': ${{{dot_path}}}")
+    return token_record.access_token
 
 
 def _resolve_request_path(request: RequestRecord, field_name: str, remaining: list[str], dot_path: str) -> str:

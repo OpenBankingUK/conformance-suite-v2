@@ -76,6 +76,22 @@ _SUPPORTED_SUITE_SELECTIONS = {
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-slice"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "discovery-jwks"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "discovery-jwks"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "psu-auth-starter"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "discovery-jwks"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "psu-auth-starter"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "discovery-jwks"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "psu-auth-starter"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-slice"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-baseline"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "discovery-jwks"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "psu-auth-starter"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "discovery-jwks"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "psu-auth-starter"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "discovery-jwks"),
+    ("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "psu-auth-starter"),
 }
 """Currently runnable normalized suite combinations backed by bundled manifests."""
 
