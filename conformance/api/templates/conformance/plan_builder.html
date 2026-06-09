@@ -676,7 +676,7 @@
             return '';
         };
 
-        const syncModelBankExample = () => {
+        const syncModelBankExample = ({ onlyBlank = false } = {}) => {
             if (!modelBankSelect || !environmentInput || !discoveryUrlInput) {
                 return;
             }
@@ -684,8 +684,12 @@
             if (!selectedOption || !selectedOption.value) {
                 return;
             }
-            environmentInput.value = selectedOption.dataset.environment || '';
-            discoveryUrlInput.value = selectedOption.dataset.discoveryUrl || '';
+            if (!onlyBlank || !environmentInput.value) {
+                environmentInput.value = selectedOption.dataset.environment || '';
+            }
+            if (!onlyBlank || !discoveryUrlInput.value) {
+                discoveryUrlInput.value = selectedOption.dataset.discoveryUrl || '';
+            }
         };
 
         const syncApiOptions = () => {
@@ -758,6 +762,7 @@
         });
         suiteSelect.addEventListener('change', syncPromptPanels);
         syncGuidedFlow();
+        syncModelBankExample({ onlyBlank: true });
     })();
 </script>
 </body>
