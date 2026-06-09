@@ -10,7 +10,8 @@
     },
     "oauth": {
         "clientId": "your-client-id-here",
-        "redirectUri": "https://conformance.example.com/callback"
+        "redirectUri": "https://conformance.example.com/callback",
+        "openBankingIntentId": "your-existing-account-access-consent-id"
     },
     "tls": {
         "certificatePathRoot": "./certs"

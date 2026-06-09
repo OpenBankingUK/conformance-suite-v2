@@ -39,6 +39,8 @@ class RequestObjectSigningInput:
         scope: OAuth scope carried in the request object.
         state: Opaque state value already registered for the PSU session.
         nonce: OIDC nonce value bound to the authorisation request.
+        openbanking_intent_id: Optional consent identifier copied into the
+            Open Banking ``claims.id_token.openbanking_intent_id`` claim.
     """
 
     issuer: str
@@ -49,6 +51,7 @@ class RequestObjectSigningInput:
     scope: str
     state: str
     nonce: str
+    openbanking_intent_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -136,6 +139,14 @@ class FapiSigningService:
         scope = _require_non_empty_string(request_object.scope, label="request_object.scope")
         state = _require_non_empty_string(request_object.state, label="request_object.state")
         nonce = _require_non_empty_string(request_object.nonce, label="request_object.nonce")
+        openbanking_intent_id = (
+            _require_non_empty_string(
+                request_object.openbanking_intent_id,
+                label="request_object.openbanking_intent_id",
+            )
+            if request_object.openbanking_intent_id is not None
+            else None
+        )
 
         issued_at, expires_at = _build_token_window(clock=self.clock, lifetime=lifetime)
         jwt_id = _build_jwt_id(self.jwt_id_factory)
@@ -153,6 +164,15 @@ class FapiSigningService:
             "exp": int(expires_at.timestamp()),
             "jti": jwt_id,
         }
+        if openbanking_intent_id is not None:
+            claims["claims"] = {
+                "id_token": {
+                    "openbanking_intent_id": {
+                        "essential": True,
+                        "value": openbanking_intent_id,
+                    }
+                }
+            }
         token = _sign_ps256_jwt(
             self.signing_credentials.signing_private_key_pem,
             key_id=self.signing_config.key_id,

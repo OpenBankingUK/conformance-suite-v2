@@ -1123,12 +1123,18 @@ def _resolve_psu_request_object(
         if request_object.audience is not None
         else authorization_endpoint
     )
+    openbanking_intent_id = (
+        resolve_placeholders(request_object.openbanking_intent_id, context)
+        if request_object.openbanking_intent_id is not None
+        else None
+    )
     return _generate_psu_request_object(
         generated_request_object=request_object,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         authorization_endpoint=authorization_endpoint,
         audience=audience,
+        openbanking_intent_id=openbanking_intent_id,
         client_id=client_id,
         redirect_uri=redirect_uri,
         response_type=manifest_step.response_type,
@@ -1145,6 +1151,7 @@ def _generate_psu_request_object(
     fapi_signing_service: _LazyFapiSigningService | None,
     authorization_endpoint: str,
     audience: str,
+    openbanking_intent_id: str | None,
     client_id: str,
     redirect_uri: str,
     response_type: str,
@@ -1162,6 +1169,8 @@ def _generate_psu_request_object(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
         audience: Resolved request-object JWT ``aud`` claim.
+        openbanking_intent_id: Optional Open Banking consent identifier
+            resolved from the manifest directive.
         client_id: Resolved OAuth client identifier.
         redirect_uri: Resolved registered redirect URI.
         response_type: Static OAuth response type from the PSU step.
@@ -1199,6 +1208,7 @@ def _generate_psu_request_object(
             scope=scope,
             state=state,
             nonce=nonce,
+            openbanking_intent_id=openbanking_intent_id,
         )
     )
     return signed_request_object.token

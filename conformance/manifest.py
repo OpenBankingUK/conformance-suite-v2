@@ -155,10 +155,15 @@ class GeneratedRequestObject:
             permitted so bundled manifests can use the OpenID discovery
             issuer when an ASPSP requires that value instead of the concrete
             authorisation endpoint URL.
+        openbanking_intent_id: Optional Open Banking consent identifier that
+            should be embedded into the signed request object. Placeholders are
+            permitted so bundled AIS manifests can bind PSU authorisation to a
+            consent created by an earlier step.
     """
 
     source: GeneratedRequestObjectSource
     audience: str | None = None
+    openbanking_intent_id: str | None = None
 
 
 RequestObjectValue = str | GeneratedRequestObject
@@ -695,7 +700,7 @@ Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (
 """
 
 _CONFIG_PLACEHOLDER_PATTERN = re.compile(
-    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|resourceBaseUrl))\}"
+    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|openBankingIntentId|resourceBaseUrl))\}"
 )
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
@@ -1168,7 +1173,11 @@ def _parse_generated_request_object(
         ManifestError: If the directive contains unknown keys, malformed
             placeholders, or an unsupported source selector.
     """
-    _reject_unknown_keys(raw_request_object, allowed_keys={"source", "audience"}, location=location)
+    _reject_unknown_keys(
+        raw_request_object,
+        allowed_keys={"source", "audience", "openbankingIntentId"},
+        location=location,
+    )
     source = _required_string(raw_request_object, "source", location=location)
     _validate_constant_manifest_string(source, location=f"{location}.source", seen_ids=seen_ids)
     if source != "fapi-signing":
@@ -1179,7 +1188,23 @@ def _parse_generated_request_object(
     audience = raw_audience.strip() if isinstance(raw_audience, str) else None
     if audience is not None:
         _validate_placeholder_syntax(audience, location=f"{location}.audience", seen_ids=seen_ids)
-    return GeneratedRequestObject(source="fapi-signing", audience=audience)
+    raw_openbanking_intent_id = raw_request_object.get("openbankingIntentId")
+    if raw_openbanking_intent_id is not None and (
+        not isinstance(raw_openbanking_intent_id, str) or not raw_openbanking_intent_id.strip()
+    ):
+        raise ManifestError(f"{location}.openbankingIntentId must be a non-empty string when present")
+    openbanking_intent_id = raw_openbanking_intent_id.strip() if isinstance(raw_openbanking_intent_id, str) else None
+    if openbanking_intent_id is not None:
+        _validate_placeholder_syntax(
+            openbanking_intent_id,
+            location=f"{location}.openbankingIntentId",
+            seen_ids=seen_ids,
+        )
+    return GeneratedRequestObject(
+        source="fapi-signing",
+        audience=audience,
+        openbanking_intent_id=openbanking_intent_id,
+    )
 
 
 def _parse_optional_token_endpoint_auth_policy(
@@ -1384,6 +1409,7 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
                     f"{location} contains unsupported config placeholder: {token} "
                     "(allowed: ${config.discoveryUrl}, ${config.environment}, "
                     "${config.oauth.clientId}, ${config.oauth.redirectUri}, "
+                    "${config.oauth.openBankingIntentId}, "
                     "${config.oauth.resourceBaseUrl})"
                 )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")

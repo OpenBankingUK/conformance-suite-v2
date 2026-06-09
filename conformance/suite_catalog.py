@@ -10,6 +10,7 @@ from typing import cast
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestError, parse_manifest
 from conformance.model_bank_config import (
+    SuiteApiFamily,
     SuiteName,
     SuiteProfile,
     SuiteSelection,
@@ -22,7 +23,7 @@ class SuiteCatalogError(ValueError):
     """Raised when a config-selected suite cannot be resolved from the catalog."""
 
 
-type SuiteCatalogKey = tuple[SuiteStandard, SuiteSpecVersion, SuiteProfile, SuiteName]
+type SuiteCatalogKey = tuple[SuiteStandard, SuiteSpecVersion, SuiteProfile, SuiteApiFamily, SuiteName]
 """Tuple key used to map a validated config suite selection to a bundled manifest."""
 
 
@@ -37,6 +38,7 @@ class SuiteMetadata:
         standard: Open Banking standard family covered by the suite.
         spec_version: Standards specification version covered by the suite.
         profile: Security profile scoped by the suite.
+        api: API family covered by the suite.
         suite: Versioned smoke/conformance suite identifier.
         manifest_resource: Package resource name for the bundled manifest.
         description: Short scope note for participants and logs.
@@ -47,6 +49,7 @@ class SuiteMetadata:
     standard: SuiteStandard
     spec_version: SuiteSpecVersion
     profile: SuiteProfile
+    api: SuiteApiFamily
     suite: SuiteName
     manifest_resource: str
     description: str
@@ -64,6 +67,7 @@ class SuiteMetadata:
             "standard": self.standard,
             "specVersion": self.spec_version,
             "profile": self.profile,
+            "api": self.api,
             "suite": self.suite,
         }
 
@@ -87,7 +91,7 @@ class _CatalogEntry:
     """Internal catalog row pointing a suite key at a bundled resource.
 
     Attributes:
-        key: Version/profile/suite tuple accepted by participant config.
+        key: Version/profile/API/suite tuple accepted by participant config.
         resource_name: JSON manifest resource stored in
             :mod:`conformance.suites`.
         label: Human-readable display label.
@@ -138,37 +142,37 @@ _AIS_CERTIFICATION_BASELINE_DESCRIPTION = (
 
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
-        key=("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
+        key=("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "discovery-jwks"),
         resource_name="ob-read-write-v3.1.11-fapi1-advanced-discovery-jwks.json",
         label="Open Banking Read/Write v3.1.11 FAPI 1 Advanced discovery/JWKS smoke suite",
         description=_SMOKE_SUITE_DESCRIPTION,
     ),
     _CatalogEntry(
-        key=("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
+        key=("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "psu-auth-starter"),
         resource_name="ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
         label="Open Banking Read/Write v3.1.11 FAPI 1 Advanced PSU auth starter suite",
         description=_PSU_AUTH_STARTER_DESCRIPTION,
     ),
     _CatalogEntry(
-        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-baseline"),
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline",
         description=_AIS_CERTIFICATION_BASELINE_DESCRIPTION,
     ),
     _CatalogEntry(
-        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-slice"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice",
         description=_AIS_CERTIFICATION_SLICE_DESCRIPTION,
     ),
     _CatalogEntry(
-        key=("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "discovery-jwks"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
         description=_SMOKE_SUITE_DESCRIPTION,
     ),
     _CatalogEntry(
-        key=("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
         resource_name="ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite",
         description=_PSU_AUTH_STARTER_DESCRIPTION,
@@ -208,7 +212,7 @@ def resolve_suite(selection: SuiteSelection) -> ResolvedSuite:
         raise SuiteCatalogError(
             "Unsupported suite selection: "
             f"standard={selection.standard}, specVersion={selection.spec_version}, "
-            f"profile={selection.profile}, suite={selection.suite}"
+            f"profile={selection.profile}, api={selection.api}, suite={selection.suite}"
         )
     return ResolvedSuite(metadata=_metadata_from_entry(entry), manifest=_load_manifest(entry))
 
@@ -222,7 +226,7 @@ def _selection_key(selection: SuiteSelection) -> SuiteCatalogKey:
     Returns:
         Tuple key used by the catalog lookup table.
     """
-    return (selection.standard, selection.spec_version, selection.profile, selection.suite)
+    return (selection.standard, selection.spec_version, selection.profile, selection.api, selection.suite)
 
 
 def _metadata_from_entry(entry: _CatalogEntry) -> SuiteMetadata:
@@ -234,13 +238,14 @@ def _metadata_from_entry(entry: _CatalogEntry) -> SuiteMetadata:
     Returns:
         Public metadata for API/UI/CLI display and later result metadata.
     """
-    standard, spec_version, profile, suite = entry.key
+    standard, spec_version, profile, api, suite = entry.key
     return SuiteMetadata(
-        catalog_id="/".join(entry.key),
+        catalog_id="/".join((standard, spec_version, profile, suite)),
         label=entry.label,
         standard=standard,
         spec_version=spec_version,
         profile=profile,
+        api=api,
         suite=suite,
         manifest_resource=entry.resource_name,
         description=entry.description,

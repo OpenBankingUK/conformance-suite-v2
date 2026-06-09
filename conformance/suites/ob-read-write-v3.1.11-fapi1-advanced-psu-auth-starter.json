@@ -52,7 +52,8 @@
       "scope": "openid accounts",
       "requestObject": {
         "source": "fapi-signing",
-        "audience": "${steps.openid-discovery.response.body.issuer}"
+        "audience": "${steps.openid-discovery.response.body.issuer}",
+        "openbankingIntentId": "${config.oauth.openBankingIntentId}"
       },
       "timeoutSeconds": 180,
       "mandatory": true

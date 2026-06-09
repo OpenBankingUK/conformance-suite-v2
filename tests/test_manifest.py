@@ -2480,6 +2480,75 @@ def test_parse_v1_psu_step_rejects_unknown_generated_request_object_key() -> Non
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_accepts_generated_request_object_openbanking_intent_id_placeholder() -> None:
+    """Generated request objects may declare an intent-id placeholder for later runtime signing."""
+    raw: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "request-object-intent-id",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://auth.example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "account-access-consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://rs.example.com/account-access-consents",
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "client-id",
+                "redirectUri": "https://conformance.example.com/callback",
+                "requestObject": {
+                    "source": "fapi-signing",
+                    "audience": "${steps.discovery.response.body.issuer}",
+                    "openbankingIntentId": "${steps.account-access-consent.response.body.Data.ConsentId}",
+                },
+            },
+        ],
+    }
+
+    manifest = parse_manifest(raw)
+
+    psu_step = manifest.steps[2]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.discovery.response.body.issuer}",
+        openbanking_intent_id="${steps.account-access-consent.response.body.Data.ConsentId}",
+    )
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_empty_generated_request_object_openbanking_intent_id() -> None:
+    """Generated request objects reject blank intent ids when the field is present."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "fapi-signing",
+        "openbankingIntentId": "   ",
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.requestObject\.openbankingIntentId must be a non-empty string when present",
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
 def test_parse_v1_psu_step_rejects_secret_bearing_config_placeholder_in_generated_request_object_source() -> None:
     """Generated request-object discriminators must not accept secret-bearing config placeholders."""
     raw = valid_psu_manifest()

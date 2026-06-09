@@ -1,8 +1,8 @@
 import pytest
 from django.conf import settings
-from django.test import Client
+from django.test import Client, override_settings
 
-from config.settings import _build_allowed_hosts
+from config.settings import LEGACY_FCS_CALLBACK_HOST, _build_allowed_hosts
 
 
 @pytest.mark.integration
@@ -64,6 +64,17 @@ def test_debug_settings_allow_localhost() -> None:
 
     assert "localhost" in allowed_hosts
     assert "127.0.0.1" in allowed_hosts
+    assert LEGACY_FCS_CALLBACK_HOST in allowed_hosts
+
+
+@pytest.mark.integration
+def test_home_accepts_legacy_fcs_host_header() -> None:
+    """Debug browser runs accept the legacy FCS callback host literal."""
+    with override_settings(ALLOWED_HOSTS=_build_allowed_hosts(debug=True)):
+        response = Client(HTTP_HOST="0.0.0.0:8443").get("/")
+
+    assert response.status_code == 302
+    assert response["Location"] == "/plan/"
 
 
 @pytest.mark.integration

@@ -45,6 +45,7 @@ PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
     "oauth": {
         "clientId": "test-client-id",
         "redirectUri": "https://conformance.example.com/callback",
+        "openBankingIntentId": "consent-ui-123",
     },
 }
 
@@ -439,9 +440,10 @@ class TestPlanBuilderUi:
                 selected_step_ids=[
                     "openid-discovery",
                     "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
                     "psu-authorization",
                     "token-exchange",
-                    "account-access-consent",
                     "accounts-list",
                     "account-balances",
                     "account-transactions",
@@ -570,9 +572,10 @@ class TestPlanBuilderUi:
                 selected_step_ids=[
                     "openid-discovery",
                     "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
                     "psu-authorization",
                     "token-exchange",
-                    "account-access-consent",
                     "accounts-list",
                     "account-balances",
                     "account-transactions",
@@ -591,9 +594,10 @@ class TestPlanBuilderUi:
         assert plan.selected_step_ids() == [
             "openid-discovery",
             "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
             "psu-authorization",
             "token-exchange",
-            "account-access-consent",
             "accounts-list",
             "account-balances",
             "account-transactions",
@@ -625,9 +629,10 @@ class TestPlanBuilderUi:
                 selected_step_ids=[
                     "openid-discovery",
                     "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
                     "psu-authorization",
                     "token-exchange",
-                    "account-access-consent",
                     "accounts-list",
                     "account-detail",
                     "account-balances",
@@ -651,9 +656,10 @@ class TestPlanBuilderUi:
         assert plan.selected_step_ids() == [
             "openid-discovery",
             "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
             "psu-authorization",
             "token-exchange",
-            "account-access-consent",
             "accounts-list",
             "account-detail",
             "account-balances",
@@ -778,6 +784,17 @@ class TestRunDetailUi:
             if url == "https://example.com/jwks":
                 return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "test-key"}]}, headers=json_headers)
             if url == "https://example.com/token":
+                body = request.content.decode("ascii")
+                if "grant_type=client_credentials" in body:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "access_token": "browser-baseline-access-token",
+                            "token_type": "Bearer",
+                            "expires_in": 300,
+                        },
+                        headers=json_headers,
+                    )
                 return httpx.Response(
                     200,
                     json={
@@ -881,9 +898,10 @@ class TestRunDetailUi:
                 selected_step_ids=[
                     "openid-discovery",
                     "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
                     "psu-authorization",
                     "token-exchange",
-                    "account-access-consent",
                     "accounts-list",
                     "account-detail",
                     "account-balances",
@@ -910,19 +928,19 @@ class TestRunDetailUi:
         assert log_response.status_code == 200
 
         result_body = result_response.json()
-        token_form_fields = parse_qs(captured_requests[2].content.decode("ascii"), keep_blank_values=True)
+        token_form_fields = parse_qs(captured_requests[4].content.decode("ascii"), keep_blank_values=True)
         raw_client_assertion = token_form_fields["client_assertion"][0]
-        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
+        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[5:]]
         result_json = json.dumps(result_body, sort_keys=True)
         log_json = log_response.content.decode("utf-8")
 
         assert result_body["status"] == "passed"
-        assert result_body["summary"] == {"total": 10, "passed": 10, "failed": 0, "warn": 0, "skipped": 0}
+        assert result_body["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
         assert result_body["plan"] == {
-            "totalSteps": 27,
-            "selectedSteps": 10,
+            "totalSteps": 28,
+            "selectedSteps": 11,
             "deselectedSteps": 17,
-            "mandatorySelected": 10,
+            "mandatorySelected": 11,
             "mandatoryDeselected": 0,
         }
         assert result_body["suite"] == {
@@ -931,6 +949,7 @@ class TestRunDetailUi:
             "standard": "ob-read-write",
             "specVersion": "v4.0",
             "profile": "fapi1-advanced",
+            "api": "ais",
             "suite": "ais-certification-baseline",
         }
         assert result_body["certificationEligibility"]["reason"] == (
@@ -941,12 +960,16 @@ class TestRunDetailUi:
             ("GET", "https://example.com/jwks"),
             ("POST", "https://example.com/token"),
             ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("POST", "https://example.com/token"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
         ]
+        consent_token_form_fields = parse_qs(captured_requests[2].content.decode("ascii"), keep_blank_values=True)
+        assert consent_token_form_fields["grant_type"] == ["client_credentials"]
+        assert consent_token_form_fields["client_id"] == ["test-client-id"]
         assert token_form_fields["grant_type"] == ["authorization_code"]
         assert token_form_fields["code"] == ["browser-baseline-auth-code"]
         assert token_form_fields["client_id"] == ["test-client-id"]
@@ -954,7 +977,8 @@ class TestRunDetailUi:
         assert token_form_fields["client_assertion_type"] == ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
         assert raw_client_assertion
         assert raw_request_object
-        assert resource_authorization_headers == ["Bearer browser-baseline-access-token"] * 6
+        assert captured_requests[3].headers["Authorization"] == "Bearer browser-baseline-access-token"
+        assert resource_authorization_headers == ["Bearer browser-baseline-access-token"] * 5
 
         assert "browser-baseline-auth-code" not in result_json
         assert "browser-baseline-access-token" not in result_json
@@ -1017,6 +1041,13 @@ class TestRunDetailUi:
                     headers={"Content-Type": "application/json"},
                 )
             if url == "https://example.com/token":
+                body = request.content.decode("ascii")
+                if "grant_type=client_credentials" in body:
+                    return httpx.Response(
+                        200,
+                        json={"access_token": "ais-access-token", "token_type": "Bearer", "expires_in": 300},
+                        headers={"Content-Type": "application/json"},
+                    )
                 return httpx.Response(
                     200,
                     json={"access_token": "ais-access-token", "token_type": "Bearer", "expires_in": 300},
@@ -1087,9 +1118,10 @@ class TestRunDetailUi:
                 selected_step_ids=[
                     "openid-discovery",
                     "jwks-fetch",
+                    "client-credentials-token",
+                    "account-access-consent",
                     "psu-authorization",
                     "token-exchange",
-                    "account-access-consent",
                     "accounts-list",
                     "account-balances",
                     "account-transactions",
@@ -1114,18 +1146,19 @@ class TestRunDetailUi:
         result_body = result_response.json()
         assert result_body["status"] == "passed"
         assert result_body["plan"] == {
-            "totalSteps": 8,
-            "selectedSteps": 8,
+            "totalSteps": 9,
+            "selectedSteps": 9,
             "deselectedSteps": 0,
-            "mandatorySelected": 8,
+            "mandatorySelected": 9,
             "mandatoryDeselected": 0,
         }
         assert [step["name"] for step in result_body["steps"]] == [
             "openid-discovery",
             "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
             "psu-authorization",
             "token-exchange",
-            "account-access-consent",
             "accounts-list",
             "account-balances",
             "account-transactions",

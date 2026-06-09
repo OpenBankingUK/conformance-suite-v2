@@ -132,6 +132,9 @@ def run(argv: Sequence[str] | None = None) -> int:
                     oauth_authorization_endpoint=(
                         config.oauth.authorization_endpoint if config.oauth is not None else None
                     ),
+                    oauth_open_banking_intent_id=(
+                        config.oauth.open_banking_intent_id if config.oauth is not None else None
+                    ),
                 ),
                 fapi_signing_config=config.fapi_signing,
                 mtls_client_configured=(

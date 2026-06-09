@@ -421,9 +421,10 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     status_by_step: dict[str, CheckStatus] = {
         "openid-discovery": "passed",
         "jwks-fetch": "warn",
+        "client-credentials-token": "passed",
+        "account-access-consent": "passed",
         "psu-authorization": "passed",
         "token-exchange": "passed",
-        "account-access-consent": "passed",
         "accounts-list": "passed",
         "account-balances": "failed",
         "account-transactions": "skipped",
@@ -448,8 +449,8 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
 
     assert isinstance(block, dict)
     assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 8
-    assert block["mandatoryPassed"] == 5
+    assert block["mandatoryTotal"] == 9
+    assert block["mandatoryPassed"] == 6
     assert block["mandatoryWarn"] == 1
     assert block["mandatoryFailed"] == 1
     assert block["mandatorySkipped"] == 1
@@ -498,8 +499,8 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     block = rendered["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 10
-    assert block["mandatoryPassed"] == 10
+    assert block["mandatoryTotal"] == 11
+    assert block["mandatoryPassed"] == 11
     assert block["reason"] == "Manifest is not marked as complete certification coverage"
     assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
     assert rendered["suite"] == {
@@ -508,6 +509,7 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
         "standard": "ob-read-write",
         "specVersion": "v4.0",
         "profile": "fapi1-advanced",
+        "api": "ais",
         "suite": "ais-certification-baseline",
     }
 
@@ -607,6 +609,7 @@ def test_suite_metadata_serialized_when_supplied() -> None:
         standard="ob-read-write",
         spec_version="v4.0",
         profile="fapi1-advanced",
+        api="ais",
         suite="discovery-jwks",
         manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
         description="Smoke-level discovery and JWKS checks.",
@@ -625,6 +628,7 @@ def test_suite_metadata_serialized_when_supplied() -> None:
         "standard": "ob-read-write",
         "specVersion": "v4.0",
         "profile": "fapi1-advanced",
+        "api": "ais",
         "suite": "discovery-jwks",
     }
 

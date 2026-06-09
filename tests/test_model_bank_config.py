@@ -136,6 +136,7 @@ def test_parse_model_bank_config_accepts_supported_test_suite(spec_version: Suit
         spec_version=spec_version,
         profile="fapi1-advanced",
         suite="discovery-jwks",
+        api="ais",
     )
 
 
@@ -155,6 +156,7 @@ def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: Su
             "oauth": {
                 "clientId": "my-client-id",
                 "redirectUri": "https://example.com/callback",
+                "openBankingIntentId": "consent-123",
             },
         },
         base_dir=tmp_path,
@@ -165,10 +167,12 @@ def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: Su
         spec_version=spec_version,
         profile="fapi1-advanced",
         suite="psu-auth-starter",
+        api="ais",
     )
     assert config.oauth is not None
     assert config.oauth.client_id == "my-client-id"
     assert config.oauth.redirect_uri == "https://example.com/callback"
+    assert config.oauth.open_banking_intent_id == "consent-123"
 
 
 @pytest.mark.unit
@@ -197,6 +201,7 @@ def test_parse_model_bank_config_accepts_ais_certification_slice_suite(tmp_path:
         spec_version="v4.0",
         profile="fapi1-advanced",
         suite="ais-certification-slice",
+        api="ais",
     )
     assert config.oauth is not None
     assert config.oauth.resource_base_url == "https://rs.example.com"
@@ -228,9 +233,79 @@ def test_parse_model_bank_config_accepts_ais_certification_baseline_suite(tmp_pa
         spec_version="v4.0",
         profile="fapi1-advanced",
         suite="ais-certification-baseline",
+        api="ais",
     )
     assert config.oauth is not None
     assert config.oauth.resource_base_url == "https://rs.example.com"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_explicit_test_suite_api(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": "v4.0",
+                "api": "ais",
+                "profile": "fapi1-advanced",
+                "suite": "ais-certification-baseline",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-baseline",
+        api="ais",
+    )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_known_api_without_bundled_suite(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="api=pis"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v4.0",
+                    "api": "pis",
+                    "profile": "fapi1-advanced",
+                    "suite": "discovery-jwks",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_cvrp_until_bundled_suite_exists(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="standard=cvrp, specVersion=v4.0, api=cvrp"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "cvrp",
+                    "specVersion": "v4.0",
+                    "api": "cvrp",
+                    "profile": "fapi1-advanced",
+                    "suite": "discovery-jwks",
+                },
+            },
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.unit
@@ -428,8 +503,9 @@ def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path
 @pytest.mark.parametrize(
     ("field_name", "value", "expected_message"),
     [
-        ("standard", "ob-business-banking", "testSuite.standard must be one of: ob-read-write"),
-        ("specVersion", "v3.1.10", "testSuite.specVersion must be one of: v3.1.11, v4.0"),
+        ("standard", "ob-business-banking", "testSuite.standard must be one of: ob-read-write, cvrp"),
+        ("specVersion", "v3.1.10", "testSuite.specVersion must be one of: v3.1.11, v4.0, v4.0.1"),
+        ("api", "cards", "testSuite.api must be one of: ais, pis, cbpii, vrp, cvrp"),
         ("profile", "fapi2-security-profile", "testSuite.profile must be one of: fapi1-advanced"),
         (
             "suite",
@@ -719,6 +795,7 @@ def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
             "oauth": {
                 "clientId": "my-client-001",
                 "redirectUri": "https://app.example.com/callback",
+                "openBankingIntentId": "consent-789",
                 "resourceBaseUrl": "https://rs.example.com",
             },
         },
@@ -728,6 +805,7 @@ def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
     assert config.oauth == OAuthConfig(
         client_id="my-client-001",
         redirect_uri="https://app.example.com/callback",
+        open_banking_intent_id="consent-789",
         resource_base_url="https://rs.example.com",
     )
 
@@ -754,6 +832,23 @@ def test_parse_model_bank_config_rejects_non_object_oauth(tmp_path: Path) -> Non
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "oauth": "my-client-001",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_blank_open_banking_intent_id(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.openBankingIntentId must be a non-empty string"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "https://app.example.com/callback",
+                    "openBankingIntentId": "   ",
+                },
             },
             base_dir=tmp_path,
         )

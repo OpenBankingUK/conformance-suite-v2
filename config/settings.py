@@ -23,12 +23,14 @@ def _get_allowed_hosts() -> list[str]:
 
 
 # Reserved hostname sent by the container HEALTHCHECK (see Dockerfile).
-# The healthcheck runs inside the container against ``http://localhost:8000/``
+# The healthcheck runs inside the container against ``http://localhost:8443/``
 # but sends an explicit ``Host: healthcheck.local`` header so the probe does
 # not depend on operators including ``localhost`` in ``DJANGO_ALLOWED_HOSTS``.
 # This token is reserved for the in-container probe and is unconditionally
 # trusted; it is not routable from outside the container.
 HEALTHCHECK_HOST = "healthcheck.local"
+LEGACY_FCS_CALLBACK_HOST = "0.0.0.0"  # noqa: S104 - legacy registered callback Host header, not a bind target.
+"""Host literal used by previous-FCS Ozone model-bank callback registrations."""
 
 
 def _build_allowed_hosts(*, debug: bool) -> list[str]:
@@ -42,7 +44,7 @@ def _build_allowed_hosts(*, debug: bool) -> list[str]:
     """
     allowed_hosts = _get_allowed_hosts()
     if debug:
-        for local_host in ("localhost", "127.0.0.1", "[::1]"):
+        for local_host in ("localhost", "127.0.0.1", LEGACY_FCS_CALLBACK_HOST, "[::1]"):
             if local_host not in allowed_hosts:
                 allowed_hosts.append(local_host)
     if HEALTHCHECK_HOST not in allowed_hosts:

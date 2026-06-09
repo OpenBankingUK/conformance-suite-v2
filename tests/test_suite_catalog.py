@@ -15,16 +15,21 @@ from conformance.manifest import (
     PsuAuthorizationStep,
     TokenEndpointAuthPolicy,
 )
-from conformance.model_bank_config import SuiteName, SuiteSelection, SuiteSpecVersion
+from conformance.model_bank_config import SuiteApiFamily, SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
 
 
-def _selection(spec_version: SuiteSpecVersion = "v4.0", suite_name: str = "discovery-jwks") -> SuiteSelection:
+def _selection(
+    spec_version: SuiteSpecVersion = "v4.0",
+    suite_name: str = "discovery-jwks",
+    api: SuiteApiFamily = "ais",
+) -> SuiteSelection:
     """Build a suite-selection value for bundled catalog tests.
 
     Args:
         spec_version: Catalog spec version to resolve.
         suite_name: Bundled suite identifier under test.
+        api: API family to include in the normalized suite-selection key.
 
     Returns:
         Suite selection object matching the requested catalog entry.
@@ -34,6 +39,7 @@ def _selection(spec_version: SuiteSpecVersion = "v4.0", suite_name: str = "disco
         spec_version=spec_version,
         profile="fapi1-advanced",
         suite=cast(SuiteName, suite_name),
+        api=api,
     )
 
 
@@ -45,6 +51,7 @@ def test_resolve_suite_returns_bundled_manifest_for_supported_versions(spec_vers
     assert resolved.metadata.standard == "ob-read-write"
     assert resolved.metadata.spec_version == spec_version
     assert resolved.metadata.profile == "fapi1-advanced"
+    assert resolved.metadata.api == "ais"
     assert resolved.metadata.suite == "discovery-jwks"
     assert resolved.metadata.catalog_id == f"ob-read-write/{spec_version}/fapi1-advanced/discovery-jwks"
     assert "smoke" in resolved.metadata.label
@@ -70,6 +77,7 @@ def test_list_supported_suites_is_deterministic() -> None:
     assert first == second
     assert [metadata.catalog_id for metadata in first] == sorted(metadata.catalog_id for metadata in first)
     assert [metadata.spec_version for metadata in first] == ["v3.1.11", "v3.1.11", "v4.0", "v4.0", "v4.0", "v4.0"]
+    assert [metadata.api for metadata in first] == ["ais", "ais", "ais", "ais", "ais", "ais"]
     assert [metadata.suite for metadata in first] == [
         "discovery-jwks",
         "psu-auth-starter",
@@ -90,6 +98,7 @@ def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_version
     assert resolved.metadata.standard == "ob-read-write"
     assert resolved.metadata.spec_version == spec_version
     assert resolved.metadata.profile == "fapi1-advanced"
+    assert resolved.metadata.api == "ais"
     assert resolved.metadata.suite == "psu-auth-starter"
     assert resolved.metadata.catalog_id == f"ob-read-write/{spec_version}/fapi1-advanced/psu-auth-starter"
     assert "PSU auth starter" in resolved.metadata.label
@@ -113,6 +122,11 @@ def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_version
     assert psu_step.client_id == "${config.oauth.clientId}"
     assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
     assert psu_step.scope == "openid accounts"
+    assert psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.openid-discovery.response.body.issuer}",
+        openbanking_intent_id="${config.oauth.openBankingIntentId}",
+    )
 
     discovery_assertions = discovery_step.assertions
     jwks_assertions = jwks_step.assertions
@@ -153,6 +167,7 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert resolved.metadata.standard == "ob-read-write"
     assert resolved.metadata.spec_version == "v4.0"
     assert resolved.metadata.profile == "fapi1-advanced"
+    assert resolved.metadata.api == "ais"
     assert resolved.metadata.suite == "ais-certification-baseline"
     assert resolved.metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
     assert resolved.metadata.manifest_resource == "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json"
@@ -165,9 +180,10 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     mandatory_step_ids = [
         "openid-discovery",
         "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
         "psu-authorization",
         "token-exchange",
-        "account-access-consent",
         "accounts-list",
         "account-detail",
         "account-balances",
@@ -197,19 +213,28 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert [step.id for step in manifest.steps if step.mandatory] == mandatory_step_ids
     assert [step.id for step in manifest.steps if step.optional] == optional_step_ids
 
-    token_exchange_step = cast(ManifestStep, manifest.steps[3])
-    consent_step = cast(ManifestStep, manifest.steps[4])
-    accounts_step = cast(ManifestStep, manifest.steps[5])
-    account_detail_step = cast(ManifestStep, manifest.steps[6])
-    balances_step = cast(ManifestStep, manifest.steps[7])
-    transactions_step = cast(ManifestStep, manifest.steps[8])
-    transactions_list_step = cast(ManifestStep, manifest.steps[9])
-    psu_step = cast(PsuAuthorizationStep, manifest.steps[2])
+    consent_token_step = cast(ManifestStep, manifest.steps[2])
+    consent_step = cast(ManifestStep, manifest.steps[3])
+    psu_step = cast(PsuAuthorizationStep, manifest.steps[4])
+    token_exchange_step = cast(ManifestStep, manifest.steps[5])
+    accounts_step = cast(ManifestStep, manifest.steps[6])
+    account_detail_step = cast(ManifestStep, manifest.steps[7])
+    balances_step = cast(ManifestStep, manifest.steps[8])
+    transactions_step = cast(ManifestStep, manifest.steps[9])
+    transactions_list_step = cast(ManifestStep, manifest.steps[10])
 
     assert psu_step.request_object == GeneratedRequestObject(
         source="fapi-signing",
         audience="${steps.openid-discovery.response.body.issuer}",
+        openbanking_intent_id="${steps.account-access-consent.response.body.Data.ConsentId}",
     )
+    assert consent_token_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
+    assert consent_token_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
+    assert isinstance(consent_token_step.request.body, FormBody)
+    assert dict(consent_token_step.request.body.fields) == {
+        "grant_type": "client_credentials",
+        "client_id": "${config.oauth.clientId}",
+    }
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert token_exchange_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
     assert isinstance(token_exchange_step.request.body, FormBody)
@@ -222,7 +247,7 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert consent_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents"
     assert consent_step.request.headers == {
         "Accept": "application/json",
-        "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
+        "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}",
     }
     consent_body = consent_step.request.body
     assert isinstance(consent_body, JsonBody)
@@ -318,6 +343,7 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     assert resolved.metadata.standard == "ob-read-write"
     assert resolved.metadata.spec_version == "v4.0"
     assert resolved.metadata.profile == "fapi1-advanced"
+    assert resolved.metadata.api == "ais"
     assert resolved.metadata.suite == "ais-certification-slice"
     assert resolved.metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
     assert resolved.metadata.manifest_resource == "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json"
@@ -330,21 +356,29 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     assert [step.id for step in manifest.steps] == [
         "openid-discovery",
         "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
         "psu-authorization",
         "token-exchange",
-        "account-access-consent",
         "accounts-list",
         "account-balances",
         "account-transactions",
     ]
-    assert [step.mandatory for step in manifest.steps] == [True, True, True, True, True, True, True, True]
+    assert [step.mandatory for step in manifest.steps] == [True, True, True, True, True, True, True, True, True]
 
-    token_exchange_step = cast(ManifestStep, manifest.steps[3])
-    consent_step = cast(ManifestStep, manifest.steps[4])
-    accounts_step = cast(ManifestStep, manifest.steps[5])
-    balances_step = cast(ManifestStep, manifest.steps[6])
-    transactions_step = cast(ManifestStep, manifest.steps[7])
+    consent_token_step = cast(ManifestStep, manifest.steps[2])
+    consent_step = cast(ManifestStep, manifest.steps[3])
+    token_exchange_step = cast(ManifestStep, manifest.steps[5])
+    accounts_step = cast(ManifestStep, manifest.steps[6])
+    balances_step = cast(ManifestStep, manifest.steps[7])
+    transactions_step = cast(ManifestStep, manifest.steps[8])
 
+    assert consent_token_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
+    assert isinstance(consent_token_step.request.body, FormBody)
+    assert dict(consent_token_step.request.body.fields) == {
+        "grant_type": "client_credentials",
+        "client_id": "${config.oauth.clientId}",
+    }
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert isinstance(token_exchange_step.request.body, FormBody)
     assert dict(token_exchange_step.request.body.fields) == {
@@ -356,7 +390,7 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     assert consent_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents"
     assert consent_step.request.headers == {
         "Accept": "application/json",
-        "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
+        "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}",
     }
     assert accounts_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
     assert balances_step.request.url == (
@@ -405,6 +439,7 @@ def test_resolve_suite_rejects_unsupported_catalog_key() -> None:
         spec_version=cast("SuiteSpecVersion", "v9.9"),
         profile="fapi1-advanced",
         suite="discovery-jwks",
+        api="ais",
     )
 
     with pytest.raises(SuiteCatalogError, match="Unsupported suite selection: .*specVersion=v9.9"):
@@ -413,7 +448,7 @@ def test_resolve_suite_rejects_unsupported_catalog_key() -> None:
 
 @pytest.mark.unit
 def test_resolve_suite_reports_missing_bundled_resource(monkeypatch: pytest.MonkeyPatch) -> None:
-    key: suite_catalog.SuiteCatalogKey = ("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks")
+    key: suite_catalog.SuiteCatalogKey = ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "discovery-jwks")
     missing_entry = suite_catalog._CatalogEntry(
         key=key,
         resource_name="missing-discovery-jwks.json",

@@ -57,6 +57,7 @@ def _oauth_context() -> ExecutionContext:
             oauth_client_id="my-client-id",
             oauth_redirect_uri="https://app.example.com/callback",
             oauth_authorization_endpoint="https://auth.example.com/authorize",
+            oauth_open_banking_intent_id="consent-123",
         )
     )
 
@@ -315,6 +316,11 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${config.oauth.authorizationEndpoint}", ctx)
         assert result == "https://auth.example.com/authorize"
 
+    def test_resolves_config_oauth_open_banking_intent_id(self) -> None:
+        ctx = _oauth_context()
+        result = resolve_placeholders("${config.oauth.openBankingIntentId}", ctx)
+        assert result == "consent-123"
+
     def test_resolves_config_oauth_resource_base_url(self) -> None:
         ctx = _oauth_context()
         result = resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
@@ -324,12 +330,14 @@ class TestResolvePlaceholdersHappyPaths:
         ctx = _oauth_context()
         template = (
             "client=${config.oauth.clientId}&redirect=${config.oauth.redirectUri}"
-            "&auth=${config.oauth.authorizationEndpoint}&resource=${config.oauth.resourceBaseUrl}"
+            "&auth=${config.oauth.authorizationEndpoint}&intent=${config.oauth.openBankingIntentId}"
+            "&resource=${config.oauth.resourceBaseUrl}"
         )
         result = resolve_placeholders(template, ctx)
         assert result == (
             "client=my-client-id&redirect=https://app.example.com/callback"
-            "&auth=https://auth.example.com/authorize&resource=https://rs.example.com"
+            "&auth=https://auth.example.com/authorize&intent=consent-123"
+            "&resource=https://rs.example.com"
         )
 
 
@@ -575,6 +583,19 @@ class TestResolvePlaceholdersErrors:
         )
         with pytest.raises(PlaceholderResolutionError, match="oauth.authorizationEndpoint is not available"):
             resolve_placeholders("${config.oauth.authorizationEndpoint}", ctx)
+
+    def test_oauth_open_banking_intent_id_unavailable_when_field_omitted(self) -> None:
+        """${config.oauth.openBankingIntentId} must identify the omitted optional field."""
+        ctx = ExecutionContext(
+            config=RuntimeConfig(
+                discovery_url="https://config.example.com/.well-known/openid-configuration",
+                environment="sandbox",
+                oauth_client_id="my-client-id",
+                oauth_redirect_uri="https://app.example.com/callback",
+            )
+        )
+        with pytest.raises(PlaceholderResolutionError, match="oauth.openBankingIntentId is not available"):
+            resolve_placeholders("${config.oauth.openBankingIntentId}", ctx)
 
     def test_config_placeholder_requires_runtime_config(self) -> None:
         ctx = ExecutionContext()

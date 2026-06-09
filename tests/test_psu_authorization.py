@@ -31,8 +31,10 @@ def test_build_authorization_url_replaces_endpoint_oauth_parameters() -> None:
         ("foo", "bar"),
         ("foo", "baz"),
         ("client_id", "client-123"),
+        ("redirect_uri", "https://conformance.example.com/callback"),
         ("response_type", "code id_token"),
         ("scope", "openid accounts"),
+        ("state", "state-123"),
         ("request", "signed.request.jwt"),
     ]
 
@@ -59,8 +61,10 @@ def test_build_authorization_url_removes_reserved_oauth_parameters_case_insensit
     assert query_items == [
         ("foo", "bar"),
         ("client_id", "client-123"),
+        ("redirect_uri", "https://conformance.example.com/callback"),
         ("response_type", "code id_token"),
         ("scope", "openid accounts"),
+        ("state", "state-123"),
         ("request", "signed.request.jwt"),
     ]
 

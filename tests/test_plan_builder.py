@@ -36,6 +36,7 @@ PSU_AUTH_STARTER_CONFIG: dict[str, JsonValue] = {
     "oauth": {
         "clientId": "test-client-id",
         "redirectUri": "https://conformance.example.com/callback",
+        "openBankingIntentId": "consent-plan-123",
     },
 }
 
@@ -264,9 +265,10 @@ def test_blank_manifest_resolves_ais_slice_suite() -> None:
             "selected_step_ids": [
                 "openid-discovery",
                 "jwks-fetch",
+                "client-credentials-token",
+                "account-access-consent",
                 "psu-authorization",
                 "token-exchange",
-                "account-access-consent",
                 "accounts-list",
                 "account-balances",
                 "account-transactions",
@@ -282,9 +284,10 @@ def test_blank_manifest_resolves_ais_slice_suite() -> None:
     assert preview.selected_plan.selected_step_ids() == [
         "openid-discovery",
         "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
         "psu-authorization",
         "token-exchange",
-        "account-access-consent",
         "accounts-list",
         "account-balances",
         "account-transactions",
@@ -308,9 +311,10 @@ def test_blank_manifest_resolves_ais_baseline_suite_with_optional_steps_deselect
     mandatory_step_ids = [
         "openid-discovery",
         "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
         "psu-authorization",
         "token-exchange",
-        "account-access-consent",
         "accounts-list",
         "account-detail",
         "account-balances",

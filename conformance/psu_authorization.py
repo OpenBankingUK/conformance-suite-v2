@@ -54,8 +54,10 @@ def build_authorization_url(
         query_items.extend(
             [
                 ("client_id", client_id),
+                ("redirect_uri", redirect_uri),
                 ("response_type", response_type),
                 ("scope", scope),
+                ("state", state),
             ]
         )
         query_items.append(("request", request_object))

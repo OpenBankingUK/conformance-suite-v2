@@ -337,6 +337,7 @@ PSU_AUTH_STARTER_CONFIG = {
     "oauth": {
         "clientId": "test-client-id",
         "redirectUri": "https://conformance.example.com/callback",
+        "openBankingIntentId": "consent-api-123",
     },
 }
 
@@ -575,9 +576,10 @@ class TestCreateRunEndpoint:
         assert plan.selected_step_ids() == [
             "openid-discovery",
             "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
             "psu-authorization",
             "token-exchange",
-            "account-access-consent",
             "accounts-list",
             "account-balances",
             "account-transactions",
@@ -633,9 +635,10 @@ class TestCreateRunEndpoint:
         assert plan.selected_step_ids() == [
             "openid-discovery",
             "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
             "psu-authorization",
             "token-exchange",
-            "account-access-consent",
             "accounts-list",
             "account-detail",
             "account-balances",
@@ -1063,27 +1066,28 @@ class TestPsuAuthorizationApiRun:
             result = _wait_for_value(lambda: completed_result(run_id), timeout_seconds=4.0)
 
         assert result["status"] == "passed"
-        assert result["summary"] == {"total": 10, "passed": 10, "failed": 0, "warn": 0, "skipped": 0}
+        assert result["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
         assert result["suite"] == {
             "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
             "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
             "standard": "ob-read-write",
             "specVersion": "v4.0",
             "profile": "fapi1-advanced",
+            "api": "ais",
             "suite": "ais-certification-baseline",
         }
         assert result["plan"] == {
-            "totalSteps": 27,
-            "selectedSteps": 10,
+            "totalSteps": 28,
+            "selectedSteps": 11,
             "deselectedSteps": 17,
-            "mandatorySelected": 10,
+            "mandatorySelected": 11,
             "mandatoryDeselected": 0,
         }
         eligibility = result["certificationEligibility"]
         assert isinstance(eligibility, dict)
         assert eligibility["eligible"] is False
-        assert eligibility["mandatoryTotal"] == 10
-        assert eligibility["mandatoryPassed"] == 10
+        assert eligibility["mandatoryTotal"] == 11
+        assert eligibility["mandatoryPassed"] == 11
         assert eligibility["reason"] == "Manifest is not marked as complete certification coverage"
 
         assert [(request.method, str(request.url)) for request in captured_requests] == [
@@ -1091,13 +1095,17 @@ class TestPsuAuthorizationApiRun:
             ("GET", "https://example.com/jwks"),
             ("POST", "https://example.com/token"),
             ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("POST", "https://example.com/token"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
         ]
-        token_wire_body = captured_requests[2].content.decode("ascii")
+        consent_token_wire_body = captured_requests[2].content.decode("ascii")
+        assert "grant_type=client_credentials" in consent_token_wire_body
+        assert "client_id=test-client-id" in consent_token_wire_body
+        token_wire_body = captured_requests[4].content.decode("ascii")
         assert "grant_type=authorization_code" in token_wire_body
         assert "code=baseline-auth-code" in token_wire_body
         assert "client_id=test-client-id" in token_wire_body
@@ -1106,8 +1114,9 @@ class TestPsuAuthorizationApiRun:
             "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer" in token_wire_body
         )
         assert "client_assertion=" in token_wire_body
-        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
-        assert resource_authorization_headers == ["Bearer baseline-access-token"] * 6
+        assert captured_requests[3].headers["Authorization"] == "Bearer baseline-access-token"
+        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[5:]]
+        assert resource_authorization_headers == ["Bearer baseline-access-token"] * 5
 
         serialised_result = json.dumps(result, sort_keys=True)
         assert "baseline-auth-code" not in serialised_result

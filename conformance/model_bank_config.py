@@ -28,11 +28,14 @@ FollowUpMode = Literal["jwks", "discovery_only"]
 ``"discovery_only"`` stops after the discovery document itself.
 """
 
-SuiteStandard = Literal["ob-read-write"]
+SuiteStandard = Literal["ob-read-write", "cvrp"]
 """Supported Open Banking standards that can be selected from config."""
 
-SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
+SuiteSpecVersion = Literal["v3.1.11", "v4.0", "v4.0.1"]
 """Supported specification versions for config-selected suite resolution."""
+
+SuiteApiFamily = Literal["ais", "pis", "cbpii", "vrp", "cvrp"]
+"""Supported API families for config-selected suite resolution."""
 
 SuiteProfile = Literal["fapi1-advanced"]
 """Supported security profiles for config-selected suite resolution."""
@@ -42,6 +45,39 @@ TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 
 SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"]
 """Supported versioned conformance suite identifiers."""
+
+_SUPPORTED_SUITE_STANDARDS = ("ob-read-write", "cvrp")
+"""Standards accepted by the normalized suite-selection contract."""
+
+_SUPPORTED_SUITE_SPEC_VERSIONS = ("v3.1.11", "v4.0", "v4.0.1")
+"""Specification versions accepted by the normalized suite-selection contract."""
+
+_SUPPORTED_SUITE_API_FAMILIES = ("ais", "pis", "cbpii", "vrp", "cvrp")
+"""API families accepted by the normalized suite-selection contract."""
+
+_SUPPORTED_SUITE_PROFILES = ("fapi1-advanced",)
+"""Security profiles accepted by the normalized suite-selection contract."""
+
+_SUPPORTED_SUITE_NAMES = ("discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline")
+"""Suite names accepted by the normalized suite-selection contract."""
+
+_LEGACY_SUITE_API_BY_SUITE = {
+    "discovery-jwks": "ais",
+    "psu-auth-starter": "ais",
+    "ais-certification-slice": "ais",
+    "ais-certification-baseline": "ais",
+}
+"""API-family defaults for configs created before ``testSuite.api`` existed."""
+
+_SUPPORTED_SUITE_SELECTIONS = {
+    ("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "discovery-jwks"),
+    ("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "psu-auth-starter"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "discovery-jwks"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-slice"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
+}
+"""Currently runnable normalized suite combinations backed by bundled manifests."""
 
 
 @dataclass(frozen=True)
@@ -53,12 +89,16 @@ class SuiteSelection:
         spec_version: Standards specification version to test.
         profile: Security profile that scopes the suite.
         suite: Versioned smoke/conformance suite identifier.
+        api: Open Banking API family selected for the suite. Legacy configs
+            that omit ``testSuite.api`` default to ``"ais"`` for the existing
+            bundled suites.
     """
 
     standard: SuiteStandard
     spec_version: SuiteSpecVersion
     profile: SuiteProfile
     suite: SuiteName
+    api: SuiteApiFamily = "ais"
 
 
 @dataclass(frozen=True)
@@ -80,6 +120,9 @@ class OAuthConfig:
         authorization_endpoint: Optional HTTPS authorisation endpoint override
             for environments whose client registration targets a legacy
             endpoint instead of the endpoint published by discovery.
+        open_banking_intent_id: Optional pre-existing Open Banking consent id
+            exposed to starter manifests as
+            ``${config.oauth.openBankingIntentId}``.
         resource_base_url: Optional HTTPS AIS protected-resource base URL used
             by bundled manifests before manifest-owned Open Banking API paths.
             Callers must not include the ``/open-banking/...`` path prefix.
@@ -88,6 +131,7 @@ class OAuthConfig:
     client_id: str
     redirect_uri: str
     authorization_endpoint: str | None = None
+    open_banking_intent_id: str | None = None
     resource_base_url: str | None = None
 
 
@@ -161,7 +205,8 @@ class ModelBankConfig:
         oauth: Optional narrow OAuth participant config for
             ``${config.oauth.*}`` placeholder resolution. Contains only
             non-secret values (``clientId``, ``redirectUri``, optional
-            ``authorizationEndpoint``, and optional ``resourceBaseUrl``).
+            ``authorizationEndpoint``, optional ``openBankingIntentId``, and
+            optional ``resourceBaseUrl``).
             Absent when the participant config omits an ``oauth`` section.
         fapi_signing: Optional FAPI signing and client-auth configuration kept
             outside the runtime placeholder allow-list. Contains signing key
@@ -343,7 +388,7 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
     Raises:
         ConfigError: If ``testSuite`` is not a JSON object, contains unknown
             keys, omits required fields, or names an unsupported standard,
-            specification version, profile, or suite.
+            specification version, API family, profile, or suite.
     """
     raw_test_suite = raw_config.get("testSuite")
     if raw_test_suite is None:
@@ -353,7 +398,7 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
 
     _reject_unknown_keys(
         raw_test_suite,
-        allowed_keys={"standard", "specVersion", "profile", "suite"},
+        allowed_keys={"standard", "specVersion", "api", "profile", "suite"},
         location="testSuite",
     )
 
@@ -362,29 +407,26 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
     profile = _required_string_at(raw_test_suite, "profile", location="testSuite")
     suite = _required_string_at(raw_test_suite, "suite", location="testSuite")
 
-    if standard != "ob-read-write":
-        raise ConfigError("testSuite.standard must be one of: ob-read-write")
-    if spec_version not in {"v3.1.11", "v4.0"}:
-        raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0")
-    if profile != "fapi1-advanced":
+    if standard not in _SUPPORTED_SUITE_STANDARDS:
+        raise ConfigError("testSuite.standard must be one of: ob-read-write, cvrp")
+    if spec_version not in _SUPPORTED_SUITE_SPEC_VERSIONS:
+        raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0, v4.0.1")
+    if profile not in _SUPPORTED_SUITE_PROFILES:
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
-    if suite not in {"discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"}:
+    if suite not in _SUPPORTED_SUITE_NAMES:
         raise ConfigError(
             "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
             "ais-certification-slice, ais-certification-baseline"
         )
-    supported_selections = {
-        ("ob-read-write", "v3.1.11", "fapi1-advanced", "discovery-jwks"),
-        ("ob-read-write", "v3.1.11", "fapi1-advanced", "psu-auth-starter"),
-        ("ob-read-write", "v4.0", "fapi1-advanced", "discovery-jwks"),
-        ("ob-read-write", "v4.0", "fapi1-advanced", "psu-auth-starter"),
-        ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-slice"),
-        ("ob-read-write", "v4.0", "fapi1-advanced", "ais-certification-baseline"),
-    }
-    if (standard, spec_version, profile, suite) not in supported_selections:
+    api = _parse_test_suite_api(raw_test_suite, suite=suite)
+    if standard == "cvrp" and api != "cvrp":
+        raise ConfigError("testSuite.api must be cvrp when testSuite.standard is cvrp")
+    if standard == "ob-read-write" and api == "cvrp":
+        raise ConfigError("testSuite.api must be one of: ais, pis, cbpii, vrp for ob-read-write")
+    if (standard, spec_version, profile, api, suite) not in _SUPPORTED_SUITE_SELECTIONS:
         raise ConfigError(
             "testSuite combination is not supported: "
-            f"standard={standard}, specVersion={spec_version}, profile={profile}, suite={suite}"
+            f"standard={standard}, specVersion={spec_version}, api={api}, profile={profile}, suite={suite}"
         )
 
     return SuiteSelection(
@@ -392,15 +434,41 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         spec_version=cast(SuiteSpecVersion, spec_version),
         profile=cast(SuiteProfile, profile),
         suite=cast(SuiteName, suite),
+        api=cast(SuiteApiFamily, api),
     )
+
+
+def _parse_test_suite_api(raw_test_suite: dict[str, JsonValue], *, suite: str) -> str:
+    """Parse or infer the API family for a suite selection.
+
+    Args:
+        raw_test_suite: Raw ``testSuite`` object from participant config.
+        suite: Already-validated suite name used for legacy API inference.
+
+    Returns:
+        Parsed or inferred API family string.
+
+    Raises:
+        ConfigError: If an explicit API family is not a supported value.
+    """
+    raw_api = raw_test_suite.get("api")
+    if raw_api is None:
+        return _LEGACY_SUITE_API_BY_SUITE[suite]
+    if not isinstance(raw_api, str) or not raw_api.strip():
+        raise ConfigError("testSuite.api must be a non-empty string")
+    api = raw_api.strip().lower()
+    if api not in _SUPPORTED_SUITE_API_FAMILIES:
+        raise ConfigError("testSuite.api must be one of: ais, pis, cbpii, vrp, cvrp")
+    return api
 
 
 def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
     """Parse the optional ``oauth`` section of a participant config.
 
-    Only the safe, non-secret fields ``clientId``, ``redirectUri``, and
-    optional ``resourceBaseUrl`` are accepted. Client secrets, private keys,
-    TLS paths, and JWS signing material are explicitly excluded from this
+    Only the safe, non-secret fields ``clientId``, ``redirectUri``, and the
+    optional ``authorizationEndpoint``, ``openBankingIntentId``, and
+    ``resourceBaseUrl`` are accepted. Client secrets, private keys, TLS
+    paths, and JWS signing material are explicitly excluded from this
     boundary; adding them here would expose credential material through
     ``${config.oauth.*}`` placeholders in bundled manifests.
 
@@ -425,13 +493,20 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
 
     _reject_unknown_keys(
         raw_oauth,
-        allowed_keys={"clientId", "redirectUri", "authorizationEndpoint", "resourceBaseUrl"},
+        allowed_keys={
+            "clientId",
+            "redirectUri",
+            "authorizationEndpoint",
+            "openBankingIntentId",
+            "resourceBaseUrl",
+        },
         location="oauth",
     )
 
     client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
     redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
     authorization_endpoint = _optional_https_url_at(raw_oauth, "authorizationEndpoint", location="oauth")
+    open_banking_intent_id = _optional_string_at(raw_oauth, "openBankingIntentId", location="oauth")
     resource_base_url = _optional_https_url_at(raw_oauth, "resourceBaseUrl", location="oauth")
     try:
         validate_oauth_redirect_uri(redirect_uri_str, label="oauth.redirectUri")
@@ -442,6 +517,7 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
         client_id=client_id,
         redirect_uri=redirect_uri_str,
         authorization_endpoint=authorization_endpoint,
+        open_banking_intent_id=open_banking_intent_id,
         resource_base_url=resource_base_url,
     )
 
@@ -701,6 +777,28 @@ def _optional_https_url_at(raw_config: dict[str, JsonValue], key: str, *, locati
     except HttpsUrlValidationError as error:
         raise ConfigError(str(error)) from error
     return stripped_value
+
+
+def _optional_string_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str | None:
+    """Extract an optional non-empty string value from a nested config dict.
+
+    Args:
+        raw_config: Raw nested configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        The stripped string value, or ``None`` when the key is absent.
+
+    Raises:
+        ConfigError: If the key is present but not a non-empty string.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{location}.{key} must be a non-empty string")
+    return value.strip()
 
 
 def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, default: float) -> float:

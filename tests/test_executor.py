@@ -15,7 +15,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
-from joserfc import jwk, jws
+from joserfc import jwk, jws, jwt
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -3545,6 +3545,7 @@ def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
         standard="ob-read-write",
         spec_version="v4.0",
         profile="fapi1-advanced",
+        api="ais",
         suite="discovery-jwks",
         manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
         description="Smoke-level discovery and JWKS checks.",
@@ -3581,6 +3582,7 @@ def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
         "standard": "ob-read-write",
         "specVersion": "v4.0",
         "profile": "fapi1-advanced",
+        "api": "ais",
         "suite": "discovery-jwks",
     }
     assert execution_logger.events()[0].payload["suite"] == expected_suite
@@ -3723,7 +3725,9 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
         environment="test",
         oauth_client_id="test-client-id",
         oauth_redirect_uri="https://0.0.0.0:8443/conformancesuite/callback",
+        oauth_open_banking_intent_id="consent-starter-123",
     )
+    signing_config = _executor_signing_config(tmp_path)
 
     # 6. Execute the manifest end-to-end.
     execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
@@ -3738,7 +3742,7 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
             run_id=run_id,
             auth_session_store=auth_store,
             plan=plan,
-            fapi_signing_config=_executor_signing_config(tmp_path),
+            fapi_signing_config=signing_config,
         )
 
     # 7. Assert plan coherence: all three steps present in result.
@@ -3780,9 +3784,9 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
     assert psu_authorization_query["client_id"] == "test-client-id"
     assert psu_authorization_query["response_type"] == "code id_token"
     assert psu_authorization_query["scope"] == "openid accounts"
-    assert "redirect_uri" not in psu_authorization_query
+    assert psu_authorization_query["redirect_uri"] == "https://0.0.0.0:8443/conformancesuite/callback"
     assert "nonce" not in psu_authorization_query
-    assert "state" not in psu_authorization_query
+    assert psu_authorization_query["state"]
     assert "request=" in psu_authorization_url
     # Raw value is "test-client-id"; BufferedExecutionLogger must replace it.
     assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
@@ -3819,7 +3823,13 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
     resolved = resolve_suite(selection)
     manifest = resolved.manifest
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
-        ["account-access-consent", "accounts-list", "account-balances", "account-transactions"]
+        [
+            "client-credentials-token",
+            "account-access-consent",
+            "accounts-list",
+            "account-balances",
+            "account-transactions",
+        ]
     )
 
     assert plan.selected_step_ids() == [
@@ -4083,6 +4093,16 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
         if url == "https://aspsp.example.com/.well-known/jwks.json":
             return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
         if url == "https://aspsp.example.com/token":
+            body = request.content.decode("ascii")
+            if "grant_type=client_credentials" in body:
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "ais-consent-access-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                )
             return httpx.Response(
                 200,
                 json={
@@ -4164,17 +4184,27 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
     assert [step.name for step in result.steps] == [
         "openid-discovery",
         "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
         "psu-authorization",
         "token-exchange",
-        "account-access-consent",
         "accounts-list",
         "account-balances",
         "account-transactions",
     ]
 
+    consent_token_request = captured_requests[2]
+    consent_request = captured_requests[3]
     accounts_request = captured_requests[-3]
     balances_request = captured_requests[-2]
     transactions_request = captured_requests[-1]
+    assert consent_token_request.method == "POST"
+    assert str(consent_token_request.url) == "https://aspsp.example.com/token"
+    assert b"grant_type=client_credentials" in consent_token_request.content
+    assert b"client_id=ais-client-id" in consent_token_request.content
+    assert consent_request.method == "POST"
+    assert str(consent_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"
+    assert consent_request.headers["authorization"] == "Bearer ais-consent-access-token"
     assert accounts_request.method == "GET"
     assert str(accounts_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts"
     assert accounts_request.headers["authorization"] == "Bearer ais-resource-access-token"
@@ -4190,11 +4220,11 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
     assert transactions_request.headers["authorization"] == "Bearer ais-resource-access-token"
 
     rendered = result.to_json_object()
-    assert rendered["summary"] == {"total": 8, "passed": 8, "failed": 0, "warn": 0, "skipped": 0}
+    assert rendered["summary"] == {"total": 9, "passed": 9, "failed": 0, "warn": 0, "skipped": 0}
     eligibility = cast(JsonObject, rendered["certificationEligibility"])
     assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 8
-    assert eligibility["mandatoryPassed"] == 8
+    assert eligibility["mandatoryTotal"] == 9
+    assert eligibility["mandatoryPassed"] == 9
     assert eligibility["mandatoryFailed"] == 0
     assert eligibility["mandatorySkipped"] == 0
 
@@ -4314,6 +4344,16 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
         if url == "https://aspsp.example.com/.well-known/jwks.json":
             return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
         if url == "https://aspsp.example.com/token":
+            body = request.content.decode("ascii")
+            if "grant_type=client_credentials" in body:
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "ais-consent-access-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                )
             return httpx.Response(
                 200,
                 json={
@@ -4416,8 +4456,8 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
     eligibility = result.to_json_object()["certificationEligibility"]
     assert isinstance(eligibility, dict)
     assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 8
-    assert eligibility["mandatoryPassed"] == 5
+    assert eligibility["mandatoryTotal"] == 9
+    assert eligibility["mandatoryPassed"] == 6
     assert eligibility["mandatoryFailed"] == 3
     assert eligibility["mandatorySkipped"] == 0
 
@@ -5202,6 +5242,75 @@ def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect
     assert len(psu_url_events) == 1
     assert psu_url_events[0].payload["request_object"] == "***"
     assert "request=***" in cast(str, psu_url_events[0].payload["url"])
+
+
+@pytest.mark.unit
+def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request_object(tmp_path: Path) -> None:
+    """Generated PSU request objects embed a resolved Open Banking consent id.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    state = "h" * 32
+    observed_urls: list[str] = []
+    signing_config = _executor_signing_config(tmp_path)
+    context = record_step(
+        ExecutionContext(),
+        "account-access-consent",
+        RequestRecord(method="POST", url="https://rs.example.com/account-access-consents"),
+        ResponseRecord(status_code=201, body={"Data": {"ConsentId": "consent-456"}}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound PSU authorisation URL for later JWT inspection.
+
+        Args:
+            request: Browser-like authorisation redirect emitted by the executor.
+
+        Returns:
+            Redirect response completing the headless PSU flow.
+        """
+        observed_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        result, _ = _execute_v1_psu_step(
+            _psu_headless_step(
+                state=state,
+                request_object=GeneratedRequestObject(
+                    source="fapi-signing",
+                    openbanking_intent_id="${steps.account-access-consent.response.body.Data.ConsentId}",
+                ),
+            ),
+            context=context,
+            client=client,
+            run_id="run-psu-signed-intent-headless",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-psu-signed-intent-headless", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+            fapi_signing_config=signing_config,
+        )
+
+    request_params = dict(parse_qsl(urlsplit(observed_urls[0]).query))
+    public_key = jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA")
+    decoded_request_object = jwt.decode(request_params["request"], public_key, algorithms=["PS256"])
+    claims = decoded_request_object.claims
+
+    assert result.status == "passed"
+    assert len(observed_urls) == 1
+    assert isinstance(claims, dict)
+    assert claims["claims"] == {
+        "id_token": {
+            "openbanking_intent_id": {
+                "essential": True,
+                "value": "consent-456",
+            }
+        }
+    }
 
 
 @pytest.mark.unit

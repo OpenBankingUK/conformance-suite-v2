@@ -41,25 +41,8 @@
       "mandatory": true
     },
     {
-      "kind": "psu-authorization",
-      "id": "psu-authorization",
-      "name": "PSU authorisation (manual)",
-      "mode": "manual",
-      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
-      "clientId": "${config.oauth.clientId}",
-      "redirectUri": "${config.oauth.redirectUri}",
-      "responseType": "code id_token",
-      "requestObject": {
-        "source": "fapi-signing",
-        "audience": "${steps.openid-discovery.response.body.issuer}"
-      },
-      "scope": "openid accounts",
-      "timeoutSeconds": 180,
-      "mandatory": true
-    },
-    {
-      "id": "token-exchange",
-      "name": "OAuth token exchange",
+      "id": "client-credentials-token",
+      "name": "Client credentials token for consent setup",
       "request": {
         "method": "POST",
         "url": "${steps.openid-discovery.response.body.token_endpoint}",
@@ -69,9 +52,7 @@
         "body": {
           "encoding": "form",
           "fields": {
-            "grant_type": "authorization_code",
-            "code": "${steps.psu-authorization.response.body.code}",
-            "redirect_uri": "${config.oauth.redirectUri}",
+            "grant_type": "client_credentials",
             "client_id": "${config.oauth.clientId}"
           }
         }
@@ -99,7 +80,7 @@
         },
         "headers": {
           "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}"
         },
         "body": {
           "Data": {
@@ -134,6 +115,55 @@
         {"type": "json_field", "path": "Data.ConsentId", "rule": "string"},
         {"type": "json_field", "path": "Data.Permissions", "rule": "array"},
         {"type": "json_field", "path": "Risk", "rule": "object"}
+      ],
+      "mandatory": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization",
+      "name": "PSU authorisation (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "requestObject": {
+        "source": "fapi-signing",
+        "audience": "${steps.openid-discovery.response.body.issuer}",
+        "openbankingIntentId": "${steps.account-access-consent.response.body.Data.ConsentId}"
+      },
+      "scope": "openid accounts",
+      "timeoutSeconds": 180,
+      "mandatory": true
+    },
+    {
+      "id": "token-exchange",
+      "name": "OAuth token exchange",
+      "request": {
+        "method": "POST",
+        "url": "${steps.openid-discovery.response.body.token_endpoint}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "${steps.psu-authorization.response.body.code}",
+            "redirect_uri": "${config.oauth.redirectUri}",
+            "client_id": "${config.oauth.clientId}"
+          }
+        }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "access_token", "rule": "string"},
+        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
+        {"type": "json_field", "path": "expires_in", "rule": "number"}
       ],
       "mandatory": true
     },

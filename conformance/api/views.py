@@ -3,7 +3,7 @@
 Implements the Phase 1 local REST API (PRD: OBL Engineering Story #5):
 unauthenticated, designed for local Docker deployment. Defence in depth:
 endpoints reject non-loopback ``REMOTE_ADDR`` by default so a misconfigured
-Docker port publish (e.g. ``-p 0.0.0.0:8000``) does not expose the API.
+Docker port publish (e.g. ``-p 0.0.0.0:8443``) does not expose the API.
 Localhost binding remains the primary control; this guard is a backstop.
 Set ``CONFORMANCE_API_ALLOW_NON_LOCAL=true`` to opt out (e.g. for an
 authenticated reverse proxy). Supports starting a run, polling run status,

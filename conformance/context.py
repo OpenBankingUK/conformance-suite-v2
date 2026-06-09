@@ -122,6 +122,10 @@ class RuntimeConfig:
         oauth_authorization_endpoint: Optional HTTPS authorisation endpoint
             override for ``${config.oauth.authorizationEndpoint}`` placeholder
             resolution. Absent when the participant config omits the override.
+        oauth_open_banking_intent_id: Optional pre-existing Open Banking
+            consent id for ``${config.oauth.openBankingIntentId}``
+            placeholder resolution. Absent when the participant config omits
+            the starter-only override.
     """
 
     discovery_url: str
@@ -130,6 +134,7 @@ class RuntimeConfig:
     oauth_client_id: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_authorization_endpoint: str | None = None
+    oauth_open_banking_intent_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -383,6 +388,7 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
             "clientId",
             "redirectUri",
             "authorizationEndpoint",
+            "openBankingIntentId",
             "resourceBaseUrl",
         }
     )
@@ -418,6 +424,14 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
                 )
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_authorization_endpoint
+    if sub_field == "openBankingIntentId":
+        if context.config.oauth_open_banking_intent_id is None:
+            if context.config.oauth_client_id is not None or context.config.oauth_redirect_uri is not None:
+                raise PlaceholderResolutionError(
+                    f"oauth.openBankingIntentId is not available for placeholder: ${{{dot_path}}}"
+                )
+            raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_open_banking_intent_id
     # sub_field == "redirectUri"
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")

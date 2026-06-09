@@ -134,6 +134,7 @@ def test_sign_request_object_builds_ps256_jar_with_expected_claims(tmp_path: Pat
         "exp": 1_780_920_300,
         "jti": "jwt-001",
     }
+    assert "claims" not in claims
     assert signed_jwt.key_id == "signing-key-001"
     assert signed_jwt.issuer == "request-object-issuer"
     assert signed_jwt.subject is None
@@ -141,6 +142,43 @@ def test_sign_request_object_builds_ps256_jar_with_expected_claims(tmp_path: Pat
     assert signed_jwt.issued_at == datetime(2026, 6, 8, 12, 0, tzinfo=UTC)
     assert signed_jwt.expires_at == datetime(2026, 6, 8, 12, 5, tzinfo=UTC)
     assert signed_jwt.jwt_id == "jwt-001"
+
+
+@pytest.mark.unit
+def test_sign_request_object_includes_openbanking_intent_claim_when_supplied(tmp_path: Path) -> None:
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = _build_signing_config(
+        certificate_root,
+        certificate_path=certificate_path,
+        private_key_path=private_key_path,
+    )
+    service = _build_signing_service(config)
+
+    signed_jwt = service.sign_request_object(
+        RequestObjectSigningInput(
+            issuer="request-object-issuer",
+            audience="https://auth.example.com/authorize",
+            client_id="client-123",
+            redirect_uri="https://rp.example.com/callback",
+            response_type="code id_token",
+            scope="openid accounts",
+            state="state-123",
+            nonce="nonce-123",
+            openbanking_intent_id="consent-456",
+        )
+    )
+    _, claims = _decode_signed_token(signed_jwt.token, certificate_pem=certificate_path.read_bytes())
+
+    assert claims["claims"] == {
+        "id_token": {
+            "openbanking_intent_id": {
+                "essential": True,
+                "value": "consent-456",
+            }
+        }
+    }
 
 
 @pytest.mark.unit
@@ -201,6 +239,34 @@ def test_sign_request_object_rejects_blank_runtime_fields(tmp_path: Path) -> Non
                 scope="openid",
                 state="state-123",
                 nonce="nonce-123",
+            )
+        )
+
+
+@pytest.mark.unit
+def test_sign_request_object_rejects_blank_openbanking_intent_id(tmp_path: Path) -> None:
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = _build_signing_config(
+        certificate_root,
+        certificate_path=certificate_path,
+        private_key_path=private_key_path,
+    )
+    service = _build_signing_service(config)
+
+    with pytest.raises(JwtSigningError, match="request_object.openbanking_intent_id must be a non-empty string"):
+        service.sign_request_object(
+            RequestObjectSigningInput(
+                issuer="request-object-issuer",
+                audience="https://auth.example.com/authorize",
+                client_id="client-123",
+                redirect_uri="https://rp.example.com/callback",
+                response_type="code",
+                scope="openid",
+                state="state-123",
+                nonce="nonce-123",
+                openbanking_intent_id="   ",
             )
         )
 

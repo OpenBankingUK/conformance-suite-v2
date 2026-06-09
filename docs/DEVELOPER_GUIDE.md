@@ -27,20 +27,20 @@ git config core.hooksPath .githooks
 ## Running the Application
 
 ```bash
-make dev         # Django dev server (auto-reload, debug error pages)
-make serve       # Uvicorn locally (mirrors production, no reload)
+make dev         # Django dev server on the legacy FCS callback port
+make serve       # Uvicorn locally on the legacy FCS callback port
 make docker      # Build and run the Docker container
 ```
 
 | Command | Server | Auto-reload | Use case |
 |---------|--------|-------------|----------|
-| `make dev` | Django `runserver` | Yes | Day-to-day development |
-| `make serve` | Uvicorn | No | Test production behaviour locally |
+| `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day development with legacy FCS callback registrations |
+| `make serve` | Uvicorn on `0.0.0.0:8443` | No | Test production behaviour locally on the same callback port |
 | `make docker` | Uvicorn (container) | No | Full production-like environment (requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`) |
 
 `make dev` and `make serve` work with zero configuration. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
 
-All targets serve on `http://localhost:8000`.
+All runtime entry points bind to port `8443` so callbacks registered against the previous FCS URI `https://0.0.0.0:8443/conformancesuite/callback` land on the same local port across Django, Uvicorn, and Docker.
 
 ## Local Checks
 
@@ -147,8 +147,8 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 | Context | Who provides env vars | Notes |
 |---------|----------------------|-------|
 | `make check` (lint/test) | No env vars needed | `settings.py` uses a safe `django-insecure-` fallback for `SECRET_KEY`; production guards are skipped |
-| `make dev` | Makefile sets `DJANGO_DEBUG=true` | Django ignores `ALLOWED_HOSTS` when `DEBUG=True` |
-| `make serve` | Makefile sets `DJANGO_ALLOWED_HOSTS` | Allows `localhost` and `127.0.0.1` for local Uvicorn |
+| `make dev` | Makefile sets `DJANGO_DEBUG=true` and binds `0.0.0.0:8443` | Django ignores `ALLOWED_HOSTS` when `DEBUG=True`; port matches legacy FCS callback registrations |
+| `make serve` | Makefile sets `DJANGO_ALLOWED_HOSTS` and binds `0.0.0.0:8443` | Allows `localhost`, `127.0.0.1`, and `0.0.0.0` for local Uvicorn while matching the legacy FCS callback port |
 | `make docker` | Caller must provide both vars | Simulates production — fails fast if misconfigured |
 | Production | Orchestrator (K8s, ECS, Compose) | Must set a real `SECRET_KEY` and `ALLOWED_HOSTS` |
 
@@ -224,27 +224,28 @@ The supported catalog keys are:
 | `standard` | `specVersion` | `profile` | `suite` | Scope | Participant config required |
 | --- | --- | --- | --- | --- | --- |
 | `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
-| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri` |
+| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-baseline` | Certifiable-track AIS baseline: discovery, JWKS, PSU authorisation, token exchange, consent creation, and the current mandatory default core AIS resource flow, with optional/conditional AIS rows available as opt-in plan entries. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Preserved certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and account-scoped AIS resource validation for accounts, balances, and transactions. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
 | `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri` |
+| `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
 
 **All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit. For v4.0 AIS, `ais-certification-baseline` is the current certifiable-track working set and `ais-certification-slice` is the older preserved proof slice. Do not relabel either as complete certification coverage without Standards confirmation and matching validator coverage.
 
-The `psu-auth-starter` suite requires an `oauth` section in the participant config, and both AIS suites add a protected-resource base URL:
+The `psu-auth-starter` suite requires an `oauth` section in the participant config. Starter runs that target ASPSPs such as Ozone and need a pre-existing AIS consent must also supply `oauth.openBankingIntentId`. Both AIS suites add a protected-resource base URL:
 
 ```json
 {
   "oauth": {
     "clientId": "your-client-id-here",
     "redirectUri": "https://conformance.example.com/callback",
+    "openBankingIntentId": "your-existing-account-access-consent-id",
     "resourceBaseUrl": "https://resource.example.com"
   }
 }
 ```
 
-The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}` and the v4 AIS manifests resolve protected resource URLs from `${config.oauth.resourceBaseUrl}`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves.
+The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}`, the PSU starter manifests resolve `openbankingIntentId` from `${config.oauth.openBankingIntentId}`, and the v4 AIS manifests resolve protected resource URLs from `${config.oauth.resourceBaseUrl}`. `openBankingIntentId` is non-secret and should hold a pre-existing account-access consent id only for starter flows that do not create consent themselves. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves.
 
 Step-response placeholders can traverse JSON arrays with non-negative numeric path segments. The bundled v4 AIS baseline and slice use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned `AccountId` from `GET /accounts` into account-scoped resource calls. Negative indices, out-of-bounds indices, and placeholders that terminate on whole objects or arrays remain invalid.
 
@@ -267,6 +268,8 @@ The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE
 `certificatePathRoot` is a separate trust boundary from `tls.certificatePathRoot` and is revalidated at both config-parse time and runtime credential loading. Signing certificate and key bytes stay on disk until execution time, must remain under the configured root, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
 
 The baseline manifest uses this block in three places: PSU authorisation can generate a PS256 request object from `{"source": "fapi-signing"}`, token exchange can apply `tokenEndpointAuthPolicy: {"source": "fapi-signing"}` to emit either `private_key_jwt` form fields or `tls_client_auth` pre-dispatch validation, and account-access consent creation signs the exact JSON payload into a detached `x-jws-signature` header. The preserved AIS slice remains the older proof flow and does not opt into these directives.
+
+For Ozone-compatible AIS runs, both bundled v4 suites create account-access consent before PSU authorisation and bind that consent id into the generated request object using `requestObject.openbankingIntentId` -> `claims.id_token.openbanking_intent_id` (with `essential: true`).
 
 When `tokenEndpointAuthMethod` is `private_key_jwt`, the executor adds `client_assertion_type` and `client_assertion` to the existing form-urlencoded token request while preserving `grant_type`, `code`, `redirect_uri`, and `client_id`. Those two assertion fields are reserved for runtime FAPI signing when `tokenEndpointAuthPolicy` is enabled, so manifest authors must not supply them in the form body. When it is `tls_client_auth`, the executor requires an mTLS client configured in `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` and fails before dispatch if that client is absent.
 
@@ -306,9 +309,11 @@ These rules are generic authoring primitives only. They enable Standards-authore
 
 These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
 
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}` and `${config.oauth.redirectUri}` in the PSU authorisation step. The preserved `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and core account-scoped resource coverage. The `ais-certification-baseline` builds on the same placeholder model with a broader mandatory default flow plus optional/conditional AIS rows, still rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
+Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.openBankingIntentId}` in the PSU authorisation step. The preserved `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and core account-scoped resource coverage. The `ais-certification-baseline` builds on the same placeholder model with a broader mandatory default flow plus optional/conditional AIS rows, still rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
 
-Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}`. `fapiSigning` values, TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, client assertions, and detached JWS values are intentionally not exposed through placeholders.
+When PSU authorisation uses a signed JAR request object, the emitted authorization URL intentionally keeps outer `redirect_uri` and `state` query parameters alongside `request` for ASPSP compatibility.
+
+Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, `${config.oauth.openBankingIntentId}`, and `${config.oauth.resourceBaseUrl}`. `fapiSigning` values, TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, client assertions, and detached JWS values are intentionally not exposed through placeholders.
 
 The v4 AIS manifests are the current authoring reference for catalog-backed certification-track flows:
 
@@ -434,7 +439,7 @@ POST /api/runs/
 
 **Browser plan builder UI:**
 
-Run the local server and open `http://localhost:8000/plan/`:
+Run the local Django server and open `http://localhost:8443/plan/`:
 
 ```bash
 make dev

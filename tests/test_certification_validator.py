@@ -417,9 +417,10 @@ def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -
         steps=(
             ("openid-discovery", "passed"),
             ("jwks-fetch", "passed"),
+            ("client-credentials-token", "passed"),
+            ("account-access-consent", "passed"),
             ("psu-authorization", "passed"),
             ("token-exchange", "passed"),
-            ("account-access-consent", "passed"),
             ("accounts-list", "passed"),
             ("account-balances", "passed"),
             ("account-transactions", "skipped"),
@@ -437,8 +438,8 @@ def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -
     rendered = result.to_json_object()
     mandatory = rendered["mandatory"]
     assert isinstance(mandatory, dict)
-    assert mandatory["total"] == 8
-    assert mandatory["passed"] == 7
+    assert mandatory["total"] == 9
+    assert mandatory["passed"] == 8
     assert mandatory["skipped"] == 1
     steps = mandatory["steps"]
     assert isinstance(steps, list)
