@@ -2595,6 +2595,70 @@ def test_parse_v1_http_step_rejects_invalid_token_endpoint_auth_policy_type() ->
 
 
 @pytest.mark.unit
+def test_parse_v1_http_step_rejects_token_endpoint_auth_policy_on_non_post() -> None:
+    """Token-endpoint auth policy is only valid on POST token requests."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy-method",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "DELETE",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "abc",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy is only valid on POST requests with a form body",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_token_endpoint_auth_policy_without_form_body() -> None:
+    """Token-endpoint auth policy requires a form-encoded token request body."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy-body",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {"encoding": "json", "value": {"grant_type": "authorization_code"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy is only valid on POST requests with a form body",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
 def test_parse_v1_http_step_rejects_invalid_detached_jws_policy_type() -> None:
     """The detached-JWS directive must be an object when present."""
     raw_manifest: dict[str, JsonValue] = {

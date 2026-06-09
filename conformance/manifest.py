@@ -860,6 +860,7 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
     phase = _parse_optional_phase(raw_step, location=location)
     token_endpoint_auth_policy = _parse_optional_token_endpoint_auth_policy(
         raw_step,
+        request=request,
         location=location,
         seen_ids=seen_ids,
     )
@@ -1160,12 +1161,13 @@ def _parse_generated_request_object(
 
 
 def _parse_optional_token_endpoint_auth_policy(
-    raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+    raw_step: dict[str, JsonValue], *, request: ManifestRequest, location: str, seen_ids: set[str]
 ) -> TokenEndpointAuthPolicy | None:
     """Parse the optional token-endpoint auth directive on an HTTP step.
 
     Args:
         raw_step: Raw JSON object for the HTTP step.
+        request: Parsed request for the HTTP step.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for placeholder validation).
 
@@ -1174,7 +1176,8 @@ def _parse_optional_token_endpoint_auth_policy(
 
     Raises:
         ManifestError: If the directive is not a JSON object, contains
-            unknown keys, malformed placeholders, or an unsupported source.
+            unknown keys, malformed placeholders, an unsupported source, or
+            is used outside a POST form request.
     """
     if "tokenEndpointAuthPolicy" not in raw_step:
         return None
@@ -1190,6 +1193,8 @@ def _parse_optional_token_endpoint_auth_policy(
     )
     if source != "fapi-signing":
         raise ManifestError(f"{location}.tokenEndpointAuthPolicy.source must be 'fapi-signing'")
+    if request.method != "POST" or not isinstance(request.body, FormBody):
+        raise ManifestError(f"{location}.tokenEndpointAuthPolicy is only valid on POST requests with a form body")
     return TokenEndpointAuthPolicy(source="fapi-signing")
 
 
