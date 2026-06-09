@@ -116,13 +116,13 @@ def send_json(
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
-        body (POST, PUT, PATCH, DELETE), exactly one of ``json_body``,
-        ``json_body_bytes``, or ``form_body`` may be supplied:
+    body (POST, PUT, PATCH, DELETE), exactly one of ``json_body``,
+    ``json_body_bytes``, or ``form_body`` may be supplied:
 
     - ``json_body`` is serialised as ``application/json`` via ``httpx``.
-        - ``json_body_bytes`` sends already-serialised JSON bytes unchanged.
-            This is used for detached-JWS request signing, where the transmitted
-            bytes must exactly match the bytes covered by the signature.
+    - ``json_body_bytes`` sends already-serialised JSON bytes unchanged.
+      This is used for detached-JWS request signing, where the transmitted
+      bytes must exactly match the bytes covered by the signature.
     - ``form_body`` is serialised as ``application/x-www-form-urlencoded``
       via ``httpx``'s native form encoder (never hand-rolled), following
       form-url-encoding semantics (e.g. spaces may be encoded as ``+``,

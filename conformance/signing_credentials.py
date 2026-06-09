@@ -8,6 +8,7 @@ before signing work begins.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
@@ -44,7 +45,7 @@ class _ComparableJwk(Protocol):
     keeps the implementation typed without importing private library classes.
     """
 
-    def as_dict(self, private: bool = False, **params: object) -> dict[str, str | list[str]]:
+    def as_dict(self, private: bool = False, **params: object) -> Mapping[str, object]:
         """Return the JWK as a JSON-serializable dictionary.
 
         Args:
@@ -52,7 +53,7 @@ class _ComparableJwk(Protocol):
             **params: Additional implementation-specific export parameters.
 
         Returns:
-            JWK members as a dictionary.
+            JWK members as a dictionary with JSON-compatible values.
         """
 
 
