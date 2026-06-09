@@ -401,6 +401,21 @@ AIS_BASELINE_CONFIG = {
     },
 }
 
+AIS_FCS_LEGACY_BENCHMARK_CONFIG = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-fcs-legacy-benchmark",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 VALID_MANIFEST = {
     "schemaVersion": "v0",
     "name": "Test manifest",
@@ -676,6 +691,67 @@ class TestCreateRunEndpoint:
             "transactions-list",
         ]
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_with_ais_fcs_legacy_benchmark_config_resolved_suite(
+        self,
+        mock_execute: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """A v4 AIS legacy benchmark ``testSuite`` resolves the bundled manifest.
+
+        Args:
+            mock_execute: Patched lifecycle worker used to inspect run inputs.
+            tmp_path: Temporary directory used to materialise signing PEM files.
+        """
+        client = Client()
+        signing_config = _executor_signing_config(tmp_path)
+        benchmark_config = {
+            **AIS_FCS_LEGACY_BENCHMARK_CONFIG,
+            "fapiSigning": {
+                "certificatePathRoot": str(signing_config.certificate_path_root),
+                "signingCertificatePath": str(signing_config.signing_certificate_path),
+                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
+                "kid": signing_config.key_id,
+                "clientAssertionIssuer": signing_config.client_assertion_issuer,
+                "clientAssertionSubject": signing_config.client_assertion_subject,
+                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
+            },
+        }
+        response = client.post(
+            "/api/runs/",
+            data=json.dumps({"config": benchmark_config}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        config = mock_execute.call_args.args[1]
+        manifest = mock_execute.call_args.args[2]
+        plan = mock_execute.call_args.args[3]
+        suite_metadata = mock_execute.call_args.args[4]
+        assert config.fapi_signing is not None
+        assert config.fapi_signing.key_id == signing_config.key_id
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark"
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
+            "psu-authorization",
+            "token-exchange",
+            "OB-400-ACC-100400",
+            "OB-400-ACC-100200",
+            "OB-400-BAL-101200",
+            "OB-400-TRA-105100",
+            "OB-400-TRA-105110",
+            "OB-400-TRA-105120",
+        ]
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-fcs-legacy-benchmark"
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
@@ -1825,6 +1901,46 @@ class TestExecuteRunDiscardsAuthSessions:
         # The run itself transitioned to completed (sanity check).
         assert run_store.get_run(record.run_id) is not None
         assert run_store.get_run(record.run_id).status == "completed"  # type: ignore[union-attr]
+
+    def test_completed_run_writes_configured_artifacts(self, tmp_path: Path) -> None:
+        """Successful API/browser lifecycle runs persist configured artifacts.
+
+        Args:
+            tmp_path: Pytest temporary directory used for result and log files.
+        """
+        from datetime import UTC, datetime
+
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        result_path = tmp_path / "out" / "result.json"
+        log_path = tmp_path / "out" / "execution-log.ndjson"
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=result_path,
+            execution_log_path=log_path,
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+        with patch(
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            return_value=fake_result,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.status == "completed"
+        assert json.loads(result_path.read_text(encoding="utf-8"))["status"] == "passed"
+        assert log_path.exists()
 
     def test_failed_run_also_discards_awaiting_auth_sessions(self) -> None:
         """Sessions are discarded even when the run raises internally."""

@@ -8,6 +8,7 @@ run-scoped PSU authorization sessions.
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 from collections.abc import Mapping
@@ -15,7 +16,13 @@ from collections.abc import Mapping
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunStore, run_store
 from conformance.context import RuntimeConfig
-from conformance.execution_log import EventType, ExecutionLogger, NullExecutionLogger, warn_if_developer_mode
+from conformance.execution_log import (
+    BufferedExecutionLogger,
+    EventType,
+    ExecutionLogger,
+    NullExecutionLogger,
+    warn_if_developer_mode,
+)
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
@@ -198,12 +205,17 @@ def _execute_run(
         else:
             if effective_plan is None:
                 effective_plan = TestPlan.default_plan_from_manifest(effective_manifest)
-            http_client = build_json_http_client(
-                timeout_seconds=config.timeout_seconds,
-                ca_bundle_path=config.tls.ca_bundle_path,
-                client_certificate_path=config.tls.client_certificate_path,
-                client_private_key_path=config.tls.client_private_key_path,
-            )
+            try:
+                http_client = build_json_http_client(
+                    timeout_seconds=config.timeout_seconds,
+                    ca_bundle_path=config.tls.ca_bundle_path,
+                    client_certificate_path=config.tls.client_certificate_path,
+                    client_private_key_path=config.tls.client_private_key_path,
+                )
+            except ValueError as error:
+                logger.error("HTTP client setup failed for run %s: %s", run_id, error)
+                run_store.mark_failed(run_id, error=f"HTTP client setup failed: {error}")
+                return
             try:
                 result = run_manifest(
                     effective_manifest,
@@ -237,7 +249,19 @@ def _execute_run(
             finally:
                 http_client.close()
 
-        run_store.mark_completed(run_id, result=result.to_json_object())
+        result_object = result.to_json_object()
+        try:
+            _persist_configured_artifacts(
+                config=config,
+                result_object=result_object,
+                execution_logger=run_logger,
+            )
+        except OSError as error:
+            logger.error("Artifact persistence failed for run %s: %s", run_id, error)
+            run_store.mark_failed(run_id, error=f"Artifact persistence failed: {error}")
+            return
+
+        run_store.mark_completed(run_id, result=result_object)
     except Exception:
         logger.exception("Run %s failed with an internal error", run_id)
         run_store.mark_failed(run_id, error="An internal error occurred")
@@ -247,3 +271,34 @@ def _execute_run(
         # stale state. Done in ``finally`` to cover both happy-path and
         # failure-path exits from the run.
         auth_session_store.discard_for_run(run_id)
+
+
+def _persist_configured_artifacts(
+    *,
+    config: ModelBankConfig,
+    result_object: JsonObject,
+    execution_logger: BufferedExecutionLogger | None,
+) -> None:
+    """Write browser/API run artifacts to config-selected output paths.
+
+    Parsed participant configs resolve output paths to absolute filesystem
+    paths. Hand-built test configs often use relative dummy paths; those are
+    intentionally ignored here so unit tests that only exercise lifecycle
+    transitions do not create files in the repository root.
+
+    Args:
+        config: Participant configuration carrying artifact output paths.
+        result_object: Structured result JSON object produced by the run.
+        execution_logger: Per-run buffered execution logger, when available.
+
+    Raises:
+        OSError: If a configured artifact cannot be written.
+    """
+    if config.result_output_path.is_absolute():
+        config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
+        config.result_output_path.write_text(
+            json.dumps(result_object, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    if config.execution_log_path.is_absolute() and execution_logger is not None:
+        execution_logger.flush_to_path(config.execution_log_path)

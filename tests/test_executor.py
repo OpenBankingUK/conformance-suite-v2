@@ -2085,6 +2085,7 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
                             "code": "auth-code",
                             "redirect_uri": "https://app.example.com/callback",
                             "client_id": "client-123",
+                            "scope": "accounts",
                         },
                     },
                 },
@@ -2113,6 +2114,7 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
     assert captured_form_body["code"] == "auth-code"
     assert captured_form_body["redirect_uri"] == "https://app.example.com/callback"
     assert captured_form_body["client_id"] == "client-123"
+    assert captured_form_body["scope"] == "accounts"
     assert captured_form_body["client_assertion_type"] == ("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
     assert captured_form_body["client_assertion"]
 
@@ -4200,8 +4202,10 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
     transactions_request = captured_requests[-1]
     assert consent_token_request.method == "POST"
     assert str(consent_token_request.url) == "https://aspsp.example.com/token"
-    assert b"grant_type=client_credentials" in consent_token_request.content
-    assert b"client_id=ais-client-id" in consent_token_request.content
+    consent_token_form = dict(parse_qsl(consent_token_request.content.decode("ascii"), keep_blank_values=True))
+    assert consent_token_form["grant_type"] == "client_credentials"
+    assert consent_token_form["client_id"] == "ais-client-id"
+    assert consent_token_form["scope"] == "accounts"
     assert consent_request.method == "POST"
     assert str(consent_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"
     assert consent_request.headers["authorization"] == "Bearer ais-consent-access-token"

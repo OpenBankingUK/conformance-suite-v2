@@ -1,4 +1,4 @@
-.PHONY: check lint test integration secrets audit dev serve docker help
+.PHONY: check lint test integration secrets audit dev dev-unmasked serve docker help
 
 check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
@@ -22,7 +22,24 @@ integration: ## Run live-network Ozone integration tests (skipped unless tier en
 	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration
 
 dev: ## Run local dev server (auto-reload, debug)
-	DJANGO_DEBUG=true uv run python manage.py runserver 0.0.0.0:8443
+	@mkdir -p local-config/certs
+	@test -f local-config/certs/dev-server.crt -a -f local-config/certs/dev-server.key || \
+		openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+			-keyout local-config/certs/dev-server.key \
+			-out local-config/certs/dev-server.crt \
+			-subj "/CN=0.0.0.0" \
+			-addext "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:localhost"
+	DJANGO_DEBUG=true uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8443 --reload --ssl-keyfile local-config/certs/dev-server.key --ssl-certfile local-config/certs/dev-server.crt
+
+dev-unmasked: ## Run local dev server with unmasked execution logs
+	@mkdir -p local-config/certs
+	@test -f local-config/certs/dev-server.crt -a -f local-config/certs/dev-server.key || \
+		openssl req -x509 -newkey rsa:2048 -nodes -days 365 \
+			-keyout local-config/certs/dev-server.key \
+			-out local-config/certs/dev-server.crt \
+			-subj "/CN=0.0.0.0" \
+			-addext "subjectAltName=IP:0.0.0.0,IP:127.0.0.1,DNS:localhost"
+	CONFORMANCE_DEVELOPER_MODE=true DJANGO_DEBUG=true uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8443 --reload --ssl-keyfile local-config/certs/dev-server.key --ssl-certfile local-config/certs/dev-server.crt
 
 serve: ## Run local prod server (uvicorn, no reload)
 	DJANGO_ALLOWED_HOSTS="localhost,127.0.0.1,0.0.0.0" uv run uvicorn config.asgi:application --host 0.0.0.0 --port 8443

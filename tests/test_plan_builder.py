@@ -70,6 +70,21 @@ AIS_BASELINE_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+AIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "suite": "ais-fcs-legacy-benchmark",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+}
+
 
 def _http_step(
     step_id: str,
@@ -478,6 +493,58 @@ def test_blank_manifest_resolves_ais_baseline_suite_with_optional_steps_deselect
     assert preview.suite_metadata is not None
     assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
     assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
+    assert preview.selected_plan.selected_step_ids() == mandatory_step_ids
+    assert [row.id for row in preview.rows] == mandatory_step_ids + optional_step_ids
+    assert [row.id for row in preview.rows if row.default_selected] == mandatory_step_ids
+    assert [row.id for row in preview.rows if row.optional and not row.default_selected] == optional_step_ids
+    assert preview.launch_supported is True
+
+
+@pytest.mark.unit
+def test_blank_manifest_resolves_ais_fcs_legacy_benchmark_with_optional_steps_deselected() -> None:
+    """A blank manifest with the legacy benchmark ``testSuite`` preserves opt-in optional rows."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_FCS_LEGACY_BENCHMARK_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    mandatory_step_ids = [
+        "openid-discovery",
+        "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
+        "psu-authorization",
+        "token-exchange",
+        "OB-400-ACC-100400",
+        "OB-400-ACC-100200",
+        "OB-400-BAL-101200",
+        "OB-400-TRA-105100",
+        "OB-400-TRA-105110",
+        "OB-400-TRA-105120",
+    ]
+    optional_step_ids = [
+        "OB-400-BAL-101300",
+        "OB-400-BEN-101800",
+        "OB-400-BEN-101900",
+        "OB-400-DIR-102300",
+        "OB-400-DIR-102400",
+        "OB-400-OFF-102600",
+        "OB-400-PAR-102900",
+        "OB-400-PAR-102901",
+        "OB-400-PRO-103200",
+        "OB-400-SCP-103500",
+        "OB-400-STO-103800",
+        "OB-400-TRA-105200",
+    ]
+
+    assert preview.suite_metadata is not None
+    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-fcs-legacy-benchmark"
+    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark"
     assert preview.selected_plan.selected_step_ids() == mandatory_step_ids
     assert [row.id for row in preview.rows] == mandatory_step_ids + optional_step_ids
     assert [row.id for row in preview.rows if row.default_selected] == mandatory_step_ids

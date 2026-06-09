@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- New partial bundled `ob-read-write / v4.0 / fapi1-advanced / ais-fcs-legacy-benchmark` suite starts the previous FCS manifest parity track separately from the current AIS certification baseline. The suite preserves migrated legacy v4 AIS script IDs for the first runnable endpoint slice, keeps optional and conditional legacy rows deselected by default, records the frozen legacy manifest inventory and mapping gaps in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`, and remains `certificationCoverage: partial` while unsupported legacy assertion semantics and Standards sign-off are outstanding.
 - Config-selected suites now use a normalized suite-selection contract with an explicit `testSuite.api` family. Existing configs that omit the new field continue to resolve through the current AIS-backed bundled suites, suite metadata now exposes `api`, and existing catalog IDs remain stable while future OBL v4.0.1, PIS/CBPII/VRP, and cVRP catalog entries are phased in.
 - Browser plan preview, API launch surfaces, and CLI suite-resolution flows now share the same expanded OBL version/API suite matrix and plan-level auth inventory model, including stable auth-bundle IDs and explicit selected-step-to-bundle mappings used by runtime token binding.
 - Local runtime entry points now standardise on port `8443`, matching the callback port used by legacy previous-FCS Ozone model-bank registrations such as `https://0.0.0.0:8443/conformancesuite/callback`. This covers `make dev`, `make serve`, Docker port publishing, the container command, container healthcheck, and CI smoke-test health probing.
@@ -74,6 +75,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Pinned third-party GitHub Actions were bumped to Node 24-compatible releases, Google-style docstrings are enforced, and v0 follow-up/test-id handling was tightened.
 
 ### Fixed
+
+- Local dev server targets now serve HTTPS on port `8443` with a generated local certificate, so registered Ozone redirects to `https://0.0.0.0:8443/conformancesuite/callback` reach the callback endpoint instead of failing with `ERR_SSL_PROTOCOL_ERROR`.
+- PSU callback handling now bridges OAuth hybrid fragment redirects by replaying browser-only `#code`/`state` or `#error` fields as a normal server-visible query callback while deliberately dropping `id_token`.
+
+- Browser/API-launched conformance runs now write the structured result JSON and NDJSON execution log to the configured `resultOutputPath` and `executionLogPath`, matching CLI runs and making local `out/` artifacts available after guided E2E attempts.
+
+- AIS certification baseline and slice suites now request the `accounts` scope on the client-credentials token used to create account-access consents, so Ozone model-bank consent setup receives a token authorised for `/account-access-consents` before PSU authorisation begins.
 
 - `_blocking_reason_lines()` in the OBL certification validator now renders Confluence summary bullet lines in the same precedence order produced by `_validation_reasons()` (tool-version failures → mandatory-step failures → partial coverage), instead of always placing the `manifest_coverage_partial` bullet first. In multi-blocker scenarios this had hidden more actionable step/version failures beneath the lower-priority coverage message. Addresses Copilot PR #44 review feedback.
 

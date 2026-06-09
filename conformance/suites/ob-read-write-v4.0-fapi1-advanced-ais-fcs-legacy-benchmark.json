@@ -1,6 +1,6 @@
 {
   "schemaVersion": "v1",
-  "name": "Open Banking Read/Write v4.0.1 FAPI 1 Advanced AIS certification baseline",
+  "name": "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark",
   "certificationCoverage": "partial",
   "steps": [
     {
@@ -72,10 +72,10 @@
     },
     {
       "id": "account-access-consent",
-      "name": "Account access consent creation",
+      "name": "Account access consent creation for legacy AIS benchmark permissions",
       "request": {
         "method": "POST",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/account-access-consents",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
         "detachedJws": {
           "source": "fapi-signing"
         },
@@ -90,6 +90,7 @@
               "ReadAccountsDetail",
               "ReadBalances",
               "ReadBeneficiariesBasic",
+              "ReadBeneficiariesDetail",
               "ReadDirectDebits",
               "ReadOffers",
               "ReadParty",
@@ -100,6 +101,7 @@
               "ReadStandingOrdersBasic",
               "ReadStandingOrdersDetail",
               "ReadStatementsBasic",
+              "ReadStatementsDetail",
               "ReadTransactionsBasic",
               "ReadTransactionsCredits",
               "ReadTransactionsDebits",
@@ -169,11 +171,11 @@
       "mandatory": true
     },
     {
-      "id": "accounts-list",
-      "name": "Accounts resource",
+      "id": "OB-400-ACC-100400",
+      "name": "OB-400-ACC-100400: bulk accounts with ReadAccountsDetail",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -193,11 +195,11 @@
       "mandatory": true
     },
     {
-      "id": "account-detail",
-      "name": "Account detail resource",
+      "id": "OB-400-ACC-100200",
+      "name": "OB-400-ACC-100200: account detail with ReadAccountsDetail",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -210,18 +212,16 @@
         {"type": "json_field", "path": "Data", "rule": "object"},
         {"type": "json_field", "path": "Data.Account", "rule": "array"},
         {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "Status"}
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"}
       ],
       "mandatory": true
     },
     {
-      "id": "account-balances",
-      "name": "Account balances resource",
+      "id": "OB-400-BAL-101200",
+      "name": "OB-400-BAL-101200: account balances with ReadBalances",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/balances",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -234,7 +234,6 @@
         {"type": "json_field", "path": "Data", "rule": "object"},
         {"type": "json_field", "path": "Data.Balance", "rule": "array"},
         {"type": "json_field", "path": "Data.Balance", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "min_items", "minItems": 1},
         {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
         {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
         {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"}
@@ -242,11 +241,11 @@
       "mandatory": true
     },
     {
-      "id": "account-transactions",
-      "name": "Account transactions resource",
+      "id": "OB-400-TRA-105100",
+      "name": "OB-400-TRA-105100: account transactions with transaction detail permissions",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/transactions",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -267,11 +266,11 @@
       "mandatory": true
     },
     {
-      "id": "transactions-list",
-      "name": "Bulk transactions resource",
+      "id": "OB-400-TRA-105110",
+      "name": "OB-400-TRA-105110: account transactions with whole-second booking date filters",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/transactions",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/transactions?fromBookingDateTime=2025-04-23T15%3A47%3A00&toBookingDateTime=2025-04-23T15%3A48%3A00",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -282,21 +281,16 @@
         {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
         {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
         {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"}
+        {"type": "json_field", "path": "Data.Transaction", "rule": "array"}
       ],
       "mandatory": true
     },
     {
-      "id": "balances-list",
-      "name": "Bulk balances resource",
+      "id": "OB-400-TRA-105120",
+      "name": "OB-400-TRA-105120: account transactions with millisecond booking date filters",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/balances",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/transactions?fromBookingDateTime=2025-04-23T15%3A47%3A00.999&toBookingDateTime=2025-04-23T15%3A48%3A00.999",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -307,19 +301,36 @@
         {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
         {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
         {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "array"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"}
+        {"type": "json_field", "path": "Data.Transaction", "rule": "array"}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "OB-400-BAL-101300",
+      "name": "OB-400-BAL-101300: bulk balances with ReadBalances",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/balances",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
+        {"type": "json_field", "path": "Data", "rule": "object"},
+        {"type": "json_field", "path": "Data.Balance", "rule": "array"}
       ],
       "optional": true
     },
     {
-      "id": "account-beneficiaries",
-      "name": "Account beneficiaries resource",
+      "id": "OB-400-BEN-101800",
+      "name": "OB-400-BEN-101800: account beneficiaries with ReadBeneficiariesBasic",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/beneficiaries",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/beneficiaries",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -335,11 +346,11 @@
       "optional": true
     },
     {
-      "id": "beneficiaries-list",
-      "name": "Bulk beneficiaries resource",
+      "id": "OB-400-BEN-101900",
+      "name": "OB-400-BEN-101900: bulk beneficiaries with ReadBeneficiariesBasic",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/beneficiaries",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/beneficiaries",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -355,11 +366,11 @@
       "optional": true
     },
     {
-      "id": "account-direct-debits",
-      "name": "Account direct debits resource",
+      "id": "OB-400-DIR-102300",
+      "name": "OB-400-DIR-102300: account direct debits with ReadDirectDebits",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/direct-debits",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/direct-debits",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -375,11 +386,11 @@
       "optional": true
     },
     {
-      "id": "direct-debits-list",
-      "name": "Bulk direct debits resource",
+      "id": "OB-400-DIR-102400",
+      "name": "OB-400-DIR-102400: bulk direct debits with ReadDirectDebits",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/direct-debits",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/direct-debits",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -395,11 +406,11 @@
       "optional": true
     },
     {
-      "id": "account-offers",
-      "name": "Account offers resource",
+      "id": "OB-400-OFF-102600",
+      "name": "OB-400-OFF-102600: account offers with ReadOffers",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/offers",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/offers",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -415,31 +426,11 @@
       "optional": true
     },
     {
-      "id": "offers-list",
-      "name": "Bulk offers resource",
+      "id": "OB-400-PAR-102900",
+      "name": "OB-400-PAR-102900: account party with ReadParty",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/offers",
-        "headers": {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
-        }
-      },
-      "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Offer", "rule": "array"}
-      ],
-      "optional": true
-    },
-    {
-      "id": "account-party",
-      "name": "Account party resource",
-      "request": {
-        "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/party",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/party",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -455,31 +446,11 @@
       "optional": true
     },
     {
-      "id": "account-parties",
-      "name": "Account parties resource",
+      "id": "OB-400-PAR-102901",
+      "name": "OB-400-PAR-102901: PSU party with ReadPartyPSU",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/parties",
-        "headers": {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
-        }
-      },
-      "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Party", "rule": "array"}
-      ],
-      "optional": true
-    },
-    {
-      "id": "party-list",
-      "name": "PSU party resource",
-      "request": {
-        "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/party",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/party",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -495,11 +466,11 @@
       "optional": true
     },
     {
-      "id": "account-product",
-      "name": "Account product resource",
+      "id": "OB-400-PRO-103200",
+      "name": "OB-400-PRO-103200: account product with ReadProducts",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/product",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/product",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -515,31 +486,11 @@
       "optional": true
     },
     {
-      "id": "products-list",
-      "name": "Bulk products resource",
+      "id": "OB-400-SCP-103500",
+      "name": "OB-400-SCP-103500: account scheduled payments with ReadScheduledPaymentsDetail",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/products",
-        "headers": {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
-        }
-      },
-      "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Product", "rule": "array"}
-      ],
-      "optional": true
-    },
-    {
-      "id": "account-scheduled-payments",
-      "name": "Account scheduled payments resource",
-      "request": {
-        "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/scheduled-payments",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/scheduled-payments",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -555,31 +506,11 @@
       "optional": true
     },
     {
-      "id": "scheduled-payments-list",
-      "name": "Bulk scheduled payments resource",
+      "id": "OB-400-STO-103800",
+      "name": "OB-400-STO-103800: account standing orders with ReadStandingOrdersDetail",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/scheduled-payments",
-        "headers": {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
-        }
-      },
-      "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.ScheduledPayment", "rule": "array"}
-      ],
-      "optional": true
-    },
-    {
-      "id": "account-standing-orders",
-      "name": "Account standing orders resource",
-      "request": {
-        "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/standing-orders",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/standing-orders",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -595,11 +526,11 @@
       "optional": true
     },
     {
-      "id": "standing-orders-list",
-      "name": "Bulk standing orders resource",
+      "id": "OB-400-TRA-105200",
+      "name": "OB-400-TRA-105200: bulk transactions with ReadTransactionsBasic",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/standing-orders",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/transactions",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -610,27 +541,7 @@
         {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
         {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
         {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.StandingOrder", "rule": "array"}
-      ],
-      "optional": true
-    },
-    {
-      "id": "statements-list",
-      "name": "Bulk statements resource",
-      "request": {
-        "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/statements",
-        "headers": {
-          "Accept": "application/json",
-          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
-        }
-      },
-      "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Statement", "rule": "array"}
+        {"type": "json_field", "path": "Data.Transaction", "rule": "array"}
       ],
       "optional": true
     }

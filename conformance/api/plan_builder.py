@@ -848,6 +848,7 @@ def _guided_suite_label(suite: str) -> str:
         "psu-auth-starter": "PSU authorization starter",
         "ais-certification-slice": "AIS certification slice",
         "ais-certification-baseline": "AIS certification baseline",
+        "ais-fcs-legacy-benchmark": "AIS FCS legacy benchmark",
     }
     return labels.get(suite, suite)
 
@@ -866,11 +867,13 @@ def _guided_suite_option(metadata: SuiteMetadata) -> GuidedSuiteOption:
     prompts_resource_base_url = metadata.api == "ais" and metadata.suite in {
         "ais-certification-slice",
         "ais-certification-baseline",
+        "ais-fcs-legacy-benchmark",
     }
     prompts_signing = metadata.suite in {
         "psu-auth-starter",
         "ais-certification-slice",
         "ais-certification-baseline",
+        "ais-fcs-legacy-benchmark",
     }
     return GuidedSuiteOption(
         standard=metadata.standard,

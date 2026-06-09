@@ -156,6 +156,14 @@ _AIS_CERTIFICATION_BASELINE_V401_DESCRIPTION = (
 )
 """Description for the partial v4.0.1 AIS certification baseline suite."""
 
+_AIS_FCS_LEGACY_BENCHMARK_DESCRIPTION = (
+    "Legacy FCS benchmark parity suite for Open Banking Read/Write v4.0 AIS, seeded from the previous "
+    "public FCS accounts/transactions manifest. The bundled suite preserves legacy script IDs where current "
+    "v2 primitives can express the request and assertion intent, keeps optional and conditional resource rows "
+    "opt-in, and remains partial coverage until legacy assertion gaps and Standards sign-off are resolved."
+)
+"""Description for the partial v4 AIS legacy FCS benchmark suite."""
+
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
         key=("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "discovery-jwks"),
@@ -180,6 +188,12 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         resource_name="ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice",
         description=_AIS_CERTIFICATION_SLICE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-fcs-legacy-benchmark"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark",
+        description=_AIS_FCS_LEGACY_BENCHMARK_DESCRIPTION,
     ),
     _CatalogEntry(
         key=("ob-read-write", "v4.0", "fapi1-advanced", "ais", "discovery-jwks"),

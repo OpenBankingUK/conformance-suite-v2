@@ -28,6 +28,7 @@ git config core.hooksPath .githooks
 
 ```bash
 make dev         # Django dev server on the legacy FCS callback port
+make dev-unmasked # Django dev server with unmasked execution logs
 make serve       # Uvicorn locally on the legacy FCS callback port
 make docker      # Build and run the Docker container
 ```
@@ -35,10 +36,11 @@ make docker      # Build and run the Docker container
 | Command | Server | Auto-reload | Use case |
 |---------|--------|-------------|----------|
 | `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day development with legacy FCS callback registrations |
+| `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked execution-log payloads |
 | `make serve` | Uvicorn on `0.0.0.0:8443` | No | Test production behaviour locally on the same callback port |
 | `make docker` | Uvicorn (container) | No | Full production-like environment (requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`) |
 
-`make dev` and `make serve` work with zero configuration. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
+`make dev`, `make dev-unmasked`, and `make serve` work with zero configuration. `make dev-unmasked` writes credentials and tokens in clear text to execution logs and is only for local debugging. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
 
 All runtime entry points bind to port `8443` so callbacks registered against the previous FCS URI `https://0.0.0.0:8443/conformancesuite/callback` land on the same local port across Django, Uvicorn, and Docker.
 
@@ -140,6 +142,7 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 | `DJANGO_SECRET_KEY` | Production only | Django cryptographic signing key. Falls back to a safe `django-insecure-` value for local tooling. |
 | `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
 | `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
+| `CONFORMANCE_DEVELOPER_MODE` | No | Set to `"true"` to disable execution-log masking for local engine debugging only. |
 | `CONFORMANCE_TOOL_VERSION` | No | Optional tool version stamped into generated reports. Docker builds can set this through `--build-arg CONFORMANCE_TOOL_VERSION=<version>`; source runs fall back to `pyproject.toml`. |
 
 ### How environment variables are managed per context
@@ -148,6 +151,7 @@ CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a 
 |---------|----------------------|-------|
 | `make check` (lint/test) | No env vars needed | `settings.py` uses a safe `django-insecure-` fallback for `SECRET_KEY`; production guards are skipped |
 | `make dev` | Makefile sets `DJANGO_DEBUG=true` and binds `0.0.0.0:8443` | Django ignores `ALLOWED_HOSTS` when `DEBUG=True`; port matches legacy FCS callback registrations |
+| `make dev-unmasked` | Makefile sets `DJANGO_DEBUG=true` and `CONFORMANCE_DEVELOPER_MODE=true` | Same server as `make dev`, but execution-log masking is disabled for local debugging |
 | `make serve` | Makefile sets `DJANGO_ALLOWED_HOSTS` and binds `0.0.0.0:8443` | Allows `localhost`, `127.0.0.1`, and `0.0.0.0` for local Uvicorn while matching the legacy FCS callback port |
 | `make docker` | Caller must provide both vars | Simulates production — fails fast if misconfigured |
 | Production | Orchestrator (K8s, ECS, Compose) | Must set a real `SECRET_KEY` and `ALLOWED_HOSTS` |
@@ -239,13 +243,13 @@ The `psu-auth-starter` suite requires an `oauth` section in the participant conf
   "oauth": {
     "clientId": "your-client-id-here",
     "redirectUri": "https://conformance.example.com/callback",
-    "openBankingIntentId": "your-existing-account-access-consent-id",
+    "openBankingIntentId": "aac-example-consent-id",
     "resourceBaseUrl": "https://resource.example.com"
   }
 }
 ```
 
-The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}`, the PSU starter manifests resolve `openbankingIntentId` from `${config.oauth.openBankingIntentId}`, and the v4 AIS manifests resolve protected resource URLs from `${config.oauth.resourceBaseUrl}`. `openBankingIntentId` is non-secret and should hold a pre-existing account-access consent id only for starter flows that do not create consent themselves. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves.
+The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}`, the PSU starter manifests resolve `openbankingIntentId` from `${config.oauth.openBankingIntentId}`, and the v4 AIS manifests resolve protected resource URLs from `${config.oauth.resourceBaseUrl}`. `openBankingIntentId` is non-secret and must hold a real pre-existing account-access consent id only for starter flows that do not create consent themselves. Run `ais-certification-baseline` first if you want the tool to create consent and return a `Data.ConsentId`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves.
 
 Step-response placeholders can traverse JSON arrays with non-negative numeric path segments. The bundled v4 AIS baseline and slice use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned `AccountId` from `GET /accounts` into account-scoped resource calls. Negative indices, out-of-bounds indices, and placeholders that terminate on whole objects or arrays remain invalid.
 

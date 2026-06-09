@@ -1,5 +1,6 @@
 """Tests for conformance.http module."""
 
+import ssl
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -73,6 +74,23 @@ class TestBuildJsonHttpClientMtlsValidation:
 
         ssl_context.load_verify_locations.assert_called_once_with(cafile=str(ca_bundle))
         assert mock_client.call_args.kwargs["verify"] is ssl_context
+
+    def test_reports_unloadable_client_certificate_pair(self, tmp_path: Path) -> None:
+        """Malformed mTLS files should raise a participant-facing setup error."""
+        cert = tmp_path / "client.pem"
+        key = tmp_path / "client.key"
+        cert.touch()
+        key.touch()
+
+        with (
+            patch("conformance.http.httpx.Client", side_effect=ssl.SSLError("PEM lib")),
+            pytest.raises(ValueError, match="Unable to load TLS client certificate/private key"),
+        ):
+            build_json_http_client(
+                timeout_seconds=10.0,
+                client_certificate_path=cert,
+                client_private_key_path=key,
+            )
 
 
 @pytest.mark.unit

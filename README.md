@@ -48,11 +48,11 @@ Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` p
 | Spec version | Suite name | Steps | Participant config required |
 |---|---|---|---|
 | `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
-| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | `oauth.clientId`, `oauth.redirectUri` |
+| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
 | `v4.0` | `ais-certification-baseline` | Discovery + JWKS + manual PSU authorisation + token exchange + consent creation + mandatory core AIS resource coverage, with optional/conditional AIS rows available as opt-in plan entries | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
 | `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
 
-The `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves. The starter suite uses the first two values; both AIS suites also use `resourceBaseUrl` for consent creation and protected resource calls.
+The `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves. The starter suite uses a pre-existing `oauth.openBankingIntentId` and does not create account-access consent; run `ais-certification-baseline` first if you want the tool to create consent and return a `Data.ConsentId`. Both AIS suites also use `resourceBaseUrl` for consent creation and protected resource calls.
 
 The `ais-certification-baseline` suite also accepts a dedicated `fapiSigning` block for generated JAR request objects, token-endpoint client authentication, and detached JWS signing of the account-access-consent request body. The current config fields are `certificatePathRoot`, `signingCertificatePath`, `signingPrivateKeyPath`, `kid`, `clientAssertionIssuer`, `clientAssertionSubject`, and `tokenEndpointAuthMethod` (`private_key_jwt` or `tls_client_auth`). The preserved `ais-certification-slice` remains the older proof flow and does not opt into these manifest directives.
 
@@ -91,7 +91,7 @@ The `ais-certification-baseline` suite also accepts a dedicated `fapiSigning` bl
 }
 ```
 
-Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}` are exposed to manifests. `fapiSigning` values, TLS paths, certificates, private keys, client secrets, request objects, client assertions, and arbitrary config traversal are not placeholder-addressable.
+Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, `${config.oauth.openBankingIntentId}`, and `${config.oauth.resourceBaseUrl}` are exposed to manifests. `fapiSigning` values, TLS paths, certificates, private keys, client secrets, request objects, client assertions, and arbitrary config traversal are not placeholder-addressable.
 
 Run a config-selected suite from the CLI by omitting `--manifest`:
 

@@ -92,6 +92,8 @@ def callback_view(request: HttpRequest) -> HttpResponse:
     error_description = request.GET.get("error_description")
 
     if not state:
+        if not request.GET:
+            return _render_fragment_bridge(request)
         logger.warning("PSU callback hit without a state parameter")
         return _render_failure(request)
 
@@ -146,6 +148,29 @@ def _render_failure(request: HttpRequest) -> HttpResponse:
             "message": _GENERIC_FAILURE_MESSAGE,
         },
         status=400,
+    )
+
+
+def _render_fragment_bridge(request: HttpRequest) -> HttpResponse:
+    """Render a bridge page for OAuth hybrid fragment callbacks.
+
+    Browsers do not send URL fragments to the server. Some ASPSPs return
+    FAPI hybrid responses as ``#code=...&state=...&id_token=...``; this page
+    lets browser-side JavaScript replay only the callback fields the server
+    needs as a query string, deliberately dropping ``id_token``.
+
+    Args:
+        request: The inbound callback request whose fragment, if any, is only
+            visible to the browser.
+
+    Returns:
+        A 200 HTML response containing the fragment replay script.
+    """
+    return render(
+        request,
+        "conformance/callback.html",
+        {"outcome": "fragment_bridge"},
+        status=200,
     )
 
 

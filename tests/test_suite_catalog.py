@@ -75,11 +75,12 @@ def test_list_supported_suites_is_deterministic() -> None:
     second = suite_catalog.list_supported_suites()
 
     assert first == second
-    assert len(first) == 22
+    assert len(first) == 23
     assert {(metadata.spec_version, metadata.api, metadata.suite) for metadata in first} >= {
         ("v3.1.11", "ais", "discovery-jwks"),
         ("v3.1.11", "ais", "psu-auth-starter"),
         ("v4.0", "ais", "ais-certification-baseline"),
+        ("v4.0", "ais", "ais-fcs-legacy-benchmark"),
         ("v4.0", "ais", "ais-certification-slice"),
         ("v4.0", "pis", "discovery-jwks"),
         ("v4.0", "cbpii", "psu-auth-starter"),
@@ -265,6 +266,7 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     assert dict(consent_token_step.request.body.fields) == {
         "grant_type": "client_credentials",
         "client_id": "${config.oauth.clientId}",
+        "scope": "accounts",
     }
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert token_exchange_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
@@ -387,6 +389,92 @@ def test_resolve_ais_certification_baseline_returns_bundled_manifest_for_support
 
 
 @pytest.mark.unit
+def test_resolve_v4_ais_fcs_legacy_benchmark_returns_bundled_manifest() -> None:
+    resolved = resolve_suite(_selection("v4.0", suite_name="ais-fcs-legacy-benchmark"))
+
+    assert resolved.metadata.standard == "ob-read-write"
+    assert resolved.metadata.spec_version == "v4.0"
+    assert resolved.metadata.profile == "fapi1-advanced"
+    assert resolved.metadata.api == "ais"
+    assert resolved.metadata.suite == "ais-fcs-legacy-benchmark"
+    assert resolved.metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-fcs-legacy-benchmark"
+    assert resolved.metadata.manifest_resource == "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json"
+    assert "Legacy FCS benchmark parity" in resolved.metadata.description
+    assert "partial coverage" in resolved.metadata.description
+
+    manifest = resolved.manifest
+    mandatory_step_ids = [
+        "openid-discovery",
+        "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
+        "psu-authorization",
+        "token-exchange",
+        "OB-400-ACC-100400",
+        "OB-400-ACC-100200",
+        "OB-400-BAL-101200",
+        "OB-400-TRA-105100",
+        "OB-400-TRA-105110",
+        "OB-400-TRA-105120",
+    ]
+    optional_step_ids = [
+        "OB-400-BAL-101300",
+        "OB-400-BEN-101800",
+        "OB-400-BEN-101900",
+        "OB-400-DIR-102300",
+        "OB-400-DIR-102400",
+        "OB-400-OFF-102600",
+        "OB-400-PAR-102900",
+        "OB-400-PAR-102901",
+        "OB-400-PRO-103200",
+        "OB-400-SCP-103500",
+        "OB-400-STO-103800",
+        "OB-400-TRA-105200",
+    ]
+    assert manifest.schema_version == "v1"
+    assert manifest.certification_coverage == "partial"
+    assert manifest.name == resolved.metadata.label
+    assert [step.id for step in manifest.steps] == mandatory_step_ids + optional_step_ids
+    assert [step.id for step in manifest.steps if step.mandatory] == mandatory_step_ids
+    assert [step.id for step in manifest.steps if step.optional] == optional_step_ids
+
+    consent_token_step = cast(ManifestStep, manifest.steps[2])
+    consent_step = cast(ManifestStep, manifest.steps[3])
+    psu_step = cast(PsuAuthorizationStep, manifest.steps[4])
+    accounts_step = cast(ManifestStep, manifest.steps[6])
+    transactions_filter_step = cast(ManifestStep, manifest.steps[10])
+
+    assert consent_token_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
+    assert psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.openid-discovery.response.body.issuer}",
+        openbanking_intent_id="${steps.account-access-consent.response.body.Data.ConsentId}",
+    )
+    assert consent_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents"
+    consent_body = consent_step.request.body
+    assert isinstance(consent_body, JsonBody)
+    assert isinstance(consent_body.value, dict)
+    consent_data = consent_body.value["Data"]
+    assert isinstance(consent_data, dict)
+    permissions = consent_data["Permissions"]
+    assert isinstance(permissions, list)
+    assert "ReadStatementsDetail" in permissions
+    assert "ReadTransactionsDetail" in permissions
+    assert accounts_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
+    assert transactions_filter_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+        "${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/transactions"
+        "?fromBookingDateTime=2025-04-23T15%3A47%3A00&toBookingDateTime=2025-04-23T15%3A48%3A00"
+    )
+    assert any(
+        isinstance(assertion, HeaderAssertion)
+        and assertion.name == "x-fapi-interaction-id"
+        and assertion.rule == "present"
+        for assertion in accounts_step.assertions
+    )
+
+
+@pytest.mark.unit
 def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     resolved = resolve_suite(_selection("v4.0", suite_name="ais-certification-slice"))
 
@@ -428,6 +516,7 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
     assert dict(consent_token_step.request.body.fields) == {
         "grant_type": "client_credentials",
         "client_id": "${config.oauth.clientId}",
+        "scope": "accounts",
     }
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert isinstance(token_exchange_step.request.body, FormBody)

@@ -43,7 +43,13 @@ SuiteProfile = Literal["fapi1-advanced"]
 TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 """Supported FAPI token-endpoint client authentication modes."""
 
-SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"]
+SuiteName = Literal[
+    "discovery-jwks",
+    "psu-auth-starter",
+    "ais-certification-slice",
+    "ais-certification-baseline",
+    "ais-fcs-legacy-benchmark",
+]
 """Supported versioned conformance suite identifiers."""
 
 _SUPPORTED_SUITE_STANDARDS = ("ob-read-write", "cvrp")
@@ -58,7 +64,13 @@ _SUPPORTED_SUITE_API_FAMILIES = ("ais", "pis", "cbpii", "vrp", "cvrp")
 _SUPPORTED_SUITE_PROFILES = ("fapi1-advanced",)
 """Security profiles accepted by the normalized suite-selection contract."""
 
-_SUPPORTED_SUITE_NAMES = ("discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline")
+_SUPPORTED_SUITE_NAMES = (
+    "discovery-jwks",
+    "psu-auth-starter",
+    "ais-certification-slice",
+    "ais-certification-baseline",
+    "ais-fcs-legacy-benchmark",
+)
 """Suite names accepted by the normalized suite-selection contract."""
 
 _LEGACY_SUITE_API_BY_SUITE = {
@@ -66,6 +78,7 @@ _LEGACY_SUITE_API_BY_SUITE = {
     "psu-auth-starter": "ais",
     "ais-certification-slice": "ais",
     "ais-certification-baseline": "ais",
+    "ais-fcs-legacy-benchmark": "ais",
 }
 """API-family defaults for configs created before ``testSuite.api`` existed."""
 
@@ -76,6 +89,7 @@ _SUPPORTED_SUITE_SELECTIONS = {
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-slice"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-fcs-legacy-benchmark"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "discovery-jwks"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "discovery-jwks"),
@@ -94,6 +108,12 @@ _SUPPORTED_SUITE_SELECTIONS = {
     ("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "psu-auth-starter"),
 }
 """Currently runnable normalized suite combinations backed by bundled manifests."""
+
+_PSU_AUTH_STARTER_PLACEHOLDER_INTENT_IDS = {
+    "replace-with-existing-account-access-consent-id",
+    "your-existing-account-access-consent-id",
+}
+"""Example-only consent ids that must not be sent to ASPSPs in starter runs."""
 
 
 @dataclass(frozen=True)
@@ -332,6 +352,7 @@ def parse_model_bank_config(
     test_suite = _parse_test_suite_selection(raw_config)
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
+    _validate_psu_auth_starter_oauth(test_suite, oauth)
     fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
 
     return ModelBankConfig(
@@ -432,7 +453,7 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
     if suite not in _SUPPORTED_SUITE_NAMES:
         raise ConfigError(
             "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
-            "ais-certification-slice, ais-certification-baseline"
+            "ais-certification-slice, ais-certification-baseline, ais-fcs-legacy-benchmark"
         )
     api = _parse_test_suite_api(raw_test_suite, suite=suite)
     if standard == "cvrp" and api != "cvrp":
@@ -535,6 +556,31 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
         authorization_endpoint=authorization_endpoint,
         open_banking_intent_id=open_banking_intent_id,
         resource_base_url=resource_base_url,
+    )
+
+
+def _validate_psu_auth_starter_oauth(test_suite: SuiteSelection | None, oauth: OAuthConfig | None) -> None:
+    """Reject example-only consent ids for PSU auth starter suite runs.
+
+    Args:
+        test_suite: Parsed suite selection, or ``None`` for legacy smoke-check
+            configs.
+        oauth: Parsed OAuth participant config, or ``None`` when omitted.
+
+    Raises:
+        ConfigError: If the selected suite is ``psu-auth-starter`` and the
+            configured ``oauth.openBankingIntentId`` is one of the published
+            placeholder values from example/local starter configs.
+    """
+    if test_suite is None or test_suite.suite != "psu-auth-starter" or oauth is None:
+        return
+    if oauth.open_banking_intent_id is None:
+        return
+    if oauth.open_banking_intent_id.lower() not in _PSU_AUTH_STARTER_PLACEHOLDER_INTENT_IDS:
+        return
+    raise ConfigError(
+        "oauth.openBankingIntentId must be a real pre-existing account-access consent id for "
+        "psu-auth-starter; create consent first or run ais-certification-baseline"
     )
 
 

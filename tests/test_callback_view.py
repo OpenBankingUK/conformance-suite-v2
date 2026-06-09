@@ -105,6 +105,38 @@ class TestCallbackView:
         assert response.status_code == 400
         assert "Invalid or expired callback" in response.content.decode("utf-8")
 
+    def test_empty_callback_renders_fragment_bridge(self) -> None:
+        run_id, state = _registered_state()
+        client = Client()
+
+        response = client.get("/conformancesuite/callback")
+
+        assert response.status_code == 200
+        body = response.content.decode("utf-8")
+        assert "Completing authorization" in body
+        assert "window.location.hash" in body
+        assert 'fragment.get("id_token")' not in body
+        assert 'query.set("id_token"' not in body
+        session = auth_session_store.get(run_id, state)
+        assert session is not None
+        assert session.status == "awaiting"
+
+    def test_fragment_bridge_script_replays_only_callback_fields(self) -> None:
+        client = Client()
+
+        response = client.get("/callback/")
+
+        body = response.content.decode("utf-8")
+        assert 'fragment.get("state")' in body
+        assert 'fragment.get("code")' in body
+        assert 'fragment.get("error")' in body
+        assert 'fragment.get("error_description")' in body
+        assert 'query.set("state", state)' in body
+        assert 'query.set("code", code)' in body
+        assert 'query.set("error", error)' in body
+        assert 'fragment.get("id_token")' not in body
+        assert 'query.set("id_token"' not in body
+
     def test_missing_code_and_error_returns_generic_400(self) -> None:
         _run_id, state = _registered_state()
         client = Client()

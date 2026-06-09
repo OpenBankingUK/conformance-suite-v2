@@ -278,10 +278,21 @@ def build_json_http_client(
     verify: bool | ssl.SSLContext = True
     if ca_bundle_path is not None:
         verify = ssl.create_default_context()
-        verify.load_verify_locations(cafile=str(ca_bundle_path))
+        try:
+            verify.load_verify_locations(cafile=str(ca_bundle_path))
+        except ssl.SSLError as error:
+            raise ValueError(f"Unable to load TLS CA bundle from {ca_bundle_path}: {error}") from error
 
     cert: tuple[str, str] | None = None
     if client_certificate_path is not None and client_private_key_path is not None:
         cert = (str(client_certificate_path), str(client_private_key_path))
 
-    return httpx.Client(timeout=timeout_seconds, verify=verify, cert=cert)
+    try:
+        return httpx.Client(timeout=timeout_seconds, verify=verify, cert=cert)
+    except ssl.SSLError as error:
+        if cert is not None:
+            raise ValueError(
+                "Unable to load TLS client certificate/private key from "
+                f"{client_certificate_path} and {client_private_key_path}: {error}"
+            ) from error
+        raise ValueError(f"Unable to initialise TLS configuration: {error}") from error

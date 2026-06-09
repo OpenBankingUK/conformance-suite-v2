@@ -1,15 +1,19 @@
-{# Minimal landing page for the PSU authorization callback.
+{% comment %}
+Minimal landing page for the PSU authorization callback.
 
-   Three variants selected via the ``outcome`` context variable:
-     * "success" — the FCS captured an authorization code.
-     * "error"   — the ASPSP returned an OAuth 2.0 error response.
-     * "failure" — the callback was rejected (unknown / expired state,
-                   malformed query, etc.). Renders a generic message
-                   with no request-supplied values to avoid leaking
-                   which states the store knows about.
+Three variants selected via the ``outcome`` context variable:
+    * "success" — the FCS captured an authorization code.
+    * "error"   — the ASPSP returned an OAuth 2.0 error response.
+    * "failure" — the callback was rejected (unknown / expired state,
+                                malformed query, etc.). Renders a generic message
+                                with no request-supplied values to avoid leaking
+                                which states the store knows about.
 
-   No JavaScript, no inline secrets. All values are auto-escaped by the
-   Django template engine. #}
+The fragment bridge uses static JavaScript only: it reads browser-only OAuth
+fragment fields, replays state plus code/error to the server as a normal query
+callback, and deliberately drops the ID token. All template values are
+auto-escaped by the Django template engine.
+{% endcomment %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -17,9 +21,37 @@
     <title>PSU authorization callback</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
+    {% if outcome == "fragment_bridge" %}
+        <script>
+            (() => {
+                const fragment = new URLSearchParams(window.location.hash.slice(1));
+                const state = fragment.get("state");
+                const code = fragment.get("code");
+                const error = fragment.get("error");
+                if (!state || (!code && !error)) {
+                    return;
+                }
+                const query = new URLSearchParams();
+                query.set("state", state);
+                if (error) {
+                    query.set("error", error);
+                    const errorDescription = fragment.get("error_description");
+                    if (errorDescription) {
+                        query.set("error_description", errorDescription);
+                    }
+                } else {
+                    query.set("code", code);
+                }
+                window.location.replace(`${window.location.pathname}?${query.toString()}`);
+            })();
+        </script>
+    {% endif %}
 </head>
 <body>
-    {% if outcome == "success" %}
+    {% if outcome == "fragment_bridge" %}
+        <h1>Completing authorization</h1>
+        <p>The conformance suite is completing the callback.</p>
+    {% elif outcome == "success" %}
         <h1>Authorization code received</h1>
         <p>The conformance suite has recorded your authorization. You can close
            this tab and return to the CLI or UI to continue the test run.</p>

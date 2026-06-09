@@ -12,7 +12,7 @@
     "oauth": {
         "clientId": "your-client-id-here",
         "redirectUri": "https://conformance.example.com/callback",
-        "openBankingIntentId": "your-existing-account-access-consent-id"
+        "openBankingIntentId": "aac-example-consent-id"
     },
     "tls": {
         "certificatePathRoot": "./certs"

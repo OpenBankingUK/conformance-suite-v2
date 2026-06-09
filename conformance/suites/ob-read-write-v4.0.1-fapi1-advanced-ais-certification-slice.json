@@ -53,7 +53,8 @@
           "encoding": "form",
           "fields": {
             "grant_type": "client_credentials",
-            "client_id": "${config.oauth.clientId}"
+            "client_id": "${config.oauth.clientId}",
+            "scope": "accounts"
           }
         }
       },

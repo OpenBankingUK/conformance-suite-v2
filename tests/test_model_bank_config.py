@@ -176,6 +176,40 @@ def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: Su
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "placeholder_intent_id",
+    [
+        "replace-with-existing-account-access-consent-id",
+        "your-existing-account-access-consent-id",
+    ],
+)
+def test_parse_model_bank_config_rejects_psu_auth_starter_placeholder_intent_id(
+    placeholder_intent_id: str,
+    tmp_path: Path,
+) -> None:
+    """Starter suite configs must not send example consent ids to ASPSPs."""
+    with pytest.raises(ConfigError, match="oauth.openBankingIntentId must be a real pre-existing account-access"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testSuite": {
+                    "standard": "ob-read-write",
+                    "specVersion": "v4.0",
+                    "profile": "fapi1-advanced",
+                    "suite": "psu-auth-starter",
+                },
+                "oauth": {
+                    "clientId": "my-client-id",
+                    "redirectUri": "https://example.com/callback",
+                    "openBankingIntentId": placeholder_intent_id,
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
 def test_parse_model_bank_config_accepts_ais_certification_slice_suite(
     spec_version: SuiteSpecVersion,
@@ -241,6 +275,38 @@ def test_parse_model_bank_config_accepts_ais_certification_baseline_suite(
         spec_version=spec_version,
         profile="fapi1-advanced",
         suite="ais-certification-baseline",
+        api="ais",
+    )
+    assert config.oauth is not None
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_v4_ais_fcs_legacy_benchmark_suite(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": "v4.0",
+                "profile": "fapi1-advanced",
+                "suite": "ais-fcs-legacy-benchmark",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-fcs-legacy-benchmark",
         api="ais",
     )
     assert config.oauth is not None
@@ -528,7 +594,7 @@ def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path
             "suite",
             "full-read-write",
             "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice, "
-            "ais-certification-baseline",
+            "ais-certification-baseline, ais-fcs-legacy-benchmark",
         ),
     ],
 )
