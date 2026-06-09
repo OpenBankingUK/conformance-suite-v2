@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import json
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
 from typing import cast
+from urllib.parse import urlsplit
 
 import httpx
 
@@ -39,6 +42,7 @@ from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     FormBody,
+    GeneratedRequestObject,
     JsonBody,
     Manifest,
     ManifestAssertion,
@@ -51,6 +55,7 @@ from conformance.manifest import (
     validate_header_value,
 )
 from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
+from conformance.model_bank_config import FapiSigningConfig
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
@@ -58,6 +63,13 @@ from conformance.psu_authorization import (
     synthesize_psu_response,
 )
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
+from conformance.signing_service import (
+    ClientAssertionSigningInput,
+    FapiSigningService,
+    JwtSigningError,
+    RequestObjectSigningInput,
+)
 from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
@@ -69,6 +81,25 @@ The manifest is participant-provided input, so group count can be large. This
 cap prevents unbounded thread creation while preserving queue-based execution
 for additional groups.
 """
+
+_OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
+"""Open Banking AIS consent-creation path requiring detached JWS support."""
+
+
+def _normalize_url_path_for_match(path: str) -> str:
+    """Normalize a URL path for endpoint eligibility checks.
+
+    Args:
+        path: Raw parsed URL path component.
+
+    Returns:
+        A canonical absolute path with repeated separators collapsed and any
+        trailing slash removed, except for the root path.
+    """
+    normalized_segments = [segment for segment in path.split("/") if segment]
+    if not normalized_segments:
+        return "/"
+    return "/" + "/".join(normalized_segments)
 
 
 def _attach_evidence(
@@ -122,6 +153,8 @@ def run_manifest(
     run_id: str | None = None,
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
     suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
@@ -158,6 +191,13 @@ def run_manifest(
             singleton) must pass it explicitly.
         runtime_config: Optional safe participant config values available to
             manifest placeholders via the narrow ``${config.*}`` grammar.
+        fapi_signing_config: Optional validated FAPI signing configuration
+            used only at execution time for generated PSU request-object JWTs.
+            Kept separate from ``runtime_config`` so signing keys and paths do
+            not become available to manifest placeholders.
+        mtls_client_configured: Whether the shared HTTP client was configured
+            with an mTLS client certificate and private key. Used to fail
+            ``tls_client_auth`` token steps clearly before dispatch.
         suite_metadata: Optional catalog metadata describing a config-resolved
             suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
@@ -185,6 +225,8 @@ def run_manifest(
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
+                fapi_signing_config=fapi_signing_config,
+                mtls_client_configured=mtls_client_configured,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
@@ -233,6 +275,67 @@ def _logger_run_id(execution_logger: ExecutionLogger) -> str | None:
     return logger_run_id if isinstance(logger_run_id, str) and logger_run_id else None
 
 
+def _build_fapi_signing_service(
+    fapi_signing_config: FapiSigningConfig | None,
+) -> FapiSigningService | None:
+    """Build a reusable runtime signing service for one manifest run.
+
+    Args:
+        fapi_signing_config: Optional validated signing configuration for the
+            current participant run.
+
+    Returns:
+        One signing service loaded from disk for the run, or ``None`` when
+        runtime FAPI signing is not configured.
+
+    Raises:
+        SigningCredentialError: If the configured PEM files cannot be read or
+            validated.
+    """
+    if fapi_signing_config is None:
+        return None
+    return FapiSigningService(
+        signing_config=fapi_signing_config,
+        signing_credentials=load_signing_credentials(fapi_signing_config),
+    )
+
+
+class _LazyFapiSigningService:
+    """Load and cache runtime signing credentials on demand for one run."""
+
+    def __init__(self, fapi_signing_config: FapiSigningConfig | None) -> None:
+        """Initialise the lazy signing-service cache.
+
+        Args:
+            fapi_signing_config: Optional validated signing configuration for
+                the current participant run.
+        """
+        self._fapi_signing_config = fapi_signing_config
+        self._service: FapiSigningService | None = None
+        self._loaded = False
+        self._lock = threading.Lock()
+
+    def get(self) -> FapiSigningService | None:
+        """Return the cached signing service, loading it at most once.
+
+        Returns:
+            Cached runtime signing service, or ``None`` when FAPI signing is
+            not configured for the current run.
+
+        Raises:
+            SigningCredentialError: If the configured PEM files cannot be read
+                or validated.
+        """
+        if self._loaded:
+            return self._service
+
+        with self._lock:
+            if not self._loaded:
+                self._service = _build_fapi_signing_service(self._fapi_signing_config)
+                self._loaded = True
+        return self._service
+
+
 def _run_manifest_v1(
     manifest: Manifest,
     *,
@@ -243,6 +346,8 @@ def _run_manifest_v1(
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
+    fapi_signing_config: FapiSigningConfig | None,
+    mtls_client_configured: bool,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
@@ -277,6 +382,10 @@ def _run_manifest_v1(
             PSU authorisation callbacks. Threaded to per-step executors.
         runtime_config: Optional safe participant config values available to
             ``${config.*}`` placeholders.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate runtime FAPI request-object JWTs for PSU steps.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
         suite_metadata: Optional catalog metadata to embed in the result for
             config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
@@ -289,6 +398,7 @@ def _run_manifest_v1(
     schedule = build_execution_schedule(manifest, plan)
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
+    fapi_signing_service = _LazyFapiSigningService(fapi_signing_config)
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
@@ -309,6 +419,9 @@ def _run_manifest_v1(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=fapi_signing_service,
+        mtls_client_configured=mtls_client_configured,
     )
     steps.extend(setup_steps)
 
@@ -320,6 +433,9 @@ def _run_manifest_v1(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=fapi_signing_service,
+        mtls_client_configured=mtls_client_configured,
     )
     steps.extend(execution_steps)
 
@@ -342,6 +458,9 @@ def _execute_v1_step_sequence(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    mtls_client_configured: bool,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -353,6 +472,12 @@ def _execute_v1_step_sequence(
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
+        fapi_signing_service: Optional lazy runtime signing-service cache
+            shared across selected steps in the current manifest run.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -367,6 +492,9 @@ def _execute_v1_step_sequence(
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            mtls_client_configured=mtls_client_configured,
         )
         steps.append(step_result)
     return steps, context
@@ -381,6 +509,9 @@ def _execute_v1_execution_groups_concurrently(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -396,6 +527,12 @@ def _execute_v1_execution_groups_concurrently(
         execution_logger: Structured execution-log sink.
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
+        fapi_signing_service: Optional lazy runtime signing-service cache
+            shared across selected steps in the current manifest run.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -416,6 +553,9 @@ def _execute_v1_execution_groups_concurrently(
                     execution_logger,
                     run_id,
                     auth_session_store,
+                    fapi_signing_config,
+                    fapi_signing_service,
+                    mtls_client_configured,
                 )
             )
 
@@ -435,6 +575,9 @@ def _execute_v1_group(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -445,6 +588,12 @@ def _execute_v1_group(
         execution_logger: Structured execution-log sink.
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
+        fapi_signing_service: Optional lazy runtime signing-service cache
+            shared across selected steps in the current manifest run.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         Step results for this group in group-local order.
@@ -456,6 +605,9 @@ def _execute_v1_group(
         execution_logger=execution_logger,
         run_id=run_id,
         auth_session_store=auth_session_store,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=fapi_signing_service,
+        mtls_client_configured=mtls_client_configured,
     )
     return group_steps
 
@@ -468,6 +620,9 @@ def _execute_v1_manifest_step(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -479,6 +634,12 @@ def _execute_v1_manifest_step(
         run_id: Run identifier propagated to PSU authorisation steps.
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks.
+        fapi_signing_config: Optional validated signing configuration used by
+            PSU steps that generate request-object JWTs at runtime.
+        fapi_signing_service: Optional lazy runtime signing-service cache
+            shared across selected steps in the current manifest run.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured for ``tls_client_auth`` steps.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -491,6 +652,8 @@ def _execute_v1_manifest_step(
             run_id=run_id,
             auth_session_store=auth_session_store,
             execution_logger=execution_logger,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
         )
     else:
         step_result, new_context = _execute_v1_step(
@@ -500,10 +663,87 @@ def _execute_v1_manifest_step(
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            mtls_client_configured=mtls_client_configured,
         )
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
     return step_result, new_context
+
+
+def _apply_token_endpoint_auth_policy(
+    *,
+    manifest_step: ManifestStep,
+    resolved_form_body: dict[str, str] | None,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    resolved_url: str,
+    mtls_client_configured: bool,
+) -> dict[str, str] | None:
+    """Apply runtime FAPI token-endpoint auth to a resolved form request.
+
+    Args:
+        manifest_step: Parsed HTTP step that may declare token-endpoint auth.
+        resolved_form_body: Placeholder-resolved form fields, or ``None`` when
+            the step is not form-encoded.
+        fapi_signing_config: Optional validated FAPI signing configuration.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+        resolved_url: Placeholder-resolved token endpoint URL.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
+
+    Returns:
+        Final form field mapping to dispatch, or ``None`` when the step has no
+        form body and no auth policy.
+
+    Raises:
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the private-key JWT client assertion cannot be
+            signed.
+        ValueError: If the policy is unsupported or cannot be satisfied.
+    """
+    if manifest_step.token_endpoint_auth_policy is None:
+        return None if resolved_form_body is None else dict(resolved_form_body)
+
+    if manifest_step.token_endpoint_auth_policy.source != "fapi-signing":
+        raise ValueError("Unsupported token endpoint auth policy source")
+    if resolved_form_body is None:
+        raise ValueError("Token endpoint auth policy requires a form-encoded request body")
+    if fapi_signing_config is None:
+        raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
+
+    if (
+        fapi_signing_config.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - FAPI auth-method enum, not a secret
+    ):
+        conflicting_fields = [
+            field_name
+            for field_name in ("client_assertion", "client_assertion_type")
+            if field_name in resolved_form_body
+        ]
+        if conflicting_fields:
+            reserved_fields = ", ".join(conflicting_fields)
+            raise ValueError(
+                f"Token endpoint auth policy reserves these form fields for runtime FAPI signing: {reserved_fields}"
+            )
+        if fapi_signing_service is None:
+            raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
+        signing_service = fapi_signing_service.get()
+        if signing_service is None:
+            raise ValueError("Token endpoint auth policy requires participant fapiSigning config")
+        client_assertion = signing_service.sign_client_assertion(ClientAssertionSigningInput(audience=resolved_url))
+        authenticated_form_body = dict(resolved_form_body)
+        authenticated_form_body["client_assertion_type"] = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        authenticated_form_body["client_assertion"] = client_assertion.token
+        return authenticated_form_body
+
+    if fapi_signing_config.token_endpoint_auth_method == "tls_client_auth":  # noqa: S105 - FAPI auth-method enum, not a secret
+        if not mtls_client_configured:
+            raise ValueError("Token endpoint auth policy requires a configured TLS client certificate and private key")
+        return dict(resolved_form_body)
+
+    raise ValueError("Unsupported FAPI token endpoint auth method")
 
 
 def _execute_v1_psu_step(
@@ -514,6 +754,8 @@ def _execute_v1_psu_step(
     run_id: str,
     auth_session_store: AuthSessionStore,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    fapi_signing_service: _LazyFapiSigningService | None = None,
     clock: Callable[[], float] | None = None,
     sleep: Callable[[float], None] | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
@@ -527,6 +769,10 @@ def _execute_v1_psu_step(
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
         execution_logger: Structured execution-log sink.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate a runtime request-object JWT when the PSU step requests
+            ``{"source": "fapi-signing"}``.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
         clock: Optional monotonic clock used for deadline checks. Defaults
             to :func:`time.monotonic`; injectable for tests.
         sleep: Optional sleep function used between polls. Defaults to
@@ -537,6 +783,9 @@ def _execute_v1_psu_step(
     """
     effective_clock = time.monotonic if clock is None else clock
     effective_sleep = time.sleep if sleep is None else sleep
+    effective_fapi_signing_service = (
+        fapi_signing_service if fapi_signing_service is not None else _LazyFapiSigningService(fapi_signing_config)
+    )
     execution_logger.emit("step-started", step_id=manifest_step.id)
     step_result, new_context = _execute_v1_psu_step_inner(
         manifest_step,
@@ -545,6 +794,8 @@ def _execute_v1_psu_step(
         run_id=run_id,
         auth_session_store=auth_session_store,
         execution_logger=execution_logger,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=effective_fapi_signing_service,
         clock=effective_clock,
         sleep=effective_sleep,
     )
@@ -564,6 +815,8 @@ def _execute_v1_psu_step_inner(
     run_id: str,
     auth_session_store: AuthSessionStore,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
     clock: Callable[[], float],
     sleep: Callable[[float], None],
 ) -> tuple[StepResult, ExecutionContext]:
@@ -577,6 +830,9 @@ def _execute_v1_psu_step_inner(
         run_id: Run identifier used to scope the auth-session registration.
         auth_session_store: Store used to register and poll the session.
         execution_logger: Structured execution-log sink.
+        fapi_signing_config: Optional validated signing configuration used to
+            generate a runtime request-object JWT when required.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
         clock: Monotonic clock used for deadline checks.
         sleep: Sleep function used between polls.
 
@@ -593,11 +849,6 @@ def _execute_v1_psu_step_inner(
         resolved_client_id = resolve_placeholders(manifest_step.client_id, context)
         resolved_redirect_uri = resolve_placeholders(manifest_step.redirect_uri, context)
         resolved_state = resolve_placeholders(manifest_step.state, context) if manifest_step.state is not None else None
-        resolved_request_object = (
-            resolve_placeholders(manifest_step.request_object, context)
-            if manifest_step.request_object is not None
-            else None
-        )
     except MissingPredecessorResponseError as error:
         return _skipped_step(
             manifest_step.id,
@@ -666,6 +917,65 @@ def _execute_v1_psu_step_inner(
                     name=manifest_step.id,
                     status="failed",
                     message=f"Unable to register PSU authorisation session: {error}",
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    try:
+        resolved_request_object = _resolve_psu_request_object(
+            manifest_step=manifest_step,
+            context=context,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            authorization_endpoint=resolved_authorization_endpoint,
+            client_id=resolved_client_id,
+            redirect_uri=resolved_redirect_uri,
+            state=session.state,
+        )
+    except MissingPredecessorResponseError as error:
+        return _skipped_step(
+            manifest_step.id,
+            context=context,
+            method="GET",
+            url=resolved_result_url,
+            error=error,
+            request_evidence=request_evidence,
+            execution_logger=execution_logger,
+        )
+    except PlaceholderResolutionError as error:
+        execution_logger.emit(
+            "placeholder-error",
+            step_id=manifest_step.id,
+            payload={"location": "psu-authorization.requestObject", "message": str(error)},
+        )
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Placeholder resolution failed: {error}",
+                    url=resolved_result_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method="GET", url=resolved_result_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to build PSU request object: {error}",
                     url=resolved_result_url,
                 ),
                 request_evidence=request_evidence,
@@ -747,6 +1057,125 @@ def _execute_v1_psu_step_inner(
         ),
         record_step(context, manifest_step.id, request_record, None),
     )
+
+
+def _resolve_psu_request_object(
+    *,
+    manifest_step: PsuAuthorizationStep,
+    context: ExecutionContext,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    state: str,
+) -> str | None:
+    """Resolve or generate the PSU request object for one authorisation step.
+
+    Args:
+        manifest_step: Parsed PSU authorisation step being executed.
+        context: Current execution context used for placeholder resolution.
+        fapi_signing_config: Optional validated signing configuration for
+            runtime-generated request objects.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+        authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
+        client_id: Resolved OAuth client identifier.
+        redirect_uri: Resolved registered redirect URI.
+        state: Registered auth-session state that must be embedded into the
+            request object when generated.
+
+    Returns:
+        Literal or generated request-object JWT, or ``None`` when the PSU step
+        does not declare one.
+
+    Raises:
+        MissingPredecessorResponseError: If a string request object depends on
+            a prior step response that was unavailable.
+        PlaceholderResolutionError: If a string request object contains an
+            invalid placeholder reference.
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the request object cannot be signed.
+        ValueError: If the manifest requests runtime signing but no validated
+            FAPI signing config was supplied.
+    """
+    request_object = manifest_step.request_object
+    if request_object is None:
+        return None
+    if isinstance(request_object, str):
+        return resolve_placeholders(request_object, context)
+    return _generate_psu_request_object(
+        generated_request_object=request_object,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=fapi_signing_service,
+        authorization_endpoint=authorization_endpoint,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        response_type=manifest_step.response_type,
+        scope=manifest_step.scope,
+        state=state,
+    )
+
+
+def _generate_psu_request_object(
+    *,
+    generated_request_object: GeneratedRequestObject,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    response_type: str,
+    scope: str,
+    state: str,
+) -> str:
+    """Generate a signed PSU request-object JWT from validated runtime config.
+
+    Args:
+        generated_request_object: Typed manifest directive naming the runtime
+            request-object source.
+        fapi_signing_config: Optional validated signing configuration for the
+            current participant run.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+        authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
+        client_id: Resolved OAuth client identifier.
+        redirect_uri: Resolved registered redirect URI.
+        response_type: Static OAuth response type from the PSU step.
+        scope: Static OAuth scope from the PSU step.
+        state: Registered auth-session state that must be embedded into the
+            request object.
+
+    Returns:
+        Compact PS256 JWT ready for the OAuth ``request`` query parameter.
+
+    Raises:
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the request object cannot be signed.
+        ValueError: If the runtime signing directive cannot be satisfied.
+    """
+    if generated_request_object.source != "fapi-signing":
+        raise ValueError("Unsupported PSU requestObject source")
+    if fapi_signing_config is None:
+        raise ValueError("Generated PSU requestObject requires participant fapiSigning config")
+    if fapi_signing_service is None:
+        raise ValueError("Generated PSU requestObject requires participant fapiSigning config")
+
+    signing_service = fapi_signing_service.get()
+    if signing_service is None:
+        raise ValueError("Generated PSU requestObject requires participant fapiSigning config")
+    signed_request_object = signing_service.sign_request_object(
+        RequestObjectSigningInput(
+            issuer=fapi_signing_config.client_assertion_issuer,
+            audience=authorization_endpoint,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            response_type=response_type,
+            scope=scope,
+            state=state,
+        )
+    )
+    return signed_request_object.token
 
 
 def _execute_headless_psu_authorization(
@@ -1014,6 +1443,9 @@ def _execute_v1_step(
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    fapi_signing_service: _LazyFapiSigningService | None = None,
+    mtls_client_configured: bool = False,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -1035,14 +1467,28 @@ def _execute_v1_step(
         auth_session_store: Store used by PSU authorisation steps to
             register and await callbacks. Ignored by plain HTTP steps
             (Phase 1 wiring only).
+        fapi_signing_config: Optional validated signing configuration used by
+            runtime token-endpoint authentication policies.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
 
     Returns:
         A tuple of the step result and the updated execution context.
     """
-    del run_id, auth_session_store  # Plain HTTP steps don't consume these (yet).
+    del run_id, auth_session_store  # Plain HTTP steps don't consume these directly.
+    effective_fapi_signing_service = (
+        fapi_signing_service if fapi_signing_service is not None else _LazyFapiSigningService(fapi_signing_config)
+    )
     execution_logger.emit("step-started", step_id=manifest_step.id)
     step_result, new_context = _execute_v1_step_inner(
-        manifest_step, context=context, client=client, execution_logger=execution_logger
+        manifest_step,
+        context=context,
+        client=client,
+        execution_logger=execution_logger,
+        fapi_signing_config=fapi_signing_config,
+        fapi_signing_service=effective_fapi_signing_service,
+        mtls_client_configured=mtls_client_configured,
     )
     execution_logger.emit(
         "step-completed",
@@ -1062,6 +1508,9 @@ def _execute_v1_step_inner(
     context: ExecutionContext,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+    mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
 
@@ -1074,6 +1523,11 @@ def _execute_v1_step_inner(
         context: Current execution context with earlier step records.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink for per-stage events.
+        fapi_signing_config: Optional validated signing configuration used by
+            runtime token-endpoint authentication policies.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            client credentials configured.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1183,9 +1637,11 @@ def _execute_v1_step_inner(
                 new_context,
             )
 
-    # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
         request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+
+    # Validate resolved header values (post-substitution defence-in-depth)
+    if resolved_headers is not None:
         for header_name, header_value in resolved_headers.items():
             try:
                 validate_header_value(
@@ -1260,6 +1716,7 @@ def _execute_v1_step_inner(
                 ),
                 new_context,
             )
+
     if resolved_json_body is not None:
         request_evidence["body"] = mask_json_value(resolved_json_body)
     elif resolved_form_body is not None:
@@ -1285,6 +1742,67 @@ def _execute_v1_step_inner(
             new_context,
         )
 
+    serialized_json_body: bytes | None = None
+    try:
+        resolved_headers, serialized_json_body = _maybe_apply_ob_detached_jws(
+            manifest_step=manifest_step,
+            resolved_url=resolved_url,
+            resolved_headers=resolved_headers,
+            resolved_json_body=resolved_json_body,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method=method, url=resolved_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to apply request signing: {error}",
+                    url=resolved_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    if resolved_headers is not None:
+        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+
+    try:
+        resolved_form_body = _apply_token_endpoint_auth_policy(
+            manifest_step=manifest_step,
+            resolved_form_body=resolved_form_body,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            resolved_url=resolved_url,
+            mtls_client_configured=mtls_client_configured,
+        )
+    except (SigningCredentialError, JwtSigningError, ValueError) as error:
+        request_record = RequestRecord(method=method, url=resolved_url)
+        new_context = record_step(context, manifest_step.id, request_record, None)
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Unable to apply token endpoint client authentication: {error}",
+                    url=resolved_url,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=None,
+            ),
+            new_context,
+        )
+
+    if resolved_json_body is not None:
+        request_evidence["body"] = mask_json_value(resolved_json_body)
+    elif resolved_form_body is not None:
+        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
+
     # Execute HTTP request
     request_record = RequestRecord(method=method, url=resolved_url)
     execution_logger.emit(
@@ -1298,7 +1816,8 @@ def _execute_v1_step_inner(
             method,
             resolved_url,
             headers=resolved_headers,
-            json_body=resolved_json_body,
+            json_body=None if serialized_json_body is not None else resolved_json_body,
+            json_body_bytes=serialized_json_body,
             form_body=resolved_form_body,
         )
     except JsonHttpClientError as error:
@@ -1450,6 +1969,90 @@ def _skipped_step(
     )
 
 
+def _maybe_apply_ob_detached_jws(
+    *,
+    manifest_step: ManifestStep,
+    resolved_url: str,
+    resolved_headers: dict[str, str] | None,
+    resolved_json_body: JsonValue | None,
+    fapi_signing_config: FapiSigningConfig | None,
+    fapi_signing_service: _LazyFapiSigningService | None,
+) -> tuple[dict[str, str] | None, bytes | None]:
+    """Add a detached JWS header for supported Open Banking JSON requests.
+
+    Args:
+        manifest_step: Parsed manifest step being executed.
+        resolved_url: Fully resolved request URL.
+        resolved_headers: Resolved outbound request headers.
+        resolved_json_body: Resolved JSON body, if this is a JSON request.
+        fapi_signing_config: Optional validated runtime signing configuration.
+        fapi_signing_service: Optional lazy runtime signing-service cache.
+
+    Returns:
+        Tuple of final outbound headers and serialized JSON body bytes.
+
+    Raises:
+        ValueError: If the manifest opted into detached JWS but runtime
+            signing config is missing, the step targets an unsupported URL,
+            or the step has no JSON body.
+        SigningCredentialError: If runtime signing credentials cannot be read
+            or validated.
+        JwtSigningError: If the detached JWS cannot be signed.
+    """
+    if manifest_step.request.detached_jws is None:
+        return resolved_headers, None
+    if fapi_signing_config is None:
+        raise ValueError("Detached request signing requires fapiSigning configuration")
+    if fapi_signing_service is None:
+        raise ValueError("Detached request signing requires fapiSigning configuration")
+    if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
+        raise ValueError("Detached request signing is only supported for account-access-consents requests")
+    if resolved_json_body is None:
+        raise ValueError("Detached request signing requires a JSON request body")
+
+    serialized_json_body = _serialize_json_request_body(resolved_json_body)
+    signing_service = fapi_signing_service.get()
+    if signing_service is None:
+        raise ValueError("Detached request signing requires fapiSigning configuration")
+    detached_signature = signing_service.sign_detached_json_payload(serialized_json_body)
+    validate_header_value(
+        detached_signature,
+        location=f"step '{manifest_step.id}' generated header x-jws-signature",
+    )
+
+    signed_headers = dict(resolved_headers) if resolved_headers is not None else {}
+    signed_headers["x-jws-signature"] = detached_signature
+    return signed_headers, serialized_json_body
+
+
+def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str) -> bool:
+    """Return whether a step should carry an Open Banking detached JWS.
+
+    Args:
+        manifest_step: Parsed manifest step being executed.
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        ``True`` when the step targets the AIS account-access-consents
+        endpoint and is an eligible write method, otherwise ``False``.
+    """
+    if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
+        return False
+    return _normalize_url_path_for_match(urlsplit(resolved_url).path) == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+
+
+def _serialize_json_request_body(body: JsonValue) -> bytes:
+    """Serialize a resolved JSON request body into exact wire bytes.
+
+    Args:
+        body: Resolved JSON value to serialize.
+
+    Returns:
+        UTF-8 encoded JSON bytes using a deterministic compact form.
+    """
+    return json.dumps(body, separators=(",", ":"), ensure_ascii=False).encode("utf-8")
+
+
 def _run_manifest_v0(
     manifest: Manifest,
     *,
@@ -1532,6 +2135,8 @@ def _run_manifest_v0(
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=None,
+            mtls_client_configured=False,
         )
         steps.append(step_result)
 
@@ -1578,6 +2183,8 @@ def _run_manifest_v0(
                     execution_logger=execution_logger,
                     run_id=run_id,
                     auth_session_store=auth_session_store,
+                    fapi_signing_config=None,
+                    mtls_client_configured=False,
                 )
                 steps.append(follow_up_result)
 

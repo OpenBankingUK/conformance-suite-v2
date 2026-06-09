@@ -18,13 +18,13 @@ The runner writes a structured result JSON to the configured `resultOutputPath`,
 
 Alongside the result file the runner writes a structured **execution log** (NDJSON, one event per line) to `executionLogPath` (default `out/execution-log.ndjson`). The log records `run-started`, `step-started`, `request-sent`, `response-received`, `assertion-evaluated`, `step-completed`, `run-completed` and the error events, with credentials and sensitive headers masked exactly as in the result file. The same log is exposed by the REST API as `GET /api/runs/<id>/log/` (`application/x-ndjson`), which returns the current full NDJSON snapshot in a single response — CI scripts can poll the endpoint to observe an in-flight run, but it is not a streaming/tail endpoint. Set `CONFORMANCE_DEVELOPER_MODE=true` to disable masking for local engineering debugging only — a `WARN` line is logged at startup whenever this is set, and it must never be enabled in release builds.
 
-The config is JSON-only for now. Certificate paths, when supplied, are resolved under `tls.certificatePathRoot`; do not commit real certificates, private keys, or inline secret material.
+The config is JSON-only for now. TLS certificate paths, when supplied, are resolved under `tls.certificatePathRoot`; FAPI signing certificate and private-key paths are resolved under `fapiSigning.certificatePathRoot`. Do not commit real certificates, private keys, or inline secret material.
 
 ## Config-selected suite runs
 
 Participant config can also select a bundled conformance-suite manifest instead of requiring callers to pass or paste manifest JSON manually. Add a `testSuite` object to the model-bank config:
 
-```json
+```jsonc
 {
 	"environment": "ozone-model-bank",
 	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
@@ -45,18 +45,20 @@ Participant config can also select a bundled conformance-suite manifest instead 
 
 Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` profile, with the explicit version/suite combinations shown below. **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The v4.0 AIS catalog now has two bundled tracks: `ais-certification-baseline` is the certifiable-track baseline suite, and `ais-certification-slice` is the older preserved proof slice. Neither should be treated as complete certification coverage until Standards confirm the mandatory matrix and the manifest is promoted accordingly.
 
-| Spec version | Suite name | Steps | OAuth config required |
+| Spec version | Suite name | Steps | Participant config required |
 |---|---|---|---|
 | `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
-| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | Yes (`oauth.clientId`, `oauth.redirectUri`) |
-| `v4.0` | `ais-certification-baseline` | Discovery + JWKS + manual PSU authorisation + token exchange + consent creation + mandatory core AIS resource coverage, with optional/conditional AIS rows available as opt-in plan entries | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
-| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | Yes (`oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`) |
+| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | `oauth.clientId`, `oauth.redirectUri` |
+| `v4.0` | `ais-certification-baseline` | Discovery + JWKS + manual PSU authorisation + token exchange + consent creation + mandatory core AIS resource coverage, with optional/conditional AIS rows available as opt-in plan entries | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
+| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
 
 The `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves. The starter suite uses the first two values; both AIS suites also use `resourceBaseUrl` for consent creation and protected resource calls.
 
-The AIS slice assumes the participant's existing OAuth/FAPI client-authentication and certificate setup is already in place for token and protected-resource calls. Certificate paths, private keys, client secrets, signing keys, request objects, and client assertions are not supplied through suite placeholders or the `oauth` config block.
+The `ais-certification-baseline` suite also accepts a dedicated `fapiSigning` block for generated JAR request objects, token-endpoint client authentication, and detached JWS signing of the account-access-consent request body. The current config fields are `certificatePathRoot`, `signingCertificatePath`, `signingPrivateKeyPath`, `kid`, `clientAssertionIssuer`, `clientAssertionSubject`, and `tokenEndpointAuthMethod` (`private_key_jwt` or `tls_client_auth`). The preserved `ais-certification-slice` remains the older proof flow and does not opt into these manifest directives.
 
-```json
+`private_key_jwt` uses the signing key to add `client_assertion_type` and `client_assertion` form fields at token exchange time. `tls_client_auth` reuses the existing `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` settings for the outbound mTLS client and still keeps all signing and client-auth inputs outside the manifest placeholder allow-list.
+
+```jsonc
 {
 	"environment": "ozone-model-bank",
 	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
@@ -65,12 +67,21 @@ The AIS slice assumes the participant's existing OAuth/FAPI client-authenticatio
 		"standard": "ob-read-write",
 		"specVersion": "v4.0",
 		"profile": "fapi1-advanced",
-		"suite": "psu-auth-starter"
+		"suite": "ais-certification-baseline"
 	},
 	"oauth": {
 		"clientId": "your-client-id-here",
 		"redirectUri": "https://conformance.example.com/callback",
 		"resourceBaseUrl": "https://resource.example.com"
+	},
+	"fapiSigning": {
+		"certificatePathRoot": "./certs",
+		"signingCertificatePath": "dummy-signing.crt",
+		"signingPrivateKeyPath": "dummy-signing.key", // pragma: allowlist secret
+		"kid": "your-signing-kid-here",
+		"clientAssertionIssuer": "your-client-id-here",
+		"clientAssertionSubject": "your-client-id-here",
+		"tokenEndpointAuthMethod": "private_key_jwt"
 	},
 	"tls": {
 		"certificatePathRoot": "./certs"
@@ -80,7 +91,7 @@ The AIS slice assumes the participant's existing OAuth/FAPI client-authenticatio
 }
 ```
 
-Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}` are exposed to manifests. TLS paths, certificates, private keys, client secrets, request objects, client assertions, and arbitrary config traversal are not placeholder-addressable.
+Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.resourceBaseUrl}` are exposed to manifests. `fapiSigning` values, TLS paths, certificates, private keys, client secrets, request objects, client assertions, and arbitrary config traversal are not placeholder-addressable.
 
 Run a config-selected suite from the CLI by omitting `--manifest`:
 
@@ -92,17 +103,17 @@ uv run python main.py config/model-bank-suite-example.json
 uv run python main.py config/model-bank-psu-auth-starter-example.json
 
 # AIS certification baseline (recommended v4 AIS catalog entry; requires
-# oauth.clientId, oauth.redirectUri, and oauth.resourceBaseUrl)
+# oauth.clientId, oauth.redirectUri, oauth.resourceBaseUrl, and fapiSigning)
 uv run python main.py config/model-bank-ais-certification-baseline-example.json
 
 # AIS certification proof slice (older partial reference flow; requires the
-# same oauth settings)
+# same oauth settings but does not opt into generated signing directives)
 uv run python main.py config/model-bank-ais-certification-slice-example.json
 ```
 
 `--manifest` remains an explicit override for authoring and certification-validation workflows. `--deselect` works with either an explicit manifest or a config-selected `testSuite`, and remains invalid for plain model-bank smoke checks that have neither.
 
-The REST API follows the same precedence: an inline `manifest` in `POST /api/runs/` wins; otherwise `config.testSuite` resolves a bundled suite; otherwise the legacy smoke check runs. `deselectStepIds` is accepted with inline or config-resolved manifests only. In the browser plan builder at `/plan/`, leave the manifest textarea blank to preview and launch the suite selected by config, or paste a manifest to override the catalog for authoring/testing.
+The REST API follows the same precedence: an inline `manifest` in `POST /api/runs/` wins; otherwise `config.testSuite` resolves a bundled suite; otherwise the legacy smoke check runs. `deselectStepIds` is accepted with inline or config-resolved manifests only. In the browser plan builder at `/plan/`, leave the manifest textarea blank to preview and launch the suite selected by config, or paste a manifest to override the catalog for authoring/testing. CLI, REST API, and browser-launched config-resolved runs all carry the validated `fapiSigning` block into runtime execution without widening the manifest placeholder boundary.
 
 Browser-launched runs can also drive manual PSU authorisation manifests. While a manual PSU step is waiting for the ASPSP callback, the run detail and status views show an `Open authorisation` action for the current step. The raw authorisation URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
 
@@ -110,7 +121,9 @@ All bundled suites set `certificationCoverage: partial` in their manifests. This
 
 The bundled `ais-certification-baseline` manifest builds on the preserved slice path with a broader v4.0 AIS working set. Its mandatory default flow covers:
 
+- generated PS256 request-object signing for the PSU authorisation redirect (`requestObject: {"source": "fapi-signing"}`)
 - form-urlencoded token exchange using `${steps.psu-authorization.response.body.code}`
+- token-endpoint client authentication from `fapiSigning.tokenEndpointAuthMethod`
 - `POST /open-banking/v4.0/aisp/account-access-consents`
 - `GET /open-banking/v4.0/aisp/accounts`
 - `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}`
@@ -118,13 +131,13 @@ The bundled `ais-certification-baseline` manifest builds on the preserved slice 
 - `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions`
 - `GET /open-banking/v4.0/aisp/transactions`
 
-The baseline manifest also bundles additional optional or conditional AIS resource rows as opt-in plan entries. Those rows are available for local execution and authoring review, but they are not selected by default. The older `ais-certification-slice` manifest is kept unchanged as the narrower proof flow that stops after consent creation plus accounts, balances, and account-scoped transactions.
+The baseline manifest also signs the exact JSON consent payload as a detached PS256 JWS sent in `x-jws-signature`. The detached-JWS rows are available for local execution and authoring review, but they are not selected by default. The older `ais-certification-slice` manifest is kept unchanged as the narrower proof flow that stops after consent creation plus accounts, balances, and account-scoped transactions.
 
 The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`. The accounts responses must include a top-level `Data` object plus an account array with `AccountId` and `Status` fields on each item. The balances responses must include a top-level `Data` object plus a balance array with `Type`, `Amount`, and `CreditDebitIndicator` fields on each item. The account-scoped and top-level transactions responses must include a top-level `Data` object plus a `Data.Transaction` array. In the `ais-certification-baseline` manifest, transaction items must include `BookingDateTime` and `Amount`; the preserved `ais-certification-slice` manifest continues to require `TransactionId` and `Amount`.
 
 Manifest placeholders can also traverse JSON arrays using non-negative numeric path segments. Both bundled v4 AIS manifests use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned account into account-scoped resource endpoints. Array indices must be in bounds, and response placeholders must still resolve to primitive values rather than whole objects or arrays.
 
-Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
+Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, detached `x-jws-signature` values, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. Signing certificate PEM, private-key PEM, and raw client-auth/signing config secrets are loaded only at execution time and are not serialized into logs, results, or error messages. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
 
 The bundled `psu-auth-starter` manifests also act as the first authoring proof for the expanded generic response-assertion vocabulary. They stay deliberately partial, but now demonstrate response-header checks plus richer JSON rules on the discovery and JWKS responses: `header` assertions (`present`, `absent`, `equals`, `contains`) and `json_field` rules including `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, and `all_items_have_field`.
 

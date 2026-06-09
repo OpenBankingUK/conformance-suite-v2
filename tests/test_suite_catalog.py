@@ -7,11 +7,13 @@ import pytest
 import conformance.suite_catalog as suite_catalog
 from conformance.manifest import (
     FormBody,
+    GeneratedRequestObject,
     HeaderAssertion,
     JsonBody,
     JsonFieldAssertion,
     ManifestStep,
     PsuAuthorizationStep,
+    TokenEndpointAuthPolicy,
 )
 from conformance.model_bank_config import SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
@@ -202,8 +204,11 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     balances_step = cast(ManifestStep, manifest.steps[7])
     transactions_step = cast(ManifestStep, manifest.steps[8])
     transactions_list_step = cast(ManifestStep, manifest.steps[9])
+    psu_step = cast(PsuAuthorizationStep, manifest.steps[2])
 
+    assert psu_step.request_object == GeneratedRequestObject(source="fapi-signing")
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
+    assert token_exchange_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
     assert isinstance(token_exchange_step.request.body, FormBody)
     assert dict(token_exchange_step.request.body.fields) == {
         "grant_type": "authorization_code",

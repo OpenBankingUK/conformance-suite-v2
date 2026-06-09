@@ -3,10 +3,18 @@ import secrets
 import threading
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 from typing import Any, cast
 
 import httpx
 import pytest
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+from joserfc import jwk, jws
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -14,7 +22,9 @@ from conformance.context import ExecutionContext, RequestRecord, ResponseRecord,
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import PsuAuthorizationStep, parse_manifest
+from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
+from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
 
 def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -29,6 +39,91 @@ def approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
     return ApprovedReleasePolicy(
         schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
         approved_tool_versions=tuple(approved_tool_versions),
+    )
+
+
+def _write_executor_signing_pair(certificate_root: Path, *, stem: str) -> tuple[Path, Path]:
+    """Write a temporary RSA signing keypair for PSU executor tests.
+
+    Args:
+        certificate_root: Directory that will receive the generated PEM files.
+        stem: File-stem prefix used for the certificate and key filenames.
+
+    Returns:
+        Tuple of ``(certificate_path, private_key_path)``.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    subject = issuer = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, stem)])
+    certificate = (
+        x509.CertificateBuilder()
+        .subject_name(subject)
+        .issuer_name(issuer)
+        .public_key(private_key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.now(UTC) - timedelta(minutes=1))
+        .not_valid_after(datetime.now(UTC) + timedelta(days=1))
+        .sign(private_key, hashes.SHA256())
+    )
+
+    certificate_path = certificate_root / f"{stem}.crt"
+    private_key_path = certificate_root / f"{stem}.key"
+    certificate_path.write_bytes(certificate.public_bytes(serialization.Encoding.PEM))
+    private_key_path.write_bytes(
+        private_key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=serialization.NoEncryption(),
+        )
+    )
+    return certificate_path, private_key_path
+
+
+def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
+    """Build a valid FAPI signing config for PSU executor tests.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated PEM files.
+
+    Returns:
+        Parsed FAPI signing configuration pointing at the generated keypair.
+    """
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_executor_signing_pair(certificate_root, stem="executor-signing")
+    return FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=certificate_path,
+        signing_private_key_path=private_key_path,
+        key_id="executor-signing-key",
+        client_assertion_issuer="client-issuer",
+        client_assertion_subject="client-subject",
+        token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
+    )
+
+
+def _invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
+    """Build a signing config whose PEM files fail runtime credential loading.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid PEM files.
+
+    Returns:
+        Parsed FAPI signing configuration pointing at invalid PEM content.
+    """
+    certificate_root = tmp_path / "invalid-certs"
+    certificate_root.mkdir()
+    certificate_path = certificate_root / "invalid-signing.crt"
+    private_key_path = certificate_root / "invalid-signing.key"
+    certificate_path.write_bytes(b"invalid certificate data")
+    private_key_path.write_bytes(b"invalid private key data")
+    return FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=certificate_path,
+        signing_private_key_path=private_key_path,
+        key_id="invalid-executor-signing-key",
+        client_assertion_issuer="client-issuer",
+        client_assertion_subject="client-subject",
+        token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
     )
 
 
@@ -1705,6 +1800,15 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
     assert result.steps[1].status == "failed"
     assert "Resolved header validation failed" in (result.steps[1].message or "")
     assert "non-transportable character" in (result.steps[1].message or "")
+    assert dict(result.steps[1].details) == {
+        "request": {
+            "method": "POST",
+            "url": "https://example.com/api",
+            "headers": {
+                "Authorization": "***",
+            },
+        }
+    }
 
 
 @pytest.mark.unit
@@ -1957,6 +2061,945 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
     serialised = str(result.steps[0])
     assert secret_sentinel not in serialised
     assert "client_secret" not in serialised
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion(tmp_path: Path) -> None:
+    """Token-endpoint auth policy appends private-key JWT form fields."""
+    captured_form_body: dict[str, str] = {}
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt token auth",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_form_body
+        captured_form_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert captured_form_body["grant_type"] == "authorization_code"
+    assert captured_form_body["code"] == "auth-code"
+    assert captured_form_body["redirect_uri"] == "https://app.example.com/callback"
+    assert captured_form_body["client_id"] == "client-123"
+    assert captured_form_body["client_assertion_type"] == ("urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+    assert captured_form_body["client_assertion"]
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("conflicting_fields", "expected_reserved_fields"),
+    [
+        pytest.param(
+            {"client_assertion": "manifest-client-assertion"},
+            "client_assertion",
+            id="client-assertion",
+        ),
+        pytest.param(
+            {
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            },
+            "client_assertion_type",
+            id="client-assertion-type",
+        ),
+        pytest.param(
+            {
+                "client_assertion": "manifest-client-assertion",
+                "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+            },
+            "client_assertion, client_assertion_type",
+            id="both-fields",
+        ),
+    ],
+)
+def test_run_manifest_v1_private_key_jwt_token_auth_policy_rejects_manifest_client_assertion_fields(
+    tmp_path: Path,
+    conflicting_fields: dict[str, str],
+    expected_reserved_fields: str,
+) -> None:
+    """Token-endpoint auth policy fails fast when manifests supply reserved assertion fields.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold signing credentials.
+        conflicting_fields: Manifest-authored token form fields that must be
+            rejected when runtime FAPI signing owns client authentication.
+        expected_reserved_fields: Deterministic error-message suffix naming the
+            conflicting form fields.
+    """
+    request_seen = False
+    raw_form_fields: dict[str, JsonValue] = {
+        "grant_type": "authorization_code",
+        "code": "auth-code",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+        **conflicting_fields,
+    }
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt token auth conflict",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": raw_form_fields,
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply token endpoint client authentication: "
+        "Token endpoint auth policy reserves these form fields for runtime FAPI signing: "
+        f"{expected_reserved_fields}"
+    )
+    assert dict(result.steps[0].details) == {
+        "request": {
+            "method": "POST",
+            "url": "https://auth.example.com/token",
+            "form": {
+                "grant_type": "authorization_code",
+                "code": "***",
+                "redirect_uri": "https://app.example.com/callback",
+                "client_id": "client-123",
+                **{key: ("***" if key in {"client_assertion"} else value) for key, value in conflicting_fields.items()},
+            },
+        }
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_path: Path) -> None:
+    """Generated client assertions are masked in step evidence and log events."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "private-key-jwt masking",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+    execution_logger = BufferedExecutionLogger(run_id="token-auth-run", developer_mode=False)
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(
+        transport=httpx.MockTransport(lambda _request: httpx.Response(400, json={"error": "invalid_client"}))
+    ) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    request_details = cast("dict[str, Any]", result.steps[0].details["request"])
+    assert request_details["form"] == {
+        "grant_type": "authorization_code",
+        "code": "***",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+        "client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+        "client_assertion": "***",
+    }
+    request_event = next(event for event in execution_logger.events() if event.type == "request-sent")
+    assert request_event.payload["form"] == request_details["form"]
+
+
+@pytest.mark.unit
+def test_run_manifest_reuses_signing_credentials_across_signed_http_steps(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Executor loads runtime signing credentials once across signed HTTP steps.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+        monkeypatch: Fixture used to replace the credential loader with a counting wrapper.
+    """
+    load_count = 0
+    real_loader = load_signing_credentials
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "shared signing credentials",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            },
+        ],
+    }
+
+    def counting_loader(signing_config: FapiSigningConfig) -> SigningCredentials:
+        """Count executor credential loads while delegating to the real loader.
+
+        Args:
+            signing_config: Validated signing configuration to load.
+
+        Returns:
+            Loaded runtime signing credentials.
+        """
+        nonlocal load_count
+        load_count += 1
+        return real_loader(signing_config)
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return passing responses for the signed consent and token steps.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing mock response for the requested endpoint.
+        """
+        if str(request.url) == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    monkeypatch.setattr("conformance.executor.load_signing_credentials", counting_loader)
+    manifest = parse_manifest(raw_manifest)
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == ["consent", "token"]
+    assert load_count == 1
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_unsigned_step_ignores_invalid_signing_credentials(tmp_path: Path) -> None:
+    """Unsigned HTTP steps do not load invalid PEM credentials just because config exists.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
+    """
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "unsigned step with invalid signing config",
+        "steps": [
+            {
+                "id": "accounts",
+                "name": "Accounts list",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Return a passing response for the unsigned request.
+
+        Args:
+            _request: Outbound request emitted by the executor.
+
+        Returns:
+            Passing unsigned HTTP response.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"Data": []})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_invalid_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert request_seen is True
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_detached_jws_invalid_signing_credentials_fail_the_step(tmp_path: Path) -> None:
+    """Detached-JWS steps translate invalid PEM files into a failed step result.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
+    """
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached jws invalid signing credentials",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Fail the test if the signed request reaches the transport.
+
+        Args:
+            _request: Outbound request that should never be dispatched.
+
+        Returns:
+            Dummy response if executor misbehaves.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_invalid_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply request signing: fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_private_key_jwt_invalid_signing_credentials_fail_the_step(tmp_path: Path) -> None:
+    """Private-key JWT token auth reports invalid PEM files as a failed step.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
+    """
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "token auth invalid signing credentials",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Fail the test if the token request reaches the transport.
+
+        Args:
+            _request: Outbound request that should never be dispatched.
+
+        Returns:
+            Dummy response if executor misbehaves.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_invalid_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply token endpoint client authentication: "
+        "fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_tls_client_auth_ignores_invalid_signing_credentials_when_mtls_is_configured(
+    tmp_path: Path,
+) -> None:
+    """TLS client auth does not load PEM credentials when mTLS is already configured.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
+    """
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "tls client auth invalid signing credentials",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Return a passing token response for the mTLS-authenticated request.
+
+        Args:
+            _request: Outbound request emitted by the executor.
+
+        Returns:
+            Passing token response.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    tls_client_auth_mode: TokenEndpointClientAuthMode = "tls_client_auth"
+    tls_signing_config = replace(
+        _invalid_executor_signing_config(tmp_path),
+        token_endpoint_auth_method=tls_client_auth_mode,
+    )
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=tls_signing_config,
+            mtls_client_configured=True,
+        )
+
+    assert result.status == "passed"
+    assert request_seen is True
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(tmp_path: Path) -> None:
+    """Consent creation signs exact JSON bytes and masks the detached JWS header."""
+    observed_requests: list[httpx.Request] = []
+    execution_logger = BufferedExecutionLogger(run_id="consent-signing-run", developer_mode=False)
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent signing",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "headers": {"Authorization": "Bearer access-token"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound consent request and force a failing assertion."""
+        observed_requests.append(request)
+        return httpx.Response(400, json={"error": "invalid_request"})
+
+    manifest = parse_manifest(raw_manifest)
+    signing_config = _executor_signing_config(tmp_path)
+    expected_payload = b'{"Data":{"Permissions":["ReadAccountsBasic","ReadBalances"]},"Risk":{}}'
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            fapi_signing_config=signing_config,
+        )
+
+    observed_request = observed_requests[0]
+    detached_signature = observed_request.headers["x-jws-signature"]
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+    )
+
+    assert result.status == "failed"
+    assert observed_request.content == expected_payload
+    assert detached_signature.split(".")[1] == ""
+    assert verified.headers() == {
+        "alg": "PS256",
+        "kid": "executor-signing-key",
+        "b64": False,
+        "crit": ["b64"],
+    }
+    request_details = cast("dict[str, Any]", result.steps[0].details["request"])
+    assert request_details["body"] == {
+        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+        "Risk": {},
+    }
+    assert request_details["headers"] == {
+        "Authorization": "***",
+        "x-jws-signature": "***",
+    }
+    request_event = next(event for event in execution_logger.events() if event.type == "request-sent")
+    assert request_event.payload["headers"] == request_details["headers"]
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_path_separator(
+    tmp_path: Path,
+) -> None:
+    """Consent creation still signs when the resolved URL path contains doubled slashes."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent signing with doubled slash",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com//open-banking/v4.0/aisp/account-access-consents/",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound consent request for doubled-slash URL coverage.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing consent response.
+        """
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    expected_payload = b'{"Data":{"Permissions":["ReadAccountsBasic","ReadBalances"]},"Risk":{}}'
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert observed_requests[0].content == expected_payload
+    assert "x-jws-signature" in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manifest_opt_in(tmp_path: Path) -> None:
+    """Consent creation stays unsigned unless the manifest request opts into detached JWS."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent without detached-jws",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "headers": {"Authorization": "Bearer access-token"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound consent request for detached-JWS absence checks.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Passing consent response.
+        """
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert "x-jws-signature" not in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_detached_jws_policy_requires_signing_config() -> None:
+    """Explicit detached-JWS opt-in fails before dispatch when signing config is absent."""
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "account access consent missing signing config",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {"Permissions": ["ReadAccountsBasic", "ReadBalances"]},
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Fail the test if an unsigned request reaches the transport.
+
+        Args:
+            _request: Outbound request that should never be sent.
+
+        Returns:
+            Dummy response if the executor misbehaves.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply request signing: Detached request signing requires fapiSigning configuration"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: Path) -> None:
+    """Explicit detached-JWS opt-in fails before dispatch on unsupported endpoints."""
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "accounts list with detached-jws",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Accounts list",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Example": True}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Fail the test if an unsupported signed request reaches transport.
+
+        Args:
+            _request: Outbound request that should never be sent.
+
+        Returns:
+            Dummy response if the executor misbehaves.
+        """
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"Data": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply request signing: "
+        "Detached request signing is only supported for account-access-consents requests"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: Path) -> None:
+    """TLS client auth fails before dispatch when no mTLS client is configured."""
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "tls-client-auth missing mtls",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    tls_client_auth_mode: TokenEndpointClientAuthMode = "tls_client_auth"
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method=tls_client_auth_mode)
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=tls_signing_config,
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply token endpoint client authentication: "
+        "Token endpoint auth policy requires a configured TLS client certificate and private key"
+    )
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_tls_client_auth_policy_dispatches_with_configured_mtls(tmp_path: Path) -> None:
+    """TLS client auth preserves the existing token form body when mTLS is present."""
+    captured_form_body: dict[str, str] = {}
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "tls-client-auth configured",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "auth-code",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        nonlocal captured_form_body
+        captured_form_body = dict(httpx.QueryParams(request.content.decode("utf-8")))
+        return httpx.Response(200, json={"access_token": "access-token"})
+
+    tls_client_auth_mode: TokenEndpointClientAuthMode = "tls_client_auth"
+    tls_signing_config = replace(_executor_signing_config(tmp_path), token_endpoint_auth_method=tls_client_auth_mode)
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=tls_signing_config,
+            mtls_client_configured=True,
+        )
+
+    assert result.status == "passed"
+    assert captured_form_body == {
+        "grant_type": "authorization_code",
+        "code": "auth-code",
+        "redirect_uri": "https://app.example.com/callback",
+        "client_id": "client-123",
+    }
 
 
 @pytest.mark.unit
@@ -3678,6 +4721,9 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         execution_logger: Any,
         run_id: str,
         auth_session_store: AuthSessionStore,
+        fapi_signing_config: FapiSigningConfig | None = None,
+        fapi_signing_service: Any = None,
+        mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
         captured["run_id"] = run_id
@@ -3689,6 +4735,9 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            mtls_client_configured=mtls_client_configured,
         )
 
     sentinel_store = _RecordingAuthSessionStore()
@@ -3722,6 +4771,9 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         execution_logger: Any,
         run_id: str,
         auth_session_store: AuthSessionStore,
+        fapi_signing_config: FapiSigningConfig | None = None,
+        fapi_signing_service: Any = None,
+        mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
         captured["run_id"] = run_id
@@ -3733,6 +4785,9 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             execution_logger=execution_logger,
             run_id=run_id,
             auth_session_store=auth_session_store,
+            fapi_signing_config=fapi_signing_config,
+            fapi_signing_service=fapi_signing_service,
+            mtls_client_configured=mtls_client_configured,
         )
 
     from conformance import executor as executor_module
@@ -3981,6 +5036,125 @@ def test_psu_manual_step_records_masked_request_url_for_placeholders() -> None:
     assert "request=***" in request_url
     assert "inline.assertion" not in request_url
     assert "signed.request.jwt" not in request_url
+
+
+@pytest.mark.unit
+def test_psu_manual_step_generates_and_masks_signed_request_object(tmp_path: Path) -> None:
+    """Manual PSU mode signs a generated request object and masks persisted artifacts.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    store = AuthSessionStore()
+    step = _psu_manual_step(request_object=GeneratedRequestObject(source="fapi-signing"))
+
+    def capture_once() -> None:
+        if store.get("run-psu-signed-manual", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-manual", developer_mode=False)
+
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-psu-signed-manual",
+        auth_session_store=store,
+        execution_logger=execution_logger,
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+        fapi_signing_config=_executor_signing_config(tmp_path),
+    )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert "request=***" in result.url
+    assert context.steps["psu"].request.url == result.url
+
+    psu_url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
+    assert len(psu_url_events) == 1
+    event_payload = psu_url_events[0].payload
+    assert event_payload["request_object"] == "***"
+    raw_url = cast(str, event_payload["url"])
+    assert "request=***" in raw_url
+    assert "response_type=code+id_token" in raw_url
+
+
+@pytest.mark.unit
+def test_psu_manual_step_invalid_signing_credentials_fail_the_step(tmp_path: Path) -> None:
+    """Generated PSU request objects translate invalid PEM files into a failed step.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold invalid signing PEM files.
+    """
+    store = AuthSessionStore()
+    step = _psu_manual_step(request_object=GeneratedRequestObject(source="fapi-signing"))
+
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-psu-invalid-signing-manual",
+        auth_session_store=store,
+        execution_logger=BufferedExecutionLogger(run_id="run-psu-invalid-signing-manual", developer_mode=False),
+        fapi_signing_config=_invalid_executor_signing_config(tmp_path),
+    )
+
+    assert result.status == "failed"
+    assert result.message == (
+        "Unable to build PSU request object: fapiSigning.signingCertificatePath must contain a valid PEM certificate"
+    )
+    assert context.steps["psu"].response is None
+
+    rendered = json.dumps(result.to_json_object())
+    assert "request=ey" not in rendered
+
+
+@pytest.mark.unit
+def test_psu_headless_step_uses_signed_request_object_for_authorization_redirect(tmp_path: Path) -> None:
+    """Headless PSU mode sends a generated JAR request and masks persisted evidence.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    state = "h" * 32
+    observed_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        observed_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+        )
+
+    execution_logger = BufferedExecutionLogger(run_id="run-psu-signed-headless", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(state=state, request_object=GeneratedRequestObject(source="fapi-signing")),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-psu-signed-headless",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=execution_logger,
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert "request=***" in result.url
+    assert context.steps["psu"].response is not None
+    assert context.steps["psu"].response.body["code"] == "headless-code"
+    assert len(observed_urls) == 1
+    assert "request=ey" in observed_urls[0]
+    assert "request=***" not in observed_urls[0]
+
+    psu_url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
+    assert len(psu_url_events) == 1
+    assert psu_url_events[0].payload["request_object"] == "***"
+    assert "request=***" in cast(str, psu_url_events[0].payload["url"])
 
 
 @pytest.mark.unit

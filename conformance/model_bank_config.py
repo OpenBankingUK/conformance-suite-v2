@@ -37,6 +37,9 @@ SuiteSpecVersion = Literal["v3.1.11", "v4.0"]
 SuiteProfile = Literal["fapi1-advanced"]
 """Supported security profiles for config-selected suite resolution."""
 
+TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
+"""Supported FAPI token-endpoint client authentication modes."""
+
 SuiteName = Literal["discovery-jwks", "psu-auth-starter", "ais-certification-slice", "ais-certification-baseline"]
 """Supported versioned conformance suite identifiers."""
 
@@ -100,6 +103,36 @@ class TlsConfig:
 
 
 @dataclass(frozen=True)
+class FapiSigningConfig:
+    """FAPI signing and token client-auth configuration kept out of placeholders.
+
+    Attributes:
+        certificate_path_root: Root directory under which signing certificate
+            and private-key paths must resolve.
+        signing_certificate_path: X.509 certificate path used for PS256 JOSE
+            signing operations such as request objects and private-key JWT
+            client assertions.
+        signing_private_key_path: Private key path paired with
+            ``signing_certificate_path``.
+        key_id: JOSE ``kid`` header value associated with the signing key.
+        client_assertion_issuer: ``iss`` claim value for token-endpoint
+            client assertions.
+        client_assertion_subject: ``sub`` claim value for token-endpoint
+            client assertions.
+        token_endpoint_auth_method: Declared client-authentication method for
+            the token endpoint.
+    """
+
+    certificate_path_root: Path
+    signing_certificate_path: Path
+    signing_private_key_path: Path
+    key_id: str
+    client_assertion_issuer: str
+    client_assertion_subject: str
+    token_endpoint_auth_method: TokenEndpointClientAuthMode
+
+
+@dataclass(frozen=True)
 class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
@@ -126,6 +159,10 @@ class ModelBankConfig:
             non-secret values (``clientId``, ``redirectUri``, and optional
             ``resourceBaseUrl``). Absent when the participant config omits an
             ``oauth`` section.
+        fapi_signing: Optional FAPI signing and client-auth configuration kept
+            outside the runtime placeholder allow-list. Contains signing key
+            metadata and filesystem paths resolved under the configured
+            certificate root.
     """
 
     environment: str
@@ -138,6 +175,7 @@ class ModelBankConfig:
     test_suite: SuiteSelection | None = None
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
+    fapi_signing: FapiSigningConfig | None = None
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -199,6 +237,7 @@ def parse_model_bank_config(
             "timeoutSeconds",
             "followUp",
             "tls",
+            "fapiSigning",
             "resultOutputPath",
             "executionLogPath",
             "testSuite",
@@ -228,6 +267,7 @@ def parse_model_bank_config(
     test_suite = _parse_test_suite_selection(raw_config)
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
+    fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
 
     return ModelBankConfig(
         environment=environment,
@@ -240,6 +280,7 @@ def parse_model_bank_config(
         test_suite=test_suite,
         approved_release_policy=approved_release_policy,
         oauth=oauth,
+        fapi_signing=fapi_signing,
     )
 
 
@@ -396,6 +437,91 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
         client_id=client_id,
         redirect_uri=redirect_uri_str,
         resource_base_url=resource_base_url,
+    )
+
+
+def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> FapiSigningConfig | None:
+    """Parse the optional ``fapiSigning`` section of a participant config.
+
+    This section is intentionally separate from ``oauth`` so bundled manifest
+    placeholders cannot traverse into signing paths, JOSE metadata, or future
+    client-auth credentials.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+        base_dir: Directory of the config file, used as the default
+            ``certificatePathRoot`` for signing material.
+
+    Returns:
+        Parsed ``FapiSigningConfig``, or ``None`` when the config omits the
+        ``fapiSigning`` section.
+
+    Raises:
+        ConfigError: If ``fapiSigning`` is not a JSON object, contains unknown
+            keys, omits required values, specifies an unsupported token-endpoint
+            auth method, or points to paths that escape ``certificatePathRoot``.
+    """
+    raw_fapi_signing = raw_config.get("fapiSigning")
+    if raw_fapi_signing is None:
+        return None
+    if not isinstance(raw_fapi_signing, dict):
+        raise ConfigError("fapiSigning must be a JSON object")
+
+    _reject_unknown_keys(
+        raw_fapi_signing,
+        allowed_keys={
+            "certificatePathRoot",
+            "signingCertificatePath",
+            "signingPrivateKeyPath",
+            "kid",
+            "clientAssertionIssuer",
+            "clientAssertionSubject",
+            "tokenEndpointAuthMethod",
+        },
+        location="fapiSigning",
+    )
+
+    certificate_root = _optional_path(
+        raw_fapi_signing,
+        "certificatePathRoot",
+        base_dir=base_dir,
+        default=base_dir,
+    )
+    signing_certificate_path = _optional_child_path(
+        raw_fapi_signing,
+        "signingCertificatePath",
+        root=certificate_root,
+    )
+    signing_private_key_path = _optional_child_path(
+        raw_fapi_signing,
+        "signingPrivateKeyPath",
+        root=certificate_root,
+    )
+    if signing_certificate_path is None or signing_private_key_path is None:
+        raise ConfigError(
+            "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
+        )
+
+    key_id = _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
+    client_assertion_issuer = _required_string_at(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning")
+    client_assertion_subject = _required_string_at(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning")
+    token_endpoint_auth_method = _required_string_at(
+        raw_fapi_signing,
+        "tokenEndpointAuthMethod",
+        location="fapiSigning",
+    )
+    if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
+        raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
+
+    return FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=signing_certificate_path,
+        signing_private_key_path=signing_private_key_path,
+        key_id=key_id,
+        client_assertion_issuer=client_assertion_issuer,
+        client_assertion_subject=client_assertion_subject,
+        token_endpoint_auth_method=cast(TokenEndpointClientAuthMode, token_endpoint_auth_method),
     )
 
 
@@ -662,6 +788,41 @@ def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *,
         raise ConfigError(f"{key} must resolve inside certificatePathRoot")
     if not resolved_path.is_file():
         raise ConfigError(f"{key} must point to an existing file")
+    return resolved_path
+
+
+def _optional_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
+    """Extract an optional path that must resolve inside ``root``.
+
+    Unlike :func:`_optional_existing_child_path`, this helper does not touch
+    the filesystem. It is used for config sections whose file existence and PEM
+    validity must be deferred until execution time so config parsing can remain
+    placeholder-safe without eagerly loading signing material.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+        root: Directory that the resolved path must reside inside.
+
+    Returns:
+        Absolute resolved ``Path`` when the key is present, or ``None``.
+
+    Raises:
+        ConfigError: If the key is present but the value is not a non-empty
+            string or the resolved path escapes ``root``.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{key} must be a non-empty string when supplied")
+
+    raw_path = Path(value.strip())
+    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
+    resolved_root = root.resolve()
+
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
     return resolved_path
 
 

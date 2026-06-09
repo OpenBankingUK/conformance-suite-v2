@@ -54,6 +54,7 @@ SENSITIVE_HEADER_NAMES: Final[frozenset[str]] = frozenset(
         "set-cookie",
         "x-api-key",
         "x-fapi-financial-id",
+        "x-jws-signature",
     }
 )
 """HTTP header names whose values must be masked, compared case-insensitively.

@@ -49,6 +49,9 @@
       "clientId": "${config.oauth.clientId}",
       "redirectUri": "${config.oauth.redirectUri}",
       "responseType": "code id_token",
+      "requestObject": {
+        "source": "fapi-signing"
+      },
       "scope": "openid accounts",
       "timeoutSeconds": 180,
       "mandatory": true
@@ -72,6 +75,9 @@
           }
         }
       },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
+      },
       "assertions": [
         {"type": "http_status", "expected": 200},
         {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
@@ -87,6 +93,9 @@
       "request": {
         "method": "POST",
         "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"

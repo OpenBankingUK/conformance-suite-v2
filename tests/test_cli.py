@@ -14,9 +14,11 @@ from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.context import RuntimeConfig
 from conformance.execution_log import ExecutionLogger
 from conformance.manifest import Manifest
+from conformance.model_bank_config import FapiSigningConfig
 from conformance.results import SmokeCheckResult
 from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
+from tests.test_executor import _executor_signing_config
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
@@ -109,6 +111,7 @@ def _write_ais_baseline_suite_config(tmp_path: Path) -> Path:
     Returns:
         Path to the written config file.
     """
+    signing_config = _executor_signing_config(tmp_path)
     config_path = tmp_path / "ais-baseline-suite-config.json"
     config_path.write_text(
         json.dumps(
@@ -127,6 +130,15 @@ def _write_ais_baseline_suite_config(tmp_path: Path) -> Path:
                     "clientId": "test-client-id",
                     "redirectUri": "https://conformance.example.com/callback",
                     "resourceBaseUrl": "https://resource.example.com",
+                },
+                "fapiSigning": {
+                    "certificatePathRoot": str(signing_config.certificate_path_root),
+                    "signingCertificatePath": str(signing_config.signing_certificate_path),
+                    "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
+                    "kid": signing_config.key_id,
+                    "clientAssertionIssuer": signing_config.client_assertion_issuer,
+                    "clientAssertionSubject": signing_config.client_assertion_subject,
+                    "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
                 },
             }
         ),
@@ -524,8 +536,14 @@ def test_cli_resolves_ais_baseline_config_selected_suite_when_manifest_is_omitte
             "transactions-list",
         ]
         runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
+        fapi_signing_config = cast(FapiSigningConfig | None, kwargs["fapi_signing_config"])
         suite_metadata = cast(SuiteMetadata, kwargs["suite_metadata"])
         assert runtime_config.oauth_resource_base_url == "https://resource.example.com"
+        assert fapi_signing_config is not None
+        assert fapi_signing_config.key_id == "executor-signing-key"
+        assert (
+            fapi_signing_config.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 - FAPI auth enum
+        )
         assert suite_metadata is not None
         assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
         now = datetime.now(UTC)

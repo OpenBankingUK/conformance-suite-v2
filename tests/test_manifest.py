@@ -7,11 +7,14 @@ import pytest
 from conformance.json_types import JsonValue
 from conformance.manifest import (
     CertificationCoverage,
+    DetachedJwsPolicy,
     FormBody,
+    GeneratedRequestObject,
     JsonBody,
     ManifestError,
     ManifestStep,
     PsuAuthorizationStep,
+    TokenEndpointAuthPolicy,
     load_manifest,
     parse_manifest,
 )
@@ -2139,6 +2142,20 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_accepts_generated_request_object_directive() -> None:
+    """PSU steps may request a runtime-generated JAR request object."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {"source": "fapi-signing"}
+
+    manifest = parse_manifest(raw)
+
+    psu_step = manifest.steps[0]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert isinstance(psu_step.request_object, GeneratedRequestObject)
+    assert psu_step.request_object.source == "fapi-signing"
+
+
+@pytest.mark.unit
 def test_parse_v1_psu_step_rejects_invalid_phase() -> None:
     """PSU steps reject unsupported phase values."""
     raw = valid_psu_manifest()
@@ -2414,6 +2431,44 @@ def test_parse_v1_psu_step_rejects_empty_request_object() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_rejects_unknown_generated_request_object_source() -> None:
+    """Generated request-object directives are closed-shape and closed-value."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {"source": "hand-rolled"}
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.requestObject\.source must be 'fapi-signing'"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_unknown_generated_request_object_key() -> None:
+    """Generated request-object directives reject extra keys at parse time."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "fapi-signing",
+        "kid": "not-allowed-here",
+    }
+
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\]\.requestObject field\(s\): kid"):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_secret_bearing_config_placeholder_in_generated_request_object_source() -> None:
+    """Generated request-object discriminators must not accept secret-bearing config placeholders."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "${config.oauth.clientSecret}",
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.requestObject\.source contains unsupported config placeholder",
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("bad_value", [0, -1, 601, 1000])
 def test_parse_v1_psu_step_rejects_out_of_range_timeout(bad_value: int) -> None:
     """Timeout must be within the documented 1..600 second range."""
@@ -2451,6 +2506,291 @@ def test_parse_v1_psu_step_rejects_unknown_key() -> None:
     cast("list[dict[str, JsonValue]]", raw["steps"])[0]["nonsense"] = True
     with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field\(s\): nonsense"):
         parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_accepts_token_endpoint_auth_policy() -> None:
+    """HTTP token-exchange steps may declare runtime token-endpoint auth policy."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "token-auth-policy",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "abc",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_accepts_detached_jws_policy() -> None:
+    """HTTP consent requests may opt into runtime detached-JWS signing."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-policy",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_invalid_token_endpoint_auth_policy_type() -> None:
+    """The token-endpoint auth directive must be an object when present."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {"method": "POST", "url": "https://auth.example.com/token", "body": "x"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": "fapi-signing",
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy must be a JSON object when present",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_token_endpoint_auth_policy_on_non_post() -> None:
+    """Token-endpoint auth policy is only valid on POST token requests."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy-method",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "DELETE",
+                    "url": "https://auth.example.com/token",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "abc",
+                            "redirect_uri": "https://app.example.com/callback",
+                            "client_id": "client-123",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy is only valid on POST requests with a form body",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_token_endpoint_auth_policy_without_form_body() -> None:
+    """Token-endpoint auth policy requires a form-encoded token request body."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy-body",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {"encoding": "json", "value": {"grant_type": "authorization_code"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy is only valid on POST requests with a form body",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_invalid_detached_jws_policy_type() -> None:
+    """The detached-JWS directive must be an object when present."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-policy",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": "fapi-signing",
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws must be a JSON object when present",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_unknown_detached_jws_source() -> None:
+    """Detached-JWS directives are closed-shape and closed-value."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-source",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "hand-rolled"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws\.source must be 'fapi-signing'",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_secret_bearing_config_placeholder_in_detached_jws_source() -> None:
+    """Detached-JWS directives must not widen the safe config placeholder boundary."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-placeholder",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "${config.fapiSigning.kid}"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws\.source contains unsupported config placeholder",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_detached_jws_on_unsupported_method() -> None:
+    """Detached-JWS directives are invalid outside supported write methods."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-detached-jws-delete",
+        "steps": [
+            {
+                "id": "accounts",
+                "name": "Accounts",
+                "request": {
+                    "method": "DELETE",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                    "detachedJws": {"source": "fapi-signing"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.request\.detachedJws is only valid on POST, PUT, or PATCH requests",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_secret_bearing_config_placeholder_in_token_endpoint_auth_policy() -> None:
+    """Token-endpoint auth policy must not allow placeholders outside the safe config allow-list."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "bad-token-auth-policy-placeholder",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {"method": "POST", "url": "https://auth.example.com/token", "body": "x"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "tokenEndpointAuthPolicy": {"source": "${config.fapiSigning.kid}"},
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.tokenEndpointAuthPolicy\.source contains unsupported config placeholder",
+    ):
+        parse_manifest(raw_manifest)
 
 
 @pytest.mark.unit

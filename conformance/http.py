@@ -110,15 +110,19 @@ def send_json(
     *,
     headers: dict[str, str] | None = None,
     json_body: JsonValue | None = None,
+    json_body_bytes: bytes | None = None,
     form_body: Mapping[str, str] | None = None,
 ) -> JsonHttpResponse:
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
-    body (POST, PUT, PATCH, DELETE), exactly one of ``json_body`` or
-    ``form_body`` may be supplied:
+    body (POST, PUT, PATCH, DELETE), exactly one of ``json_body``,
+    ``json_body_bytes``, or ``form_body`` may be supplied:
 
     - ``json_body`` is serialised as ``application/json`` via ``httpx``.
+    - ``json_body_bytes`` sends already-serialised JSON bytes unchanged.
+      This is used for detached-JWS request signing, where the transmitted
+      bytes must exactly match the bytes covered by the signature.
     - ``form_body`` is serialised as ``application/x-www-form-urlencoded``
       via ``httpx``'s native form encoder (never hand-rolled), following
       form-url-encoding semantics (e.g. spaces may be encoded as ``+``,
@@ -145,10 +149,13 @@ def send_json(
         headers: Optional additional headers to include in the request.
         json_body: Optional JSON-serialisable body (sent as
             ``application/json`` for POST/PUT/PATCH/DELETE). Mutually
-            exclusive with ``form_body``.
+            exclusive with ``json_body_bytes`` and ``form_body``.
+        json_body_bytes: Optional pre-serialized JSON request bytes, sent as
+            ``application/json`` for POST/PUT/PATCH/DELETE. Mutually
+            exclusive with ``json_body`` and ``form_body``.
         form_body: Optional form-field mapping (sent as
             ``application/x-www-form-urlencoded`` for POST/PUT/PATCH/DELETE).
-            Mutually exclusive with ``json_body``.
+            Mutually exclusive with ``json_body`` and ``json_body_bytes``.
 
     Returns:
         Parsed JSON object response with URL and status code.
@@ -156,13 +163,14 @@ def send_json(
     Raises:
         JsonHttpClientError: If the request fails, the response is not valid
             JSON, or the payload is not a JSON object.
-        ValueError: If both ``json_body`` and ``form_body`` are supplied.
+        ValueError: If more than one body encoding is supplied.
     """
     # Reject ambiguous calls eagerly: a single request can carry only one
     # body encoding. Allowing both would force the helper to silently pick
     # one, hiding manifest authoring mistakes.
-    if json_body is not None and form_body is not None:
-        raise ValueError("send_json: json_body and form_body are mutually exclusive")
+    supplied_body_encodings = sum(candidate is not None for candidate in (json_body, json_body_bytes, form_body))
+    if supplied_body_encodings > 1:
+        raise ValueError("send_json: json_body, json_body_bytes, and form_body are mutually exclusive")
 
     # Normalise the method to uppercase once so the body-selection guard and
     # the dispatch call agree regardless of the caller's casing. httpx accepts
@@ -182,7 +190,11 @@ def send_json(
     # at most one of these is non-None here — there is no precedence rule.
     method_allows_body = method in ("POST", "PUT", "PATCH", "DELETE")
     send_json_body = json_body if method_allows_body else None
+    send_json_body_bytes: bytes | None = json_body_bytes if method_allows_body else None
     send_form_body: Mapping[str, str] | None = form_body if method_allows_body else None
+
+    if send_json_body_bytes is not None and "content-type" not in request_headers:
+        request_headers["Content-Type"] = "application/json"
 
     # Set the form Content-Type default only when the manifest has not
     # supplied one. ``httpx.Headers.__contains__`` is case-insensitive, so
@@ -196,6 +208,7 @@ def send_json(
             url,
             headers=request_headers,
             json=send_json_body,
+            content=send_json_body_bytes,
             data=send_form_body,
         )
     except httpx.RequestError as error:
