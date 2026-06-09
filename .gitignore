@@ -25,5 +25,9 @@ out/
 htmlcov/
 dist/
 *.egg-info/
+
+# Local participant configs, certificates, and secrets. Keep examples in config/.
+local-config/
+
 # Local AI agent workspace (project context, decision log, plans, handover, dev log)
 ai/
