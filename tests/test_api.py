@@ -877,7 +877,7 @@ class TestPsuAuthorizationApiRun:
 
         log_response = client.get(f"/api/runs/{run_id}/log/")
         assert log_response.status_code == 200
-        events = [json.loads(line) for line in log_response.content.decode("utf-8").splitlines()]
+        events = json.loads(log_response.content.decode("utf-8"))
         assert "psu-authorization-url" in [event["type"] for event in events]
 
     def test_baseline_suite_run_passes_after_synthetic_callback_and_stays_partial(self, tmp_path: Path) -> None:
@@ -1119,16 +1119,16 @@ class TestPsuAuthorizationApiRun:
 
         log_response = client.get(f"/api/runs/{run_id}/log/")
         assert log_response.status_code == 200
-        ndjson = log_response.content.decode("utf-8")
-        assert "baseline-auth-code" not in ndjson
-        assert "baseline-access-token" not in ndjson
-        assert "baseline-id-token" not in ndjson
-        assert '"client_assertion": "***"' in ndjson
-        assert '"request_object": "***"' in ndjson
-        assert '"Authorization": "***"' in ndjson
-        assert "signingCertificatePath" not in ndjson
-        assert "signingPrivateKeyPath" not in ndjson
-        assert '"code": "***"' in ndjson
+        log_json = log_response.content.decode("utf-8")
+        assert "baseline-auth-code" not in log_json
+        assert "baseline-access-token" not in log_json
+        assert "baseline-id-token" not in log_json
+        assert '"client_assertion": "***"' in log_json
+        assert '"request_object": "***"' in log_json
+        assert '"Authorization": "***"' in log_json
+        assert "signingCertificatePath" not in log_json
+        assert "signingPrivateKeyPath" not in log_json
+        assert '"code": "***"' in log_json
 
 
 @pytest.mark.integration
@@ -1344,8 +1344,8 @@ class TestGetRunLogEndpoint:
         response = client.get("/api/runs/nonexistent/log/")
         assert response.status_code == 404
 
-    def test_returns_ndjson_for_known_run(self) -> None:
-        """The endpoint streams ``application/x-ndjson`` with one JSON object per line."""
+    def test_returns_json_for_known_run(self) -> None:
+        """The endpoint streams ``application/json`` with one event object per array item."""
         client = Client()
         record = run_store.create_run()
         # Emit a couple of events into the live buffer attached to the run.
@@ -1355,9 +1355,8 @@ class TestGetRunLogEndpoint:
 
         response = client.get(f"/api/runs/{record.run_id}/log/")
         assert response.status_code == 200
-        assert response["Content-Type"] == "application/x-ndjson"
-        lines = response.content.decode("utf-8").rstrip("\n").split("\n")
-        parsed = [json.loads(line) for line in lines]
+        assert response["Content-Type"] == "application/json"
+        parsed = json.loads(response.content.decode("utf-8"))
         assert [event["type"] for event in parsed] == ["run-started", "run-completed"]
         assert all(event["runId"] == record.run_id for event in parsed)
 
@@ -1371,8 +1370,8 @@ class TestGetRunLogEndpoint:
 
         response = client.get(f"/api/runs/{record.run_id}/log/")
         assert response.status_code == 200
-        body = response.content.decode("utf-8").rstrip("\n")
-        assert len(body.split("\n")) == 1
+        body = json.loads(response.content.decode("utf-8"))
+        assert len(body) == 1
 
     def test_non_loopback_request_is_rejected_with_403(self) -> None:
         """The loopback guard applies to the log endpoint too."""
@@ -1421,8 +1420,7 @@ class TestGetRunLogEndpoint:
         response = client.get(f"/api/runs/{record.run_id}/log/")
 
         assert response.status_code == 200
-        lines = response.content.decode("utf-8").rstrip("\n").split("\n")
-        assert json.loads(lines[0])["type"] == "run-started"
+        assert json.loads(response.content.decode("utf-8"))[0]["type"] == "run-started"
 
 
 # ─── Auth-session API endpoints ─────────────────────────────────────────────

@@ -10,6 +10,10 @@ class HttpsUrlValidationError(ValueError):
     """Raised when a value is not a hardened HTTPS URL."""
 
 
+_LEGACY_FCS_REDIRECT_HOST = "0.0.0.0"  # noqa: S104 - legacy registered redirect host, not a bind target.
+"""Host literal used by the previous FCS Ozone model-bank redirect registration."""
+
+
 def validate_https_url(value: str, *, label: str) -> None:
     """Validate a URL before it is accepted as an HTTPS network target.
 
@@ -36,6 +40,61 @@ def validate_https_url(value: str, *, label: str) -> None:
     if parsed_url.username is not None or parsed_url.password is not None:
         raise HttpsUrlValidationError(f"{label} must not include credentials")
     _validate_hostname(parsed_url.hostname, label=label)
+
+
+def validate_oauth_redirect_uri(value: str, *, label: str) -> None:
+    """Validate an OAuth redirect URI accepted from config or manifests.
+
+    General redirect URIs use :func:`validate_https_url`. The single legacy
+    exception preserves compatibility with the previous FCS model-bank
+    registration, which used the browser callback URI
+    ``https://0.0.0.0:8443/conformancesuite/callback``. This exception is
+    deliberately scoped to that host, port, and callback path because
+    ``0.0.0.0`` is not a safe general-purpose redirect host.
+
+    Args:
+        value: Redirect URI string to validate.
+        label: Human-readable field name used in validation errors.
+
+    Raises:
+        HttpsUrlValidationError: If the URI is neither a hardened HTTPS URL
+            nor the recognised legacy FCS callback URI.
+    """
+    try:
+        validate_https_url(value, label=label)
+    except HttpsUrlValidationError:
+        if _is_legacy_fcs_redirect_uri(value):
+            return
+        raise
+
+
+def _is_legacy_fcs_redirect_uri(value: str) -> bool:
+    """Return whether ``value`` is the previous FCS model-bank callback URI.
+
+    Args:
+        value: Redirect URI string to classify.
+
+    Returns:
+        ``True`` only for the old registered callback shape used by the
+        previous FCS against the Ozone model bank.
+    """
+    if any(character.isspace() or ord(character) < 32 or ord(character) == 127 for character in value):
+        return False
+    parsed_url = urlparse(value)
+    try:
+        parsed_port = parsed_url.port
+    except ValueError:
+        return False
+    return (
+        parsed_url.scheme == "https"
+        and parsed_url.hostname == _LEGACY_FCS_REDIRECT_HOST
+        and parsed_port == 8443
+        and parsed_url.username is None
+        and parsed_url.password is None
+        and parsed_url.path.rstrip("/") == "/conformancesuite/callback"
+        and not parsed_url.query
+        and not parsed_url.fragment
+    )
 
 
 def _validate_hostname(hostname: str, *, label: str) -> None:

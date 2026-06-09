@@ -1,6 +1,6 @@
 {
   "schemaVersion": "v1",
-  "name": "FAPI 1 Advanced hybrid PSU authorisation (manual mode example)",
+  "name": "FAPI 1 Advanced hybrid PSU authorisation (runtime-configured manual example)",
   "certificationCoverage": "partial",
   "steps": [
     {
@@ -8,7 +8,7 @@
       "name": "OpenID discovery document",
       "request": {
         "method": "GET",
-        "url": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+        "url": "${config.discoveryUrl}"
       },
       "assertions": [
         { "type": "http_status", "expected": 200 },
@@ -22,10 +22,14 @@
       "name": "PSU authorisation (manual)",
       "mode": "manual",
       "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
-      "clientId": "synthetic-client-id-00000000000000000000",
-      "redirectUri": "https://conformance.example.com/callback",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
       "responseType": "code id_token",
       "scope": "openid accounts",
+      "requestObject": {
+        "source": "fapi-signing",
+        "audience": "${steps.discovery.response.body.issuer}"
+      },
       "timeoutSeconds": 180,
       "mandatory": true
     },
@@ -40,10 +44,13 @@
           "fields": {
             "grant_type": "authorization_code",
             "code": "${steps.psu-authorization.response.body.code}",
-            "client_id": "synthetic-client-id-00000000000000000000",
-            "redirect_uri": "https://conformance.example.com/callback"
+            "client_id": "${config.oauth.clientId}",
+            "redirect_uri": "${config.oauth.redirectUri}"
           }
         }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
       },
       "assertions": [
         { "type": "http_status", "expected": 200 },

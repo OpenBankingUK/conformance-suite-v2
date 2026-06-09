@@ -309,6 +309,20 @@ def _query_parameter(url: str, name: str) -> str:
     return values[0]
 
 
+def _registered_auth_state(run_id: str) -> str:
+    """Read the single registered PSU auth-session state for a run.
+
+    Args:
+        run_id: Run whose pending PSU authorization state should be returned.
+
+    Returns:
+        The registered auth-session state value.
+    """
+    sessions = auth_session_store.for_run(run_id)
+    assert len(sessions) == 1
+    return sessions[0].state
+
+
 def _wait_for_participant_action(run_id: str) -> str:
     """Wait until a browser PSU participant action is available.
 
@@ -883,14 +897,14 @@ class TestRunDetailUi:
         run_id = _run_id_from_redirect(launch_response["Location"])
         authorisation_url = _wait_for_participant_action(run_id)
         raw_request_object = _query_parameter(authorisation_url, "request")
-        state = _query_parameter(authorisation_url, "state")
+        state = _registered_auth_state(run_id)
         callback_response = client.get("/callback/", {"state": state, "code": "browser-baseline-auth-code"})
 
         assert callback_response.status_code == 200
         _wait_for_terminal_run(run_id)
 
         result_response = client.get(f"/runs/{run_id}/result.json")
-        log_response = client.get(f"/runs/{run_id}/log.ndjson")
+        log_response = client.get(f"/runs/{run_id}/log.json")
 
         assert result_response.status_code == 200
         assert log_response.status_code == 200
@@ -900,7 +914,7 @@ class TestRunDetailUi:
         raw_client_assertion = token_form_fields["client_assertion"][0]
         resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[3:]]
         result_json = json.dumps(result_body, sort_keys=True)
-        ndjson = log_response.content.decode("utf-8")
+        log_json = log_response.content.decode("utf-8")
 
         assert result_body["status"] == "passed"
         assert result_body["summary"] == {"total": 10, "passed": 10, "failed": 0, "warn": 0, "skipped": 0}
@@ -951,17 +965,17 @@ class TestRunDetailUi:
         assert "signingPrivateKeyPath" not in result_json
         assert "request=***" in result_json
 
-        assert "browser-baseline-auth-code" not in ndjson
-        assert "browser-baseline-access-token" not in ndjson
-        assert "browser-baseline-id-token" not in ndjson
-        assert raw_request_object not in ndjson
-        assert raw_client_assertion not in ndjson
-        assert '"code": "***"' in ndjson
-        assert '"client_assertion": "***"' in ndjson
-        assert '"request_object": "***"' in ndjson
-        assert '"Authorization": "***"' in ndjson
-        assert "signingCertificatePath" not in ndjson
-        assert "signingPrivateKeyPath" not in ndjson
+        assert "browser-baseline-auth-code" not in log_json
+        assert "browser-baseline-access-token" not in log_json
+        assert "browser-baseline-id-token" not in log_json
+        assert raw_request_object not in log_json
+        assert raw_client_assertion not in log_json
+        assert '"code": "***"' in log_json
+        assert '"client_assertion": "***"' in log_json
+        assert '"request_object": "***"' in log_json
+        assert '"Authorization": "***"' in log_json
+        assert "signingCertificatePath" not in log_json
+        assert "signingPrivateKeyPath" not in log_json
 
     def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(
         self,
@@ -1085,8 +1099,8 @@ class TestRunDetailUi:
 
         assert launch_response.status_code == 302
         run_id = _run_id_from_redirect(launch_response["Location"])
-        authorisation_url = _wait_for_participant_action(run_id)
-        state = _query_parameter(authorisation_url, "state")
+        _wait_for_participant_action(run_id)
+        state = _registered_auth_state(run_id)
         callback_response = client.get("/callback/", {"state": state, "code": "ais-auth-code-123"})
 
         assert callback_response.status_code == 200
@@ -1139,7 +1153,7 @@ class TestRunDetailUi:
         assert launch_response.status_code == 302
         run_id = _run_id_from_redirect(launch_response["Location"])
         authorisation_url = _wait_for_participant_action(run_id)
-        state = _query_parameter(authorisation_url, "state")
+        state = _registered_auth_state(run_id)
         assert _query_parameter(authorisation_url, "request") == raw_request_object
 
         detail_response = client.get(f"/runs/{run_id}/")
@@ -1166,7 +1180,7 @@ class TestRunDetailUi:
         assert "Action required" not in cleared_content
         assert "Open authorisation" not in cleared_content
 
-        log_response = client.get(f"/runs/{run_id}/log.ndjson")
+        log_response = client.get(f"/runs/{run_id}/log.json")
         result_response = client.get(f"/runs/{run_id}/result.json")
 
         assert log_response.status_code == 200
@@ -1200,7 +1214,7 @@ class TestRunDetailUi:
         assert f"Run {record.run_id}" in content
         assert "pending" in content
         assert 'http-equiv="refresh" content="2"' in content
-        assert f"/runs/{record.run_id}/log.ndjson" in content
+        assert f"/runs/{record.run_id}/log.json" in content
         assert "Result pending" in content
 
     def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
@@ -1256,7 +1270,7 @@ class TestRunDetailUi:
         assert 'target="_blank"' not in content
 
     def test_log_partial_renders_masked_log_link_and_event_count(self) -> None:
-        """The log partial links to the browser-accessible NDJSON endpoint."""
+        """The log partial links to the browser-accessible JSON endpoint."""
         record = run_store.create_run()
         assert record.execution_logger is not None
         record.execution_logger.emit("run-started")
@@ -1267,14 +1281,14 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert ">2<" in content
-        assert f"/runs/{record.run_id}/log.ndjson" in content
+        assert f"/runs/{record.run_id}/log.json" in content
         assert "Masked log" in content
 
-    def test_log_partial_counts_events_without_serialising_ndjson(self, monkeypatch: pytest.MonkeyPatch) -> None:
+    def test_log_partial_counts_events_without_serialising_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Rendering the log partial should count buffered events directly.
 
         Args:
-            monkeypatch: pytest fixture used to make NDJSON serialisation fail
+            monkeypatch: pytest fixture used to make log serialisation fail
                 if the UI summary accidentally calls it.
         """
         record = run_store.create_run()
@@ -1282,8 +1296,8 @@ class TestRunDetailUi:
         record.execution_logger.emit("run-started")
         monkeypatch.setattr(
             record.execution_logger,
-            "to_ndjson_bytes",
-            Mock(side_effect=AssertionError("log count must not serialise NDJSON")),
+            "to_json_bytes",
+            Mock(side_effect=AssertionError("log count must not serialise JSON")),
         )
 
         response = Client().get(f"/runs/{record.run_id}/log/")
@@ -1299,13 +1313,13 @@ class TestRunDetailUi:
 
         client = Client(REMOTE_ADDR="10.0.0.5")
         api_response = client.get(f"/api/runs/{record.run_id}/log/")
-        ui_response = client.get(f"/runs/{record.run_id}/log.ndjson")
+        ui_response = client.get(f"/runs/{record.run_id}/log.json")
 
         assert api_response.status_code == 403
         assert ui_response.status_code == 200
-        assert ui_response["Content-Type"] == "application/x-ndjson"
-        assert ui_response["Content-Disposition"] == f'attachment; filename="{record.run_id}-execution-log.ndjson"'
-        assert json.loads(ui_response.content.decode("utf-8").strip())["type"] == "run-started"
+        assert ui_response["Content-Type"] == "application/json"
+        assert ui_response["Content-Disposition"] == f'attachment; filename="{record.run_id}-execution-log.json"'
+        assert json.loads(ui_response.content.decode("utf-8"))[0]["type"] == "run-started"
 
     def test_result_partial_renders_completed_summary(self) -> None:
         """The result partial summarises completed structured results."""

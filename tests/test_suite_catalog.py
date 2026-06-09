@@ -206,7 +206,10 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     transactions_list_step = cast(ManifestStep, manifest.steps[9])
     psu_step = cast(PsuAuthorizationStep, manifest.steps[2])
 
-    assert psu_step.request_object == GeneratedRequestObject(source="fapi-signing")
+    assert psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.openid-discovery.response.body.issuer}",
+    )
     assert token_exchange_step.request.url == "${steps.openid-discovery.response.body.token_endpoint}"
     assert token_exchange_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
     assert isinstance(token_exchange_step.request.body, FormBody)

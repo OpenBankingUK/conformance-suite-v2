@@ -6,7 +6,7 @@
         "mode": "discovery_only"
     },
     "tls": {
-        "certificatePathRoot": "./certs"
+        "certificatePathRoot": "../certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"

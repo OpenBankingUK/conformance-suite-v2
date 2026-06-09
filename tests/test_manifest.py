@@ -2091,11 +2091,30 @@ def test_parse_v1_manifest_loads_psu_authorization_example_file() -> None:
     manifest = load_manifest(PSU_EXAMPLE_MANIFEST_PATH)
     assert manifest.schema_version == "v1"
     assert len(manifest.steps) == 3
+    discovery_step = manifest.steps[0]
     psu_step = manifest.steps[1]
+    token_step = manifest.steps[2]
+    assert isinstance(discovery_step, ManifestStep)
+    assert discovery_step.request.url == "${config.discoveryUrl}"
     assert isinstance(psu_step, PsuAuthorizationStep)
     assert psu_step.id == "psu-authorization"
     assert psu_step.mode == "manual"
+    assert psu_step.client_id == "${config.oauth.clientId}"
+    assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
+    assert psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.discovery.response.body.issuer}",
+    )
     assert psu_step.mandatory is True
+    assert isinstance(token_step, ManifestStep)
+    assert token_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
+    assert isinstance(token_step.request.body, FormBody)
+    assert dict(token_step.request.body.fields) == {
+        "grant_type": "authorization_code",
+        "code": "${steps.psu-authorization.response.body.code}",
+        "client_id": "${config.oauth.clientId}",
+        "redirect_uri": "${config.oauth.redirectUri}",
+    }
 
 
 @pytest.mark.unit
@@ -2107,6 +2126,7 @@ def test_parse_v1_psu_step_applies_defaults() -> None:
     assert psu_step.response_type == "code id_token"
     assert psu_step.scope == "openid"
     assert psu_step.state is None
+    assert psu_step.nonce is None
     assert psu_step.request_object is None
     assert psu_step.timeout_seconds == 120
     assert psu_step.mandatory is False
@@ -2123,6 +2143,7 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     step["responseType"] = "code"
     step["scope"] = "openid accounts"
     step["state"] = "x" * 64
+    step["nonce"] = "n" * 64
     step["requestObject"] = "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     step["timeoutSeconds"] = 60
     step["mandatory"] = True
@@ -2134,6 +2155,7 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     assert psu_step.response_type == "code"
     assert psu_step.scope == "openid accounts"
     assert psu_step.state == "x" * 64
+    assert psu_step.nonce == "n" * 64
     assert psu_step.request_object == "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     assert psu_step.timeout_seconds == 60
     assert psu_step.mandatory is True
@@ -2145,7 +2167,10 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
 def test_parse_v1_psu_step_accepts_generated_request_object_directive() -> None:
     """PSU steps may request a runtime-generated JAR request object."""
     raw = valid_psu_manifest()
-    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {"source": "fapi-signing"}
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "fapi-signing",
+        "audience": "https://auth.example.com",
+    }
 
     manifest = parse_manifest(raw)
 
@@ -2153,6 +2178,7 @@ def test_parse_v1_psu_step_accepts_generated_request_object_directive() -> None:
     assert isinstance(psu_step, PsuAuthorizationStep)
     assert isinstance(psu_step.request_object, GeneratedRequestObject)
     assert psu_step.request_object.source == "fapi-signing"
+    assert psu_step.request_object.audience == "https://auth.example.com"
 
 
 @pytest.mark.unit

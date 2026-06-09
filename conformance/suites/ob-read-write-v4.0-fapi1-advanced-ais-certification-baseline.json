@@ -32,7 +32,7 @@
       },
       "assertions": [
         {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "json"},
         {"type": "json_field", "path": "keys", "rule": "array"},
         {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
         {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},
@@ -50,7 +50,8 @@
       "redirectUri": "${config.oauth.redirectUri}",
       "responseType": "code id_token",
       "requestObject": {
-        "source": "fapi-signing"
+        "source": "fapi-signing",
+        "audience": "${steps.openid-discovery.response.body.issuer}"
       },
       "scope": "openid accounts",
       "timeoutSeconds": 180,

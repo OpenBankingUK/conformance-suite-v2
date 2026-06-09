@@ -114,6 +114,7 @@ def test_sign_request_object_builds_ps256_jar_with_expected_claims(tmp_path: Pat
             response_type="code id_token",
             scope="openid accounts",
             state="state-123",
+            nonce="nonce-123",
         )
     )
     header, claims = _decode_signed_token(signed_jwt.token, certificate_pem=certificate_path.read_bytes())
@@ -127,7 +128,9 @@ def test_sign_request_object_builds_ps256_jar_with_expected_claims(tmp_path: Pat
         "response_type": "code id_token",
         "scope": "openid accounts",
         "state": "state-123",
+        "nonce": "nonce-123",
         "iat": 1_780_920_000,
+        "nbf": 1_780_920_000,
         "exp": 1_780_920_300,
         "jti": "jwt-001",
     }
@@ -197,6 +200,7 @@ def test_sign_request_object_rejects_blank_runtime_fields(tmp_path: Path) -> Non
                 response_type="code",
                 scope="openid",
                 state="state-123",
+                nonce="nonce-123",
             )
         )
 

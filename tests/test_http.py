@@ -1,7 +1,7 @@
 """Tests for conformance.http module."""
 
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 import httpx
 import pytest
@@ -54,6 +54,25 @@ class TestBuildJsonHttpClientMtlsValidation:
         """Omitting both mTLS paths does not raise."""
         client = build_json_http_client(timeout_seconds=10.0)
         client.close()
+
+    @patch("conformance.http.ssl.create_default_context")
+    @patch("conformance.http.httpx.Client")
+    def test_ca_bundle_augments_default_trust_store(
+        self,
+        mock_client: Mock,
+        mock_create_context: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """Supplying a CA bundle passes an SSL context to ``httpx``."""
+        ca_bundle = tmp_path / "ca.pem"
+        ca_bundle.touch()
+        ssl_context = Mock()
+        mock_create_context.return_value = ssl_context
+
+        build_json_http_client(timeout_seconds=10.0, ca_bundle_path=ca_bundle)
+
+        ssl_context.load_verify_locations.assert_called_once_with(cafile=str(ca_bundle))
+        assert mock_client.call_args.kwargs["verify"] is ssl_context
 
 
 @pytest.mark.unit

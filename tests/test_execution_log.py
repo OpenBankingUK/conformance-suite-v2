@@ -300,6 +300,16 @@ def test_to_ndjson_bytes_empty_buffer_returns_empty_bytes() -> None:
 
 
 @pytest.mark.unit
+def test_to_json_bytes_returns_pretty_json_array() -> None:
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit("run-started")
+    data = logger.to_json_bytes()
+    decoded = json.loads(data.decode("utf-8"))
+    assert isinstance(decoded, list)
+    assert decoded[0]["type"] == "run-started"
+
+
+@pytest.mark.unit
 def test_timestamp_is_rfc3339_with_z_suffix() -> None:
     logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     logger.emit("run-started")

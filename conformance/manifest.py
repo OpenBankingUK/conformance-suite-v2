@@ -13,7 +13,7 @@ from types import MappingProxyType
 from typing import Literal, cast
 
 from conformance.json_types import JsonValue
-from conformance.url_validation import HttpsUrlValidationError, validate_https_url
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
 class ManifestError(ValueError):
@@ -151,9 +151,14 @@ class GeneratedRequestObject:
 
     Attributes:
         source: Runtime signing source used to build the PS256 request object.
+        audience: Optional request-object JWT ``aud`` value. Placeholders are
+            permitted so bundled manifests can use the OpenID discovery
+            issuer when an ASPSP requires that value instead of the concrete
+            authorisation endpoint URL.
     """
 
     source: GeneratedRequestObjectSource
+    audience: str | None = None
 
 
 RequestObjectValue = str | GeneratedRequestObject
@@ -460,6 +465,10 @@ class PsuAuthorizationStep:
             a cryptographically secure value. When supplied as a literal
             (no placeholders), the value must be at least 32 characters
             to mirror the store's minimum entropy requirement.
+        nonce: Optional caller-supplied OIDC ``nonce`` token. Placeholders are
+            permitted so the value can come from an earlier step. When omitted
+            (``None``), the executor generates a cryptographically secure
+            value for the authorisation request.
         request_object: Optional signed JWT carried as the ``request``
             query parameter (RFC 9101 JAR). Legacy manifests may supply an
             opaque string JWT; newer manifests may instead declare a typed
@@ -488,6 +497,7 @@ class PsuAuthorizationStep:
     response_type: str = _PSU_AUTH_DEFAULT_RESPONSE_TYPE
     scope: str = _PSU_AUTH_DEFAULT_SCOPE
     state: str | None = None
+    nonce: str | None = None
     request_object: RequestObjectValue | None = None
     timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
     mandatory: bool = False
@@ -895,6 +905,7 @@ _PSU_AUTH_ALLOWED_KEYS: set[str] = {
     "responseType",
     "scope",
     "state",
+    "nonce",
     "requestObject",
     "timeoutSeconds",
     "mandatory",
@@ -968,7 +979,7 @@ def _parse_v1_psu_authorization_step(
             )
     else:
         try:
-            validate_https_url(redirect_uri, label=f"{location}.redirectUri")
+            validate_oauth_redirect_uri(redirect_uri, label=f"{location}.redirectUri")
         except HttpsUrlValidationError as error:
             raise ManifestError(str(error)) from error
 
@@ -981,7 +992,8 @@ def _parse_v1_psu_authorization_step(
     if _PLACEHOLDER_FIND_PATTERN.search(scope):
         raise ManifestError(f"{location}.scope must not contain placeholders")
 
-    state = _parse_psu_optional_state(raw_step, location=location, seen_ids=seen_ids)
+    state = _parse_psu_optional_token(raw_step, key="state", location=location, seen_ids=seen_ids)
+    nonce = _parse_psu_optional_token(raw_step, key="nonce", location=location, seen_ids=seen_ids)
     request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)
     timeout_seconds = _parse_psu_timeout_seconds(raw_step, location=location)
 
@@ -1002,6 +1014,7 @@ def _parse_v1_psu_authorization_step(
         response_type=response_type,
         scope=scope,
         state=state,
+        nonce=nonce,
         request_object=request_object,
         timeout_seconds=timeout_seconds,
         mandatory=mandatory,
@@ -1055,43 +1068,46 @@ def _parse_psu_optional_string(raw_step: dict[str, JsonValue], *, key: str, defa
     return value.strip()
 
 
-def _parse_psu_optional_state(raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> str | None:
-    """Parse the optional ``state`` field on a PSU authorisation step.
+def _parse_psu_optional_token(
+    raw_step: dict[str, JsonValue], *, key: str, location: str, seen_ids: set[str]
+) -> str | None:
+    """Parse an optional ``state`` or ``nonce`` field on a PSU authorisation step.
 
     Placeholders are permitted (and the runtime check inside the
-    :class:`AuthSessionStore` enforces the same 32-character minimum after
-    resolution). When the literal value contains no placeholders the
-    32-character minimum is enforced at parse time as well, mirroring the
-    store's :data:`MIN_CALLER_SUPPLIED_STATE_LENGTH` so a misauthored
-    manifest fails fast.
+    :class:`AuthSessionStore` enforces the same 32-character minimum for
+    ``state`` after resolution). When the literal value contains no
+    placeholders, the 32-character minimum is enforced at parse time as well,
+    mirroring the store's :data:`MIN_CALLER_SUPPLIED_STATE_LENGTH` so a
+    misauthored manifest fails fast.
 
     Args:
         raw_step: Raw JSON object for the PSU step.
+        key: Field name to parse.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
 
     Returns:
-        The stripped ``state`` string, or ``None`` if the key was absent.
+        The stripped token string, or ``None`` if the key was absent.
 
     Raises:
-        ManifestError: If ``state`` is present but is not a non-empty
+        ManifestError: If the field is present but is not a non-empty
             string, contains a malformed placeholder, references a
             forward step, or — when given as a literal — is shorter than
             the store's minimum length.
     """
-    if "state" not in raw_step:
+    if key not in raw_step:
         return None
-    value = raw_step["state"]
+    value = raw_step[key]
     if not isinstance(value, str) or not value.strip():
-        raise ManifestError(f"{location}.state must be a non-empty string when present")
-    state_value = value.strip()
-    _validate_placeholder_syntax(state_value, location=f"{location}.state", seen_ids=seen_ids)
-    if not _PLACEHOLDER_FIND_PATTERN.search(state_value) and len(state_value) < _PSU_AUTH_MIN_STATE_LENGTH:
+        raise ManifestError(f"{location}.{key} must be a non-empty string when present")
+    token_value = value.strip()
+    _validate_placeholder_syntax(token_value, location=f"{location}.{key}", seen_ids=seen_ids)
+    if not _PLACEHOLDER_FIND_PATTERN.search(token_value) and len(token_value) < _PSU_AUTH_MIN_STATE_LENGTH:
         raise ManifestError(
-            f"{location}.state must be at least {_PSU_AUTH_MIN_STATE_LENGTH} characters "
+            f"{location}.{key} must be at least {_PSU_AUTH_MIN_STATE_LENGTH} characters "
             "(matches AuthSessionStore minimum caller-supplied entropy)"
         )
-    return state_value
+    return token_value
 
 
 def _parse_psu_optional_request_object(
@@ -1102,8 +1118,8 @@ def _parse_psu_optional_request_object(
     Two backward-compatible shapes are accepted:
 
     * a legacy opaque JWT string, optionally containing placeholders, and
-    * a typed ``{"source": "fapi-signing"}`` directive that tells the
-      executor to generate a PS256 JAR request object at runtime.
+        * a typed ``{"source": "fapi-signing"}`` directive that tells the
+            executor to generate a PS256 JAR request object at runtime.
 
     Args:
         raw_step: Raw JSON object for the PSU step.
@@ -1152,12 +1168,18 @@ def _parse_generated_request_object(
         ManifestError: If the directive contains unknown keys, malformed
             placeholders, or an unsupported source selector.
     """
-    _reject_unknown_keys(raw_request_object, allowed_keys={"source"}, location=location)
+    _reject_unknown_keys(raw_request_object, allowed_keys={"source", "audience"}, location=location)
     source = _required_string(raw_request_object, "source", location=location)
     _validate_constant_manifest_string(source, location=f"{location}.source", seen_ids=seen_ids)
     if source != "fapi-signing":
         raise ManifestError(f"{location}.source must be 'fapi-signing'")
-    return GeneratedRequestObject(source="fapi-signing")
+    raw_audience = raw_request_object.get("audience")
+    if raw_audience is not None and (not isinstance(raw_audience, str) or not raw_audience.strip()):
+        raise ManifestError(f"{location}.audience must be a non-empty string when present")
+    audience = raw_audience.strip() if isinstance(raw_audience, str) else None
+    if audience is not None:
+        _validate_placeholder_syntax(audience, location=f"{location}.audience", seen_ids=seen_ids)
+    return GeneratedRequestObject(source="fapi-signing", audience=audience)
 
 
 def _parse_optional_token_endpoint_auth_policy(

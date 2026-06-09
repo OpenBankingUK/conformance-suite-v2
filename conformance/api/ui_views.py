@@ -169,14 +169,14 @@ def run_result_partial(request: HttpRequest, run_id: str) -> HttpResponse:
 
 @require_GET
 def run_log_download(request: HttpRequest, run_id: str) -> HttpResponse:
-    """Return the browser-accessible masked NDJSON execution log.
+    """Return the browser-accessible masked JSON execution log.
 
     Args:
         request: The incoming browser GET request.
         run_id: The unique run identifier from the URL path.
 
     Returns:
-        ``application/x-ndjson`` response for known runs, 404 for unknown
+        ``application/json`` response for known runs, 404 for unknown
         runs, or 500 when the run exists without an attached log buffer.
     """
     record = run_store.get_run(run_id)
@@ -184,8 +184,8 @@ def run_log_download(request: HttpRequest, run_id: str) -> HttpResponse:
         return HttpResponseNotFound("Run not found")
     if record.execution_logger is None:
         return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
-    response = HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
-    response["Content-Disposition"] = f'attachment; filename="{record.run_id}-execution-log.ndjson"'
+    response = HttpResponse(record.execution_logger.to_json_bytes(), content_type="application/json")
+    response["Content-Disposition"] = f'attachment; filename="{record.run_id}-execution-log.json"'
     return response
 
 
@@ -275,7 +275,7 @@ def _log_event_count(record: RunRecord) -> int:
             with the live record.
 
     Returns:
-        Number of NDJSON events currently available.
+        Number of execution-log events currently available.
     """
     if record.execution_logger is None:
         return 0

@@ -119,6 +119,9 @@ class RuntimeConfig:
             authorisation server, for ``${config.oauth.redirectUri}``
             placeholder resolution. Absent when the participant config omits
             an ``oauth`` section.
+        oauth_authorization_endpoint: Optional HTTPS authorisation endpoint
+            override for ``${config.oauth.authorizationEndpoint}`` placeholder
+            resolution. Absent when the participant config omits the override.
     """
 
     discovery_url: str
@@ -126,6 +129,7 @@ class RuntimeConfig:
     oauth_resource_base_url: str | None = None
     oauth_client_id: str | None = None
     oauth_redirect_uri: str | None = None
+    oauth_authorization_endpoint: str | None = None
 
 
 @dataclass(frozen=True)
@@ -260,7 +264,7 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     ``steps.<id>.request.(method|url)``
     ``steps.<id>.response.(status_code|body.<dot.path>)``
     ``config.(discoveryUrl|environment)``
-    ``config.oauth.(clientId|redirectUri)``
+    ``config.oauth.(clientId|redirectUri|authorizationEndpoint|resourceBaseUrl)``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -343,6 +347,7 @@ _ALLOWED_CONFIG_PLACEHOLDERS = (
     "${config.environment}",
     "${config.oauth.clientId}",
     "${config.oauth.redirectUri}",
+    "${config.oauth.authorizationEndpoint}",
     "${config.oauth.resourceBaseUrl}",
 )
 """Exhaustive allow-list of ``${config.*}`` placeholder paths exposed to manifest steps."""
@@ -371,7 +376,15 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
     _allowed_str = ", ".join(_ALLOWED_CONFIG_PLACEHOLDERS)
     is_simple_field = len(segments) == 2 and segments[1] in {"discoveryUrl", "environment"}
     is_oauth_field = (
-        len(segments) == 3 and segments[1] == "oauth" and segments[2] in {"clientId", "redirectUri", "resourceBaseUrl"}
+        len(segments) == 3
+        and segments[1] == "oauth"
+        and segments[2]
+        in {
+            "clientId",
+            "redirectUri",
+            "authorizationEndpoint",
+            "resourceBaseUrl",
+        }
     )
     if not (is_simple_field or is_oauth_field):
         raise PlaceholderResolutionError(f"Unsupported config placeholder: ${{{dot_path}}} (allowed: {_allowed_str})")
@@ -383,7 +396,7 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
             return context.config.discovery_url
         return context.config.environment
 
-    # is_oauth_field — segments[2] is "clientId", "redirectUri", or "resourceBaseUrl"
+    # is_oauth_field — segments[2] is an allow-listed non-secret OAuth field.
     sub_field = segments[2]
     if sub_field == "clientId":
         if context.config.oauth_client_id is None:
@@ -397,6 +410,14 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
                 )
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_resource_base_url
+    if sub_field == "authorizationEndpoint":
+        if context.config.oauth_authorization_endpoint is None:
+            if context.config.oauth_client_id is not None or context.config.oauth_redirect_uri is not None:
+                raise PlaceholderResolutionError(
+                    f"oauth.authorizationEndpoint is not available for placeholder: ${{{dot_path}}}"
+                )
+            raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_authorization_endpoint
     # sub_field == "redirectUri"
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")

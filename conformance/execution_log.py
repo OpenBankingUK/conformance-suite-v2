@@ -259,10 +259,11 @@ class BufferedExecutionLogger(ExecutionLogger):
     objects via :meth:`events`. The buffer is unbounded — callers are
     responsible for bounding run length (the PRD's per-run model).
 
-    Thread-safety: :meth:`emit`, :meth:`events`, :meth:`to_ndjson_bytes`, and
-    :meth:`flush_to_path` are safe to call concurrently from multiple threads.
-    Events are appended atomically under a per-instance lock; snapshot reads
-    are consistent copies that release the lock before serialisation or I/O.
+    Thread-safety: :meth:`emit`, :meth:`events`, :meth:`to_json_bytes`,
+    :meth:`to_ndjson_bytes`, and :meth:`flush_to_path` are safe to call
+    concurrently from multiple threads. Events are appended atomically under a
+    per-instance lock; snapshot reads are consistent copies that release the
+    lock before serialisation or I/O.
     """
 
     def __init__(self, *, run_id: str, developer_mode: bool | None = None) -> None:
@@ -373,6 +374,16 @@ class BufferedExecutionLogger(ExecutionLogger):
         """
         lines = [json.dumps(event.to_json_object(), sort_keys=True) for event in self.events()]
         return ("\n".join(lines) + ("\n" if lines else "")).encode("utf-8")
+
+    def to_json_bytes(self) -> bytes:
+        """Serialise the buffered events to a pretty-printed JSON array.
+
+        Returns:
+            UTF-8 encoded JSON array containing event objects in emission
+            order.
+        """
+        payload = [event.to_json_object() for event in self.events()]
+        return json.dumps(payload, indent=2, sort_keys=True).encode("utf-8") + b"\n"
 
     def _mask_payload(self, event_type: EventType, payload: Mapping[str, JsonValue]) -> JsonObject:
         """Apply shape-based masking to a raw payload.

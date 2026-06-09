@@ -2,9 +2,9 @@
     <h2>Status</h2>
     <p><span class="status {{ run.status }}">{{ run.status }}</span></p>
     <div class="grid">
-        <div class="metric"><strong>{{ run.created_at }}</strong><span>Created</span></div>
-        <div class="metric"><strong>{{ run.started_at|default:"-" }}</strong><span>Started</span></div>
-        <div class="metric"><strong>{{ run.finished_at|default:"-" }}</strong><span>Finished</span></div>
+        <div class="metric"><strong><time datetime="{{ run.created_at|date:'c' }}" data-local-datetime>{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></strong><span>Created</span></div>
+        <div class="metric"><strong>{% if run.started_at %}<time datetime="{{ run.started_at|date:'c' }}" data-local-datetime>{{ run.started_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Started</span></div>
+        <div class="metric"><strong>{% if run.finished_at %}<time datetime="{{ run.finished_at|date:'c' }}" data-local-datetime>{{ run.finished_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Finished</span></div>
     </div>
     {% if run.participant_action and run.participant_action.type == "psu-authorization-url" %}
         <div class="participant-action" aria-live="polite">

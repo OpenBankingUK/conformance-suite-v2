@@ -219,6 +219,9 @@ def _execute_run(
                         oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
                         oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
                         oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
+                        oauth_authorization_endpoint=(
+                            config.oauth.authorization_endpoint if config.oauth is not None else None
+                        ),
                     ),
                     fapi_signing_config=config.fapi_signing,
                     mtls_client_configured=(

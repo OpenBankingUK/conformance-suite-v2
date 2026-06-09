@@ -598,6 +598,35 @@ def test_parse_model_bank_config_rejects_certificate_path_traversal(tmp_path: Pa
 
 
 @pytest.mark.unit
+def test_parse_model_bank_config_resolves_existing_certificate_root_from_cwd(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Repo-relative certificate roots work when config JSON is pasted."""
+    config_dir = tmp_path / "local-config" / "configs"
+    cert_root = tmp_path / "local-config" / "certs"
+    config_dir.mkdir(parents=True)
+    cert_root.mkdir(parents=True)
+    ca_bundle = cert_root / "openbanking-preprod-ca-bundle.pem"
+    ca_bundle.write_text("certificate", encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "tls": {
+                "certificatePathRoot": "local-config/certs",
+                "caBundlePath": "openbanking-preprod-ca-bundle.pem",
+            },
+        },
+        base_dir=config_dir,
+    )
+
+    assert config.tls.ca_bundle_path == ca_bundle.resolve()
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     "discovery_url",
     [
@@ -839,6 +868,60 @@ def test_parse_model_bank_config_rejects_ip_literal_oauth_redirect_uri(tmp_path:
                 "oauth": {
                     "clientId": "my-client-001",
                     "redirectUri": "https://127.0.0.1/callback",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_legacy_fcs_oauth_redirect_uri(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "my-client-001",
+                "redirectUri": "https://0.0.0.0:8443/conformancesuite/callback",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.oauth is not None
+    assert config.oauth.redirect_uri == "https://0.0.0.0:8443/conformancesuite/callback"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_oauth_authorization_endpoint(tmp_path: Path) -> None:
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "my-client-001",
+                "redirectUri": "https://app.example.com/callback",
+                "authorizationEndpoint": "https://auth.example.com/auth",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.oauth is not None
+    assert config.oauth.authorization_endpoint == "https://auth.example.com/auth"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_http_oauth_authorization_endpoint(tmp_path: Path) -> None:
+    with pytest.raises(ConfigError, match="oauth.authorizationEndpoint must be an HTTPS URL"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "my-client-001",
+                    "redirectUri": "https://app.example.com/callback",
+                    "authorizationEndpoint": "http://auth.example.com/auth",
                 },
             },
             base_dir=tmp_path,

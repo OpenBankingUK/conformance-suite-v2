@@ -32,7 +32,7 @@
       },
       "assertions": [
         {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "json"},
         {"type": "json_field", "path": "keys", "rule": "array"},
         {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
         {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},

@@ -14,7 +14,7 @@ from conformance.approved_releases import (
     load_approved_release_policy,
 )
 from conformance.json_types import JsonValue
-from conformance.url_validation import HttpsUrlValidationError, validate_https_url
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
 class ConfigError(ValueError):
@@ -77,6 +77,9 @@ class OAuthConfig:
             request.
         redirect_uri: HTTPS redirect URI registered with the authorisation
             server. Must use the HTTPS scheme with a valid DNS hostname.
+        authorization_endpoint: Optional HTTPS authorisation endpoint override
+            for environments whose client registration targets a legacy
+            endpoint instead of the endpoint published by discovery.
         resource_base_url: Optional HTTPS AIS protected-resource base URL used
             by bundled manifests before manifest-owned Open Banking API paths.
             Callers must not include the ``/open-banking/...`` path prefix.
@@ -84,6 +87,7 @@ class OAuthConfig:
 
     client_id: str
     redirect_uri: str
+    authorization_endpoint: str | None = None
     resource_base_url: str | None = None
 
 
@@ -156,9 +160,9 @@ class ModelBankConfig:
             supplied.
         oauth: Optional narrow OAuth participant config for
             ``${config.oauth.*}`` placeholder resolution. Contains only
-            non-secret values (``clientId``, ``redirectUri``, and optional
-            ``resourceBaseUrl``). Absent when the participant config omits an
-            ``oauth`` section.
+            non-secret values (``clientId``, ``redirectUri``, optional
+            ``authorizationEndpoint``, and optional ``resourceBaseUrl``).
+            Absent when the participant config omits an ``oauth`` section.
         fapi_signing: Optional FAPI signing and client-auth configuration kept
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
@@ -421,21 +425,23 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
 
     _reject_unknown_keys(
         raw_oauth,
-        allowed_keys={"clientId", "redirectUri", "resourceBaseUrl"},
+        allowed_keys={"clientId", "redirectUri", "authorizationEndpoint", "resourceBaseUrl"},
         location="oauth",
     )
 
     client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
     redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
+    authorization_endpoint = _optional_https_url_at(raw_oauth, "authorizationEndpoint", location="oauth")
     resource_base_url = _optional_https_url_at(raw_oauth, "resourceBaseUrl", location="oauth")
     try:
-        validate_https_url(redirect_uri_str, label="oauth.redirectUri")
+        validate_oauth_redirect_uri(redirect_uri_str, label="oauth.redirectUri")
     except HttpsUrlValidationError as error:
         raise ConfigError(str(error)) from error
 
     return OAuthConfig(
         client_id=client_id,
         redirect_uri=redirect_uri_str,
+        authorization_endpoint=authorization_endpoint,
         resource_base_url=resource_base_url,
     )
 
@@ -725,11 +731,15 @@ def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, def
 
 
 def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path, default: Path) -> Path:
-    """Extract an optional filesystem path, resolving relative paths against ``base_dir``.
+    """Extract an optional filesystem path, resolving relative paths safely.
 
     If the key is absent, ``default`` is resolved against ``base_dir`` (or
-    returned as-is if already absolute).  If present, the value is resolved
-    against ``base_dir`` when relative.
+    returned as-is if already absolute). If present, an absolute value is used
+    as-is. A relative value is normally resolved against ``base_dir``; when
+    that path does not exist but the same relative path exists under the
+    current working directory, the working-directory path is used instead.
+    This lets browser-pasted configs use repo-relative certificate roots while
+    file-loaded configs can still use paths relative to their own location.
 
     Args:
         raw_config: Raw configuration dictionary to read from.
@@ -750,7 +760,13 @@ def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{key} must be a non-empty string when supplied")
     path = Path(value.strip())
-    return path.resolve() if path.is_absolute() else (base_dir / path).resolve()
+    if path.is_absolute():
+        return path.resolve()
+    base_relative_path = (base_dir / path).resolve()
+    cwd_relative_path = (Path.cwd() / path).resolve()
+    if not base_relative_path.exists() and cwd_relative_path.exists():
+        return cwd_relative_path
+    return base_relative_path
 
 
 def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:

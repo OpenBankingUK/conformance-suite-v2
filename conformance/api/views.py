@@ -281,20 +281,20 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
 @_require_loopback
 @require_GET
 def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
-    """Return the structured NDJSON execution log for a run.
+    """Return the structured JSON execution log for a run.
 
     Returns the log snapshot taken at request time. For runs that are
-    still in-flight the response contains a partial log (one JSON object
-    per line) — the client can re-poll to receive newer events. Masking
+    still in-flight the response contains a partial JSON array; the client
+    can re-poll to receive newer events. Masking
     is applied at append time inside the engine, so callers receive the
-    same bytes that the CLI writes to disk.
+    same masked event payloads that the CLI writes to disk.
 
     Args:
         request: The incoming HTTP GET request.
         run_id: The unique run identifier from the URL path.
 
     Returns:
-        200 with ``application/x-ndjson`` body on success, or 404 if the
+        200 with ``application/json`` body on success, or 404 if the
         run ID is unknown, or 500 if the run exists but its execution log is
         unavailable.
     """
@@ -306,7 +306,7 @@ def get_run_log(request: HttpRequest, run_id: str) -> HttpResponse:
     # instead of the correct 404 when the run is pruned between the two calls.
     if record.execution_logger is None:
         return JsonResponse({"error": "Execution log unavailable for this run"}, status=500)
-    return HttpResponse(record.execution_logger.to_ndjson_bytes(), content_type="application/x-ndjson")
+    return HttpResponse(record.execution_logger.to_json_bytes(), content_type="application/json")
 
 
 @_require_loopback

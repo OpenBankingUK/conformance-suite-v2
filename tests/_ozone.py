@@ -21,7 +21,7 @@ from conformance.url_validation import HttpsUrlValidationError, validate_https_u
 
 _TIER_ENV_VARS: Final[dict[int, tuple[str, ...]]] = {
     1: ("OZONE_DISCOVERY_URL",),
-    2: ("OZONE_DISCOVERY_URL", "OZONE_HEADLESS_PSU_SUPPORTED"),
+    2: ("OZONE_DISCOVERY_URL", "OZONE_HEADLESS_PSU_SUPPORTED", "OZONE_CLIENT_ID", "OZONE_REDIRECT_URI"),
 }
 """Environment variables required by each supported Ozone integration tier."""
 
@@ -65,6 +65,16 @@ def _skip_reason_for_tier(tier: int) -> str | None:
         except HttpsUrlValidationError as error:
             return _with_headless_psu_context(
                 f"OZONE_DISCOVERY_URL is not a valid HTTPS URL: {error}",
+                tier=tier,
+            )
+
+    if tier == 2:
+        redirect_uri = os.environ["OZONE_REDIRECT_URI"]
+        try:
+            validate_https_url(redirect_uri, label="OZONE_REDIRECT_URI")
+        except HttpsUrlValidationError as error:
+            return _with_headless_psu_context(
+                f"OZONE_REDIRECT_URI is not a valid HTTPS URL: {error}",
                 tier=tier,
             )
 

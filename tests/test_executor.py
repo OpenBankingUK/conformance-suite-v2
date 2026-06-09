@@ -7,6 +7,7 @@ from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, cast
+from urllib.parse import parse_qsl, urlsplit
 
 import httpx
 import pytest
@@ -3587,7 +3588,7 @@ def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
 
 
 @pytest.mark.integration
-def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """End-to-end mocked execution of the bundled ``psu-auth-starter`` catalog suite.
 
     Resolves the actual bundled manifest, builds a full default plan, executes
@@ -3611,6 +3612,8 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
         monkeypatch: Pytest fixture used to replace ``conformance.executor.time``
             with a deterministic fake so the PSU polling loop exits promptly
             without calling real ``time.sleep``.
+        tmp_path: Pytest temporary directory used to hold generated FAPI signing
+            material for the bundled request-object directive.
     """
     import types
 
@@ -3719,7 +3722,7 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
         discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
         environment="test",
         oauth_client_id="test-client-id",
-        oauth_redirect_uri="https://participant.example.com/callback",
+        oauth_redirect_uri="https://0.0.0.0:8443/conformancesuite/callback",
     )
 
     # 6. Execute the manifest end-to-end.
@@ -3735,6 +3738,7 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
             run_id=run_id,
             auth_session_store=auth_store,
             plan=plan,
+            fapi_signing_config=_executor_signing_config(tmp_path),
         )
 
     # 7. Assert plan coherence: all three steps present in result.
@@ -3772,7 +3776,14 @@ def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest
     psu_url_events = [e for e in execution_logger.events() if e.type == "psu-authorization-url"]
     assert len(psu_url_events) == 1
     psu_authorization_url = cast(str, psu_url_events[0].payload["url"])
-    assert "redirect_uri=https%3A%2F%2Fparticipant.example.com%2Fcallback" in psu_authorization_url
+    psu_authorization_query = dict(parse_qsl(urlsplit(psu_authorization_url).query, keep_blank_values=True))
+    assert psu_authorization_query["client_id"] == "test-client-id"
+    assert psu_authorization_query["response_type"] == "code id_token"
+    assert psu_authorization_query["scope"] == "openid accounts"
+    assert "redirect_uri" not in psu_authorization_query
+    assert "nonce" not in psu_authorization_query
+    assert "state" not in psu_authorization_query
+    assert "request=" in psu_authorization_url
     # Raw value is "test-client-id"; BufferedExecutionLogger must replace it.
     assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
 
@@ -4924,6 +4935,42 @@ def test_psu_manual_step_captures_code_into_context() -> None:
 
 
 @pytest.mark.unit
+def test_psu_manual_step_prefers_runtime_authorization_endpoint_override() -> None:
+    """Manual mode can target a config-pinned auth endpoint instead of discovery."""
+    store = AuthSessionStore()
+    step = _psu_manual_step(authorization_endpoint="https://discovered.example.com/branded-auth")
+
+    def capture_once() -> None:
+        if store.get("run-override", "s" * 32) is not None:
+            store.capture_code("s" * 32, "auth-code-123")
+
+    fake_clock = _FakeClock(on_sleep=capture_once)
+    execution_logger = BufferedExecutionLogger(run_id="run-override", developer_mode=False)
+
+    result, context = _execute_v1_psu_step(
+        step,
+        context=ExecutionContext(
+            config=RuntimeConfig(
+                discovery_url="https://auth.example.com/.well-known/openid-configuration",
+                environment="sandbox",
+                oauth_authorization_endpoint="https://auth.example.com/auth",
+            )
+        ),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-override",
+        auth_session_store=store,
+        execution_logger=execution_logger,
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    assert result.status == "passed"
+    assert result.url is not None
+    assert result.url.startswith("https://auth.example.com/auth?")
+    assert context.steps["psu"].request.url.startswith("https://auth.example.com/auth?")
+
+
+@pytest.mark.unit
 def test_psu_manual_step_records_authorization_error() -> None:
     """Manual mode converts an ASPSP error redirect into a failed step."""
     store = AuthSessionStore()
@@ -5400,11 +5447,19 @@ def test_psu_headless_step_captures_code_from_redirect() -> None:
     assert result.status == "passed"
     assert context.steps["psu"].response is not None
     assert context.steps["psu"].response.body["code"] == "headless-code"
-    assert requested_urls == [
-        "https://auth.example.com/authorize?existing=1&client_id=client-123"
-        "&redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback"
-        "&response_type=code+id_token&scope=openid+accounts&state=" + state
-    ]
+    assert len(requested_urls) == 1
+    requested_url = urlsplit(requested_urls[0])
+    assert requested_url.scheme == "https"
+    assert requested_url.netloc == "auth.example.com"
+    assert requested_url.path == "/authorize"
+    query = dict(parse_qsl(requested_url.query, keep_blank_values=True))
+    assert query["existing"] == "1"
+    assert query["client_id"] == "client-123"
+    assert query["redirect_uri"] == "https://conformance.example.com/callback"
+    assert query["response_type"] == "code id_token"
+    assert query["scope"] == "openid accounts"
+    assert query["state"] == state
+    assert len(query["nonce"]) >= 32
     redirect_events = [
         event for event in execution_logger.events() if event.type == "psu-authorization-redirect-received"
     ]

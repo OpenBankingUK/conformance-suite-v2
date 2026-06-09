@@ -62,7 +62,7 @@ urlpatterns = [
     path("runs/<str:run_id>/", run_detail, name="ui-run-detail"),
     path("runs/<str:run_id>/status/", run_status_partial, name="ui-run-status"),
     path("runs/<str:run_id>/log/", run_log_partial, name="ui-run-log"),
-    path("runs/<str:run_id>/log.ndjson", run_log_download, name="ui-run-log-download"),
+    path("runs/<str:run_id>/log.json", run_log_download, name="ui-run-log-download"),
     path("runs/<str:run_id>/result/", run_result_partial, name="ui-run-result"),
     path("runs/<str:run_id>/result.json", run_result_download, name="ui-run-result-download"),
     path("api/", include("conformance.api.urls")),
@@ -72,6 +72,8 @@ urlpatterns = [
     # traverse a reverse proxy. Security relies on ``state``
     # unguessability + one-shot consumption (see callback_views.py).
     path("callback/", callback_view, name="psu-callback"),
+    path("conformancesuite/callback", callback_view, name="legacy-psu-callback"),
+    path("conformancesuite/callback/", callback_view, name="legacy-psu-callback-slash"),
     path("admin/", admin.site.urls),
     path("<path:unmatched_path>", not_found, name="not-found"),
 ]

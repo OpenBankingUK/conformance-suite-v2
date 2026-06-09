@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import threading
 import time
 from collections.abc import Callable
@@ -72,7 +73,7 @@ from conformance.signing_service import (
 )
 from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
-from conformance.url_validation import HttpsUrlValidationError, validate_https_url
+from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 _MAX_EXECUTION_GROUP_WORKERS = 32
 """Upper bound for concurrent v1 execution-group workers.
@@ -846,9 +847,16 @@ def _execute_v1_psu_step_inner(
     }
     try:
         resolved_authorization_endpoint = resolve_placeholders(manifest_step.authorization_endpoint, context)
+        if context.config is not None and context.config.oauth_authorization_endpoint is not None:
+            resolved_authorization_endpoint = context.config.oauth_authorization_endpoint
         resolved_client_id = resolve_placeholders(manifest_step.client_id, context)
         resolved_redirect_uri = resolve_placeholders(manifest_step.redirect_uri, context)
         resolved_state = resolve_placeholders(manifest_step.state, context) if manifest_step.state is not None else None
+        resolved_nonce = (
+            resolve_placeholders(manifest_step.nonce, context)
+            if manifest_step.nonce is not None
+            else secrets.token_urlsafe(32)
+        )
     except MissingPredecessorResponseError as error:
         return _skipped_step(
             manifest_step.id,
@@ -888,7 +896,7 @@ def _execute_v1_psu_step_inner(
             resolved_authorization_endpoint,
             label=f"Step '{manifest_step.id}' authorizationEndpoint",
         )
-        validate_https_url(resolved_redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
+        validate_oauth_redirect_uri(resolved_redirect_uri, label=f"Step '{manifest_step.id}' redirectUri")
     except HttpsUrlValidationError as error:
         request_record = RequestRecord(method="GET", url=resolved_result_url)
         new_context = record_step(context, manifest_step.id, request_record, None)
@@ -935,6 +943,7 @@ def _execute_v1_psu_step_inner(
             client_id=resolved_client_id,
             redirect_uri=resolved_redirect_uri,
             state=session.state,
+            nonce=resolved_nonce,
         )
     except MissingPredecessorResponseError as error:
         return _skipped_step(
@@ -991,6 +1000,7 @@ def _execute_v1_psu_step_inner(
         response_type=manifest_step.response_type,
         scope=manifest_step.scope,
         state=session.state,
+        nonce=resolved_nonce,
         request_object=resolved_request_object,
     )
     result_url = mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
@@ -1007,6 +1017,7 @@ def _execute_v1_psu_step_inner(
             "client_id": resolved_client_id,
             "request_object": resolved_request_object,
             "state": session.state,
+            "nonce": resolved_nonce,
             "mode": manifest_step.mode,
         },
     )
@@ -1069,6 +1080,7 @@ def _resolve_psu_request_object(
     client_id: str,
     redirect_uri: str,
     state: str,
+    nonce: str,
 ) -> str | None:
     """Resolve or generate the PSU request object for one authorisation step.
 
@@ -1083,6 +1095,8 @@ def _resolve_psu_request_object(
         redirect_uri: Resolved registered redirect URI.
         state: Registered auth-session state that must be embedded into the
             request object when generated.
+        nonce: OIDC nonce that must be embedded into a generated request
+            object.
 
     Returns:
         Literal or generated request-object JWT, or ``None`` when the PSU step
@@ -1104,16 +1118,23 @@ def _resolve_psu_request_object(
         return None
     if isinstance(request_object, str):
         return resolve_placeholders(request_object, context)
+    audience = (
+        resolve_placeholders(request_object.audience, context)
+        if request_object.audience is not None
+        else authorization_endpoint
+    )
     return _generate_psu_request_object(
         generated_request_object=request_object,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         authorization_endpoint=authorization_endpoint,
+        audience=audience,
         client_id=client_id,
         redirect_uri=redirect_uri,
         response_type=manifest_step.response_type,
         scope=manifest_step.scope,
         state=state,
+        nonce=nonce,
     )
 
 
@@ -1123,11 +1144,13 @@ def _generate_psu_request_object(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     authorization_endpoint: str,
+    audience: str,
     client_id: str,
     redirect_uri: str,
     response_type: str,
     scope: str,
     state: str,
+    nonce: str,
 ) -> str:
     """Generate a signed PSU request-object JWT from validated runtime config.
 
@@ -1138,12 +1161,14 @@ def _generate_psu_request_object(
             current participant run.
         fapi_signing_service: Optional lazy runtime signing-service cache.
         authorization_endpoint: Resolved ASPSP authorisation endpoint URL.
+        audience: Resolved request-object JWT ``aud`` claim.
         client_id: Resolved OAuth client identifier.
         redirect_uri: Resolved registered redirect URI.
         response_type: Static OAuth response type from the PSU step.
         scope: Static OAuth scope from the PSU step.
         state: Registered auth-session state that must be embedded into the
             request object.
+        nonce: OIDC nonce that must be embedded into the request object.
 
     Returns:
         Compact PS256 JWT ready for the OAuth ``request`` query parameter.
@@ -1167,12 +1192,13 @@ def _generate_psu_request_object(
     signed_request_object = signing_service.sign_request_object(
         RequestObjectSigningInput(
             issuer=fapi_signing_config.client_assertion_issuer,
-            audience=authorization_endpoint,
+            audience=audience,
             client_id=client_id,
             redirect_uri=redirect_uri,
             response_type=response_type,
             scope=scope,
             state=state,
+            nonce=nonce,
         )
     )
     return signed_request_object.token

@@ -149,7 +149,7 @@
     <header>
         <div>
             <h1>Run {{ run.run_id }}</h1>
-            <div class="muted">Created {{ run.created_at }}</div>
+            <div class="muted">Created <time datetime="{{ run.created_at|date:'c' }}" data-local-datetime>{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></div>
         </div>
         <a class="button" href="{% url 'plan-builder' %}">New plan</a>
     </header>
@@ -158,5 +158,24 @@
     {% include "conformance/partials/run_result.html" %}
     {% include "conformance/partials/run_log.html" %}
 </main>
+<script>
+    function renderLocalDatetimes(root) {
+        const formatter = new Intl.DateTimeFormat(undefined, {
+            dateStyle: "medium",
+            timeStyle: "medium",
+            timeZoneName: "short",
+        });
+        root.querySelectorAll("time[data-local-datetime]").forEach((node) => {
+            const value = node.getAttribute("datetime");
+            if (!value) return;
+            const date = new Date(value);
+            if (Number.isNaN(date.getTime())) return;
+            node.textContent = formatter.format(date);
+        });
+    }
+
+    renderLocalDatetimes(document);
+    document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));
+</script>
 </body>
 </html>

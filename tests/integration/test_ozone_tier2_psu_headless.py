@@ -18,6 +18,7 @@ import httpx
 import pytest
 
 from conformance.api.auth_session_store import AuthSessionStore
+from conformance.context import RuntimeConfig
 from conformance.execution_log import BufferedExecutionLogger, new_run_id
 from conformance.executor import run_manifest
 from conformance.json_types import JsonObject, JsonValue
@@ -42,17 +43,13 @@ _HEADLESS_STATE = "ozone-headless-psu-state-" + "x" * 32
 """Deterministic caller-supplied state long enough for the auth-session store."""
 
 
-def _headless_psu_example_manifest(ozone_discovery_url: str) -> JsonObject:
+def _headless_psu_example_manifest() -> JsonObject:
     """Load the bundled PSU example and adapt it for the live Ozone tier 2 run.
 
     The example remains the source of truth for the discovery -> PSU
-    authorisation -> token-exchange flow. This helper only parameterises the
-    discovery URL from CI configuration and flips the PSU step from manual to
+    authorisation -> token-exchange flow. Runtime config supplies discovery
+    and OAuth values; this helper only flips the PSU step from manual to
     headless so the integration tier can run unattended.
-
-    Args:
-        ozone_discovery_url: Absolute HTTPS OpenID discovery URL for the
-            target Ozone environment.
 
     Returns:
         A v1 manifest JSON object suitable for ``parse_manifest``.
@@ -63,10 +60,6 @@ def _headless_psu_example_manifest(ozone_discovery_url: str) -> JsonObject:
     )
     manifest = copy.deepcopy(raw_manifest)
     steps = cast("list[JsonValue]", manifest["steps"])
-
-    discovery_step = cast("JsonObject", steps[0])
-    discovery_request = cast("JsonObject", discovery_step["request"])
-    discovery_request["url"] = ozone_discovery_url
 
     psu_step = cast("JsonObject", steps[1])
     psu_step["mode"] = "headless"
@@ -90,13 +83,21 @@ def _read_ndjson(path: Path) -> list[JsonObject]:
 @_OZONE_TIER2
 def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
     ozone_discovery_url: str,
+    ozone_client_id: str,
+    ozone_redirect_uri: str,
     tmp_path: Path,
 ) -> None:
     """Run the bundled PSU example in headless mode and verify log masking."""
-    manifest = parse_manifest(_headless_psu_example_manifest(ozone_discovery_url))
+    manifest = parse_manifest(_headless_psu_example_manifest())
     plan = TestPlan.default_plan_from_manifest(manifest)
     run_id = new_run_id()
     execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    runtime_config = RuntimeConfig(
+        discovery_url=ozone_discovery_url,
+        environment="ozone-tier2",
+        oauth_client_id=ozone_client_id,
+        oauth_redirect_uri=ozone_redirect_uri,
+    )
 
     with httpx.Client(timeout=_INTEGRATION_HTTP_TIMEOUT_SECONDS) as client:
         result = run_manifest(
@@ -107,6 +108,7 @@ def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
             plan=plan,
             run_id=run_id,
             auth_session_store=AuthSessionStore(),
+            runtime_config=runtime_config,
         )
 
     log_path = tmp_path / "execution-log.ndjson"

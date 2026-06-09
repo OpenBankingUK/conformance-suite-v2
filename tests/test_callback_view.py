@@ -137,6 +137,17 @@ class TestCallbackView:
         assert session is not None
         assert session.status == "captured"
 
+    def test_legacy_conformance_suite_callback_path_captures_session(self) -> None:
+        run_id, state = _registered_state()
+        client = Client()
+
+        response = client.get("/conformancesuite/callback", {"state": state, "code": "auth-code"})
+
+        assert response.status_code == 200
+        session = auth_session_store.get(run_id, state)
+        assert session is not None
+        assert session.status == "captured"
+
     def test_callback_emits_masked_event_into_run_log(self) -> None:
         run_id, state = _registered_state()
         client = Client()

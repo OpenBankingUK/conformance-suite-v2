@@ -38,6 +38,7 @@ class RequestObjectSigningInput:
         response_type: OAuth response type requested from the ASPSP.
         scope: OAuth scope carried in the request object.
         state: Opaque state value already registered for the PSU session.
+        nonce: OIDC nonce value bound to the authorisation request.
     """
 
     issuer: str
@@ -47,6 +48,7 @@ class RequestObjectSigningInput:
     response_type: str
     scope: str
     state: str
+    nonce: str
 
 
 @dataclass(frozen=True)
@@ -133,6 +135,7 @@ class FapiSigningService:
         )
         scope = _require_non_empty_string(request_object.scope, label="request_object.scope")
         state = _require_non_empty_string(request_object.state, label="request_object.state")
+        nonce = _require_non_empty_string(request_object.nonce, label="request_object.nonce")
 
         issued_at, expires_at = _build_token_window(clock=self.clock, lifetime=lifetime)
         jwt_id = _build_jwt_id(self.jwt_id_factory)
@@ -144,7 +147,9 @@ class FapiSigningService:
             "response_type": response_type,
             "scope": scope,
             "state": state,
+            "nonce": nonce,
             "iat": int(issued_at.timestamp()),
+            "nbf": int(issued_at.timestamp()),
             "exp": int(expires_at.timestamp()),
             "jti": jwt_id,
         }

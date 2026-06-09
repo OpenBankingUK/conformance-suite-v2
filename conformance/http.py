@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ssl
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
@@ -274,9 +275,10 @@ def build_json_http_client(
     if (client_certificate_path is None) != (client_private_key_path is None):
         raise ValueError("client_certificate_path and client_private_key_path must be supplied together")
 
-    verify: bool | str = True
+    verify: bool | ssl.SSLContext = True
     if ca_bundle_path is not None:
-        verify = str(ca_bundle_path)
+        verify = ssl.create_default_context()
+        verify.load_verify_locations(cafile=str(ca_bundle_path))
 
     cert: tuple[str, str] | None = None
     if client_certificate_path is not None and client_private_key_path is not None:

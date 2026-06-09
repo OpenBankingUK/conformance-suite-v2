@@ -56,6 +56,7 @@ def _oauth_context() -> ExecutionContext:
             oauth_resource_base_url="https://rs.example.com",
             oauth_client_id="my-client-id",
             oauth_redirect_uri="https://app.example.com/callback",
+            oauth_authorization_endpoint="https://auth.example.com/authorize",
         )
     )
 
@@ -309,6 +310,11 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${config.oauth.redirectUri}", ctx)
         assert result == "https://app.example.com/callback"
 
+    def test_resolves_config_oauth_authorization_endpoint(self) -> None:
+        ctx = _oauth_context()
+        result = resolve_placeholders("${config.oauth.authorizationEndpoint}", ctx)
+        assert result == "https://auth.example.com/authorize"
+
     def test_resolves_config_oauth_resource_base_url(self) -> None:
         ctx = _oauth_context()
         result = resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
@@ -318,11 +324,12 @@ class TestResolvePlaceholdersHappyPaths:
         ctx = _oauth_context()
         template = (
             "client=${config.oauth.clientId}&redirect=${config.oauth.redirectUri}"
-            "&resource=${config.oauth.resourceBaseUrl}"
+            "&auth=${config.oauth.authorizationEndpoint}&resource=${config.oauth.resourceBaseUrl}"
         )
         result = resolve_placeholders(template, ctx)
         assert result == (
-            "client=my-client-id&redirect=https://app.example.com/callback&resource=https://rs.example.com"
+            "client=my-client-id&redirect=https://app.example.com/callback"
+            "&auth=https://auth.example.com/authorize&resource=https://rs.example.com"
         )
 
 
@@ -537,6 +544,12 @@ class TestResolvePlaceholdersErrors:
         with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
             resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
 
+    def test_oauth_authorization_endpoint_unavailable_when_oauth_config_absent(self) -> None:
+        """${config.oauth.authorizationEndpoint} must fail when RuntimeConfig has no oauth fields."""
+        ctx = _runtime_config_context()
+        with pytest.raises(PlaceholderResolutionError, match="OAuth config is not available"):
+            resolve_placeholders("${config.oauth.authorizationEndpoint}", ctx)
+
     def test_oauth_resource_base_url_unavailable_when_field_omitted(self) -> None:
         """${config.oauth.resourceBaseUrl} must identify the omitted optional field."""
         ctx = ExecutionContext(
@@ -549,6 +562,19 @@ class TestResolvePlaceholdersErrors:
         )
         with pytest.raises(PlaceholderResolutionError, match="oauth.resourceBaseUrl is not available"):
             resolve_placeholders("${config.oauth.resourceBaseUrl}", ctx)
+
+    def test_oauth_authorization_endpoint_unavailable_when_field_omitted(self) -> None:
+        """${config.oauth.authorizationEndpoint} must identify the omitted optional field."""
+        ctx = ExecutionContext(
+            config=RuntimeConfig(
+                discovery_url="https://config.example.com/.well-known/openid-configuration",
+                environment="sandbox",
+                oauth_client_id="my-client-id",
+                oauth_redirect_uri="https://app.example.com/callback",
+            )
+        )
+        with pytest.raises(PlaceholderResolutionError, match="oauth.authorizationEndpoint is not available"):
+            resolve_placeholders("${config.oauth.authorizationEndpoint}", ctx)
 
     def test_config_placeholder_requires_runtime_config(self) -> None:
         ctx = ExecutionContext()
