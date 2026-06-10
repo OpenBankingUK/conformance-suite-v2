@@ -83,9 +83,6 @@
                                 >
                                     Copy
                                 </button>
-                                {% if step.request_json_preview %}
-                                    <pre class="payload-json payload-scroll evidence-preview">{{ step.request_json_preview|escape }}</pre>
-                                {% endif %}
                                 <pre id="step-{{ forloop.counter }}-result-request-json" class="payload-json payload-scroll">{{ step.request_json|escape }}</pre>
                             </div>
                         {% endif %}
@@ -100,9 +97,6 @@
                                 >
                                     Copy
                                 </button>
-                                {% if step.response_json_preview %}
-                                    <pre class="payload-json payload-scroll evidence-preview">{{ step.response_json_preview|escape }}</pre>
-                                {% endif %}
                                 <pre id="step-{{ forloop.counter }}-result-response-json" class="payload-json payload-scroll">{{ step.response_json|escape }}</pre>
                             </div>
                         {% endif %}
@@ -137,13 +131,27 @@
                                                     at <time datetime="{{ event.timestamp }}" data-local-datetime>{{ event.timestamp }}</time>
                                                 </span>
                                             {% endif %}
-                                            {% if event.payload_json_preview and event.type != "psu-authorization-url" %}
-                                                <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
+                                            {% if event.payload_json_preview %}
+                                                {% if event.type == "request-sent" %}
+                                                    {% if not step.request_json %}
+                                                        <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
+                                                    {% endif %}
+                                                {% elif event.type == "response-received" %}
+                                                    {% if not step.response_json %}
+                                                        <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
+                                                    {% endif %}
+                                                {% elif event.type != "psu-authorization-url" %}
+                                                    <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
+                                                {% endif %}
                                             {% endif %}
                                         </summary>
 
                                         {% if event.type == "psu-authorization-url" %}
                                             <p class="muted" style="padding: 0 10px 10px; margin: 0;">Authorization URL evidence is available in the Status panel and is not repeated here.</p>
+                                        {% elif event.type == "request-sent" and step.request_json %}
+                                            <p class="muted" style="padding: 0 10px 10px; margin: 0;">Request evidence is shown in the consolidated result evidence above.</p>
+                                        {% elif event.type == "response-received" and step.response_json %}
+                                            <p class="muted" style="padding: 0 10px 10px; margin: 0;">Response evidence is shown in the consolidated result evidence above.</p>
                                         {% elif event.payload_json %}
                                             <div class="payload-block">
                                                 <button

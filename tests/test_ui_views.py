@@ -1725,6 +1725,27 @@ class TestRunDetailUi:
             )
         )
         run_store.mark_running(record.run_id)
+        assert record.execution_logger is not None
+        record.execution_logger.emit(
+            "request-sent",
+            step_id="discovery",
+            payload={"method": "GET", "url": "https://example.com/.well-known/openid-configuration"},
+        )
+        record.execution_logger.emit(
+            "response-received",
+            step_id="discovery",
+            payload={"statusCode": 200, "url": "https://example.com/.well-known/openid-configuration"},
+        )
+        record.execution_logger.emit(
+            "request-sent",
+            step_id="token-request",
+            payload={"method": "POST", "url": "https://example.com/token"},
+        )
+        record.execution_logger.emit(
+            "response-received",
+            step_id="token-request",
+            payload={"statusCode": 400, "url": "https://example.com/token"},
+        )
         run_store.mark_completed(
             record.run_id,
             result={
@@ -1809,7 +1830,13 @@ class TestRunDetailUi:
         assert 'id="step-2-result-request-json"' in content
         assert 'id="step-2-result-response-json"' in content
         assert 'id="step-2-result-remaining-details-json"' in content
-        assert content.count("evidence-preview") >= 2
+        assert "Request sent - GET - https://example.com/.well-known/openid-configuration" in content
+        assert "Response received (400) - https://example.com/token" in content
+        assert "Request evidence is shown in the consolidated result evidence above." in content
+        assert "Response evidence is shown in the consolidated result evidence above." in content
+        assert 'data-copy-target="step-1-event-' not in content
+        assert 'data-copy-target="step-2-event-' not in content
+        assert 'class="payload-json payload-scroll evidence-preview"' not in content
 
         context_steps = cast("list[dict[str, object]]", response.context["step_progress"])
         assert len(context_steps) == 2
