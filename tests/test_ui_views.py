@@ -1415,7 +1415,7 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert 'id="run-steps"' in content
-        assert "Selected Step Progress" in content
+        assert "Step Progress and Results" in content
         assert f"/runs/{record.run_id}/steps/" in content
         assert 'data-step-id="discovery"' in content
         assert "sessionStorage.setItem(STEP_STATE_STORAGE_KEY" in content
@@ -1698,9 +1698,32 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "ineligible: 1 mandatory step(s) failed" in content
 
-    def test_result_partial_builds_step_view_model_for_completed_result(self) -> None:
-        """Completed result context exposes template-friendly per-step display data."""
-        record = run_store.create_run()
+    def test_steps_partial_renders_completed_result_details_and_context(self) -> None:
+        """Completed steps partial renders final per-step details and unified context."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+                RunPlanStep(
+                    step_id="token-request",
+                    name="Token request",
+                    kind="http",
+                    group="execution",
+                    phase="execution",
+                    mandatory=False,
+                    optional=True,
+                    order=1,
+                ),
+            )
+        )
         run_store.mark_running(record.run_id)
         run_store.mark_completed(
             record.run_id,
@@ -1709,7 +1732,7 @@ class TestRunDetailUi:
                 "summary": {"total": 2, "passed": 1, "failed": 1, "warn": 0, "skipped": 0},
                 "steps": [
                     {
-                        "name": "Discovery",
+                        "name": "discovery",
                         "status": "passed",
                         "message": "Discovery endpoint reachable",
                         "url": "https://example.com/.well-known/openid-configuration",
@@ -1724,7 +1747,7 @@ class TestRunDetailUi:
                         },
                     },
                     {
-                        "name": "Token request",
+                        "name": "token-request",
                         "status": "failed",
                         "message": "Token step failed",
                         "url": "https://example.com/token",
@@ -1765,23 +1788,30 @@ class TestRunDetailUi:
             },
         )
 
-        response = Client().get(f"/runs/{record.run_id}/result/")
+        response = Client().get(f"/runs/{record.run_id}/steps/")
 
         assert response.status_code == 200
         assert response.context is not None
         content = response.content.decode("utf-8")
 
-        assert '<details class="result-step">' in content
+        assert "Step Progress and Results" in content
         assert "Issues" in content
         assert "Request evidence" in content
         assert "Response evidence" in content
         assert "Raw details" in content
-        assert 'class="payload-json payload-scroll"' in content
-        assert f"/runs/{record.run_id}/result.json" in content
-        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
-        assert "rawError" in content
+        assert '&lt;script&gt;alert(1)&lt;/script&gt;' in content
+        assert '<script>alert(1)</script>' not in content
+        assert 'data-copy-target="step-1-result-request-json"' in content
+        assert 'data-copy-target="step-1-result-response-json"' in content
+        assert 'data-copy-target="step-2-result-request-json"' in content
+        assert 'data-copy-target="step-2-result-response-json"' in content
+        assert 'data-copy-target="step-2-result-remaining-details-json"' in content
+        assert 'id="step-2-result-request-json"' in content
+        assert 'id="step-2-result-response-json"' in content
+        assert 'id="step-2-result-remaining-details-json"' in content
+        assert content.count("evidence-preview") >= 2
 
-        context_steps = cast("list[dict[str, object]]", response.context["result_steps"])
+        context_steps = cast("list[dict[str, object]]", response.context["step_progress"])
         assert len(context_steps) == 2
 
         passed_step = context_steps[0]
@@ -1824,8 +1854,6 @@ class TestRunDetailUi:
         assert '"line-12"' in failed_request_json
         assert '"line-12"' not in failed_request_preview
 
-        assert html.escape(failed_request_json) in content
-
         assert response.context["result_issue_count"] == 2
         assert response.context["result_status_counts"] == {
             "passed": 1,
@@ -1834,6 +1862,40 @@ class TestRunDetailUi:
             "skipped": 0,
         }
         assert response.context["developer_mode"] is False
+
+    def test_result_partial_omits_per_step_details_loop(self) -> None:
+        """Result partial should keep only run-level outcome content."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0},
+                "steps": [{"name": "discovery", "status": "passed", "message": "ok"}],
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Per-step details" not in content
+        assert 'details class="result-step"' not in content
+        assert 'data-step-id="discovery"' not in content
 
     def test_result_partial_context_sets_developer_mode_from_run_logger(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Result context surfaces the logger developer-mode flag for warnings."""

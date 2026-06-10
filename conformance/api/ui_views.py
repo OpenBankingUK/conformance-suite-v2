@@ -275,7 +275,6 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         and summarised result fields.
     """
     step_progress = _step_progress_rows(record)
-    result_steps = _result_steps(record.result)
     return {
         "run": record,
         "status_url": reverse("ui-run-status", kwargs={"run_id": record.run_id}),
@@ -290,9 +289,8 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "certification_eligibility": _certification_eligibility(record.result),
         "step_progress": step_progress,
         "step_progress_counts": _step_progress_counts(step_progress),
-        "result_steps": result_steps,
-        "result_issue_count": _result_issue_count(result_steps),
-        "result_status_counts": _result_status_counts(result_steps),
+        "result_issue_count": _result_issue_count(step_progress),
+        "result_status_counts": _result_status_counts(step_progress),
         "developer_mode": _run_developer_mode(record),
     }
 
@@ -326,6 +324,19 @@ def _step_progress_rows(record: RunRecord) -> list[dict[str, object]]:
             "completed_at": None,
             "awaiting_authorisation": False,
             "evidence_events": [],
+            # Final-result fields — populated by _reconcile_step_progress_with_result
+            "url": None,
+            "request_method": None,
+            "request_url": None,
+            "response_status_code": None,
+            "assertion_summaries": [],
+            "issues": [],
+            "request_json": None,
+            "request_json_preview": None,
+            "response_json": None,
+            "response_json_preview": None,
+            "remaining_details_json": None,
+            "remaining_details_json_preview": None,
         }
         rows.append(row)
         row_by_step_id[planned_step.step_id] = row
@@ -487,12 +498,79 @@ def _progress_event_summary(*, event_type: str, payload: JsonObject) -> str:
     return event_type
 
 
+def _result_step_details(raw_step: JsonObject) -> dict[str, object]:
+    """Extract final-result display fields from a raw result step dict.
+
+    Args:
+        raw_step: A single step entry from the completed run result JSON.
+
+    Returns:
+        Dictionary of template-friendly fields covering the step URL,
+        request/response summaries, assertion summaries, failed/warn issues,
+        pretty-printed JSON blocks, and compact preview strings for each
+        JSON block.
+    """
+    details = raw_step.get("details")
+    step_details: JsonObject = details if isinstance(details, dict) else {}
+
+    assertions_raw = step_details.get("assertions")
+    assertion_summaries: list[dict[str, str]] = []
+    if isinstance(assertions_raw, list):
+        for assertion in assertions_raw:
+            if not isinstance(assertion, dict):
+                continue
+            a_status = assertion.get("status")
+            a_message = assertion.get("message")
+            if isinstance(a_status, str) and isinstance(a_message, str):
+                assertion_summaries.append({"status": a_status, "message": a_message})
+
+    request_evidence = step_details.get("request")
+    response_evidence = step_details.get("response")
+    request_dict = request_evidence if isinstance(request_evidence, dict) else None
+    response_dict = response_evidence if isinstance(response_evidence, dict) else None
+
+    request_method = request_dict.get("method") if request_dict is not None else None
+    request_url = request_dict.get("url") if request_dict is not None else None
+    response_status_code = response_dict.get("statusCode") if response_dict is not None else None
+    if not isinstance(request_method, str):
+        request_method = None
+    if not isinstance(request_url, str):
+        request_url = None
+    if not isinstance(response_status_code, int):
+        response_status_code = None
+
+    request_json = _pretty_json(request_dict)
+    response_json = _pretty_json(response_dict)
+    remaining_details_json = _pretty_json(_remaining_step_details(step_details))
+
+    step_url = raw_step.get("url")
+    return {
+        "url": step_url if isinstance(step_url, str) else None,
+        "request_method": request_method,
+        "request_url": request_url,
+        "response_status_code": response_status_code,
+        "assertion_summaries": assertion_summaries,
+        "issues": _step_issues(step_details),
+        "request_json": request_json,
+        "request_json_preview": _json_preview(request_json),
+        "response_json": response_json,
+        "response_json_preview": _json_preview(response_json),
+        "remaining_details_json": remaining_details_json,
+        "remaining_details_json_preview": _json_preview(remaining_details_json),
+    }
+
+
 def _reconcile_step_progress_with_result(rows: list[dict[str, object]], result: JsonObject | None) -> None:
     """Reconcile live rows with canonical final result step outcomes.
 
     Args:
         rows: Mutable selected-step progress rows.
         result: Completed run result JSON, or ``None`` for active runs.
+
+    Notes:
+        Result steps are matched by ``name`` against planned ``step_id``.
+        Only existing selected rows are updated; unmatched result steps are
+        intentionally ignored to preserve selected-steps-only rendering.
     """
     if result is None:
         return
@@ -525,13 +603,12 @@ def _reconcile_step_progress_with_result(rows: list[dict[str, object]], result: 
         if isinstance(result_message, str):
             row["message"] = result_message
 
-        details = raw_step.get("details")
-        if isinstance(details, dict):
-            response = details.get("response")
-            if isinstance(response, dict):
-                response_status_code = response.get("statusCode")
-                if isinstance(response_status_code, int):
-                    row["status_code"] = response_status_code
+        result_details = _result_step_details(raw_step)
+        row.update(result_details)
+
+        response_status_code = result_details.get("response_status_code")
+        if isinstance(response_status_code, int):
+            row["status_code"] = response_status_code
 
 
 def _step_progress_counts(step_progress: list[dict[str, object]]) -> dict[str, int]:
@@ -756,37 +833,39 @@ def _run_developer_mode(record: RunRecord) -> bool:
     return record.execution_logger.developer_mode
 
 
-def _result_status_counts(result_steps: list[dict[str, object]]) -> dict[str, int]:
-    """Count per-status outcomes from rendered step rows.
+def _result_status_counts(step_progress: list[dict[str, object]]) -> dict[str, int]:
+    """Count terminal per-status outcomes from reconciled progress rows.
 
     Args:
-        result_steps: Template-friendly step rows returned by
-            :func:`_result_steps`.
+        step_progress: Selected-step progress rows returned by
+            :func:`_step_progress_rows`, including final result reconciliation
+            when the run is completed.
 
     Returns:
         Mapping of known status keys (``passed``, ``failed``, ``warn``,
         ``skipped``) to integer counts.
     """
     counts = {"passed": 0, "failed": 0, "warn": 0, "skipped": 0}
-    for step in result_steps:
+    for step in step_progress:
         status = step.get("status")
         if isinstance(status, str) and status in counts:
             counts[status] += 1
     return counts
 
 
-def _result_issue_count(result_steps: list[dict[str, object]]) -> int:
-    """Count failed/warn issue entries across all rendered step rows.
+def _result_issue_count(step_progress: list[dict[str, object]]) -> int:
+    """Count failed/warn issue entries across reconciled progress rows.
 
     Args:
-        result_steps: Template-friendly step rows returned by
-            :func:`_result_steps`.
+        step_progress: Selected-step progress rows returned by
+            :func:`_step_progress_rows`, including final result reconciliation
+            when the run is completed.
 
     Returns:
         Total issue entry count across all rows.
     """
     total = 0
-    for step in result_steps:
+    for step in step_progress:
         issues = step.get("issues")
         if isinstance(issues, list):
             total += len(issues)

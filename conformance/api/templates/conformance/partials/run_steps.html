@@ -1,5 +1,5 @@
 <section class="panel" id="run-steps" hx-get="{{ steps_partial_url }}" hx-trigger="{% if run.status == "pending" or run.status == "running" %}load, every 2s{% else %}load{% endif %}" hx-swap="outerHTML">
-    <h2>Selected Step Progress</h2>
+    <h2>Step Progress and Results</h2>
     {% if developer_mode %}
         <p class="developer-warning"><strong>Developer mode warning:</strong> evidence shown below may include unmasked sensitive data. Do not share externally.</p>
     {% endif %}
@@ -8,7 +8,7 @@
         <div class="grid">
             <div class="metric"><strong>{{ step_progress_counts.total|default:"0" }}</strong><span>Selected</span></div>
             <div class="metric"><strong>{{ step_progress_counts.pending|default:"0" }}</strong><span>Pending</span></div>
-            <div class="metric"><strong>{{ step_progress_counts.running_or_awaiting|default:"0" }}</strong><span>Running or awaiting</span></div>
+            <div class="metric"><strong>{{ step_progress_counts.running_or_awaiting|default:"0" }}</strong><span>{% if run.status == "completed" %}Ran{% else %}Running or awaiting{% endif %}</span></div>
             <div class="metric"><strong>{{ step_progress_counts.passed|default:"0" }}</strong><span>Passed</span></div>
             <div class="metric"><strong>{{ step_progress_counts.failed|default:"0" }}</strong><span>Failed</span></div>
             <div class="metric"><strong>{{ step_progress_counts.warn|default:"0" }}</strong><span>Warn</span></div>
@@ -16,7 +16,7 @@
             <div class="metric"><strong>{{ step_progress_counts.completed|default:"0" }}</strong><span>Completed</span></div>
         </div>
 
-        <div class="steps-header muted">Selected steps</div>
+        <div class="steps-header muted">Steps</div>
         <ol>
             {% for step in step_progress %}
                 <li>
@@ -45,49 +45,121 @@
                             <p><strong>Status code:</strong> {{ step.status_code|default:"-" }}</p>
                             <p><strong>Started:</strong> {% if step.started_at %}<time datetime="{{ step.started_at }}" data-local-datetime>{{ step.started_at }}</time>{% else %}-{% endif %}</p>
                             <p><strong>Completed:</strong> {% if step.completed_at %}<time datetime="{{ step.completed_at }}" data-local-datetime>{{ step.completed_at }}</time>{% else %}-{% endif %}</p>
+                            {% if step.url %}
+                                <p><strong>Step URL:</strong> <a href="{{ step.url }}">{{ step.url }}</a></p>
+                            {% endif %}
+                            {% if step.request_method or step.request_url %}
+                                <p>
+                                    <strong>Request:</strong>
+                                    {% if step.request_method %}{{ step.request_method }}{% endif %}
+                                    {% if step.request_url %} {{ step.request_url }}{% endif %}
+                                </p>
+                            {% endif %}
+                            {% if step.response_status_code %}
+                                <p><strong>Response status:</strong> {{ step.response_status_code }}</p>
+                            {% endif %}
                         </div>
 
                         {% if step.awaiting_authorisation %}
                             <p class="muted"><strong>Awaiting authorisation:</strong> Waiting for PSU callback to continue this step.</p>
                         {% endif %}
 
-                        {% if step.evidence_events %}
-                            <h3>Live evidence</h3>
-                            {% for event in step.evidence_events %}
-                                <details class="evidence-block">
-                                    <summary class="evidence-summary">
-                                        <span class="evidence-chevron" aria-hidden="true"></span>
-                                        <span class="evidence-title">{{ event.type }}</span>
-                                        <span class="muted">{{ event.summary }}</span>
-                                        {% if event.timestamp %}
-                                            <span class="muted evidence-summary-note">
-                                                <span class="evidence-summary-note-collapsed">Preview shown</span>
-                                                <span class="evidence-summary-note-expanded">Full payload shown</span>
-                                                at <time datetime="{{ event.timestamp }}" data-local-datetime>{{ event.timestamp }}</time>
-                                            </span>
-                                        {% endif %}
-                                        {% if event.payload_json_preview and event.type != "psu-authorization-url" %}
-                                            <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
-                                        {% endif %}
-                                    </summary>
+                        {% if step.issues %}
+                            <h3>Issues</h3>
+                            <ul class="issue-list">
+                                {% for issue in step.issues %}
+                                    <li><span class="status-badge {{ issue.status|default:"unknown" }}">{{ issue.status|default:"-" }}</span> {{ issue.message }}</li>
+                                {% endfor %}
+                            </ul>
+                        {% endif %}
 
-                                    {% if event.type == "psu-authorization-url" %}
-                                        <p class="muted" style="padding: 0 10px 10px; margin: 0;">Authorization URL evidence is available in the Status panel and is not repeated here.</p>
-                                    {% elif event.payload_json %}
-                                        <div class="payload-block">
-                                            <button
-                                                type="button"
-                                                class="payload-copy-button"
-                                                data-copy-target="step-{{ forloop.parentloop.counter }}-event-{{ forloop.counter }}"
-                                            >
-                                                Copy
-                                            </button>
-                                            <pre id="step-{{ forloop.parentloop.counter }}-event-{{ forloop.counter }}" class="payload-json payload-scroll evidence-full">{{ event.payload_json|escape }}</pre>
-                                        </div>
-                                    {% endif %}
-                                </details>
-                            {% endfor %}
-                        {% else %}
+                        {% if step.request_json %}
+                            <h3>Request evidence</h3>
+                            <div class="payload-block">
+                                <button
+                                    type="button"
+                                    class="payload-copy-button"
+                                    data-copy-target="step-{{ forloop.counter }}-result-request-json"
+                                >
+                                    Copy
+                                </button>
+                                {% if step.request_json_preview %}
+                                    <pre class="payload-json payload-scroll evidence-preview">{{ step.request_json_preview|escape }}</pre>
+                                {% endif %}
+                                <pre id="step-{{ forloop.counter }}-result-request-json" class="payload-json payload-scroll">{{ step.request_json|escape }}</pre>
+                            </div>
+                        {% endif %}
+
+                        {% if step.response_json %}
+                            <h3>Response evidence</h3>
+                            <div class="payload-block">
+                                <button
+                                    type="button"
+                                    class="payload-copy-button"
+                                    data-copy-target="step-{{ forloop.counter }}-result-response-json"
+                                >
+                                    Copy
+                                </button>
+                                {% if step.response_json_preview %}
+                                    <pre class="payload-json payload-scroll evidence-preview">{{ step.response_json_preview|escape }}</pre>
+                                {% endif %}
+                                <pre id="step-{{ forloop.counter }}-result-response-json" class="payload-json payload-scroll">{{ step.response_json|escape }}</pre>
+                            </div>
+                        {% endif %}
+
+                        {% if step.remaining_details_json %}
+                            <h3>Raw details</h3>
+                            <div class="payload-block">
+                                <button
+                                    type="button"
+                                    class="payload-copy-button"
+                                    data-copy-target="step-{{ forloop.counter }}-result-remaining-details-json"
+                                >
+                                    Copy
+                                </button>
+                                <pre id="step-{{ forloop.counter }}-result-remaining-details-json" class="payload-json payload-scroll">{{ step.remaining_details_json|escape }}</pre>
+                            </div>
+                        {% endif %}
+
+                        {% if step.evidence_events %}
+                            <details class="evidence-log-block"{% if step.status == "running" or step.status == "awaiting" %} open{% endif %}>
+                                <summary><h3 style="display: inline;">Live evidence log</h3></summary>
+                                {% for event in step.evidence_events %}
+                                    <details class="evidence-block">
+                                        <summary class="evidence-summary">
+                                            <span class="evidence-chevron" aria-hidden="true"></span>
+                                            <span class="evidence-title">{{ event.type }}</span>
+                                            <span class="muted">{{ event.summary }}</span>
+                                            {% if event.timestamp %}
+                                                <span class="muted evidence-summary-note">
+                                                    <span class="evidence-summary-note-collapsed">Preview shown</span>
+                                                    <span class="evidence-summary-note-expanded">Full payload shown</span>
+                                                    at <time datetime="{{ event.timestamp }}" data-local-datetime>{{ event.timestamp }}</time>
+                                                </span>
+                                            {% endif %}
+                                            {% if event.payload_json_preview and event.type != "psu-authorization-url" %}
+                                                <pre class="payload-json payload-scroll evidence-preview">{{ event.payload_json_preview|escape }}</pre>
+                                            {% endif %}
+                                        </summary>
+
+                                        {% if event.type == "psu-authorization-url" %}
+                                            <p class="muted" style="padding: 0 10px 10px; margin: 0;">Authorization URL evidence is available in the Status panel and is not repeated here.</p>
+                                        {% elif event.payload_json %}
+                                            <div class="payload-block">
+                                                <button
+                                                    type="button"
+                                                    class="payload-copy-button"
+                                                    data-copy-target="step-{{ forloop.parentloop.counter }}-event-{{ forloop.counter }}"
+                                                >
+                                                    Copy
+                                                </button>
+                                                <pre id="step-{{ forloop.parentloop.counter }}-event-{{ forloop.counter }}" class="payload-json payload-scroll evidence-full">{{ event.payload_json|escape }}</pre>
+                                            </div>
+                                        {% endif %}
+                                    </details>
+                                {% endfor %}
+                            </details>
+                        {% elif step.status == "pending" or step.status == "running" or step.status == "awaiting" %}
                             <p class="muted">No evidence events received yet.</p>
                         {% endif %}
                     </details>
