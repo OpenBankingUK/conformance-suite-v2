@@ -53,8 +53,11 @@ TokenEndpointAuthSource = Literal["fapi-signing"]
 DetachedJwsSource = Literal["fapi-signing"]
 """Source selectors for detached JWS directives on HTTP requests."""
 
-AssertionType = Literal["http_status", "json_field", "header"]
+AssertionType = Literal["http_status", "json_field", "header", "response_schema"]
 """Assertion discriminators supported by manifest assertions."""
+
+ResponseSchemaSource = Literal["bundled_openapi"]
+"""Source selectors for schema-backed response assertions."""
 
 JsonFieldRule = Literal[
     "required",
@@ -267,7 +270,30 @@ class HeaderAssertion:
     value: str | None = None
 
 
-ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion
+@dataclass(frozen=True)
+class ResponseSchemaAssertion:
+    """Assertion requiring a response payload to satisfy a JSON/OpenAPI schema.
+
+    Attributes:
+        type: Assertion discriminator for schema-backed checks.
+        source: Source selector for schema resolution.
+        document: Allowlisted bundled standards document identifier.
+        schema_ref: JSON Pointer reference to a schema within ``document``.
+        schema: Optional inline schema object embedded directly in the
+            assertion.
+        body_path: Optional dot-path selecting a nested response body value
+            before schema validation.
+    """
+
+    type: Literal["response_schema"]
+    source: ResponseSchemaSource
+    document: str
+    schema_ref: str | None = None
+    schema: Mapping[str, JsonValue] | None = None
+    body_path: str | None = None
+
+
+ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion
 """Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
@@ -1873,6 +1899,8 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         return _parse_json_field_assertion(raw_assertion, location=location)
     if assertion_type == "header":
         return _parse_header_assertion(raw_assertion, location=location)
+    if assertion_type == "response_schema":
+        return _parse_response_schema_assertion(raw_assertion, location=location)
     # Defensive: _required_assertion_type already constrains assertion_type to the
     # AssertionType literal, but an explicit raise removes the implicit None
     # fall-through and guards against future literal additions.
@@ -1981,6 +2009,134 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
     return HeaderAssertion(type="header", name=name, rule=rule, value=value)
 
 
+_ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
+    "ob-read-write-v4.0-account-info-openapi",
+}
+"""Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
+
+
+def _parse_response_schema_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> ResponseSchemaAssertion:
+    """Parse a ``response_schema`` assertion with source/document controls.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A validated :class:`ResponseSchemaAssertion`.
+
+    Raises:
+        ManifestError: If required fields are missing, unknown keys are
+            present, source/document are unsupported, or schema reference
+            and inline schema forms are misconfigured.
+    """
+    _reject_unknown_keys(
+        raw_assertion,
+        allowed_keys={"type", "source", "document", "schemaRef", "schema", "bodyPath"},
+        location=location,
+    )
+
+    source = _required_response_schema_source(raw_assertion, location=location)
+    document = _required_response_schema_document(raw_assertion, location=location)
+    body_path = _optional_response_schema_body_path(raw_assertion, location=location)
+
+    has_schema_ref = "schemaRef" in raw_assertion
+    has_inline_schema = "schema" in raw_assertion
+    if has_schema_ref == has_inline_schema:
+        raise ManifestError(f"{location} must provide exactly one of schemaRef or schema")
+
+    if has_schema_ref:
+        schema_ref = _required_string(raw_assertion, "schemaRef", location=location)
+        if _PLACEHOLDER_FIND_PATTERN.search(schema_ref):
+            raise ManifestError(f"{location}.schemaRef must not contain placeholders")
+        return ResponseSchemaAssertion(
+            type="response_schema",
+            source=source,
+            document=document,
+            schema_ref=schema_ref,
+            body_path=body_path,
+        )
+
+    inline_schema = raw_assertion["schema"]
+    if not isinstance(inline_schema, dict) or not inline_schema:
+        raise ManifestError(f"{location}.schema must be a non-empty JSON object")
+    schema_copy = copy.deepcopy(inline_schema)
+    return ResponseSchemaAssertion(
+        type="response_schema",
+        source=source,
+        document=document,
+        schema=MappingProxyType(schema_copy),
+        body_path=body_path,
+    )
+
+
+def _required_response_schema_source(raw_assertion: dict[str, JsonValue], *, location: str) -> ResponseSchemaSource:
+    """Extract and validate the source selector for a ``response_schema`` assertion.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated schema source selector.
+
+    Raises:
+        ManifestError: If source is missing, contains placeholders, or is
+            unsupported.
+    """
+    source = _required_string(raw_assertion, "source", location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(source):
+        raise ManifestError(f"{location}.source must not contain placeholders")
+    if source == "bundled_openapi":
+        return "bundled_openapi"
+    raise ManifestError(f"{location}.source must be one of: bundled_openapi")
+
+
+def _required_response_schema_document(raw_assertion: dict[str, JsonValue], *, location: str) -> str:
+    """Extract and validate the bundled document id for ``response_schema``.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated allowlisted bundled document id.
+
+    Raises:
+        ManifestError: If document is missing, contains placeholders, or is
+            not allowlisted.
+    """
+    document = _required_string(raw_assertion, "document", location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(document):
+        raise ManifestError(f"{location}.document must not contain placeholders")
+    if document not in _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS:
+        allowed = ", ".join(sorted(_ALLOWED_RESPONSE_SCHEMA_DOCUMENTS))
+        raise ManifestError(f"{location}.document must be one of: {allowed}")
+    return document
+
+
+def _optional_response_schema_body_path(raw_assertion: dict[str, JsonValue], *, location: str) -> str | None:
+    """Extract and validate the optional ``bodyPath`` selector.
+
+    Args:
+        raw_assertion: Raw assertion dict from the manifest JSON.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Stripped ``bodyPath`` when present, otherwise ``None``.
+
+    Raises:
+        ManifestError: If ``bodyPath`` is present but blank or contains
+            placeholders.
+    """
+    if "bodyPath" not in raw_assertion:
+        return None
+    body_path = _required_string(raw_assertion, "bodyPath", location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(body_path):
+        raise ManifestError(f"{location}.bodyPath must not contain placeholders")
+    return body_path
+
+
 def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: str) -> AssertionType:
     """Extract and validate the assertion type discriminator.
 
@@ -2001,7 +2157,9 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         return "json_field"
     if assertion_type == "header":
         return "header"
-    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header")
+    if assertion_type == "response_schema":
+        return "response_schema"
+    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema")
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:

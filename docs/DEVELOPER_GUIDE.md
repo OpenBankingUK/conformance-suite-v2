@@ -281,7 +281,7 @@ Bundle authors must not expose certificate paths, private keys, client secrets, 
 
 See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), `config/model-bank-ais-certification-baseline-example.json` (v4 AIS baseline), and `config/model-bank-ais-certification-slice-example.json` (preserved v4 AIS proof slice) for complete config examples.
 
-The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python.
+The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python. The v4 AIS baseline and legacy benchmark slices additionally use `response_schema` assertions for schema-backed response checks against bundled standards assets.
 
 Supported v1 assertion shapes are:
 
@@ -290,6 +290,7 @@ Supported v1 assertion shapes are:
 | `http_status` | Exact `expected` status code | Existing status assertion. |
 | `header` | `present`, `absent`, `equals`, `contains` | Header names are case-insensitive. |
 | `json_field` | `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, `all_items_have_field` | `required` treats explicit JSON `null` as present; `all_items_have_field` is a lightweight array-of-objects constraint. |
+| `response_schema` | `source` + `document` + exactly one of `schemaRef` or inline `schema`; optional `bodyPath` | Source/document are allowlisted; placeholders are rejected for schema selector fields. |
 
 Representative manifest snippets:
 
@@ -308,6 +309,12 @@ Representative manifest snippets:
 ```json
 {"type": "json_field", "path": "token_endpoint_auth_method", "rule": "one_of", "values": ["private_key_jwt", "tls_client_auth"]}
 ```
+
+```json
+{"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
+```
+
+`response_schema` currently allowlists `source: "bundled_openapi"` and `document: "ob-read-write-v4.0-account-info-openapi"`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` validates a nested response node before evaluation. `source`, `document`, `schemaRef`, and `bodyPath` must be constant strings with no placeholders, and manifests cannot load schemas from arbitrary local paths or remote URLs.
 
 These rules are generic authoring primitives only. They enable Standards-authored certification suites, but they do not by themselves make the current bundled starter suites complete or certifying.
 

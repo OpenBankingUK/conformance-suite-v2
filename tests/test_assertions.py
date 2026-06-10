@@ -9,6 +9,7 @@ from conformance.manifest import (
     JsonFieldAssertion,
     ManifestAssertion,
     ManifestStep,
+    ResponseSchemaAssertion,
     parse_manifest,
 )
 
@@ -400,3 +401,129 @@ def test_evaluate_header_contains_checks_substring() -> None:
 
     assert result.passed is False
     assert result.message == "Header cache-control must contain the expected value"
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_passes_for_valid_bundled_openapi_payload() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={
+            "Data": {"Account": [{"AccountId": "account-123"}]},
+            "Links": {"Self": "https://api.example.com/accounts"},
+            "Meta": {},
+        },
+    )
+
+    assert result.passed is True
+    assert result.message == (
+        "Response body matches schema #/components/schemas/OBReadAccount6 from ob-read-write-v4.0-account-info-openapi"
+    )
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_fails_for_bundled_schema_mismatch() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Account": [{}]}, "Links": {}, "Meta": {}},
+    )
+
+    assert result.passed is False
+    assert result.message == (
+        "Response body failed schema validation: at Data.Account[0].AccountId: 'AccountId' is a required property"
+    )
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_uses_body_path_for_inline_schema() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "bodyPath": "Data",
+            "schema": {
+                "type": "object",
+                "required": ["Account"],
+                "properties": {
+                    "Account": {
+                        "type": "array",
+                    }
+                },
+                "additionalProperties": False,
+            },
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Account": []}},
+    )
+
+    assert result.passed is True
+    assert result.message == (
+        "Response body path Data matches schema inline schema from ob-read-write-v4.0-account-info-openapi"
+    )
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_fails_when_body_path_is_missing() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "bodyPath": "Data.Account",
+            "schema": {
+                "type": "array",
+            },
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {}},
+    )
+
+    assert result.passed is False
+    assert result.message == "Response body path Data.Account is missing"
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_reports_unknown_schema_ref_as_assertion_failure() -> None:
+    result = evaluate_assertion(
+        ResponseSchemaAssertion(
+            type="response_schema",
+            source="bundled_openapi",
+            document="ob-read-write-v4.0-account-info-openapi",
+            schema_ref="#/components/schemas/DoesNotExist",
+        ),
+        status_code=200,
+        body={"Data": {}},
+    )
+
+    assert result.passed is False
+    assert result.message == (
+        "Response body failed schema validation: Schema reference '#/components/schemas/DoesNotExist' was not found"
+    )

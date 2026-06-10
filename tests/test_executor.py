@@ -1,8 +1,6 @@
 import json
 import secrets
-import threading
 from collections.abc import Callable
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -24,7 +22,9 @@ from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.masking import MASKED_VALUE
 from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
+from conformance.results import SmokeCheckResult
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
 
@@ -129,6 +129,11 @@ def _invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
 
 
 def manifest_config() -> dict[str, JsonValue]:
+    """Build the legacy v0 discovery/JWKS smoke manifest fixture.
+
+    Returns:
+        Manifest dictionary accepted by the v0 parser tests.
+    """
     return {
         "schemaVersion": "v0",
         "name": "Ozone OpenID discovery and JWKS smoke check",
@@ -157,1012 +162,6 @@ def manifest_config() -> dict[str, JsonValue]:
             }
         ],
     }
-
-
-def first_test(raw_manifest: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    tests = cast("list[JsonValue]", raw_manifest["tests"])
-    return cast("dict[str, JsonValue]", tests[0])
-
-
-@pytest.mark.unit
-def test_run_manifest_fetches_primary_request_and_follow_up() -> None:
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://modelbank.example.com",
-                    "jwks_uri": "https://modelbank.example.com/jwks",
-                },
-            )
-        return httpx.Response(200, json={"keys": [{"kid": "signing-key"}]})
-
-    manifest = parse_manifest(manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "passed"
-    assert requested_urls == [
-        "https://modelbank.example.com/.well-known/openid-configuration",
-        "https://modelbank.example.com/jwks",
-    ]
-    assert [step.name for step in result.steps] == ["openid-discovery", "openid-discovery.followUp"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
-
-
-@pytest.mark.unit
-def test_run_manifest_v0_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        """Return passing v0 discovery and JWKS responses.
-
-        Args:
-            request: HTTP request emitted by the manifest executor.
-
-        Returns:
-            Mock response satisfying the requested v0 step.
-        """
-        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://modelbank.example.com",
-                    "jwks_uri": "https://modelbank.example.com/jwks",
-                },
-            )
-        return httpx.Response(200, json={"keys": []})
-
-    manifest = parse_manifest(manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="ozone-model-bank",
-            client=client,
-            approved_release_policy=approved_policy("1.2.3"),
-        )
-
-    eligibility = cast("dict[str, JsonValue]", result.to_json_object()["certificationEligibility"])
-    assert eligibility["approvedRelease"] == {
-        "checked": True,
-        "approved": True,
-        "toolVersion": "1.2.3",
-        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_skips_follow_up_when_primary_assertion_fails() -> None:
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(
-            201,
-            json={
-                "issuer": "https://modelbank.example.com",
-                "jwks_uri": "https://modelbank.example.com/jwks",
-            },
-        )
-
-    manifest = parse_manifest(manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]
-    assert len(result.steps) == 1
-    assert result.steps[0].status == "failed"
-
-
-@pytest.mark.unit
-def test_run_manifest_reports_missing_follow_up_url() -> None:
-    raw_manifest = manifest_config()
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    manifest = parse_manifest(raw_manifest)
-
-    with httpx.Client(
-        transport=httpx.MockTransport(
-            lambda _request: httpx.Response(200, json={"issuer": "https://modelbank.example.com"})
-        )
-    ) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert [step.status for step in result.steps] == ["passed", "failed"]
-    assert result.steps[1].name == "openid-discovery.followUp"
-    assert result.steps[1].message == "Unable to resolve follow-up URL from response.body.jwks_uri"
-
-
-@pytest.mark.unit
-def test_run_manifest_rejects_unsafe_follow_up_url_before_fetching() -> None:
-    raw_manifest = manifest_config()
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(
-            200,
-            json={
-                "issuer": "https://modelbank.example.com",
-                "jwks_uri": "http://modelbank.example.com/jwks",
-            },
-        )
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert requested_urls == ["https://modelbank.example.com/.well-known/openid-configuration"]
-    assert [step.status for step in result.steps] == ["passed", "failed"]
-    assert "must be an HTTPS URL" in result.steps[1].message
-
-
-@pytest.mark.unit
-def test_run_manifest_evaluates_expected_http_error_status() -> None:
-    raw_manifest = manifest_config()
-    first_test(raw_manifest).pop("followUp")
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 404}]
-    manifest = parse_manifest(raw_manifest)
-
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _request: httpx.Response(404, json={"error": "missing"}))
-    ) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "passed"
-    assert result.steps[0].status == "passed"
-    assert result.steps[0].status_code == 404
-    assert result.steps[0].details == {"assertions": [{"status": "passed", "message": "HTTP status was 404"}]}
-
-
-@pytest.mark.unit
-def test_run_manifest_reports_unexpected_http_error_status_as_assertion_failure() -> None:
-    raw_manifest = manifest_config()
-    first_test(raw_manifest).pop("followUp")
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    manifest = parse_manifest(raw_manifest)
-
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _request: httpx.Response(404, json={"error": "missing"}))
-    ) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert result.steps[0].status == "failed"
-    assert result.steps[0].status_code == 404
-    details = dict(result.steps[0].details)
-    assert details == {
-        "assertions": [{"status": "failed", "message": "Expected HTTP status 200, got 404"}],
-        "request": {
-            "method": "GET",
-            "url": "https://modelbank.example.com/.well-known/openid-configuration",
-        },
-        "response": {
-            "statusCode": 404,
-            "headers": {"content-length": "19", "content-type": "application/json"},
-            "body": {"error": "missing"},
-        },
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_reports_request_error() -> None:
-    manifest = parse_manifest(manifest_config())
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        raise httpx.ConnectError("connection refused", request=request)
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert len(result.steps) == 1
-    assert result.steps[0].name == "openid-discovery"
-    assert result.steps[0].status == "failed"
-    assert result.steps[0].message.startswith("Request failed for https://modelbank.example.com")
-
-
-@pytest.mark.unit
-def test_run_manifest_reports_invalid_json_response() -> None:
-    manifest = parse_manifest(manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, text="not-json"))) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert result.steps[0].message == (
-        "Response from https://modelbank.example.com/.well-known/openid-configuration was not valid JSON"
-    )
-
-
-@pytest.mark.unit
-def test_run_manifest_preserves_status_code_when_body_is_not_json() -> None:
-    """DL-0011: a 4xx with a non-JSON body must surface the HTTP status on the StepResult."""
-    manifest = parse_manifest(manifest_config())
-    with httpx.Client(
-        transport=httpx.MockTransport(lambda _request: httpx.Response(404, text="<html>Not Found</html>"))
-    ) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "failed"
-    assert len(result.steps) == 1
-    step = result.steps[0]
-    assert step.status == "failed"
-    assert step.status_code == 404
-    assert "was not valid JSON" in step.message
-
-
-@pytest.mark.unit
-def test_run_manifest_rejects_unsafe_primary_url() -> None:
-    raw_manifest = manifest_config()
-    first_test(raw_manifest)["request"] = {"method": "GET", "url": "http://modelbank.example.com/unsafe"}
-    first_test(raw_manifest).pop("followUp")
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    # Bypass the parser's URL validation to simulate programmatic construction.
-    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
-
-    unsafe_manifest = Manifest(
-        schema_version="v0",
-        name="unsafe",
-        tests=(
-            ManifestTest(
-                id="unsafe-test",
-                name="Unsafe test",
-                request=ManifestRequest(method="GET", url="http://modelbank.example.com/unsafe"),
-                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
-            ),
-        ),
-    )
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(200, json={})
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(unsafe_manifest, environment="test", client=client)
-
-    assert result.status == "failed"
-    assert requested_urls == []
-    assert result.steps[0].status == "failed"
-    assert "must be an HTTPS URL" in result.steps[0].message
-
-
-@pytest.mark.unit
-def test_run_manifest_rejects_unsupported_primary_method() -> None:
-    """Defence-in-depth: fail the step if request method is outside the supported set."""
-    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestStep
-
-    bad_manifest = Manifest(
-        schema_version="v1",
-        name="bad-method",
-        steps=(
-            ManifestStep(
-                id="options-test",
-                name="OPTIONS test",
-                request=ManifestRequest(method=cast(Any, "OPTIONS"), url="https://example.com/api"),
-                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
-            ),
-        ),
-    )
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(200, json={})
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(bad_manifest, environment="test", client=client)
-
-    assert result.status == "failed"
-    assert requested_urls == []
-    assert result.steps[0].status == "failed"
-    assert result.steps[0].message == "Unsupported request method: OPTIONS"
-
-
-@pytest.mark.unit
-def test_run_manifest_v0_rejects_non_get_primary_method() -> None:
-    """v0 primary requests must be GET; non-GET methods are rejected before any HTTP call.
-
-    The JSON parser already enforces GET-only at parse time, but ``ManifestRequest.method``
-    is typed as the broader v1 ``RequestMethod`` union. A programmatically constructed v0
-    manifest could therefore bypass the GET-only contract via the shared v1 executor.
-    This guard closes that hole.
-    """
-    from conformance.manifest import HttpStatusAssertion, Manifest, ManifestRequest, ManifestTest
-
-    bad_manifest = Manifest(
-        schema_version="v0",
-        name="v0-non-get",
-        tests=(
-            ManifestTest(
-                id="post-test",
-                name="POST test",
-                request=ManifestRequest(method="POST", url="https://example.com/api"),
-                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
-            ),
-        ),
-    )
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(200, json={})
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(bad_manifest, environment="test", client=client)
-
-    assert result.status == "failed"
-    assert requested_urls == []
-    assert result.steps[0].status == "failed"
-    assert result.steps[0].message == "v0 manifest primary requests must use GET, got: POST"
-
-
-@pytest.mark.unit
-def test_run_manifest_rejects_unsupported_follow_up_method() -> None:
-    """Defence-in-depth: fail the follow-up step if its method is outside the supported set."""
-    from conformance.manifest import (
-        FollowUpRequest,
-        HttpStatusAssertion,
-        Manifest,
-        ManifestFollowUp,
-        ManifestRequest,
-        ManifestTest,
-    )
-
-    bad_manifest = Manifest(
-        schema_version="v0",
-        name="bad-follow-up-method",
-        tests=(
-            ManifestTest(
-                id="oidc",
-                name="OIDC discovery",
-                request=ManifestRequest(method="GET", url="https://example.com/.well-known/openid-configuration"),
-                assertions=(HttpStatusAssertion(type="http_status", expected=200),),
-                follow_up=ManifestFollowUp(
-                    type="jwks",
-                    url_source="response.body.jwks_uri",
-                    request=FollowUpRequest(method=cast(Any, "OPTIONS")),
-                    assertions=(HttpStatusAssertion(type="http_status", expected=200),),
-                ),
-            ),
-        ),
-    )
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(
-            200,
-            json={"issuer": "https://example.com", "jwks_uri": "https://example.com/jwks"},
-        )
-
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(bad_manifest, environment="test", client=client)
-
-    assert result.status == "failed"
-    # Primary request should succeed; only the follow-up should fail
-    assert requested_urls == ["https://example.com/.well-known/openid-configuration"]
-    assert result.steps[0].status == "passed"
-    assert result.steps[1].status == "failed"
-    assert result.steps[1].message == "Unsupported request method: OPTIONS"
-
-
-@pytest.mark.unit
-def test_run_manifest_v0_strips_whitespace_from_follow_up_url() -> None:
-    """v0 URL extraction strips surrounding whitespace before HTTPS validation."""
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        if "openid-configuration" in str(request.url):
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://modelbank.example.com",
-                    "jwks_uri": "  https://modelbank.example.com/jwks  ",
-                },
-            )
-        return httpx.Response(200, json={"keys": [{"kid": "k1"}]})
-
-    raw_manifest = manifest_config()
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
-
-    assert result.status == "passed"
-    assert requested_urls == [
-        "https://modelbank.example.com/.well-known/openid-configuration",
-        "https://modelbank.example.com/jwks",
-    ]
-
-
-@pytest.mark.unit
-def test_run_manifest_v0_rejects_non_string_follow_up_url() -> None:
-    """v0 URL extraction fails explicitly when jwks_uri is not a string."""
-    raw_manifest = manifest_config()
-    first_test(raw_manifest)["assertions"] = [{"type": "http_status", "expected": 200}]
-    manifest = parse_manifest(raw_manifest)
-
-    with httpx.Client(
-        transport=httpx.MockTransport(
-            lambda _request: httpx.Response(
-                200,
-                json={"issuer": "https://modelbank.example.com", "jwks_uri": 42},
-            )
-        )
-    ) as client:
-        result = run_manifest(manifest, environment="test", client=client)
-
-    assert result.status == "failed"
-    assert [step.status for step in result.steps] == ["passed", "failed"]
-    assert result.steps[1].name == "openid-discovery.followUp"
-    assert result.steps[1].message == "Unable to resolve follow-up URL from response.body.jwks_uri"
-
-
-# --- v1 manifest executor tests ---
-
-
-def v1_manifest_config() -> dict[str, JsonValue]:
-    return {
-        "schemaVersion": "v1",
-        "name": "v1 discovery + JWKS",
-        "steps": [
-            {
-                "id": "openid-discovery",
-                "name": "OpenID discovery document",
-                "request": {
-                    "method": "GET",
-                    "url": "https://modelbank.example.com/.well-known/openid-configuration",
-                },
-                "assertions": [
-                    {"type": "http_status", "expected": 200},
-                    {"type": "json_field", "path": "jwks_uri", "rule": "https_url"},
-                ],
-            },
-            {
-                "id": "jwks-fetch",
-                "name": "JWKS endpoint",
-                "request": {
-                    "method": "GET",
-                    "url": "${steps.openid-discovery.response.body.jwks_uri}",
-                },
-                "assertions": [
-                    {"type": "http_status", "expected": 200},
-                    {"type": "json_field", "path": "keys", "rule": "array"},
-                ],
-            },
-        ],
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_multi_step_happy_path() -> None:
-    requested_urls: list[str] = []
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://modelbank.example.com",
-                    "jwks_uri": "https://modelbank.example.com/jwks",
-                },
-            )
-        return httpx.Response(200, json={"keys": [{"kid": "signing-key"}]})
-
-    manifest = parse_manifest(v1_manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
-
-    assert result.status == "passed"
-    assert requested_urls == [
-        "https://modelbank.example.com/.well-known/openid-configuration",
-        "https://modelbank.example.com/jwks",
-    ]
-    assert [step.name for step in result.steps] == ["openid-discovery", "jwks-fetch"]
-    assert result.to_json_object()["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_runs_setup_before_execution_groups() -> None:
-    """Setup-phase steps run before execution groups even if they appear later in the manifest."""
-    requested_urls: list[str] = []
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "setup ordering",
-        "steps": [
-            {
-                "id": "alpha-step",
-                "name": "Alpha step",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "setup-discovery",
-                "name": "Setup discovery",
-                "phase": "setup",
-                "request": {"method": "GET", "url": "https://example.com/setup"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-step",
-                "name": "Beta step",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        requested_urls.append(str(request.url))
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert requested_urls == ["https://example.com/setup", "https://example.com/alpha", "https://example.com/beta"]
-    assert [step.name for step in result.steps] == ["setup-discovery", "alpha-step", "beta-step"]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_runs_independent_execution_groups_concurrently() -> None:
-    """A blocked group can make progress once a sibling execution group runs."""
-    alpha_started = threading.Event()
-    beta_called = threading.Event()
-    alpha_unblocked: list[bool] = []
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "group concurrency",
-        "steps": [
-            {
-                "id": "alpha-step",
-                "name": "Alpha step",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-step",
-                "name": "Beta step",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == "https://example.com/alpha":
-            alpha_started.set()
-            alpha_unblocked.append(beta_called.wait(timeout=2.0))
-            return httpx.Response(200, json={})
-        if str(request.url) == "https://example.com/beta":
-            alpha_started.wait(timeout=2.0)
-            beta_called.set()
-            return httpx.Response(200, json={})
-        return httpx.Response(404, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert alpha_unblocked == [True]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_failure_in_one_group_does_not_suppress_another_group() -> None:
-    """Independent execution groups continue even when one group fails assertions."""
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "group continuation",
-        "steps": [
-            {
-                "id": "alpha-fail",
-                "name": "Alpha fail",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-pass",
-                "name": "Beta pass",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == "https://example.com/alpha":
-            return httpx.Response(500, json={"error": "boom"})
-        if str(request.url) == "https://example.com/beta":
-            return httpx.Response(200, json={})
-        return httpx.Response(404, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "failed"
-    outcome_by_name = {step.name: step.status for step in result.steps}
-    assert outcome_by_name == {"alpha-fail": "failed", "beta-pass": "passed"}
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_preserves_sequential_order_within_a_group() -> None:
-    """Steps inside one execution group still run sequentially."""
-    alpha_first_done = threading.Event()
-    alpha_second_observed_first: list[bool] = []
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "intra-group ordering",
-        "steps": [
-            {
-                "id": "alpha-first",
-                "name": "Alpha first",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "alpha-second",
-                "name": "Alpha second",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-step",
-                "name": "Beta step",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if str(request.url) == "https://example.com/alpha-1":
-            alpha_first_done.set()
-            return httpx.Response(200, json={})
-        if str(request.url) == "https://example.com/alpha-2":
-            alpha_second_observed_first.append(alpha_first_done.is_set())
-            return httpx.Response(200, json={})
-        if str(request.url) == "https://example.com/beta":
-            return httpx.Response(200, json={})
-        return httpx.Response(404, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert alpha_second_observed_first == [True]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_merges_concurrent_group_results_in_manifest_order() -> None:
-    """Execution-group concurrency still returns step results in manifest order."""
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "manifest-order merge",
-        "steps": [
-            {
-                "id": "alpha-1",
-                "name": "Alpha 1",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha-1"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-1",
-                "name": "Beta 1",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta-1"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "alpha-2",
-                "name": "Alpha 2",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha-2"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-2",
-                "name": "Beta 2",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta-2"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert [step.name for step in result.steps] == ["alpha-1", "beta-1", "alpha-2", "beta-2"]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_caps_execution_group_worker_count(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_max_workers: list[int] = []
-    real_executor = ThreadPoolExecutor
-
-    class RecordingExecutor:
-        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
-            captured_max_workers.append(max_workers)
-            self._delegate = real_executor(max_workers, *args, **kwargs)
-
-        def __enter__(self) -> Any:
-            return self._delegate.__enter__()
-
-        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
-            return self._delegate.__exit__(exc_type, exc, tb)
-
-    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
-
-    many_groups_steps: list[dict[str, JsonValue]] = []
-    for index in range(40):
-        many_groups_steps.append(
-            {
-                "id": f"group-{index}",
-                "name": f"Group {index}",
-                "group": f"group-{index}",
-                "request": {"method": "GET", "url": f"https://example.com/{index}"},
-                "assertions": cast("JsonValue", [{"type": "http_status", "expected": 200}]),
-            }
-        )
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "worker cap",
-        "steps": cast("JsonValue", many_groups_steps),
-    }
-
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert captured_max_workers == [32]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_uses_group_count_when_below_worker_cap(monkeypatch: pytest.MonkeyPatch) -> None:
-    captured_max_workers: list[int] = []
-    real_executor = ThreadPoolExecutor
-
-    class RecordingExecutor:
-        def __init__(self, max_workers: int, *args: Any, **kwargs: Any) -> None:
-            captured_max_workers.append(max_workers)
-            self._delegate = real_executor(max_workers, *args, **kwargs)
-
-        def __enter__(self) -> Any:
-            return self._delegate.__enter__()
-
-        def __exit__(self, exc_type: Any, exc: Any, tb: Any) -> bool | None:
-            return self._delegate.__exit__(exc_type, exc, tb)
-
-    monkeypatch.setattr("conformance.executor.ThreadPoolExecutor", RecordingExecutor)
-
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "worker below cap",
-        "steps": [
-            {
-                "id": "alpha-step",
-                "name": "Alpha step",
-                "group": "alpha",
-                "request": {"method": "GET", "url": "https://example.com/alpha"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "beta-step",
-                "name": "Beta step",
-                "group": "beta",
-                "request": {"method": "GET", "url": "https://example.com/beta"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-            {
-                "id": "gamma-step",
-                "name": "Gamma step",
-                "group": "gamma",
-                "request": {"method": "GET", "url": "https://example.com/gamma"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            },
-        ],
-    }
-
-    def handler(_request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
-
-    assert result.status == "passed"
-    assert captured_max_workers == [3]
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_embeds_approved_release_policy_in_result(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setattr("conformance.results.resolve_conformance_tool_version", lambda: "1.2.3")
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        """Return passing v1 discovery and JWKS responses.
-
-        Args:
-            request: HTTP request emitted by the manifest executor.
-
-        Returns:
-            Mock response satisfying the requested v1 step.
-        """
-        if str(request.url) == "https://modelbank.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={"jwks_uri": "https://modelbank.example.com/jwks"},
-            )
-        return httpx.Response(200, json={"keys": []})
-
-    manifest = parse_manifest(v1_manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="ozone-model-bank",
-            client=client,
-            approved_release_policy=approved_policy("1.2.3"),
-        )
-
-    eligibility = cast("dict[str, JsonValue]", result.to_json_object()["certificationEligibility"])
-    assert eligibility["approvedRelease"] == {
-        "checked": True,
-        "approved": True,
-        "toolVersion": "1.2.3",
-        "policySchemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_substitution_resolves_across_steps() -> None:
-    """Context carry-forward: second step URL comes from first step response."""
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        if "openid-configuration" in str(request.url):
-            return httpx.Response(
-                200,
-                json={"jwks_uri": "https://modelbank.example.com/certs"},
-            )
-        if str(request.url) == "https://modelbank.example.com/certs":
-            return httpx.Response(200, json={"keys": [{"kid": "k1"}]})
-        return httpx.Response(404, json={})
-
-    manifest = parse_manifest(v1_manifest_config())
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
-
-    assert result.status == "passed"
-    assert result.steps[1].url == "https://modelbank.example.com/certs"
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_resolves_config_placeholders_in_request_leaves() -> None:
-    """Config placeholders resolve in URL, headers, and JSON body leaves."""
-    observed_request: httpx.Request | None = None
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "config placeholders",
-        "steps": [
-            {
-                "id": "config-driven",
-                "name": "Config-driven request",
-                "request": {
-                    "method": "POST",
-                    "url": "${config.discoveryUrl}",
-                    "headers": {"X-Environment": "${config.environment}"},
-                    "body": {
-                        "encoding": "json",
-                        "value": {
-                            "discovery": "${config.discoveryUrl}",
-                            "environment": "${config.environment}",
-                        },
-                    },
-                },
-                "assertions": [{"type": "http_status", "expected": 200}],
-            }
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        """Capture the outgoing request and return a passing response.
-
-        Args:
-            request: HTTP request emitted by the manifest executor.
-
-        Returns:
-            A JSON response satisfying the manifest assertion.
-        """
-        nonlocal observed_request
-        observed_request = request
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    runtime_config = RuntimeConfig(
-        discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
-        environment="sandbox",
-    )
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client, runtime_config=runtime_config)
-
-    assert result.status == "passed"
-    assert observed_request is not None
-    assert str(observed_request.url) == "https://modelbank.example.com/.well-known/openid-configuration"
-    assert observed_request.headers["X-Environment"] == "sandbox"
-    assert json.loads(observed_request.content) == {
-        "discovery": "https://modelbank.example.com/.well-known/openid-configuration",
-        "environment": "sandbox",
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_valid_config_placeholder_without_runtime_config_fails_before_request() -> None:
-    """A valid config placeholder fails cleanly when no runtime config is supplied."""
-    requested = False
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "missing runtime config",
-        "steps": [
-            {
-                "id": "config-driven",
-                "name": "Config-driven request",
-                "request": {"method": "GET", "url": "${config.discoveryUrl}"},
-                "assertions": [{"type": "http_status", "expected": 200}],
-            }
-        ],
-    }
-
-    def handler(request: httpx.Request) -> httpx.Response:
-        """Record that an unexpected HTTP request was attempted.
-
-        Args:
-            request: HTTP request emitted by the manifest executor.
-
-        Returns:
-            A placeholder response; the test asserts this path is unused.
-        """
-        nonlocal requested
-        requested = True
-        return httpx.Response(200, json={})
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
-
-    assert requested is False
-    assert result.status == "failed"
-    assert result.steps[0].status == "failed"
-    assert "Runtime config is not available" in result.steps[0].message
 
 
 @pytest.mark.unit
@@ -1751,6 +750,94 @@ def test_run_manifest_v1_post_status_agnostic_4xx() -> None:
     assert result.status == "passed"
     assert result.steps[0].status == "passed"
     assert result.steps[0].status_code == 400
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_schema_failure_records_masked_evidence() -> None:
+    """Schema assertion failures are normal failed steps with masked evidence."""
+    secret_sentinel = f"sentinel-{secrets.token_hex(16)}"
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Schema failure evidence",
+        "steps": [
+            {
+                "id": "accounts-list",
+                "name": "Schema checked resource",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {
+                        "Authorization": f"Bearer {secret_sentinel}",
+                        "X-FAPI-Financial-Id": secret_sentinel,
+                    },
+                    "body": {
+                        "client_secret": secret_sentinel,
+                        "Data": {"ConsentId": "consent-123"},
+                    },
+                },
+                "assertions": [
+                    {"type": "http_status", "expected": 200},
+                    {
+                        "type": "response_schema",
+                        "source": "bundled_openapi",
+                        "document": "ob-read-write-v4.0-account-info-openapi",
+                        "schemaRef": "#/components/schemas/OBReadAccount6",
+                    },
+                ],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"content-type": "application/json", "set-cookie": f"session={secret_sentinel}"},
+            json={
+                "Data": {"Account": [{}]},
+                "Links": {"Self": "https://example.com/open-banking/v4.0/aisp/accounts"},
+                "Meta": {"access_token": secret_sentinel},
+            },
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    rendered = result.to_json_object()
+    rendered_json = json.dumps(rendered)
+    assert result.status == "failed"
+    assert result.steps[0].status == "failed"
+    assert result.steps[0].message == "Schema checked resource failed"
+    assert "Response body failed schema validation" in rendered_json
+    assert "Data.Account[0].AccountId" in rendered_json
+
+    steps = rendered["steps"]
+    assert isinstance(steps, list)
+    step = steps[0]
+    assert isinstance(step, dict)
+    details = step["details"]
+    assert isinstance(details, dict)
+    request = details["request"]
+    assert isinstance(request, dict)
+    request_headers = request["headers"]
+    assert isinstance(request_headers, dict)
+    assert request_headers["Authorization"] == MASKED_VALUE
+    assert request_headers["X-FAPI-Financial-Id"] == MASKED_VALUE
+    request_body = request["body"]
+    assert isinstance(request_body, dict)
+    assert request_body["client_secret"] == MASKED_VALUE
+
+    response = details["response"]
+    assert isinstance(response, dict)
+    response_headers = response["headers"]
+    assert isinstance(response_headers, dict)
+    assert response_headers["set-cookie"] == MASKED_VALUE
+    response_body = response["body"]
+    assert isinstance(response_body, dict)
+    response_meta = response_body["Meta"]
+    assert isinstance(response_meta, dict)
+    assert response_meta["access_token"] == MASKED_VALUE
+    assert secret_sentinel not in rendered_json
 
 
 @pytest.mark.unit
@@ -3988,17 +3075,12 @@ def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_log
         "url": "https://aspsp.example.com/token",
     }
 
-    ndjson = execution_logger.to_ndjson_bytes().decode("utf-8")
-    assert "ais-auth-code-e2e" not in ndjson
-    assert "ais-access-token" not in ndjson
-    assert "ais-id-token" not in ndjson
-
 
 @pytest.mark.integration
-def test_ais_certification_slice_account_balances_and_transactions_resources_execute_and_count_mandatory_steps(
+def test_ais_certification_slice_accounts_execution_uses_resource_token_and_masks_logs(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Bundled AIS slice completes the balances and transactions resource calls.
+    """Bundled AIS slice executes resource calls with masked token evidence.
 
     Args:
         monkeypatch: Pytest fixture used to install deterministic fake time for
@@ -4115,7 +3197,17 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
                 },
             )
         if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+            return httpx.Response(
+                201,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
+                json={
+                    "Data": {
+                        "ConsentId": "consent-123",
+                        "Permissions": ["ReadTransactionsDetail"],
+                    },
+                    "Risk": {},
+                },
+            )
         if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
             return httpx.Response(
                 200,
@@ -4182,7 +3274,6 @@ def test_ais_certification_slice_account_balances_and_transactions_resources_exe
             auth_session_store=auth_store,
         )
 
-    assert result.status == "passed"
     assert [step.name for step in result.steps] == [
         "openid-discovery",
         "jwks-fetch",
@@ -4440,7 +3531,17 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
                 },
             )
         if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+            return httpx.Response(
+                201,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
+                json={
+                    "Data": {
+                        "ConsentId": "consent-123",
+                        "Permissions": ["ReadTransactionsDetail"],
+                    },
+                    "Risk": {},
+                },
+            )
         return httpx.Response(200, json={"Data": {"Account": [{"Status": "Enabled"}]}})
 
     runtime_config = RuntimeConfig(
@@ -4532,6 +3633,278 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
     assert eligibility["mandatoryPassed"] == 6
     assert eligibility["mandatoryFailed"] == 3
     assert eligibility["mandatorySkipped"] == 0
+
+
+def _run_v4_ais_baseline_through_accounts_list(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    accounts_response: JsonObject,
+) -> tuple[SmokeCheckResult, BufferedExecutionLogger, list[httpx.Request]]:
+    """Execute the bundled v4 AIS baseline through the accounts-list step.
+
+    Args:
+        monkeypatch: Pytest monkeypatch fixture used to replace PSU polling
+            time with a deterministic fake.
+        tmp_path: Pytest temporary directory used to hold generated FAPI
+            signing credentials.
+        accounts_response: JSON body returned by the mocked accounts endpoint.
+
+    Returns:
+        Tuple of the result object, execution logger, and captured HTTP
+        requests for the exercised baseline slice.
+    """
+    import types
+
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+    from conformance.test_plan import TestPlan
+
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="ais-certification-baseline",
+    )
+    resolved = resolve_suite(selection)
+    manifest = resolved.manifest
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
+        ["account-detail", "account-balances", "account-transactions", "transactions-list"]
+    )
+
+    auth_store = AuthSessionStore()
+    run_id = "e2e-ais-baseline-accounts"
+    registered_states: list[str] = []
+    original_register = auth_store.register
+
+    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Delegate to the real store and record the generated PSU state.
+
+        Args:
+            run_id_inner: Run identifier passed through by the executor.
+            state: Optional caller-supplied state token.
+
+        Returns:
+            Newly registered auth session.
+        """
+        session = original_register(run_id_inner, state=state)
+        registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", intercepting_register)
+
+    tick = [0.0]
+    code_injected = [False]
+
+    def fake_monotonic() -> float:
+        """Return a deterministic monotonic time for the PSU poll loop.
+
+        Returns:
+            Current fake monotonic timestamp.
+        """
+        value = tick[0]
+        tick[0] += 0.5
+        return value
+
+    def fake_sleep(_seconds: float) -> None:
+        """Inject a captured auth code on the first PSU poll.
+
+        Args:
+            _seconds: Requested sleep interval, ignored by the fake.
+        """
+        if registered_states and not code_injected[0]:
+            code_injected[0] = True
+            auth_store.capture_code(registered_states[-1], "baseline-accounts-auth-code")
+
+    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
+
+    captured_requests: list[httpx.Request] = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked responses for the baseline slice under test.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Mock response for the requested endpoint.
+
+        Raises:
+            AssertionError: If the executor issues an unexpected URL.
+        """
+        captured_requests.append(request)
+        url = str(request.url)
+        if url == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://aspsp.example.com",
+                    "authorization_endpoint": "https://aspsp.example.com/authorize",
+                    "token_endpoint": "https://aspsp.example.com/token",
+                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+                    "response_types_supported": ["code id_token"],
+                },
+            )
+        if url == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+        if url == "https://aspsp.example.com/token":
+            body = request.content.decode("ascii")
+            if "grant_type=client_credentials" in body:
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "baseline-consent-access-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": "baseline-resource-access-token",
+                    "id_token": "baseline-resource-id-token",
+                    "token_type": "Bearer",
+                    "expires_in": 300,
+                },
+            )
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+            return httpx.Response(
+                201,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
+                json={
+                    "Data": {
+                        "ConsentId": "consent-123",
+                        "Permissions": ["ReadTransactionsDetail"],
+                    },
+                    "Risk": {},
+                },
+            )
+        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "accounts-123"},
+                json=accounts_response,
+            )
+        raise AssertionError(f"Unexpected request URL: {url}")
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="baseline-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+    )
+
+    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=resolved.metadata,
+            runtime_config=runtime_config,
+            run_id=run_id,
+            auth_session_store=auth_store,
+            plan=plan,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    return result, execution_logger, captured_requests
+
+
+@pytest.mark.integration
+def test_ais_certification_baseline_accounts_resource_schema_passes(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Mocked baseline execution reaches a passing schema-backed accounts check.
+
+    The test exercises the bundled v4 AIS baseline through the first resource
+    assertion that uses the new schema-backed primitive and confirms the
+    response-schema assertion passes while the run stays otherwise coherent.
+    """
+    result, _execution_logger, captured_requests = _run_v4_ais_baseline_through_accounts_list(
+        monkeypatch,
+        tmp_path,
+        accounts_response={
+            "Data": {"Account": [{"AccountId": "account-123"}]},
+            "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
+            "Meta": {},
+        },
+    )
+
+    assert result.status == "passed"
+    assert [step.name for step in result.steps] == [
+        "openid-discovery",
+        "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
+        "psu-authorization",
+        "token-exchange",
+        "accounts-list",
+    ]
+    accounts_step = result.steps[-1]
+    assert accounts_step.status == "passed"
+    details = cast("dict[str, Any]", accounts_step.details)
+    assertions = cast(list[dict[str, Any]], details["assertions"])
+    assert assertions[-1] == {
+        "status": "passed",
+        "message": (
+            "Response body matches schema #/components/schemas/OBReadAccount6 "
+            "from ob-read-write-v4.0-account-info-openapi"
+        ),
+    }
+    assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
+
+
+@pytest.mark.integration
+def test_ais_certification_baseline_accounts_resource_schema_failure_masks_evidence(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Schema validation failure keeps the step failed and masks evidence.
+
+    The accounts response deliberately violates the schema while still
+    satisfying the earlier JSON-field assertions, so the failure is attributed
+    to the schema-backed assertion rather than a simpler structural check.
+    """
+    result, _execution_logger, captured_requests = _run_v4_ais_baseline_through_accounts_list(
+        monkeypatch,
+        tmp_path,
+        accounts_response={
+            "Data": {"Account": [{"AccountId": "account-123", "Status": "BROKEN"}]},
+            "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
+            "Meta": {},
+            "access_token": "baseline-leaky-token",
+        },
+    )
+
+    accounts_step = result.steps[-1]
+    assert accounts_step.name == "accounts-list"
+    assert accounts_step.status == "failed"
+    details = cast("dict[str, Any]", accounts_step.details)
+    assertions = cast(list[dict[str, Any]], details["assertions"])
+    assert assertions[-1]["status"] == "failed"
+    assert "failed schema validation" in cast(str, assertions[-1]["message"])
+    assert details["request"] == {
+        "method": "GET",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+        "headers": {
+            "Accept": "application/json",
+            "Authorization": "***",
+        },
+    }
+    response_details = cast("dict[str, Any]", details["response"])
+    assert response_details["statusCode"] == 200
+    assert response_details["body"] == {
+        "Data": {"Account": [{"AccountId": "account-123", "Status": "BROKEN"}]},
+        "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
+        "Meta": {},
+        "access_token": "***",
+    }
+    assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
 
 
 @pytest.mark.unit

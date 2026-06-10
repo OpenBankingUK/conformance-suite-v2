@@ -14,6 +14,7 @@ from conformance.manifest import (
     ManifestError,
     ManifestStep,
     PsuAuthorizationStep,
+    ResponseSchemaAssertion,
     TokenEndpointAuthPolicy,
     load_manifest,
     parse_manifest,
@@ -248,13 +249,145 @@ def test_parse_v1_manifest_accepts_extended_assertion_vocabulary() -> None:
         {"type": "header", "name": "set-cookie", "rule": "absent"},
         {"type": "header", "name": "cache-control", "rule": "equals", "value": "no-store"},
         {"type": "header", "name": "x-fapi-interaction-id", "rule": "contains", "value": "abc"},
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        },
     ]
 
     manifest = parse_manifest(raw_manifest)
 
     parsed_step = cast("ManifestStep", manifest.steps[0])
-    assert len(parsed_step.assertions) == 17
+    assert len(parsed_step.assertions) == 18
     assert parsed_step.assertions[13].type == "header"
+    assert parsed_step.assertions[17].type == "response_schema"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_response_schema_assertion_with_schema_ref() -> None:
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+            "bodyPath": "Data.Account",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion.type == "response_schema"
+    assert assertion.source == "bundled_openapi"
+    assert assertion.document == "ob-read-write-v4.0-account-info-openapi"
+    assert assertion.schema_ref == "#/components/schemas/OBReadAccount6"
+    assert assertion.body_path == "Data.Account"
+    assert assertion.schema is None
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema() -> None:
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schema": {
+                "type": "object",
+                "required": ["Data"],
+            },
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion.type == "response_schema"
+    assert assertion.schema_ref is None
+    assert assertion.schema is not None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("raw_assertion", "message"),
+    [
+        (
+            {
+                "type": "response_schema",
+                "source": "external_url",
+                "document": "ob-read-write-v4.0-account-info-openapi",
+                "schemaRef": "#/components/schemas/OBReadAccount6",
+            },
+            r"steps\[0\]\.assertions\[0\]\.source must be one of: bundled_openapi",
+        ),
+        (
+            {
+                "type": "response_schema",
+                "source": "bundled_openapi",
+                "document": "ob-read-write-v4.0.1-account-info-openapi",
+                "schemaRef": "#/components/schemas/OBReadAccount6",
+            },
+            r"steps\[0\]\.assertions\[0\]\.document must be one of: ob-read-write-v4\.0-account-info-openapi",
+        ),
+        (
+            {
+                "type": "response_schema",
+                "source": "bundled_openapi",
+                "document": "ob-read-write-v4.0-account-info-openapi",
+            },
+            r"steps\[0\]\.assertions\[0\] must provide exactly one of schemaRef or schema",
+        ),
+        (
+            {
+                "type": "response_schema",
+                "source": "bundled_openapi",
+                "document": "ob-read-write-v4.0-account-info-openapi",
+                "schemaRef": "#/components/schemas/OBReadAccount6",
+                "schema": {"type": "object"},
+            },
+            r"steps\[0\]\.assertions\[0\] must provide exactly one of schemaRef or schema",
+        ),
+        (
+            {
+                "type": "response_schema",
+                "source": "bundled_openapi",
+                "document": "ob-read-write-v4.0-account-info-openapi",
+                "schemaRef": "#/components/schemas/OBReadAccount6",
+                "extra": "bad",
+            },
+            r"Unknown steps\[0\]\.assertions\[0\] field\(s\): extra",
+        ),
+    ],
+)
+def test_parse_v1_manifest_rejects_invalid_response_schema_assertion_shape(
+    raw_assertion: dict[str, JsonValue],
+    message: str,
+) -> None:
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "Response schema assertion validation",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/resource",
+                },
+                "assertions": [raw_assertion],
+            }
+        ],
+    }
+
+    with pytest.raises(ManifestError, match=message):
+        parse_manifest(raw_manifest)
 
 
 @pytest.mark.unit

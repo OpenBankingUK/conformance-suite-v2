@@ -873,7 +873,9 @@ class TestRunDetailUi:
                         "Data": {
                             "Balance": [
                                 {
-                                    "Type": "ClosingAvailable",
+                                    "AccountId": "acct-123",
+                                    "Type": "CLAV",
+                                    "DateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "10.00", "Currency": "GBP"},
                                     "CreditDebitIndicator": "Credit",
                                 }
@@ -891,7 +893,7 @@ class TestRunDetailUi:
                                 {
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Debit",
-                                    "Status": "Booked",
+                                    "Status": "BOOK",
                                     "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "3.14", "Currency": "GBP"},
                                 }
@@ -909,7 +911,7 @@ class TestRunDetailUi:
                                 {
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Credit",
-                                    "Status": "Booked",
+                                    "Status": "BOOK",
                                     "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "1.00", "Currency": "GBP"},
                                 }

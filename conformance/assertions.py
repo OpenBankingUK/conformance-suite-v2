@@ -8,7 +8,14 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import HeaderAssertion, HttpStatusAssertion, JsonFieldAssertion, ManifestAssertion
+from conformance.manifest import (
+    HeaderAssertion,
+    HttpStatusAssertion,
+    JsonFieldAssertion,
+    ManifestAssertion,
+    ResponseSchemaAssertion,
+)
+from conformance.schema_validation import validate_json_instance_against_response_schema
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
@@ -45,9 +52,52 @@ def evaluate_assertion(
     """
     if isinstance(assertion, HttpStatusAssertion):
         return _evaluate_http_status(assertion, status_code=status_code)
+    if isinstance(assertion, ResponseSchemaAssertion):
+        return _evaluate_response_schema(assertion, body=body)
     if isinstance(assertion, HeaderAssertion):
         return _evaluate_header(assertion, headers=headers)
     return _evaluate_json_field(assertion, body=body)
+
+
+def _evaluate_response_schema(assertion: ResponseSchemaAssertion, *, body: JsonObject) -> AssertionResult:
+    """Evaluate a schema-backed response assertion.
+
+    Args:
+        assertion: Parsed response schema assertion.
+        body: Parsed JSON response body to validate.
+
+    Returns:
+        Assertion result indicating whether the selected response value matches
+        the configured schema.
+    """
+    instance: JsonValue = body
+    location = "Response body"
+    if assertion.body_path is not None:
+        selected_value = _resolve_json_path(body, assertion.body_path)
+        if isinstance(selected_value, _MissingValue):
+            return AssertionResult(
+                passed=False,
+                message=f"Response body path {assertion.body_path} is missing",
+            )
+        instance = selected_value
+        location = f"Response body path {assertion.body_path}"
+
+    validation_message = validate_json_instance_against_response_schema(
+        source=assertion.source,
+        document=assertion.document,
+        schema_ref=assertion.schema_ref,
+        inline_schema=assertion.schema,
+        instance=instance,
+    )
+    if validation_message is None:
+        return AssertionResult(
+            passed=True,
+            message=f"{location} matches schema {_describe_response_schema(assertion)}",
+        )
+    return AssertionResult(
+        passed=False,
+        message=f"{location} failed schema validation: {validation_message}",
+    )
 
 
 def _evaluate_http_status(assertion: HttpStatusAssertion, *, status_code: int) -> AssertionResult:
@@ -112,6 +162,20 @@ def _evaluate_json_field(assertion: JsonFieldAssertion, *, body: JsonObject) -> 
     if assertion.rule == "one_of":
         return _evaluate_json_one_of(assertion.path, value, assertion.values)
     return _evaluate_all_items_have_field(assertion.path, value, assertion.field)
+
+
+def _describe_response_schema(assertion: ResponseSchemaAssertion) -> str:
+    """Describe the response schema target for diagnostics.
+
+    Args:
+        assertion: Parsed response schema assertion.
+
+    Returns:
+        Human-readable schema target description.
+    """
+    if assertion.schema_ref is not None:
+        return f"{assertion.schema_ref} from {assertion.document}"
+    return f"inline schema from {assertion.document}"
 
 
 def _evaluate_https_url(path: str, value: JsonValue) -> AssertionResult:

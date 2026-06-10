@@ -13,6 +13,7 @@ from conformance.manifest import (
     JsonFieldAssertion,
     ManifestStep,
     PsuAuthorizationStep,
+    ResponseSchemaAssertion,
     TokenEndpointAuthPolicy,
 )
 from conformance.model_bank_config import SuiteApiFamily, SuiteName, SuiteSelection, SuiteSpecVersion
@@ -60,6 +61,28 @@ def _has_all_items_field_assertion(step: ManifestStep, *, path: str, field: str)
         and assertion.path == path
         and assertion.rule == "all_items_have_field"
         and assertion.field == field
+        for assertion in step.assertions
+    )
+
+
+def _has_response_schema_assertion(step: ManifestStep, *, document: str, schema_ref: str) -> bool:
+    """Return whether a step has a schema-backed assertion for a given schema ref.
+
+    Args:
+        step: Manifest step whose assertions should be inspected.
+        document: Allowlisted bundled document identifier expected on the
+            assertion.
+        schema_ref: JSON Pointer expected on the assertion.
+
+    Returns:
+        ``True`` when the step contains a matching ``response_schema``
+        assertion, otherwise ``False``.
+    """
+    return any(
+        isinstance(assertion, ResponseSchemaAssertion)
+        and assertion.source == "bundled_openapi"
+        and assertion.document == document
+        and assertion.schema_ref == schema_ref
         for assertion in step.assertions
     )
 
@@ -382,6 +405,81 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     )
     assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="Status")
     assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="BookingDateTime")
+
+
+@pytest.mark.unit
+def test_v4_ais_certification_baseline_mandatory_resource_steps_have_schema_assertions() -> None:
+    """Schema-backed assertions are present on mandatory AIS resource steps and coverage stays partial.
+
+    Verifies that the five mandatory v4.0 AIS resource steps each carry exactly
+    one ``response_schema`` assertion referencing the bundled v4.0 OpenAPI
+    document, and that the suite's ``certificationCoverage`` has not been
+    promoted to ``complete``.
+    """
+    resolved = resolve_suite(_selection("v4.0", suite_name="ais-certification-baseline"))
+    manifest = resolved.manifest
+
+    assert manifest.certification_coverage == "partial"
+
+    steps_by_id = {step.id: cast(ManifestStep, step) for step in manifest.steps}
+    _doc = "ob-read-write-v4.0-account-info-openapi"
+
+    assert _has_response_schema_assertion(
+        steps_by_id["accounts-list"],
+        document=_doc,
+        schema_ref="#/components/schemas/OBReadAccount6",
+    ), "accounts-list is missing OBReadAccount6 response_schema assertion"
+    assert _has_response_schema_assertion(
+        steps_by_id["account-detail"],
+        document=_doc,
+        schema_ref="#/components/schemas/OBReadAccount6",
+    ), "account-detail is missing OBReadAccount6 response_schema assertion"
+    assert _has_response_schema_assertion(
+        steps_by_id["account-balances"],
+        document=_doc,
+        schema_ref="#/components/schemas/OBReadBalance1",
+    ), "account-balances is missing OBReadBalance1 response_schema assertion"
+    assert _has_response_schema_assertion(
+        steps_by_id["account-transactions"],
+        document=_doc,
+        schema_ref="#/components/schemas/OBReadTransaction6",
+    ), "account-transactions is missing OBReadTransaction6 response_schema assertion"
+    assert _has_response_schema_assertion(
+        steps_by_id["transactions-list"],
+        document=_doc,
+        schema_ref="#/components/schemas/OBReadTransaction6",
+    ), "transactions-list is missing OBReadTransaction6 response_schema assertion"
+
+
+@pytest.mark.unit
+def test_v4_0_1_ais_certification_baseline_keeps_schema_rollout_blocked() -> None:
+    """v4.0.1 baseline stays partial until a bundled v4.0.1 schema source exists.
+
+    The current allowlist exposes only the bundled v4.0 AIS OpenAPI snapshot.
+    Until the repository gains a defensible v4.0.1 document mapping, the v4.0.1
+    baseline should remain unchanged rather than reusing the v4.0 document by
+    implication.
+    """
+    resolved = resolve_suite(_selection("v4.0.1", suite_name="ais-certification-baseline"))
+    manifest = resolved.manifest
+
+    assert manifest.certification_coverage == "partial"
+
+    steps_by_id = {step.id: cast(ManifestStep, step) for step in manifest.steps}
+    schema_expectations = [
+        ("accounts-list", "#/components/schemas/OBReadAccount6"),
+        ("account-detail", "#/components/schemas/OBReadAccount6"),
+        ("account-balances", "#/components/schemas/OBReadBalance1"),
+        ("account-transactions", "#/components/schemas/OBReadTransaction6"),
+        ("transactions-list", "#/components/schemas/OBReadTransaction6"),
+    ]
+
+    for step_id, schema_ref in schema_expectations:
+        assert not _has_response_schema_assertion(
+            steps_by_id[step_id],
+            document="ob-read-write-v4.0-account-info-openapi",
+            schema_ref=schema_ref,
+        ), f"{step_id} should stay without response_schema until v4.0.1 source mapping is approved"
 
 
 @pytest.mark.unit

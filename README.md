@@ -139,7 +139,7 @@ Manifest placeholders can also traverse JSON arrays using non-negative numeric p
 
 Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, detached `x-jws-signature` values, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. Signing certificate PEM, private-key PEM, and raw client-auth/signing config secrets are loaded only at execution time and are not serialized into logs, results, or error messages. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
 
-The bundled `psu-auth-starter` manifests also act as the first authoring proof for the expanded generic response-assertion vocabulary. They stay deliberately partial, but now demonstrate response-header checks plus richer JSON rules on the discovery and JWKS responses: `header` assertions (`present`, `absent`, `equals`, `contains`) and `json_field` rules including `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, and `all_items_have_field`.
+The bundled `psu-auth-starter` manifests also act as the first authoring proof for the expanded generic response-assertion vocabulary. They stay deliberately partial, but now demonstrate response-header checks plus richer JSON rules on the discovery and JWKS responses: `header` assertions (`present`, `absent`, `equals`, `contains`) and `json_field` rules including `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, and `all_items_have_field`. The v4 AIS baseline and legacy benchmark slices now also use a schema-backed `response_schema` assertion for allowlisted bundled standards documents.
 
 For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-example.json` shows the same generic style against discovery/JWKS endpoints. Representative assertion fragments look like this:
 
@@ -169,6 +169,17 @@ For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-examp
 	"values": ["private_key_jwt", "tls_client_auth"]
 }
 ```
+
+```json
+{
+	"type": "response_schema",
+	"source": "bundled_openapi",
+	"document": "ob-read-write-v4.0-account-info-openapi",
+	"schemaRef": "#/components/schemas/OBReadAccount6"
+}
+```
+
+For `response_schema`, `source` is currently restricted to `bundled_openapi`, and `document` is currently restricted to `ob-read-write-v4.0-account-info-openapi`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` can scope validation to a nested response node. Placeholders are not allowed in `source`, `document`, `schemaRef`, or `bodyPath`, and participant manifests cannot trigger arbitrary filesystem or network schema loading.
 
 This is still an enabling layer for suite authors. It does not publish full Read/Write certification coverage, and no bundled suite should be treated as certifying until Standards confirm the complete mandatory manifest coverage.
 

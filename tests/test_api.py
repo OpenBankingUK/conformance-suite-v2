@@ -1079,7 +1079,9 @@ class TestPsuAuthorizationApiRun:
                         "Data": {
                             "Balance": [
                                 {
-                                    "Type": "ClosingAvailable",
+                                    "AccountId": "acct-123",
+                                    "Type": "CLAV",
+                                    "DateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "10.00", "Currency": "GBP"},
                                     "CreditDebitIndicator": "Credit",
                                 }
@@ -1097,7 +1099,7 @@ class TestPsuAuthorizationApiRun:
                                 {
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Debit",
-                                    "Status": "Booked",
+                                    "Status": "BOOK",
                                     "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "3.14", "Currency": "GBP"},
                                 }
@@ -1115,7 +1117,7 @@ class TestPsuAuthorizationApiRun:
                                 {
                                     "AccountId": "acct-123",
                                     "CreditDebitIndicator": "Credit",
-                                    "Status": "Booked",
+                                    "Status": "BOOK",
                                     "BookingDateTime": "2024-01-01T00:00:00+00:00",
                                     "Amount": {"Amount": "1.00", "Currency": "GBP"},
                                 }
@@ -1173,6 +1175,10 @@ class TestPsuAuthorizationApiRun:
 
         assert result["status"] == "passed"
         assert result["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
+        serialised_result = json.dumps(result)
+        assert "Response body matches schema #/components/schemas/OBReadAccount6" in serialised_result
+        assert "Response body matches schema #/components/schemas/OBReadBalance1" in serialised_result
+        assert "Response body matches schema #/components/schemas/OBReadTransaction6" in serialised_result
         assert result["suite"] == {
             "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
             "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
