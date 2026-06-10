@@ -170,7 +170,7 @@ Both modes are Phase 1 requirements. Both use the FAPI hybrid flow. The FCS must
 - Four states: `PASS`, `FAIL`, `WARN`, `SKIPPED`.
 - `WARN`: test passed but a deprecation or risk signal applies. Does not block certification.
 - `SKIPPED`: test could not run because a prerequisite setup step failed.
-- Full request and response captured on `FAIL`, `WARN`, and `SKIPPED`. Summary only on `PASS`.
+- Request and response evidence may be captured for all executed HTTP steps, including `PASS`, when available.
 - Sensitive fields (tokens, keys, account numbers, sort codes) masked by default. Unmasking requires explicit developer mode opt-in — never enabled in release builds.
 
 ### Certification Eligibility Assessment

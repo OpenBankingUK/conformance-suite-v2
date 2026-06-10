@@ -6,7 +6,7 @@ import json
 import secrets
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
@@ -38,7 +38,7 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
-from conformance.execution_log import ExecutionLogger, NullExecutionLogger, new_run_id
+from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
@@ -110,16 +110,13 @@ def _attach_evidence(
     request_evidence: dict[str, JsonValue],
     response_evidence: dict[str, JsonValue] | None,
 ) -> StepResult:
-    """Attach masked request/response evidence to a non-PASS step result.
+    """Attach masked request/response evidence to a step result.
 
-    Implements the PRD outcome rule: *"Full request and response captured on
-    FAIL, WARN, and SKIPPED. Summary only on PASS."* Sensitive credential
-    fields and headers are masked via :mod:`conformance.masking` before being
-    embedded so reports remain safe to share with OBL.
-
-    PASS steps are returned unchanged: the spec keeps successful runs lean,
-    and exposing full payloads on every passing API call would bloat reports
-    and expand the surface area for accidental disclosure.
+    Implements the result-evidence policy: executed HTTP steps may include
+    request/response evidence when available, while sensitive credential fields
+    and headers remain masked via :mod:`conformance.masking` before embedding.
+    Pre-request failures and skipped steps may only include request evidence
+    because no response exists.
 
     Args:
         step: The step result to enrich.
@@ -133,16 +130,73 @@ def _attach_evidence(
 
     Returns:
         A new :class:`StepResult` with ``details["request"]`` and, when
-        available, ``details["response"]`` populated. PASS results are
-        returned unchanged.
+        available, ``details["response"]`` populated.
     """
-    if step.status == "passed":
-        return step
     new_details: dict[str, JsonValue] = dict(step.details)
     new_details["request"] = dict(request_evidence)
     if response_evidence is not None:
         new_details["response"] = dict(response_evidence)
     return replace(step, details=new_details)
+
+
+def _mask_result_headers(headers: Mapping[str, str]) -> JsonObject:
+    """Return result-evidence headers masked unless developer mode is enabled.
+
+    Args:
+        headers: Header mapping captured for result evidence.
+
+    Returns:
+        Masked headers in normal mode, or an unmodified shallow copy in
+        developer mode.
+    """
+    if is_developer_mode_enabled():
+        return cast("JsonObject", dict(headers))
+    return cast("JsonObject", mask_headers(headers))
+
+
+def _mask_result_json_value(value: JsonValue) -> JsonValue:
+    """Return result-evidence JSON masked unless developer mode is enabled.
+
+    Args:
+        value: JSON value captured for result evidence.
+
+    Returns:
+        Masked value in normal mode, or a deep-copied unmasked value in
+        developer mode.
+    """
+    if is_developer_mode_enabled():
+        return cast("JsonValue", json.loads(json.dumps(value)))
+    return mask_json_value(value)
+
+
+def _mask_result_form_fields(fields: Mapping[str, str]) -> JsonObject:
+    """Return result-evidence form fields masked unless developer mode is enabled.
+
+    Args:
+        fields: Form field mapping captured for result evidence.
+
+    Returns:
+        Masked mapping in normal mode, or an unmodified shallow copy in
+        developer mode.
+    """
+    if is_developer_mode_enabled():
+        return cast("JsonObject", dict(fields))
+    return cast("JsonObject", dict(mask_form_fields(fields)))
+
+
+def _mask_result_url_query(url: str) -> str:
+    """Return URL query evidence masked unless developer mode is enabled.
+
+    Args:
+        url: URL whose query string may contain sensitive OAuth values.
+
+    Returns:
+        Original URL in developer mode; otherwise URL with sensitive query
+        parameters masked.
+    """
+    if is_developer_mode_enabled():
+        return url
+    return mask_url_query(url, SENSITIVE_JSON_KEYS)
 
 
 def run_manifest(
@@ -841,7 +895,7 @@ def _execute_v1_psu_step_inner(
     Returns:
         A tuple of the PSU step result and updated execution context.
     """
-    initial_result_url = mask_url_query(manifest_step.authorization_endpoint, SENSITIVE_JSON_KEYS)
+    initial_result_url = _mask_result_url_query(manifest_step.authorization_endpoint)
     request_evidence: dict[str, JsonValue] = {
         "method": "GET",
         "url": initial_result_url,
@@ -890,7 +944,7 @@ def _execute_v1_psu_step_inner(
             new_context,
         )
 
-    resolved_result_url = mask_url_query(resolved_authorization_endpoint, SENSITIVE_JSON_KEYS)
+    resolved_result_url = _mask_result_url_query(resolved_authorization_endpoint)
     request_evidence["url"] = resolved_result_url
     try:
         validate_https_url(
@@ -1004,7 +1058,7 @@ def _execute_v1_psu_step_inner(
         nonce=resolved_nonce,
         request_object=resolved_request_object,
     )
-    result_url = mask_url_query(authorization_url, SENSITIVE_JSON_KEYS)
+    result_url = _mask_result_url_query(authorization_url)
     request_record = RequestRecord(method="GET", url=result_url)
     request_evidence["url"] = result_url
     # The browser-facing URL is emitted as the raw event payload so the CLI
@@ -1675,7 +1729,7 @@ def _execute_v1_step_inner(
             )
 
     if resolved_headers is not None:
-        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+        request_evidence["headers"] = _mask_result_headers(resolved_headers)
 
     # Validate resolved header values (post-substitution defence-in-depth)
     if resolved_headers is not None:
@@ -1755,9 +1809,9 @@ def _execute_v1_step_inner(
             )
 
     if resolved_json_body is not None:
-        request_evidence["body"] = mask_json_value(resolved_json_body)
+        request_evidence["body"] = _mask_result_json_value(resolved_json_body)
     elif resolved_form_body is not None:
-        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
+        request_evidence["form"] = _mask_result_form_fields(resolved_form_body)
 
     # Validate resolved URL is HTTPS
     try:
@@ -1807,7 +1861,7 @@ def _execute_v1_step_inner(
         )
 
     if resolved_headers is not None:
-        request_evidence["headers"] = cast("JsonObject", mask_headers(resolved_headers))
+        request_evidence["headers"] = _mask_result_headers(resolved_headers)
 
     try:
         resolved_form_body = _apply_token_endpoint_auth_policy(
@@ -1836,9 +1890,9 @@ def _execute_v1_step_inner(
         )
 
     if resolved_json_body is not None:
-        request_evidence["body"] = mask_json_value(resolved_json_body)
+        request_evidence["body"] = _mask_result_json_value(resolved_json_body)
     elif resolved_form_body is not None:
-        request_evidence["form"] = dict(mask_form_fields(resolved_form_body))
+        request_evidence["form"] = _mask_result_form_fields(resolved_form_body)
 
     # Execute HTTP request
     request_record = RequestRecord(method=method, url=resolved_url)
@@ -1906,17 +1960,16 @@ def _execute_v1_step_inner(
         response_record=response_record,
     )
 
-    # Build masked response evidence — attached to non-PASS step results so
-    # participants can debug failed assertions without OBL assistance while
-    # tokens/credentials in the body remain redacted.
+    # Build masked response evidence for result-file diagnostics while keeping
+    # tokens/credentials in the body redacted.
     response_evidence: dict[str, JsonValue] = {
         "statusCode": response.status_code,
-        "body": mask_json_value(dict(response.body)),
+        "body": _mask_result_json_value(dict(response.body)),
     }
     if response.headers:
-        response_evidence["headers"] = cast("JsonObject", mask_headers(response.headers))
+        response_evidence["headers"] = _mask_result_headers(response.headers)
     # Per PRD: response bodies are NOT duplicated into the execution log —
-    # they already live in the result-file evidence for non-PASS outcomes.
+    # they already live in the result-file evidence.
     # The log records only the status code + URL so the timeline is complete
     # without inflating disk usage.
     execution_logger.emit(

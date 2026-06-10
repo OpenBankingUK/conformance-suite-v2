@@ -16,6 +16,7 @@ from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunConflictError, run_store
+from conformance.api.ui_views import _run_context
 from conformance.json_types import JsonValue
 from tests.test_executor import _executor_signing_config
 
@@ -1449,7 +1450,25 @@ class TestRunDetailUi:
         assert "passed" in content
         assert "eligible" in content
         assert "Plan selected" in content
+        assert "Warn" in content
+        assert "Skipped" in content
+        assert "Issues" in content
+        assert "Mandatory selected" in content
         assert f"/runs/{record.run_id}/result.json" in content
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
+
+    def test_result_partial_polls_while_run_is_active(self) -> None:
+        """Active runs keep HTMX polling enabled for the result panel."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Result pending" in content
+        assert 'hx-trigger="load, every 2s"' in content
 
     def test_result_partial_renders_structured_certification_eligibility(self) -> None:
         """The result partial renders the current eligibility object shape."""
@@ -1480,6 +1499,126 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "ineligible: 1 mandatory step(s) failed" in content
 
+    def test_result_partial_builds_step_view_model_for_completed_result(self) -> None:
+        """Completed result context exposes template-friendly per-step display data."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "failed",
+                "summary": {"total": 2, "passed": 1, "failed": 1, "warn": 0, "skipped": 0},
+                "steps": [
+                    {
+                        "name": "Discovery",
+                        "status": "passed",
+                        "message": "Discovery endpoint reachable",
+                        "url": "https://example.com/.well-known/openid-configuration",
+                        "details": {
+                            "assertions": [{"status": "passed", "message": "Status code matched"}],
+                            "request": {"method": "GET", "url": "https://example.com/.well-known/openid-configuration"},
+                            "response": {
+                                "statusCode": 200,
+                                "headers": {"content-type": "application/json"},
+                                "body": {"issuer": "https://example.com", "note": "<script>alert(1)</script>"},
+                            },
+                        },
+                    },
+                    {
+                        "name": "Token request",
+                        "status": "failed",
+                        "message": "Token step failed",
+                        "url": "https://example.com/token",
+                        "details": {
+                            "assertions": [{"status": "failed", "message": "Expected 200 got 400"}],
+                            "warning": "Deprecated token endpoint behaviour",
+                            "request": {
+                                "method": "POST",
+                                "url": "https://example.com/token",
+                                "headers": {"Authorization": "***"},
+                                "body": {"grant_type": "authorization_code"},
+                            },
+                            "response": {
+                                "statusCode": 400,
+                                "headers": {"content-type": "application/json"},
+                                "body": {"error": "invalid_grant"},
+                            },
+                            "rawError": {"reason": "Downstream rejected auth code"},
+                        },
+                    },
+                ],
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        assert response.context is not None
+        content = response.content.decode("utf-8")
+
+        assert '<details class="result-step">' in content
+        assert "Issues" in content
+        assert "Request evidence" in content
+        assert "Response evidence" in content
+        assert "Raw details" in content
+        assert f"/runs/{record.run_id}/result.json" in content
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
+        assert "rawError" in content
+
+        context_steps = cast("list[dict[str, object]]", response.context["result_steps"])
+        assert len(context_steps) == 2
+
+        passed_step = context_steps[0]
+        assert passed_step["name"] == "Discovery"
+        assert passed_step["status"] == "passed"
+        assert passed_step["request_method"] == "GET"
+        assert passed_step["request_url"] == "https://example.com/.well-known/openid-configuration"
+        assert passed_step["response_status_code"] == 200
+        assert cast("list[dict[str, str]]", passed_step["issues"]) == []
+        assert '"method": "GET"' in cast("str", passed_step["request_json"])
+        assert '"statusCode": 200' in cast("str", passed_step["response_json"])
+        assert passed_step["remaining_details_json"] is None
+
+        failed_step = context_steps[1]
+        assert failed_step["name"] == "Token request"
+        assert failed_step["status"] == "failed"
+        issues = cast("list[dict[str, str]]", failed_step["issues"])
+        assert issues == [
+            {"status": "failed", "message": "Expected 200 got 400"},
+            {"status": "warn", "message": "Deprecated token endpoint behaviour"},
+        ]
+        assert '"rawError"' in cast("str", failed_step["remaining_details_json"])
+
+        assert response.context["result_issue_count"] == 2
+        assert response.context["result_status_counts"] == {
+            "passed": 1,
+            "failed": 1,
+            "warn": 0,
+            "skipped": 0,
+        }
+        assert response.context["developer_mode"] is False
+
+    def test_result_partial_context_sets_developer_mode_from_run_logger(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Result context surfaces the logger developer-mode flag for warnings."""
+        monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+        record = run_store.create_run()
+
+        context = _run_context(record)
+
+        assert context["developer_mode"] is True
+
+    def test_result_partial_renders_developer_mode_warning(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Completed results show a clear warning in developer-unmasked mode."""
+        monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed", "summary": {"total": 0}})
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        assert "Developer mode warning" in response.content.decode("utf-8")
+
     def test_result_download_is_available_to_non_loopback_browser_clients(self) -> None:
         """UI result downloads should not inherit the REST API loopback guard."""
         record = run_store.create_run()
@@ -1505,4 +1644,7 @@ class TestRunDetailUi:
         response = Client().get(f"/runs/{record.run_id}/result/")
 
         assert response.status_code == 200
-        assert "Internal engine error" in response.content.decode("utf-8")
+        content = response.content.decode("utf-8")
+        assert "Internal engine error" in content
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content

@@ -40,7 +40,7 @@ make docker      # Build and run the Docker container
 | `make serve` | Uvicorn on `0.0.0.0:8443` | No | Test production behaviour locally on the same callback port |
 | `make docker` | Uvicorn (container) | No | Full production-like environment (requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`) |
 
-`make dev`, `make dev-unmasked`, and `make serve` work with zero configuration. `make dev-unmasked` writes credentials and tokens in clear text to execution logs and is only for local debugging. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
+`make dev`, `make dev-unmasked`, and `make serve` work with zero configuration. `make dev-unmasked` writes credentials and tokens in clear text to execution logs and can expose unmasked result evidence in the browser report UI; use it only for local debugging. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
 
 All runtime entry points bind to port `8443` so callbacks registered against the previous FCS URI `https://0.0.0.0:8443/conformancesuite/callback` land on the same local port across Django, Uvicorn, and Docker.
 

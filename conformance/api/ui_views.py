@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.shortcuts import redirect, render
 from django.urls import reverse
@@ -10,7 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 
 
 @require_GET
@@ -253,6 +255,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         Template context containing status, raw endpoint URLs, log metadata,
         and summarised result fields.
     """
+    result_steps = _result_steps(record.result)
     return {
         "run": record,
         "status_url": reverse("ui-run-status", kwargs={"run_id": record.run_id}),
@@ -264,7 +267,195 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
+        "result_steps": result_steps,
+        "result_issue_count": _result_issue_count(result_steps),
+        "result_status_counts": _result_status_counts(result_steps),
+        "developer_mode": _run_developer_mode(record),
     }
+
+
+def _result_steps(result: JsonObject | None) -> list[dict[str, object]]:
+    """Build template-friendly display rows for per-step result details.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        Ordered list of step display dictionaries with summary fields,
+        assertion summaries, failed/warn issues, and pretty JSON blocks for
+        request/response/remaining details.
+    """
+    if result is None:
+        return []
+    raw_steps = result.get("steps")
+    if not isinstance(raw_steps, list):
+        return []
+
+    rendered_steps: list[dict[str, object]] = []
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        details = raw_step.get("details")
+        step_details = details if isinstance(details, dict) else {}
+
+        assertions_raw = step_details.get("assertions")
+        assertion_summaries: list[dict[str, str]] = []
+        if isinstance(assertions_raw, list):
+            for assertion in assertions_raw:
+                if not isinstance(assertion, dict):
+                    continue
+                status = assertion.get("status")
+                message = assertion.get("message")
+                if isinstance(status, str) and isinstance(message, str):
+                    assertion_summaries.append({"status": status, "message": message})
+
+        request_evidence = step_details.get("request")
+        response_evidence = step_details.get("response")
+        request_dict = request_evidence if isinstance(request_evidence, dict) else None
+        response_dict = response_evidence if isinstance(response_evidence, dict) else None
+
+        request_method = request_dict.get("method") if request_dict is not None else None
+        request_url = request_dict.get("url") if request_dict is not None else None
+        response_status_code = response_dict.get("statusCode") if response_dict is not None else None
+        if not isinstance(request_method, str):
+            request_method = None
+        if not isinstance(request_url, str):
+            request_url = None
+        if not isinstance(response_status_code, int):
+            response_status_code = None
+
+        rendered_steps.append(
+            {
+                "name": raw_step.get("name") if isinstance(raw_step.get("name"), str) else "-",
+                "status": raw_step.get("status") if isinstance(raw_step.get("status"), str) else "-",
+                "message": raw_step.get("message") if isinstance(raw_step.get("message"), str) else "",
+                "url": raw_step.get("url") if isinstance(raw_step.get("url"), str) else None,
+                "request_method": request_method,
+                "request_url": request_url,
+                "response_status_code": response_status_code,
+                "assertion_summaries": assertion_summaries,
+                "issues": _step_issues(step_details),
+                "request_json": _pretty_json(request_dict),
+                "response_json": _pretty_json(response_dict),
+                "remaining_details_json": _pretty_json(_remaining_step_details(step_details)),
+            }
+        )
+    return rendered_steps
+
+
+def _step_issues(step_details: JsonObject) -> list[dict[str, str]]:
+    """Extract failed/warn issue entries from a step details object.
+
+    Args:
+        step_details: ``details`` object from a step entry in result JSON.
+
+    Returns:
+        Ordered issue dictionaries with ``status`` and ``message`` keys,
+        including failed assertions, warning assertions, and step-level
+        warning strings.
+    """
+    issues: list[dict[str, str]] = []
+    assertions_raw = step_details.get("assertions")
+    if isinstance(assertions_raw, list):
+        for assertion in assertions_raw:
+            if not isinstance(assertion, dict):
+                continue
+            status = assertion.get("status")
+            message = assertion.get("message")
+            if not isinstance(status, str) or not isinstance(message, str):
+                continue
+            if status in {"failed", "warn"}:
+                issues.append({"status": status, "message": message})
+
+    warning = step_details.get("warning")
+    if isinstance(warning, str) and warning:
+        issues.append({"status": "warn", "message": warning})
+    return issues
+
+
+def _pretty_json(value: JsonValue | None) -> str | None:
+    """Render a JSON value as deterministic pretty-printed text.
+
+    Args:
+        value: JSON-compatible value to render.
+
+    Returns:
+        Indented JSON string when ``value`` is not ``None``; otherwise
+        ``None``.
+    """
+    if value is None:
+        return None
+    return json.dumps(value, indent=2, sort_keys=True)
+
+
+def _remaining_step_details(step_details: JsonObject) -> JsonObject | None:
+    """Return non-evidence detail keys for optional raw JSON fallback display.
+
+    Args:
+        step_details: ``details`` object from a step entry in result JSON.
+
+    Returns:
+        Dictionary containing keys other than ``request``, ``response``, and
+        ``assertions``, or ``None`` when no remaining keys exist.
+    """
+    remaining: JsonObject = {
+        key: value for key, value in step_details.items() if key not in {"request", "response", "assertions"}
+    }
+    if not remaining:
+        return None
+    return remaining
+
+
+def _run_developer_mode(record: RunRecord) -> bool:
+    """Return whether the run was captured in developer-unmasked mode.
+
+    Args:
+        record: Snapshot of the run record being rendered.
+
+    Returns:
+        True when the attached execution logger bypassed masking for this
+        run; otherwise False.
+    """
+    if record.execution_logger is None:
+        return False
+    return record.execution_logger.developer_mode
+
+
+def _result_status_counts(result_steps: list[dict[str, object]]) -> dict[str, int]:
+    """Count per-status outcomes from rendered step rows.
+
+    Args:
+        result_steps: Template-friendly step rows returned by
+            :func:`_result_steps`.
+
+    Returns:
+        Mapping of known status keys (``passed``, ``failed``, ``warn``,
+        ``skipped``) to integer counts.
+    """
+    counts = {"passed": 0, "failed": 0, "warn": 0, "skipped": 0}
+    for step in result_steps:
+        status = step.get("status")
+        if isinstance(status, str) and status in counts:
+            counts[status] += 1
+    return counts
+
+
+def _result_issue_count(result_steps: list[dict[str, object]]) -> int:
+    """Count failed/warn issue entries across all rendered step rows.
+
+    Args:
+        result_steps: Template-friendly step rows returned by
+            :func:`_result_steps`.
+
+    Returns:
+        Total issue entry count across all rows.
+    """
+    total = 0
+    for step in result_steps:
+        issues = step.get("issues")
+        if isinstance(issues, list):
+            total += len(issues)
+    return total
 
 
 def _log_event_count(record: RunRecord) -> int:

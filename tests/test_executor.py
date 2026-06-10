@@ -1097,12 +1097,11 @@ def test_run_manifest_v1_form_body_respects_manifest_content_type() -> None:
 
 @pytest.mark.unit
 def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
-    """Form fields must not appear in the step result — masking is deferred (DL-0013).
+    """Passed form-body steps retain evidence while masking sensitive values.
 
-    Locks in the DL-0013 deferral: until secrets masking lands, form-field
-    values (which often carry OAuth2 secrets) are not recorded into the
-    step result. The result still reports method, URL, and assertions, but
-    no field names or values.
+    Result evidence now includes request details for passed HTTP steps. For
+    form payloads this means field names are retained for debugging value,
+    while sensitive OAuth fields are replaced with the masking sentinel.
     """
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -1143,12 +1142,14 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
 
     assert result.steps[0].status == "passed"
     assert result.steps[0].url == "https://example.com/token"
-    # Scan the full step result (incl. details) for any leak of the secret
-    # or field name. ``str`` covers nested dataclasses/mappings without
-    # imposing a JSON-serialisable constraint on the result.
+    # Scan the full step result (incl. details) for evidence retention and
+    # sensitive-value masking. ``str`` covers nested
+    # dataclasses/mappings without imposing a JSON-serialisable constraint
+    # on the result.
     serialised = str(result.steps[0])
     assert secret_sentinel not in serialised
-    assert "client_secret" not in serialised
+    assert "client_secret" in serialised
+    assert MASKED_VALUE in serialised
 
 
 @pytest.mark.unit
@@ -2214,12 +2215,8 @@ def test_run_manifest_v1_warn_step_does_not_fail_aggregate_with_passed_step() ->
 
 
 @pytest.mark.unit
-def test_run_manifest_v1_omits_evidence_on_pass() -> None:
-    """PRD: passing steps include summary only — no request/response evidence.
-
-    Keeps reports lean and avoids broadening the surface area of accidental
-    disclosure for runs where everything went right.
-    """
+def test_run_manifest_v1_passed_step_includes_masked_request_and_response_evidence() -> None:
+    """PASS step carries masked request/response evidence when available."""
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
         "name": "evidence-pass",
@@ -2240,14 +2237,18 @@ def test_run_manifest_v1_omits_evidence_on_pass() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(manifest, environment="test", client=client)
 
-    assert result.steps[0].status == "passed"
-    details = dict(result.steps[0].details)
-    assert "request" not in details
-    assert "response" not in details
+    step = result.steps[0]
+    assert step.status == "passed"
+    details = dict(step.details)
+    assert details["request"] == {"method": "GET", "url": "https://example.com/ok"}
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 200
+    assert response["body"] == {"access_token": "***"}
+    assert response["headers"]["content-type"] == "application/json"
 
 
 @pytest.mark.unit
-def test_run_manifest_v1_applies_header_and_json_assertions_and_keeps_pass_details_lean() -> None:
+def test_run_manifest_v1_applies_header_and_json_assertions_with_pass_evidence() -> None:
     """Executor passes response headers into assertion evaluation for PASS steps."""
     raw_manifest: dict[str, JsonValue] = {
         "schemaVersion": "v1",
@@ -2283,14 +2284,18 @@ def test_run_manifest_v1_applies_header_and_json_assertions_and_keeps_pass_detai
 
     step = result.steps[0]
     assert step.status == "passed"
-    assert step.details == {
-        "assertions": [
-            {"status": "passed", "message": "HTTP status was 200"},
-            {"status": "passed", "message": "Header x-fapi-interaction-id is present"},
-            {"status": "passed", "message": "Header content-type contains the expected value"},
-            {"status": "passed", "message": "JSON field issuer equals https://example.com"},
-        ]
-    }
+    details = dict(step.details)
+    assert details["assertions"] == [
+        {"status": "passed", "message": "HTTP status was 200"},
+        {"status": "passed", "message": "Header x-fapi-interaction-id is present"},
+        {"status": "passed", "message": "Header content-type contains the expected value"},
+        {"status": "passed", "message": "JSON field issuer equals https://example.com"},
+    ]
+    assert details["request"] == {"method": "GET", "url": "https://example.com/discovery"}
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 200
+    assert response["body"] == {"issuer": "https://example.com"}
+    assert response["headers"]["x-fapi-interaction-id"] == "trace-123"
 
 
 @pytest.mark.unit
@@ -2341,6 +2346,121 @@ def test_run_manifest_v1_failed_step_includes_masked_request_and_response_eviden
     assert response["statusCode"] == 400
     assert response["body"] == {"error": "invalid_client", "access_token": "***"}
     assert response["headers"]["content-type"] == "application/json"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_masks_sensitive_request_and_response_evidence_by_default() -> None:
+    """Default mode masks headers, tokens, codes, and client secrets in result evidence."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-sensitive-default",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "headers": {
+                        "Authorization": "Bearer very-secret-token",
+                        "Accept": "application/json",
+                    },
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "super-secret-code",  # pragma: allowlist secret
+                            "client_secret": "super-secret-client",  # pragma: allowlist secret
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Set-Cookie": "session=very-secret-cookie"},
+            json={"access_token": "very-secret-access", "code": "very-secret-code"},  # pragma: allowlist secret
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "passed"
+    details = dict(step.details)
+    request = cast("dict[str, Any]", details["request"])
+    assert request["headers"]["Authorization"] == MASKED_VALUE
+    assert request["form"]["code"] == MASKED_VALUE
+    assert request["form"]["client_secret"] == MASKED_VALUE
+
+    response = cast("dict[str, Any]", details["response"])
+    assert response["headers"]["set-cookie"] == MASKED_VALUE
+    assert response["body"]["access_token"] == MASKED_VALUE
+    assert response["body"]["code"] == MASKED_VALUE
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_developer_mode_keeps_sensitive_result_evidence_unmasked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Developer mode intentionally bypasses masking for result evidence payloads."""
+    monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "evidence-sensitive-developer",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "headers": {
+                        "Authorization": "Bearer very-secret-token",
+                        "Accept": "application/json",
+                    },
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "raw-auth-code",  # pragma: allowlist secret
+                            "client_secret": "raw-client-secret",  # pragma: allowlist secret
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            200,
+            headers={"Set-Cookie": "session=raw-cookie"},
+            json={"access_token": "raw-access-token", "code": "raw-code"},  # pragma: allowlist secret
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "passed"
+    details = dict(step.details)
+    request = cast("dict[str, Any]", details["request"])
+    assert request["headers"]["Authorization"] == "Bearer very-secret-token"  # noqa: S105
+    assert request["form"]["code"] == "raw-auth-code"  # noqa: S105  # pragma: allowlist secret
+    assert request["form"]["client_secret"] == "raw-client-secret"  # noqa: S105  # pragma: allowlist secret
+
+    response = cast("dict[str, Any]", details["response"])
+    assert response["headers"]["set-cookie"] == "session=raw-cookie"  # noqa: S105
+    assert response["body"]["access_token"] == "raw-access-token"  # noqa: S105
+    assert response["body"]["code"] == "raw-code"  # noqa: S105
 
 
 @pytest.mark.unit
@@ -4534,6 +4654,37 @@ def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
     assert context.steps["psu"].request.url == request_url
     assert "inline.assertion" not in rendered
     assert "signed.request.jwt" not in rendered
+
+
+@pytest.mark.unit
+def test_psu_manual_timeout_developer_mode_keeps_authorization_url_query_unmasked(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Developer mode keeps credential-bearing PSU URL query values in result evidence."""
+    monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+    fake_clock = _FakeClock()
+    result, context = _execute_v1_psu_step(
+        _psu_manual_step(
+            authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
+            request_object="signed.request.jwt",
+            timeout_seconds=1,
+        ),
+        context=ExecutionContext(),
+        client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
+        run_id="run-timeout-unmasked-url",
+        auth_session_store=AuthSessionStore(),
+        execution_logger=BufferedExecutionLogger(run_id="run-timeout-unmasked-url", developer_mode=False),
+        clock=fake_clock.monotonic,
+        sleep=fake_clock.sleep,
+    )
+
+    request_details = cast("dict[str, Any]", result.details["request"])
+    request_url = cast("str", request_details["url"])
+    assert result.status == "failed"
+    assert result.url == request_url
+    assert "client_assertion=inline.assertion" in request_url
+    assert "request=signed.request.jwt" in request_url
+    assert context.steps["psu"].request.url == request_url
 
 
 @pytest.mark.unit
