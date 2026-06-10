@@ -185,6 +185,10 @@
             margin-top: 14px;
         }
 
+        .preview-actions {
+            justify-content: flex-start;
+        }
+
         button,
         .button {
             min-height: 38px;
@@ -572,7 +576,7 @@
         </section>
 
         {% if preview %}
-            <section class="panel" aria-labelledby="preview-heading">
+            <section class="panel" aria-labelledby="preview-heading" data-plan-preview>
                 <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
                 {% if preview.suite_metadata %}
                     <div class="muted">
@@ -584,16 +588,22 @@
 
                 <div class="counts" aria-label="Plan counts">
                     <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>
-                    <div class="count"><strong>{{ preview_counts.selected }}</strong><span>Selected</span></div>
+                    <div class="count"><strong data-plan-count-selected>{{ preview_counts.selected }}</strong><span>Selected</span></div>
                     <div class="count"><strong>{{ preview_counts.mandatory }}</strong><span>Mandatory</span></div>
                     <div class="count"><strong>{{ preview_counts.optional }}</strong><span>Optional</span></div>
-                    <div class="count"><strong>{{ preview_counts.mandatory_deselected }}</strong><span>Mandatory off</span></div>
+                    <div class="count"><strong data-plan-count-mandatory-off>{{ preview_counts.mandatory_deselected }}</strong><span>Mandatory off</span></div>
+                </div>
+
+                <div class="actions preview-actions" aria-label="Bulk selection controls">
+                    <button type="button" class="secondary" data-plan-bulk-action="select-all">select all</button>
+                    <button type="button" class="secondary" data-plan-bulk-action="select-mandatory-only">select mandatory only</button>
+                    <button type="button" class="secondary" data-plan-bulk-action="deselect-all">deselect all</button>
                 </div>
 
                 {% if preview.certification_eligible_by_selection %}
-                    <div class="message success">Certification selection eligible</div>
+                    <div class="message success" data-plan-certification-message>Certification selection eligible</div>
                 {% else %}
-                    <div class="message warning">Certification selection ineligible</div>
+                    <div class="message warning" data-plan-certification-message>Certification selection ineligible</div>
                 {% endif %}
 
                 {% for blocker in preview.launch_blockers %}
@@ -616,9 +626,9 @@
                         </thead>
                         <tbody>
                         {% for row in preview.rows %}
-                            <tr>
+                            <tr data-plan-step-row data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}" data-step-selected="{% if row.selected_after_form %}true{% else %}false{% endif %}">
                                 <td>
-                                    <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="Select {{ row.id }}">
+                                    <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="Select {{ row.id }}" data-plan-step-checkbox data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}" data-step-selected="{% if row.selected_after_form %}true{% else %}false{% endif %}">
                                 </td>
                                 <td>
                                     <strong>{{ row.name }}</strong><br>
@@ -633,7 +643,7 @@
                                     {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
                                 </td>
                                 <td>{% if row.default_selected %}Selected{% else %}Off{% endif %}</td>
-                                <td>{% if row.selected_after_form %}Selected{% else %}Off{% endif %}</td>
+                                <td data-plan-selection-cell>{% if row.selected_after_form %}Selected{% else %}Off{% endif %}</td>
                             </tr>
                         {% endfor %}
                         </tbody>
@@ -656,6 +666,11 @@
         const intentPanel = document.querySelector('[data-guided-intent-panel]');
         const resourcePanel = document.querySelector('[data-guided-resource-panel]');
         const signingPanel = document.querySelector('[data-guided-signing-panel]');
+        const bulkButtons = document.querySelectorAll('[data-plan-bulk-action]');
+        const stepCheckboxes = document.querySelectorAll('[data-plan-step-checkbox]');
+        const selectedCountValue = document.querySelector('[data-plan-count-selected]');
+        const mandatoryOffCountValue = document.querySelector('[data-plan-count-mandatory-off]');
+        const certificationMessage = document.querySelector('[data-plan-certification-message]');
         if (!specSelect || !apiSelect || !suiteSelect || !suiteDescription) {
             return;
         }
@@ -752,6 +767,74 @@
             syncPromptPanels();
         };
 
+        const setStepSelectionState = (checkbox, isSelected) => {
+            checkbox.checked = isSelected;
+            checkbox.dataset.stepSelected = isSelected ? 'true' : 'false';
+            const row = checkbox.closest('[data-plan-step-row]');
+            if (!row) {
+                return;
+            }
+            row.dataset.stepSelected = isSelected ? 'true' : 'false';
+        };
+
+        const refreshPlanSelectionPreview = () => {
+            let selectedCount = 0;
+            let mandatoryOffCount = 0;
+
+            for (const checkbox of stepCheckboxes) {
+                const isSelected = checkbox.checked;
+                const isMandatory = checkbox.dataset.stepMandatory === 'true';
+
+                if (isSelected) {
+                    selectedCount += 1;
+                }
+                if (isMandatory && !isSelected) {
+                    mandatoryOffCount += 1;
+                }
+
+                const row = checkbox.closest('[data-plan-step-row]');
+                if (!row) {
+                    continue;
+                }
+                const selectionCell = row.querySelector('[data-plan-selection-cell]');
+                if (selectionCell) {
+                    selectionCell.textContent = isSelected ? 'Selected' : 'Off';
+                }
+            }
+
+            if (selectedCountValue) {
+                selectedCountValue.textContent = String(selectedCount);
+            }
+            if (mandatoryOffCountValue) {
+                mandatoryOffCountValue.textContent = String(mandatoryOffCount);
+            }
+            if (certificationMessage) {
+                const eligible = mandatoryOffCount === 0;
+                certificationMessage.textContent = eligible
+                    ? 'Certification selection eligible'
+                    : 'Certification selection ineligible';
+                certificationMessage.classList.toggle('success', eligible);
+                certificationMessage.classList.toggle('warning', !eligible);
+            }
+        };
+
+        const applyBulkSelection = (action) => {
+            for (const checkbox of stepCheckboxes) {
+                if (action === 'select-all') {
+                    setStepSelectionState(checkbox, true);
+                    continue;
+                }
+                if (action === 'select-mandatory-only') {
+                    const isMandatory = checkbox.dataset.stepMandatory === 'true';
+                    setStepSelectionState(checkbox, isMandatory);
+                    continue;
+                }
+                if (action === 'deselect-all') {
+                    setStepSelectionState(checkbox, false);
+                }
+            }
+        };
+
         specSelect.addEventListener('change', syncGuidedFlow);
         if (modelBankSelect) {
             modelBankSelect.addEventListener('change', syncModelBankExample);
@@ -761,8 +844,18 @@
             syncPromptPanels();
         });
         suiteSelect.addEventListener('change', syncPromptPanels);
+        for (const button of bulkButtons) {
+            button.addEventListener('click', () => {
+                applyBulkSelection(button.dataset.planBulkAction);
+                refreshPlanSelectionPreview();
+            });
+        }
+        for (const checkbox of stepCheckboxes) {
+            checkbox.addEventListener('change', refreshPlanSelectionPreview);
+        }
         syncGuidedFlow();
         syncModelBankExample({ onlyBlank: true });
+        refreshPlanSelectionPreview();
     })();
 </script>
 </body>

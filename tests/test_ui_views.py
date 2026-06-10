@@ -406,6 +406,85 @@ class TestPlanBuilderUi:
         assert "accounts" in content
         assert "hx-post" not in content
 
+    def test_preview_post_renders_bulk_selection_controls_and_metadata(self) -> None:
+        """Preview renders bulk button hooks and mandatory metadata for each step row."""
+        manifest = _v1_manifest(
+            [
+                _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
+                _http_step("optional", optional=True, phase="execution", group="accounts"),
+            ]
+        )
+
+        response = Client().post("/plan/preview/", data=_plan_form_data(manifest, selected_step_ids=["mandatory"]))
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "select all" in content
+        assert "select mandatory only" in content
+        assert "deselect all" in content
+        assert 'data-plan-bulk-action="select-all"' in content
+        assert 'data-plan-bulk-action="select-mandatory-only"' in content
+        assert 'data-plan-bulk-action="deselect-all"' in content
+        assert 'data-plan-step-row data-step-id="mandatory" data-step-mandatory="true"' in content
+        assert 'data-plan-step-row data-step-id="optional" data-step-mandatory="false"' in content
+        assert 'data-plan-step-checkbox data-step-id="mandatory" data-step-mandatory="true"' in content
+        assert 'data-plan-step-checkbox data-step-id="optional" data-step-mandatory="false"' in content
+
+    @pytest.mark.parametrize(
+        ("selected_step_ids", "expected_checked_ids", "expected_mandatory_off_count", "expected_eligible_message"),
+        [
+            (["mandatory", "default", "optional"], ["mandatory", "default", "optional"], 0, True),
+            (["mandatory"], ["mandatory"], 0, True),
+            ([], [], 1, False),
+        ],
+    )
+    def test_preview_post_select_mode_reflects_bulk_selection_end_states(
+        self,
+        selected_step_ids: list[str],
+        expected_checked_ids: list[str],
+        expected_mandatory_off_count: int,
+        expected_eligible_message: bool,
+    ) -> None:
+        """Preview reflects all, mandatory-only, and empty select-mode submissions."""
+        manifest = _v1_manifest(
+            [
+                _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
+                _http_step("default", phase="execution", group="accounts"),
+                _http_step("optional", optional=True, phase="execution", group="accounts"),
+            ]
+        )
+
+        response = Client().post(
+            "/plan/preview/",
+            data=_plan_form_data(manifest, selected_step_ids=selected_step_ids, selection_mode="select"),
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+
+        for step_id in ["mandatory", "default", "optional"]:
+            checked_fragment = f'value="{step_id}" checked'
+            if step_id in expected_checked_ids:
+                assert checked_fragment in content
+            else:
+                assert checked_fragment not in content
+
+        assert f'data-plan-count-selected>{len(expected_checked_ids)}<' in content
+        assert f'data-plan-count-mandatory-off>{expected_mandatory_off_count}<' in content
+
+        if expected_eligible_message:
+            assert (
+                '<div class="message success" data-plan-certification-message>'
+                "Certification selection eligible"
+                "</div>"
+            ) in content
+        else:
+            assert (
+                '<div class="message warning" data-plan-certification-message>'
+                "Certification selection ineligible"
+                "</div>"
+            ) in content
+
     def test_preview_post_resolves_config_only_suite(self) -> None:
         """POST /plan/preview/ can render a config-selected suite with blank manifest."""
         response = Client().post(

@@ -230,6 +230,51 @@ def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
 
 
 @pytest.mark.unit
+def test_select_mode_with_mandatory_only_ids_deselects_non_mandatory_rows() -> None:
+    manifest = _v1_manifest(
+        [
+            _http_step("mandatory", mandatory=True),
+            _http_step("standard"),
+            _http_step("optional", optional=True),
+        ]
+    )
+    form = _bound_form(
+        manifest,
+        selection_mode="select",
+        selected_step_ids=["mandatory"],
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.selected_plan.selected_step_ids() == ["mandatory"]
+    assert [row.selected_after_form for row in preview.rows] == [True, False, False]
+    assert preview.certification_eligible_by_selection is True
+
+
+@pytest.mark.unit
+def test_select_mode_with_empty_selection_deselects_all_rows() -> None:
+    manifest = _v1_manifest(
+        [
+            _http_step("mandatory", mandatory=True),
+            _http_step("standard"),
+            _http_step("optional", optional=True),
+        ]
+    )
+    form = _bound_form(
+        manifest,
+        selection_mode="select",
+        selected_step_ids=[],
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.selected_plan.selected_step_ids() == []
+    assert [row.selected_after_form for row in preview.rows] == [False, False, False]
+    assert preview.selected_plan.deselected_mandatory_step_ids() == ["mandatory"]
+    assert preview.certification_eligible_by_selection is False
+
+
+@pytest.mark.unit
 def test_blank_manifest_resolves_config_selected_suite() -> None:
     """A blank manifest textarea can preview the suite selected by config."""
     form = PlanBuilderForm(
