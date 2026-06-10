@@ -43,6 +43,27 @@ def _selection(
     )
 
 
+def _has_all_items_field_assertion(step: ManifestStep, *, path: str, field: str) -> bool:
+    """Return whether a step asserts that every array item contains a field.
+
+    Args:
+        step: Manifest step whose assertions should be inspected.
+        path: JSON path targeted by the array-field assertion.
+        field: Field name expected on every array item.
+
+    Returns:
+        ``True`` when the step contains the matching ``all_items_have_field``
+        assertion, otherwise ``False``.
+    """
+    return any(
+        isinstance(assertion, JsonFieldAssertion)
+        and assertion.path == path
+        and assertion.rule == "all_items_have_field"
+        and assertion.field == field
+        for assertion in step.assertions
+    )
+
+
 @pytest.mark.unit
 @pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
 def test_resolve_suite_returns_bundled_manifest_for_supported_versions(spec_version: SuiteSpecVersion) -> None:
@@ -337,10 +358,14 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Account" and assertion.rule == "array"
         for assertion in accounts_assertions
     )
+    assert _has_all_items_field_assertion(accounts_step, path="Data.Account", field="AccountId")
+    assert not _has_all_items_field_assertion(accounts_step, path="Data.Account", field="Status")
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Account" and assertion.rule == "array"
         for assertion in account_detail_assertions
     )
+    assert _has_all_items_field_assertion(account_detail_step, path="Data.Account", field="AccountId")
+    assert not _has_all_items_field_assertion(account_detail_step, path="Data.Account", field="Status")
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Balance" and assertion.rule == "array"
         for assertion in balances_assertions
@@ -349,24 +374,14 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Transaction" and assertion.rule == "array"
         for assertion in transactions_assertions
     )
-    assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "Data.Transaction"
-        and assertion.rule == "all_items_have_field"
-        and assertion.field == "BookingDateTime"
-        for assertion in transactions_assertions
-    )
+    assert _has_all_items_field_assertion(transactions_step, path="Data.Transaction", field="Status")
+    assert _has_all_items_field_assertion(transactions_step, path="Data.Transaction", field="BookingDateTime")
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Transaction" and assertion.rule == "array"
         for assertion in transactions_list_assertions
     )
-    assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "Data.Transaction"
-        and assertion.rule == "all_items_have_field"
-        and assertion.field == "BookingDateTime"
-        for assertion in transactions_list_assertions
-    )
+    assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="Status")
+    assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="BookingDateTime")
 
 
 @pytest.mark.unit

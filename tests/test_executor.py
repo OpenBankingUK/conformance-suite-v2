@@ -4469,14 +4469,10 @@ def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
     details = dict(accounts_step.details)
     assertion_results = details["assertions"]
     assert isinstance(assertion_results, list)
-    assert len(assertion_results) == 8
-    assert assertion_results[-2] == {
+    assert len(assertion_results) == 7
+    assert assertion_results[-1] == {
         "status": "failed",
         "message": "Every item in JSON field Data.Account must contain field AccountId",
-    }
-    assert assertion_results[-1] == {
-        "status": "passed",
-        "message": "Every item in JSON field Data.Account contains field Status",
     }
     assert details["request"] == {
         "method": "GET",

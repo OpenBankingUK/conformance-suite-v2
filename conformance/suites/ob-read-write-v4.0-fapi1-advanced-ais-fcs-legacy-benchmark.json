@@ -189,8 +189,7 @@
         {"type": "json_field", "path": "Data.Account", "rule": "array"},
         {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
         {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "Status"}
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"}
       ],
       "mandatory": true
     },
