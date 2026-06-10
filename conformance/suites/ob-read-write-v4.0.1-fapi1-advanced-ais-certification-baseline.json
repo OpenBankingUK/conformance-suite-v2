@@ -187,7 +187,8 @@
         {"type": "json_field", "path": "Data.Account", "rule": "array"},
         {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
         {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"}
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0.1-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
       ],
       "mandatory": true
     },
@@ -210,7 +211,8 @@
         {"type": "json_field", "path": "Data.Account", "rule": "array"},
         {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
         {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"}
+        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0.1-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
       ],
       "mandatory": true
     },
@@ -235,7 +237,8 @@
         {"type": "json_field", "path": "Data.Balance", "rule": "min_items", "minItems": 1},
         {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
         {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"}
+        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0.1-account-info-openapi", "schemaRef": "#/components/schemas/OBReadBalance1"}
       ],
       "mandatory": true
     },
@@ -260,7 +263,8 @@
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"}
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0.1-account-info-openapi", "schemaRef": "#/components/schemas/OBReadTransaction6"}
       ],
       "mandatory": true
     },
@@ -285,7 +289,8 @@
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
         {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"}
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0.1-account-info-openapi", "schemaRef": "#/components/schemas/OBReadTransaction6"}
       ],
       "mandatory": true
     },

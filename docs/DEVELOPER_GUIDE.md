@@ -314,7 +314,7 @@ Representative manifest snippets:
 {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
 ```
 
-`response_schema` currently allowlists `source: "bundled_openapi"` and `document: "ob-read-write-v4.0-account-info-openapi"`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` validates a nested response node before evaluation. `source`, `document`, `schemaRef`, and `bodyPath` must be constant strings with no placeholders, and manifests cannot load schemas from arbitrary local paths or remote URLs.
+`response_schema` currently allowlists `source: "bundled_openapi"` and the bundled Account Info OpenAPI documents `"ob-read-write-v4.0-account-info-openapi"` and `"ob-read-write-v4.0.1-account-info-openapi"`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` validates a nested response node before evaluation. `source`, `document`, `schemaRef`, and `bodyPath` must be constant strings with no placeholders, and manifests cannot load schemas from arbitrary local paths or remote URLs.
 
 These rules are generic authoring primitives only. They enable Standards-authored certification suites, but they do not by themselves make the current bundled starter suites complete or certifying.
 

@@ -179,7 +179,7 @@ For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-examp
 }
 ```
 
-For `response_schema`, `source` is currently restricted to `bundled_openapi`, and `document` is currently restricted to `ob-read-write-v4.0-account-info-openapi`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` can scope validation to a nested response node. Placeholders are not allowed in `source`, `document`, `schemaRef`, or `bodyPath`, and participant manifests cannot trigger arbitrary filesystem or network schema loading.
+For `response_schema`, `source` is currently restricted to `bundled_openapi`, and `document` is currently restricted to the bundled Account Info OpenAPI snapshots: `ob-read-write-v4.0-account-info-openapi` and `ob-read-write-v4.0.1-account-info-openapi`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` can scope validation to a nested response node. Placeholders are not allowed in `source`, `document`, `schemaRef`, or `bodyPath`, and participant manifests cannot trigger arbitrary filesystem or network schema loading.
 
 This is still an enabling layer for suite authors. It does not publish full Read/Write certification coverage, and no bundled suite should be treated as certifying until Standards confirm the complete mandatory manifest coverage.
 

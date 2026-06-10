@@ -6,11 +6,11 @@
   "sources": [
     {
       "file": "account-info-openapi.json",
-      "description": "Open Banking Read/Write v4.0.0 Account and Transaction API OpenAPI snapshot.",
-      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.0/dist/openapi/account-info-openapi.json",
+      "description": "Open Banking Read/Write v4.0 Account and Transaction API OpenAPI snapshot from the latest v4.0 swagger update tag.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/account-info-openapi.json",
       "repository": "OpenBankingUK/read-write-api-specs",
-      "ref": "v4.0.0",
-      "sha256Chunks": ["abd5a0de", "9e111a72", "88ed6c77", "5bec81cf", "b92af069", "625712d4", "63560f14", "d3d9fb4d"]
+      "ref": "v4.0-Update-5",
+      "sha256Chunks": ["d57ebf8b", "0132e950", "68999aab", "66066040", "38aee247", "780cf21d", "63c8ea4f", "366ef738"]
     },
     {
       "file": "legacy-ob_4.0_accounts_transactions_fca.json",

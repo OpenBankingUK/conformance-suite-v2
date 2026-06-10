@@ -1,0 +1,17 @@
+{
+  "standard": "ob-read-write",
+  "specVersion": "v4.0.1",
+  "retrievedAt": "2026-06-10",
+  "hashNote": "sha256Chunks joins to the SHA-256 digest of the bundled file after line-end whitespace normalization.",
+  "sources": [
+    {
+      "file": "account-info-openapi.json",
+      "description": "Open Banking Read/Write v4.0.1 Account and Transaction API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/account-info-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0.1",
+      "sha256Chunks": ["85e87112", "8c87af44", "baf61117", "7ccf0721", "26aeacd5", "13ba9558", "da18342b", "e1b4e42b"]
+    }
+  ],
+  "certificationNote": "This bundled source is pinned to the upstream read-write-api-specs tag selected for the corresponding suite specVersion. Swagger update tags are treated as distinct source refs and must be recorded explicitly when used."
+}

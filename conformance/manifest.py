@@ -2011,6 +2011,7 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
     "ob-read-write-v4.0-account-info-openapi",
+    "ob-read-write-v4.0.1-account-info-openapi",
 }
 """Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
 

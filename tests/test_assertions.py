@@ -431,6 +431,93 @@ def test_evaluate_response_schema_passes_for_valid_bundled_openapi_payload() -> 
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    "document",
+    [
+        "ob-read-write-v4.0-account-info-openapi",
+        "ob-read-write-v4.0.1-account-info-openapi",
+    ],
+)
+def test_evaluate_response_schema_accepts_namespaced_account_identification_code(document: str) -> None:
+    """Bundled v4 Account schemas accept the Standards namespaced account scheme codes.
+
+    Args:
+        document: Bundled OpenAPI document identifier under test.
+    """
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": document,
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={
+            "Data": {
+                "Account": [
+                    {
+                        "AccountId": "account-123",
+                        "Account": [
+                            {
+                                "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                                "Identification": "12345612345678",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "Links": {"Self": "https://api.example.com/accounts"},
+            "Meta": {},
+        },
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_rejects_bare_account_identification_code() -> None:
+    """Bundled v4 schemas enforce Open Banking ``x-namespaced-enum`` code sets."""
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={
+            "Data": {
+                "Account": [
+                    {
+                        "AccountId": "account-123",
+                        "Account": [
+                            {
+                                "SchemeName": "IBAN",
+                                "Identification": "GB33BUKB20201555555555",
+                            }
+                        ],
+                    }
+                ]
+            },
+            "Links": {"Self": "https://api.example.com/accounts"},
+            "Meta": {},
+        },
+    )
+
+    assert result.passed is False
+    assert "at Data.Account[0].Account[0].SchemeName" in result.message
+    assert "'IBAN' is not one of" in result.message
+
+
+@pytest.mark.unit
 def test_evaluate_response_schema_fails_for_bundled_schema_mismatch() -> None:
     assertion = parsed_assertion(
         {

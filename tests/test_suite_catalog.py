@@ -452,20 +452,15 @@ def test_v4_ais_certification_baseline_mandatory_resource_steps_have_schema_asse
 
 
 @pytest.mark.unit
-def test_v4_0_1_ais_certification_baseline_keeps_schema_rollout_blocked() -> None:
-    """v4.0.1 baseline stays partial until a bundled v4.0.1 schema source exists.
-
-    The current allowlist exposes only the bundled v4.0 AIS OpenAPI snapshot.
-    Until the repository gains a defensible v4.0.1 document mapping, the v4.0.1
-    baseline should remain unchanged rather than reusing the v4.0 document by
-    implication.
-    """
+def test_v4_0_1_ais_certification_baseline_uses_versioned_schema_source() -> None:
+    """v4.0.1 baseline uses its own bundled OpenAPI source and stays partial."""
     resolved = resolve_suite(_selection("v4.0.1", suite_name="ais-certification-baseline"))
     manifest = resolved.manifest
 
     assert manifest.certification_coverage == "partial"
 
     steps_by_id = {step.id: cast(ManifestStep, step) for step in manifest.steps}
+    document = "ob-read-write-v4.0.1-account-info-openapi"
     schema_expectations = [
         ("accounts-list", "#/components/schemas/OBReadAccount6"),
         ("account-detail", "#/components/schemas/OBReadAccount6"),
@@ -475,11 +470,11 @@ def test_v4_0_1_ais_certification_baseline_keeps_schema_rollout_blocked() -> Non
     ]
 
     for step_id, schema_ref in schema_expectations:
-        assert not _has_response_schema_assertion(
+        assert _has_response_schema_assertion(
             steps_by_id[step_id],
-            document="ob-read-write-v4.0-account-info-openapi",
+            document=document,
             schema_ref=schema_ref,
-        ), f"{step_id} should stay without response_schema until v4.0.1 source mapping is approved"
+        ), f"{step_id} is missing {schema_ref} response_schema assertion for {document}"
 
 
 @pytest.mark.unit

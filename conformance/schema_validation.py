@@ -1,6 +1,6 @@
 """Validate response payloads against allowlisted bundled schema documents.
 
-This helper currently targets the bundled Open Banking v4 AIS OpenAPI snapshot.
+This helper targets bundled Open Banking Read/Write AIS OpenAPI snapshots.
 It resolves local ``#/...`` references, translates ``nullable`` into plain JSON
 Schema union types, and returns deterministic validation diagnostics for use in
 manifest assertion failures.
@@ -30,6 +30,9 @@ class SchemaValidationConfigurationError(Exception):
 _BUNDLED_OPENAPI_DOCUMENT_PATHS: dict[str, Path] = {
     "ob-read-write-v4.0-account-info-openapi": (
         Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "account-info-openapi.json"
+    ),
+    "ob-read-write-v4.0.1-account-info-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "account-info-openapi.json"
     ),
 }
 """Allowlisted bundled OpenAPI documents addressable by response schema assertions."""
@@ -201,27 +204,35 @@ def _prepare_openapi_schema(document_root: JsonObject, value: JsonValue, *, seen
             merged_schema = copy.deepcopy(resolved_schema)
             for key, member in sibling_items.items():
                 merged_schema[key] = _prepare_openapi_schema(document_root, member, seen_refs=seen_refs)
-            return _normalize_nullable_schema(merged_schema)
+            return _normalize_openapi_schema_keywords(merged_schema)
 
         normalized_schema = {
             key: _prepare_openapi_schema(document_root, member, seen_refs=seen_refs) for key, member in value.items()
         }
-        return _normalize_nullable_schema(normalized_schema)
+        return _normalize_openapi_schema_keywords(normalized_schema)
 
     if isinstance(value, list):
         return [_prepare_openapi_schema(document_root, item, seen_refs=seen_refs) for item in value]
     return value
 
 
-def _normalize_nullable_schema(schema: JsonObject) -> JsonObject:
-    """Translate OpenAPI ``nullable`` into JSON Schema type unions.
+def _normalize_openapi_schema_keywords(schema: JsonObject) -> JsonObject:
+    """Translate OpenAPI-specific keywords into JSON Schema equivalents.
 
     Args:
-        schema: Schema object possibly containing the OpenAPI ``nullable`` key.
+        schema: Schema object possibly containing OpenAPI-only keywords.
 
     Returns:
         Schema object adjusted for plain JSON Schema validation.
     """
+    namespaced_enum_value = schema.pop("x-namespaced-enum", None)
+    if (
+        "enum" not in schema
+        and isinstance(namespaced_enum_value, list)
+        and all(isinstance(item, str) for item in namespaced_enum_value)
+    ):
+        schema["enum"] = namespaced_enum_value
+
     nullable_value = schema.pop("nullable", None)
     if nullable_value is not True:
         return schema

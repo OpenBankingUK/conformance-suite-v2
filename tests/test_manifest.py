@@ -315,6 +315,26 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_v4_0_1_response_schema_document() -> None:
+    """Parse response schema assertions targeting the bundled v4.0.1 OpenAPI document."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0.1-account-info-openapi",
+            "schemaRef": "#/components/schemas/OBReadAccount6",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion.document == "ob-read-write-v4.0.1-account-info-openapi"
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("raw_assertion", "message"),
     [
@@ -331,10 +351,13 @@ def test_parse_v1_manifest_accepts_response_schema_assertion_with_inline_schema(
             {
                 "type": "response_schema",
                 "source": "bundled_openapi",
-                "document": "ob-read-write-v4.0.1-account-info-openapi",
+                "document": "ob-read-write-v9.9-account-info-openapi",
                 "schemaRef": "#/components/schemas/OBReadAccount6",
             },
-            r"steps\[0\]\.assertions\[0\]\.document must be one of: ob-read-write-v4\.0-account-info-openapi",
+            (
+                r"steps\[0\]\.assertions\[0\]\.document must be one of: "
+                r"ob-read-write-v4\.0-account-info-openapi, ob-read-write-v4\.0\.1-account-info-openapi"
+            ),
         ),
         (
             {
