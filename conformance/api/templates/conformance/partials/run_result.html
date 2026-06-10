@@ -63,17 +63,44 @@
 
                     {% if step.request_json %}
                         <h3>Request evidence</h3>
-                        <pre class="payload-json">{{ step.request_json|escape }}</pre>
+                        <div class="payload-block">
+                            <button
+                                type="button"
+                                class="payload-copy-button"
+                                data-copy-target="step-{{ forloop.counter }}-request-json"
+                            >
+                                Copy
+                            </button>
+                            <pre id="step-{{ forloop.counter }}-request-json" class="payload-json payload-scroll">{{ step.request_json|escape }}</pre>
+                        </div>
                     {% endif %}
 
                     {% if step.response_json %}
                         <h3>Response evidence</h3>
-                        <pre class="payload-json">{{ step.response_json|escape }}</pre>
+                        <div class="payload-block">
+                            <button
+                                type="button"
+                                class="payload-copy-button"
+                                data-copy-target="step-{{ forloop.counter }}-response-json"
+                            >
+                                Copy
+                            </button>
+                            <pre id="step-{{ forloop.counter }}-response-json" class="payload-json payload-scroll">{{ step.response_json|escape }}</pre>
+                        </div>
                     {% endif %}
 
                     {% if step.remaining_details_json %}
                         <h3>Raw details</h3>
-                        <pre class="payload-json">{{ step.remaining_details_json|escape }}</pre>
+                        <div class="payload-block">
+                            <button
+                                type="button"
+                                class="payload-copy-button"
+                                data-copy-target="step-{{ forloop.counter }}-remaining-details-json"
+                            >
+                                Copy
+                            </button>
+                            <pre id="step-{{ forloop.counter }}-remaining-details-json" class="payload-json payload-scroll">{{ step.remaining_details_json|escape }}</pre>
+                        </div>
                     {% endif %}
                 </details>
             {% endfor %}

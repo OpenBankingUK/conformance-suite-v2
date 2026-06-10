@@ -1536,7 +1536,23 @@ class TestRunDetailUi:
                                 "method": "POST",
                                 "url": "https://example.com/token",
                                 "headers": {"Authorization": "***"},
-                                "body": {"grant_type": "authorization_code"},
+                                "body": {
+                                    "grant_type": "authorization_code",
+                                    "evidence_lines": [
+                                        "line-1",
+                                        "line-2",
+                                        "line-3",
+                                        "line-4",
+                                        "line-5",
+                                        "line-6",
+                                        "line-7",
+                                        "line-8",
+                                        "line-9",
+                                        "line-10",
+                                        "line-11",
+                                        "line-12",
+                                    ],
+                                },
                             },
                             "response": {
                                 "statusCode": 400,
@@ -1561,6 +1577,7 @@ class TestRunDetailUi:
         assert "Request evidence" in content
         assert "Response evidence" in content
         assert "Raw details" in content
+        assert 'class="payload-json payload-scroll"' in content
         assert f"/runs/{record.run_id}/result.json" in content
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
         assert "rawError" in content
@@ -1578,6 +1595,13 @@ class TestRunDetailUi:
         assert '"method": "GET"' in cast("str", passed_step["request_json"])
         assert '"statusCode": 200' in cast("str", passed_step["response_json"])
         assert passed_step["remaining_details_json"] is None
+        assert cast("str", passed_step["request_json_preview"]).splitlines() == cast(
+            "str", passed_step["request_json"]
+        ).splitlines()[:9]
+        assert cast("str", passed_step["response_json_preview"]).splitlines() == cast(
+            "str", passed_step["response_json"]
+        ).splitlines()[:9]
+        assert passed_step["remaining_details_json_preview"] is None
 
         failed_step = context_steps[1]
         assert failed_step["name"] == "Token request"
@@ -1588,6 +1612,18 @@ class TestRunDetailUi:
             {"status": "warn", "message": "Deprecated token endpoint behaviour"},
         ]
         assert '"rawError"' in cast("str", failed_step["remaining_details_json"])
+        assert isinstance(failed_step["request_json_preview"], str)
+        assert isinstance(failed_step["response_json_preview"], str)
+        assert isinstance(failed_step["remaining_details_json_preview"], str)
+
+        failed_request_json = cast("str", failed_step["request_json"])
+        failed_request_preview = cast("str", failed_step["request_json_preview"])
+        assert len(failed_request_preview.splitlines()) == 9
+        assert failed_request_preview == "\n".join(failed_request_json.splitlines()[:9])
+        assert '"line-12"' in failed_request_json
+        assert '"line-12"' not in failed_request_preview
+
+        assert html.escape(failed_request_json) in content
 
         assert response.context["result_issue_count"] == 2
         assert response.context["result_status_counts"] == {

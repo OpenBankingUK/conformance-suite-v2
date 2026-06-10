@@ -324,6 +324,10 @@ def _result_steps(result: JsonObject | None) -> list[dict[str, object]]:
         if not isinstance(response_status_code, int):
             response_status_code = None
 
+        request_json = _pretty_json(request_dict)
+        response_json = _pretty_json(response_dict)
+        remaining_details_json = _pretty_json(_remaining_step_details(step_details))
+
         rendered_steps.append(
             {
                 "name": raw_step.get("name") if isinstance(raw_step.get("name"), str) else "-",
@@ -335,9 +339,12 @@ def _result_steps(result: JsonObject | None) -> list[dict[str, object]]:
                 "response_status_code": response_status_code,
                 "assertion_summaries": assertion_summaries,
                 "issues": _step_issues(step_details),
-                "request_json": _pretty_json(request_dict),
-                "response_json": _pretty_json(response_dict),
-                "remaining_details_json": _pretty_json(_remaining_step_details(step_details)),
+                "request_json": request_json,
+                "request_json_preview": _json_preview(request_json),
+                "response_json": response_json,
+                "response_json_preview": _json_preview(response_json),
+                "remaining_details_json": remaining_details_json,
+                "remaining_details_json_preview": _json_preview(remaining_details_json),
             }
         )
     return rendered_steps
@@ -386,6 +393,22 @@ def _pretty_json(value: JsonValue | None) -> str | None:
     if value is None:
         return None
     return json.dumps(value, indent=2, sort_keys=True)
+
+
+def _json_preview(value: str | None, *, line_count: int = 9) -> str | None:
+    """Return a compact preview for a pretty-printed JSON payload.
+
+    Args:
+        value: Pretty-printed JSON text to truncate for collapsed display.
+        line_count: Maximum number of lines to include in the preview.
+
+    Returns:
+        The first ``line_count`` lines of ``value``, or ``None`` when the
+        input is ``None``.
+    """
+    if value is None:
+        return None
+    return "\n".join(value.splitlines()[:line_count])
 
 
 def _remaining_step_details(step_details: JsonObject) -> JsonObject | None:
