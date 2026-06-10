@@ -419,6 +419,7 @@
     </header>
 
     {% include "conformance/partials/run_status.html" %}
+    {% include "conformance/partials/run_steps.html" %}
     {% include "conformance/partials/run_result.html" %}
     {% include "conformance/partials/run_log.html" %}
 </main>
@@ -478,6 +479,58 @@
 
     renderLocalDatetimes(document);
     document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));
+
+    (function () {
+        const STEP_STATE_STORAGE_KEY = "conformance.runSteps.{{ run.run_id }}";
+        const STEP_SELECTOR = "details.result-step[data-step-id]";
+        const stepStates = new Map();
+
+        function loadStepStates() {
+            try {
+                const stored = sessionStorage.getItem(STEP_STATE_STORAGE_KEY);
+                if (!stored) { return; }
+                const parsed = JSON.parse(stored);
+                Object.entries(parsed).forEach(function ([stepId, open]) {
+                    if (typeof open === "boolean") {
+                        stepStates.set(stepId, open);
+                    }
+                });
+            } catch {
+                return;
+            }
+        }
+
+        function saveStepStates() {
+            try {
+                sessionStorage.setItem(STEP_STATE_STORAGE_KEY, JSON.stringify(Object.fromEntries(stepStates)));
+            } catch {
+                return;
+            }
+        }
+
+        function captureStepStates() {
+            document.querySelectorAll(STEP_SELECTOR).forEach(function (det) {
+                stepStates.set(det.dataset.stepId, det.open);
+            });
+            saveStepStates();
+        }
+
+        function restoreStepStates() {
+            document.querySelectorAll(STEP_SELECTOR).forEach(function (det) {
+                const saved = stepStates.get(det.dataset.stepId);
+                if (saved !== undefined) {
+                    det.open = saved;
+                }
+            });
+        }
+
+        loadStepStates();
+        restoreStepStates();
+        document.querySelectorAll(STEP_SELECTOR).forEach(function (det) {
+            det.addEventListener("toggle", captureStepStates);
+        });
+        window.addEventListener("pagehide", captureStepStates);
+    }());
 </script>
 </body>
 </html>

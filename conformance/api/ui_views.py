@@ -12,6 +12,7 @@ from django.views.decorators.http import require_GET, require_POST
 from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
+from conformance.execution_log import ExecutionEvent
 from conformance.json_types import JsonObject, JsonValue
 
 
@@ -131,6 +132,24 @@ def run_status_partial(request: HttpRequest, run_id: str) -> HttpResponse:
     if record is None:
         return HttpResponseNotFound("Run not found")
     return render(request, "conformance/partials/run_status.html", _run_context(record))
+
+
+@require_GET
+def run_steps_partial(request: HttpRequest, run_id: str) -> HttpResponse:
+    """Render the selected-step progress panel partial.
+
+    Args:
+        request: The incoming browser GET request.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        HTML partial with selected-step progress rows, or 404 when the run
+        is unknown.
+    """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return HttpResponseNotFound("Run not found")
+    return render(request, "conformance/partials/run_steps.html", _run_context(record))
 
 
 @require_GET
@@ -255,10 +274,12 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         Template context containing status, raw endpoint URLs, log metadata,
         and summarised result fields.
     """
+    step_progress = _step_progress_rows(record)
     result_steps = _result_steps(record.result)
     return {
         "run": record,
         "status_url": reverse("ui-run-status", kwargs={"run_id": record.run_id}),
+        "steps_partial_url": reverse("ui-run-steps", kwargs={"run_id": record.run_id}),
         "log_partial_url": reverse("ui-run-log", kwargs={"run_id": record.run_id}),
         "result_partial_url": reverse("ui-run-result", kwargs={"run_id": record.run_id}),
         "raw_log_url": reverse("ui-run-log-download", kwargs={"run_id": record.run_id}),
@@ -267,11 +288,302 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
+        "step_progress": step_progress,
+        "step_progress_counts": _step_progress_counts(step_progress),
         "result_steps": result_steps,
         "result_issue_count": _result_issue_count(result_steps),
         "result_status_counts": _result_status_counts(result_steps),
         "developer_mode": _run_developer_mode(record),
     }
+
+
+def _step_progress_rows(record: RunRecord) -> list[dict[str, object]]:
+    """Build selected-step progress rows for live run rendering.
+
+    Args:
+        record: Snapshot of the run record to render.
+
+    Returns:
+        Ordered list of selected planned-step rows with launch metadata,
+        current lifecycle status, and masked event evidence summaries.
+    """
+    rows: list[dict[str, object]] = []
+    row_by_step_id: dict[str, dict[str, object]] = {}
+    for planned_step in sorted(record.planned_steps, key=lambda step: step.order):
+        row: dict[str, object] = {
+            "step_id": planned_step.step_id,
+            "name": planned_step.name,
+            "kind": planned_step.kind,
+            "group": planned_step.group,
+            "phase": planned_step.phase,
+            "mandatory": planned_step.mandatory,
+            "optional": planned_step.optional,
+            "order": planned_step.order,
+            "status": "pending",
+            "message": "",
+            "status_code": None,
+            "started_at": None,
+            "completed_at": None,
+            "awaiting_authorisation": False,
+            "evidence_events": [],
+        }
+        rows.append(row)
+        row_by_step_id[planned_step.step_id] = row
+
+    if not rows:
+        return []
+
+    logger_events = record.execution_logger.events() if record.execution_logger is not None else []
+    for event in logger_events:
+        if event.step_id is None:
+            continue
+        event_row = row_by_step_id.get(event.step_id)
+        if event_row is None:
+            continue
+        _apply_progress_event_to_row(event_row, event)
+
+    for participant_action in record.participant_actions.values():
+        action_row = row_by_step_id.get(participant_action.step_id)
+        if action_row is None:
+            continue
+        if participant_action.status != "pending":
+            continue
+        action_row["awaiting_authorisation"] = True
+        row_status = action_row.get("status")
+        if isinstance(row_status, str) and row_status in {"pending", "running"}:
+            action_row["status"] = "awaiting"
+            if not action_row["message"]:
+                action_row["message"] = "Waiting for PSU authorisation callback"
+
+    _reconcile_step_progress_with_result(rows, record.result)
+    return rows
+
+
+def _apply_progress_event_to_row(row: dict[str, object], event: ExecutionEvent) -> None:
+    """Update a progress row from one execution-log event.
+
+    Args:
+        row: Mutable selected-step progress row.
+        event: Structured execution-log event for the same step.
+    """
+    event_payload: JsonObject = event.payload if isinstance(event.payload, dict) else {}
+
+    if event.type == "step-started":
+        row["started_at"] = event.timestamp
+        if row["status"] == "pending":
+            row["status"] = "running"
+    elif event.type == "step-completed":
+        completion_status = event_payload.get("status")
+        row["status"] = completion_status if isinstance(completion_status, str) and completion_status else "completed"
+        completion_message = event_payload.get("message")
+        if isinstance(completion_message, str):
+            row["message"] = completion_message
+        completion_status_code = event_payload.get("statusCode")
+        if isinstance(completion_status_code, int):
+            row["status_code"] = completion_status_code
+        row["completed_at"] = event.timestamp
+
+    event_evidence = _progress_event_evidence(event)
+    if event_evidence is None:
+        return
+    evidence_events = row["evidence_events"]
+    if isinstance(evidence_events, list):
+        evidence_events.append(event_evidence)
+
+
+def _progress_event_evidence(event: ExecutionEvent) -> dict[str, object] | None:
+    """Build a template-friendly masked evidence summary for one event.
+
+    Args:
+        event: Structured execution-log event linked to a selected step.
+
+    Returns:
+        Evidence dictionary for supported event types, or ``None`` when the
+        event type is omitted from progress evidence.
+    """
+    payload = event.payload if isinstance(event.payload, dict) else {}
+    event_type = event.type
+    if event_type not in {
+        "request-sent",
+        "response-received",
+        "assertion-evaluated",
+        "placeholder-error",
+        "application-error",
+        "psu-authorization-url",
+        "step-completed",
+    }:
+        return None
+
+    payload_json = _pretty_json(payload)
+    return {
+        "timestamp": event.timestamp,
+        "type": event_type,
+        "summary": _progress_event_summary(event_type=event_type, payload=payload),
+        "payload_json": payload_json,
+        "payload_json_preview": _json_preview(payload_json),
+    }
+
+
+def _progress_event_summary(*, event_type: str, payload: JsonObject) -> str:
+    """Return a one-line summary for a step evidence event.
+
+    Args:
+        event_type: Execution-log event type to summarise.
+        payload: Masked event payload for ``event_type``.
+
+    Returns:
+        Human-readable evidence summary for UI rendering.
+    """
+    if event_type == "request-sent":
+        method = payload.get("method")
+        url = payload.get("url")
+        parts = ["Request sent"]
+        if isinstance(method, str):
+            parts.append(method)
+        if isinstance(url, str):
+            parts.append(url)
+        return " - ".join(parts)
+
+    if event_type == "response-received":
+        status_code = payload.get("statusCode")
+        url = payload.get("url")
+        if isinstance(status_code, int) and isinstance(url, str):
+            return f"Response received ({status_code}) - {url}"
+        if isinstance(status_code, int):
+            return f"Response received ({status_code})"
+        return "Response received"
+
+    if event_type == "assertion-evaluated":
+        assertion_status = payload.get("status")
+        assertion_message = payload.get("message")
+        if isinstance(assertion_status, str) and isinstance(assertion_message, str):
+            return f"Assertion {assertion_status}: {assertion_message}"
+        if isinstance(assertion_status, str):
+            return f"Assertion {assertion_status}"
+        return "Assertion evaluated"
+
+    if event_type in {"placeholder-error", "application-error"}:
+        message = payload.get("message")
+        if isinstance(message, str) and message:
+            label = "Placeholder error" if event_type == "placeholder-error" else "Application error"
+            return f"{label}: {message}"
+        return "Placeholder error" if event_type == "placeholder-error" else "Application error"
+
+    if event_type == "psu-authorization-url":
+        mode = payload.get("mode")
+        if isinstance(mode, str) and mode:
+            return f"PSU authorisation URL emitted ({mode})"
+        return "PSU authorisation URL emitted"
+
+    if event_type == "step-completed":
+        completion_status = payload.get("status")
+        completion_message = payload.get("message")
+        if isinstance(completion_status, str) and isinstance(completion_message, str):
+            return f"Step completed ({completion_status}): {completion_message}"
+        if isinstance(completion_status, str):
+            return f"Step completed ({completion_status})"
+        return "Step completed"
+
+    return event_type
+
+
+def _reconcile_step_progress_with_result(rows: list[dict[str, object]], result: JsonObject | None) -> None:
+    """Reconcile live rows with canonical final result step outcomes.
+
+    Args:
+        rows: Mutable selected-step progress rows.
+        result: Completed run result JSON, or ``None`` for active runs.
+    """
+    if result is None:
+        return
+
+    raw_steps = result.get("steps")
+    if not isinstance(raw_steps, list):
+        return
+
+    result_by_name: dict[str, JsonObject] = {}
+    for raw_step in raw_steps:
+        if not isinstance(raw_step, dict):
+            continue
+        name = raw_step.get("name")
+        if isinstance(name, str):
+            result_by_name[name] = raw_step
+
+    for row in rows:
+        step_id = row.get("step_id")
+        if not isinstance(step_id, str):
+            continue
+        raw_step = result_by_name.get(step_id)
+        if raw_step is None:
+            continue
+
+        result_status = raw_step.get("status")
+        if isinstance(result_status, str) and result_status:
+            row["status"] = result_status
+
+        result_message = raw_step.get("message")
+        if isinstance(result_message, str):
+            row["message"] = result_message
+
+        details = raw_step.get("details")
+        if isinstance(details, dict):
+            response = details.get("response")
+            if isinstance(response, dict):
+                response_status_code = response.get("statusCode")
+                if isinstance(response_status_code, int):
+                    row["status_code"] = response_status_code
+
+
+def _step_progress_counts(step_progress: list[dict[str, object]]) -> dict[str, int]:
+    """Count aggregate progress-state totals across selected planned steps.
+
+    Args:
+        step_progress: Selected-step progress rows returned by
+            :func:`_step_progress_rows`.
+
+    Returns:
+        Counts for selected-step totals and status buckets used by run-detail
+        progress metrics.
+    """
+    counts = {
+        "total": len(step_progress),
+        "pending": 0,
+        "running_or_awaiting": 0,
+        "passed": 0,
+        "failed": 0,
+        "warn": 0,
+        "skipped": 0,
+        "completed": 0,
+    }
+
+    for row in step_progress:
+        status = row.get("status")
+        if status == "pending":
+            counts["pending"] += 1
+            continue
+        if status in {"running", "awaiting"}:
+            counts["running_or_awaiting"] += 1
+            continue
+        if status == "passed":
+            counts["passed"] += 1
+            counts["completed"] += 1
+            continue
+        if status == "failed":
+            counts["failed"] += 1
+            counts["completed"] += 1
+            continue
+        if status in {"warn", "warning"}:
+            counts["warn"] += 1
+            counts["completed"] += 1
+            continue
+        if status == "skipped":
+            counts["skipped"] += 1
+            counts["completed"] += 1
+            continue
+        if status == "completed":
+            counts["completed"] += 1
+
+    return counts
 
 
 def _result_steps(result: JsonObject | None) -> list[dict[str, object]]:

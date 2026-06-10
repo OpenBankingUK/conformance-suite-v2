@@ -15,7 +15,7 @@ import pytest
 from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.api.run_store import RunConflictError, run_store
+from conformance.api.run_store import RunConflictError, RunPlanStep, run_store
 from conformance.api.ui_views import _run_context
 from conformance.json_types import JsonValue
 from tests.test_executor import _executor_signing_config
@@ -469,20 +469,16 @@ class TestPlanBuilderUi:
             else:
                 assert checked_fragment not in content
 
-        assert f'data-plan-count-selected>{len(expected_checked_ids)}<' in content
-        assert f'data-plan-count-mandatory-off>{expected_mandatory_off_count}<' in content
+        assert f"data-plan-count-selected>{len(expected_checked_ids)}<" in content
+        assert f"data-plan-count-mandatory-off>{expected_mandatory_off_count}<" in content
 
         if expected_eligible_message:
             assert (
-                '<div class="message success" data-plan-certification-message>'
-                "Certification selection eligible"
-                "</div>"
+                '<div class="message success" data-plan-certification-message>Certification selection eligible</div>'
             ) in content
         else:
             assert (
-                '<div class="message warning" data-plan-certification-message>'
-                "Certification selection ineligible"
-                "</div>"
+                '<div class="message warning" data-plan-certification-message>Certification selection ineligible</div>'
             ) in content
 
     def test_preview_post_resolves_config_only_suite(self) -> None:
@@ -858,6 +854,27 @@ class TestPlanBuilderUi:
         assert accepted.status_code == 302
         assert accepted["Location"] == "/runs/run-123/"
         assert mock_start_run.call_count == 1
+
+    def test_launch_post_persists_only_selected_steps_on_run_snapshot(self) -> None:
+        """Browser launch snapshots only selected steps for live progress rows."""
+        client = Client()
+        manifest = _v1_manifest(
+            [
+                _http_step("keep", mandatory=True),
+                _http_step("drop", optional=True),
+            ]
+        )
+
+        response = client.post(
+            "/plan/launch/",
+            data=_plan_form_data(manifest, selected_step_ids=["keep"]),
+        )
+
+        assert response.status_code == 302
+        run_id = _run_id_from_redirect(response["Location"])
+        record = run_store.get_run(run_id)
+        assert record is not None
+        assert [step.step_id for step in record.planned_steps] == ["keep"]
 
 
 @pytest.mark.integration
@@ -1372,9 +1389,37 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert f"Run {record.run_id}" in content
         assert "pending" in content
-        assert 'http-equiv="refresh" content="2"' in content
+        assert '<meta http-equiv="refresh" content="2">' in content
         assert f"/runs/{record.run_id}/log.json" in content
         assert "Result pending" in content
+
+    def test_run_detail_renders_step_progress_panel_and_preserves_step_state(self) -> None:
+        """Pending run detail pages include selected-step panel and state preservation script."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'id="run-steps"' in content
+        assert "Selected Step Progress" in content
+        assert f"/runs/{record.run_id}/steps/" in content
+        assert 'data-step-id="discovery"' in content
+        assert "sessionStorage.setItem(STEP_STATE_STORAGE_KEY" in content
+        assert 'window.addEventListener("pagehide", captureStepStates)' in content
 
     def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
         """Completed run detail pages should not keep refreshing."""
@@ -1385,7 +1430,7 @@ class TestRunDetailUi:
         response = Client().get(f"/runs/{record.run_id}/")
 
         assert response.status_code == 200
-        assert 'http-equiv="refresh"' not in response.content.decode("utf-8")
+        assert '<meta http-equiv="refresh" content="2">' not in response.content.decode("utf-8")
 
     def test_status_partial_renders_current_timestamps(self) -> None:
         """The status partial renders the current run snapshot."""
@@ -1398,6 +1443,81 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
+
+    def test_steps_partial_returns_404_for_unknown_run(self) -> None:
+        """Unknown run ids return browser 404 from steps partial endpoint."""
+        response = Client().get("/runs/missing/steps/")
+
+        assert response.status_code == 404
+        assert "Run not found" in response.content.decode("utf-8")
+
+    def test_steps_partial_renders_rows_and_live_evidence_for_active_run(self) -> None:
+        """Steps partial renders selected rows and expandable masked evidence."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        assert record.execution_logger is not None
+        record.execution_logger.emit("step-started", step_id="discovery")
+        record.execution_logger.emit(
+            "request-sent",
+            step_id="discovery",
+            payload={"method": "GET", "url": "https://example.com/.well-known/openid-configuration"},
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/steps/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'id="run-steps"' in content
+        assert 'data-step-id="discovery"' in content
+        assert "open" in content
+        assert "Discovery" in content
+        assert "running" in content
+        assert "Live evidence" in content
+        assert "request-sent" in content
+        assert "Request sent - GET - https://example.com/.well-known/openid-configuration" in content
+
+    def test_steps_partial_disables_interval_polling_when_run_is_terminal(self) -> None:
+        """Terminal runs render steps partial without interval polling."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={"status": "passed", "steps": [{"name": "discovery", "status": "passed"}]},
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/steps/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'id="run-steps"' in content
+        assert 'data-step-id="discovery"' in content
+        # Terminal rows are not forced open by the server.
+        assert 'data-step-id="discovery" open>' not in content
 
     def test_status_partial_renders_pending_psu_authorisation_action(self) -> None:
         """The status partial renders active manual PSU browser actions."""
@@ -1674,12 +1794,14 @@ class TestRunDetailUi:
         assert '"method": "GET"' in cast("str", passed_step["request_json"])
         assert '"statusCode": 200' in cast("str", passed_step["response_json"])
         assert passed_step["remaining_details_json"] is None
-        assert cast("str", passed_step["request_json_preview"]).splitlines() == cast(
-            "str", passed_step["request_json"]
-        ).splitlines()[:9]
-        assert cast("str", passed_step["response_json_preview"]).splitlines() == cast(
-            "str", passed_step["response_json"]
-        ).splitlines()[:9]
+        assert (
+            cast("str", passed_step["request_json_preview"]).splitlines()
+            == cast("str", passed_step["request_json"]).splitlines()[:9]
+        )
+        assert (
+            cast("str", passed_step["response_json_preview"]).splitlines()
+            == cast("str", passed_step["response_json"]).splitlines()[:9]
+        )
         assert passed_step["remaining_details_json_preview"] is None
 
         failed_step = context_steps[1]
@@ -1696,7 +1818,7 @@ class TestRunDetailUi:
         assert isinstance(failed_step["remaining_details_json_preview"], str)
 
         failed_request_json = cast("str", failed_step["request_json"])
-        failed_request_preview = cast("str", failed_step["request_json_preview"])
+        failed_request_preview = failed_step["request_json_preview"]  # isinstance check above narrows to str
         assert len(failed_request_preview.splitlines()) == 9
         assert failed_request_preview == "\n".join(failed_request_json.splitlines()[:9])
         assert '"line-12"' in failed_request_json
@@ -1763,3 +1885,220 @@ class TestRunDetailUi:
         assert "Internal engine error" in content
         assert 'hx-trigger="load"' in content
         assert "every 2s" not in content
+
+    def test_run_context_step_progress_defaults_selected_steps_to_pending(self) -> None:
+        """Selected planned steps should render as pending before any events."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="step-one",
+                    name="Step one",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+                RunPlanStep(
+                    step_id="step-two",
+                    name="Step two",
+                    kind="http",
+                    group="execution",
+                    phase="execution",
+                    mandatory=False,
+                    optional=True,
+                    order=1,
+                ),
+            )
+        )
+        snapshot = run_store.get_run(record.run_id)
+        assert snapshot is not None
+
+        context = _run_context(snapshot)
+
+        progress_rows = cast("list[dict[str, object]]", context["step_progress"])
+        assert len(progress_rows) == 2
+        assert [row["step_id"] for row in progress_rows] == ["step-one", "step-two"]
+        assert [row["status"] for row in progress_rows] == ["pending", "pending"]
+        assert [row["evidence_events"] for row in progress_rows] == [[], []]
+        assert context["step_progress_counts"] == {
+            "total": 2,
+            "pending": 2,
+            "running_or_awaiting": 0,
+            "passed": 0,
+            "failed": 0,
+            "warn": 0,
+            "skipped": 0,
+            "completed": 0,
+        }
+
+    def test_run_context_step_progress_maps_events_into_running_and_terminal_rows(self) -> None:
+        """Step progress rows should reflect execution events and evidence summaries."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        assert record.execution_logger is not None
+        record.execution_logger.emit("step-started", step_id="discovery")
+        record.execution_logger.emit(
+            "request-sent",
+            step_id="discovery",
+            payload={"method": "GET", "url": "https://example.com/.well-known/openid-configuration"},
+        )
+        record.execution_logger.emit(
+            "response-received",
+            step_id="discovery",
+            payload={"statusCode": 200, "url": "https://example.com/.well-known/openid-configuration"},
+        )
+        record.execution_logger.emit(
+            "assertion-evaluated",
+            step_id="discovery",
+            payload={"status": "passed", "message": "Status code matched"},
+        )
+        record.execution_logger.emit(
+            "step-completed",
+            step_id="discovery",
+            payload={"status": "passed", "message": "Discovery passed", "statusCode": 200},
+        )
+
+        snapshot = run_store.get_run(record.run_id)
+        assert snapshot is not None
+        context = _run_context(snapshot)
+
+        progress_rows = cast("list[dict[str, object]]", context["step_progress"])
+        assert len(progress_rows) == 1
+        row = progress_rows[0]
+        assert row["step_id"] == "discovery"
+        assert row["status"] == "passed"
+        assert row["message"] == "Discovery passed"
+        assert row["status_code"] == 200
+        assert isinstance(row["started_at"], str)
+        evidence_events = cast("list[dict[str, object]]", row["evidence_events"])
+        assert [event["type"] for event in evidence_events] == [
+            "request-sent",
+            "response-received",
+            "assertion-evaluated",
+            "step-completed",
+        ]
+        assert context["step_progress_counts"] == {
+            "total": 1,
+            "pending": 0,
+            "running_or_awaiting": 0,
+            "passed": 1,
+            "failed": 0,
+            "warn": 0,
+            "skipped": 0,
+            "completed": 1,
+        }
+
+    def test_run_context_step_progress_marks_pending_participant_action_as_awaiting(self) -> None:
+        """Pending PSU participant actions should surface as awaiting progress rows."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="psu",
+                    name="Manual PSU",
+                    kind="psu-authorization",
+                    group="consent",
+                    phase="execution",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        assert record.execution_logger is not None
+        record.execution_logger.emit("step-started", step_id="psu")
+        run_store.set_participant_action(record.run_id, step_id="psu", url="https://auth.example.com/authorize?state=x")
+
+        snapshot = run_store.get_run(record.run_id)
+        assert snapshot is not None
+        context = _run_context(snapshot)
+
+        progress_rows = cast("list[dict[str, object]]", context["step_progress"])
+        assert len(progress_rows) == 1
+        row = progress_rows[0]
+        assert row["status"] == "awaiting"
+        assert row["awaiting_authorisation"] is True
+        assert row["message"] == "Waiting for PSU authorisation callback"
+        assert context["step_progress_counts"] == {
+            "total": 1,
+            "pending": 0,
+            "running_or_awaiting": 1,
+            "passed": 0,
+            "failed": 0,
+            "warn": 0,
+            "skipped": 0,
+            "completed": 0,
+        }
+
+    def test_run_context_step_progress_reconciles_status_with_final_result(self) -> None:
+        """Final result step data should override live status and message fields."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="token-exchange",
+                    name="Token exchange",
+                    kind="http",
+                    group="execution",
+                    phase="execution",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        assert record.execution_logger is not None
+        record.execution_logger.emit("step-started", step_id="token-exchange")
+        record.execution_logger.emit(
+            "step-completed",
+            step_id="token-exchange",
+            payload={"status": "passed", "message": "Interim status", "statusCode": 200},
+        )
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "failed",
+                "steps": [
+                    {
+                        "name": "token-exchange",
+                        "status": "failed",
+                        "message": "Token endpoint rejected authorisation code",
+                        "details": {"response": {"statusCode": 400}},
+                    }
+                ],
+            },
+        )
+
+        snapshot = run_store.get_run(record.run_id)
+        assert snapshot is not None
+        context = _run_context(snapshot)
+
+        progress_rows = cast("list[dict[str, object]]", context["step_progress"])
+        assert len(progress_rows) == 1
+        row = progress_rows[0]
+        assert row["status"] == "failed"
+        assert row["message"] == "Token endpoint rejected authorisation code"
+        assert row["status_code"] == 400
+        assert context["step_progress_counts"] == {
+            "total": 1,
+            "pending": 0,
+            "running_or_awaiting": 0,
+            "passed": 0,
+            "failed": 1,
+            "warn": 0,
+            "skipped": 0,
+            "completed": 1,
+        }

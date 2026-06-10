@@ -17,6 +17,7 @@ from conformance.api.ui_views import (
     run_result_download,
     run_result_partial,
     run_status_partial,
+    run_steps_partial,
 )
 
 
@@ -61,6 +62,7 @@ urlpatterns = [
     path("plan/launch/", plan_launch, name="plan-launch"),
     path("runs/<str:run_id>/", run_detail, name="ui-run-detail"),
     path("runs/<str:run_id>/status/", run_status_partial, name="ui-run-status"),
+    path("runs/<str:run_id>/steps/", run_steps_partial, name="ui-run-steps"),
     path("runs/<str:run_id>/log/", run_log_partial, name="ui-run-log"),
     path("runs/<str:run_id>/log.json", run_log_download, name="ui-run-log-download"),
     path("runs/<str:run_id>/result/", run_result_partial, name="ui-run-result"),

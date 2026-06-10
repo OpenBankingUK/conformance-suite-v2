@@ -1,3 +1,4 @@
+import dataclasses
 import json
 import time
 from collections.abc import Callable
@@ -10,7 +11,7 @@ from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_lifecycle import BrowserParticipantActionLogger
-from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunStore, run_store
+from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunPlanStep, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.execution_log import BufferedExecutionLogger
 from tests.test_executor import _executor_signing_config
@@ -102,6 +103,87 @@ class TestRunStore:
         assert status_json["status"] == "completed"
         assert "startedAt" in status_json
         assert "finishedAt" in status_json
+
+    def test_create_run_persists_planned_steps_snapshot(self) -> None:
+        store = RunStore()
+        record = store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+                RunPlanStep(
+                    step_id="token-exchange",
+                    name="Token exchange",
+                    kind="http",
+                    group="execution",
+                    phase="execution",
+                    mandatory=False,
+                    optional=True,
+                    order=1,
+                ),
+            )
+        )
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert [step.step_id for step in snapshot.planned_steps] == ["discovery", "token-exchange"]
+        assert [step.order for step in snapshot.planned_steps] == [0, 1]
+
+    def test_planned_steps_snapshot_is_immutable_and_detached(self) -> None:
+        store = RunStore()
+        record = store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        with pytest.raises(dataclasses.FrozenInstanceError):
+            snapshot.planned_steps[0].name = "Mutated"  # type: ignore[misc]  # intentional: asserts frozen dataclass raises
+
+        assert record.run_id in store._runs
+        store._runs[record.run_id].planned_steps = ()
+        assert [step.step_id for step in snapshot.planned_steps] == ["discovery"]
+
+    def test_to_status_json_does_not_expose_planned_steps(self) -> None:
+        store = RunStore()
+        record = store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="discovery",
+                    name="Discovery",
+                    kind="http",
+                    group="setup",
+                    phase="setup",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+
+        status_json = record.to_status_json()
+
+        assert "plannedSteps" not in status_json
+        assert "planned_steps" not in status_json
+        assert "discovery" not in json.dumps(status_json)
 
     def test_get_run_returns_snapshot_not_live_reference(self) -> None:
         store = RunStore()
@@ -505,6 +587,121 @@ class TestCreateRunEndpoint:
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
         assert "Manifest validation failed" in response.json()["error"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_start_run_derives_default_plan_and_persists_selected_steps(self, mock_execute: Mock) -> None:
+        """Lifecycle start derives default plans and snapshots selected steps."""
+        from conformance.api.run_lifecycle import start_run
+        from conformance.manifest import parse_manifest
+        from conformance.model_bank_config import ModelBankConfig
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        manifest = parse_manifest(
+            {
+                "schemaVersion": "v1",
+                "name": "plan snapshot",
+                "steps": [
+                    {
+                        "id": "mandatory-http",
+                        "name": "Mandatory HTTP",
+                        "mandatory": True,
+                        "request": {"method": "GET", "url": "https://example.com/mandatory"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                    {
+                        "id": "optional-http",
+                        "name": "Optional HTTP",
+                        "optional": True,
+                        "request": {"method": "GET", "url": "https://example.com/optional"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                    {
+                        "kind": "psu-authorization",
+                        "id": "psu-step",
+                        "name": "PSU authorization",
+                        "mode": "manual",
+                        "authorizationEndpoint": "https://auth.example.com/authorize",
+                        "clientId": "client-123",
+                        "redirectUri": "https://conformance.example.com/callback",
+                    },
+                ],
+            }
+        )
+
+        response = start_run(config=config, manifest=manifest, plan=None)
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        assert [step.step_id for step in record.planned_steps] == ["mandatory-http", "psu-step"]
+        assert [step.order for step in record.planned_steps] == [0, 1]
+        assert [step.kind for step in record.planned_steps] == ["http", "psu-authorization"]
+
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        threaded_plan = mock_execute.call_args.args[3]
+        assert threaded_plan is not None
+        assert threaded_plan.selected_step_ids() == ["mandatory-http", "psu-step"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_start_run_persists_selected_only_when_plan_deselects_steps(self, mock_execute: Mock) -> None:
+        """Run snapshots include selected steps only, excluding deselections."""
+        from conformance.api.run_lifecycle import start_run
+        from conformance.manifest import parse_manifest
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.test_plan import TestPlan
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        manifest = parse_manifest(
+            {
+                "schemaVersion": "v1",
+                "name": "selected only",
+                "steps": [
+                    {
+                        "id": "keep-me",
+                        "name": "Keep me",
+                        "request": {"method": "GET", "url": "https://example.com/keep"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                    {
+                        "id": "drop-me",
+                        "name": "Drop me",
+                        "request": {"method": "GET", "url": "https://example.com/drop"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                ],
+            }
+        )
+        plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["drop-me"])
+
+        response = start_run(config=config, manifest=manifest, plan=plan)
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        assert [step.step_id for step in record.planned_steps] == ["keep-me"]
+
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        threaded_plan = mock_execute.call_args.args[3]
+        assert threaded_plan is not None
+        assert threaded_plan.selected_step_ids() == ["keep-me"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:

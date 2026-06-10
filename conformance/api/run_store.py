@@ -61,6 +61,31 @@ class ParticipantAction:
     completed_at: datetime | None = None
 
 
+@dataclass(frozen=True)
+class RunPlanStep:
+    """Immutable snapshot of one selected plan step at run launch.
+
+    Attributes:
+        step_id: Manifest step identifier.
+        name: Human-readable step name.
+        kind: Manifest step kind.
+        group: Optional logical grouping label for the step.
+        phase: Optional high-level phase label for the step.
+        mandatory: Whether the step is mandatory in the manifest.
+        optional: Whether the step is optional in the manifest.
+        order: Launch-time selected ordering index.
+    """
+
+    step_id: str
+    name: str
+    kind: str
+    group: str | None
+    phase: str | None
+    mandatory: bool
+    optional: bool
+    order: int
+
+
 @dataclass
 class RunRecord:
     """Mutable state for a single conformance run.
@@ -83,6 +108,9 @@ class RunRecord:
             engine appends events here during the run; the API exposes
             the buffer's bytes via the run-log endpoint. ``None`` only
             for legacy fixtures that don't exercise the engine path.
+        planned_steps: Launch-time immutable snapshot of selected plan
+            steps used by UI progress rendering. Empty for runs started
+            without a manifest plan snapshot.
     """
 
     run_id: str
@@ -95,6 +123,7 @@ class RunRecord:
     participant_actions: dict[str, ParticipantAction] = field(default_factory=dict)
     participant_action: ParticipantAction | None = None
     execution_logger: BufferedExecutionLogger | None = None
+    planned_steps: tuple[RunPlanStep, ...] = ()
 
     def to_status_json(self) -> JsonObject:
         """Serialise the run record into the public status JSON shape.
@@ -129,8 +158,12 @@ class RunStore:
         self._runs: dict[str, RunRecord] = {}
         self._active_run_id: str | None = None
 
-    def create_run(self) -> RunRecord:
+    def create_run(self, *, planned_steps: tuple[RunPlanStep, ...] = ()) -> RunRecord:
         """Reserve a new run slot if no run is currently active.
+
+        Args:
+            planned_steps: Optional immutable launch snapshot of selected
+                manifest plan steps.
 
         Returns:
             The newly created run record in ``pending`` state.
@@ -147,6 +180,7 @@ class RunStore:
                 status="pending",
                 created_at=datetime.now(UTC),
                 execution_logger=BufferedExecutionLogger(run_id=run_id),
+                planned_steps=tuple(planned_steps),
             )
             self._runs[run_id] = record
             self._active_run_id = run_id
@@ -362,7 +396,8 @@ class RunStore:
             record: Live run record stored under ``self._lock``.
 
         Returns:
-            A shallow copy of the record with a detached participant action.
+            A shallow copy of the record with detached participant action
+            snapshots and an immutable planned-step tuple.
         """
         snapshot_actions = self._snapshot_participant_actions(record.participant_actions)
         legacy_action = self._snapshot_participant_action(self._first_pending_action_locked(record))
@@ -370,6 +405,7 @@ class RunStore:
             record,
             participant_actions=snapshot_actions,
             participant_action=legacy_action,
+            planned_steps=tuple(record.planned_steps),
         )
 
     def _first_pending_action_locked(self, record: RunRecord) -> ParticipantAction | None:

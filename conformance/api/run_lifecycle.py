@@ -14,7 +14,7 @@ import threading
 from collections.abc import Mapping
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.api.run_store import RunStore, run_store
+from conformance.api.run_store import RunPlanStep, RunStore, run_store
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -26,7 +26,7 @@ from conformance.execution_log import (
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import Manifest
+from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
@@ -136,17 +136,90 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    record = run_store.create_run()
+    effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan)
+    planned_steps = _selected_planned_steps_snapshot(manifest=manifest, plan=effective_plan)
+    record = run_store.create_run(planned_steps=planned_steps)
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
-        args=(record.run_id, config, manifest, plan, suite_metadata),
+        args=(record.run_id, config, manifest, effective_plan, suite_metadata),
         kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
     initial_status = record.to_status_json()
     thread.start()
     return initial_status
+
+
+def _effective_plan_for_launch(*, manifest: Manifest | None, plan: TestPlan | None) -> TestPlan | None:
+    """Return the launch-time execution plan for a run.
+
+    Args:
+        manifest: Parsed manifest selected for the run, if any.
+        plan: Caller-supplied plan, or ``None`` when the lifecycle should
+            derive the default manifest plan.
+
+    Returns:
+        The supplied plan when present, the manifest default plan when
+        ``manifest`` is present and ``plan`` is ``None``, otherwise ``None``
+        for smoke-check runs.
+    """
+    if manifest is None:
+        return None
+    if plan is not None:
+        return plan
+    return TestPlan.default_plan_from_manifest(manifest)
+
+
+def _selected_planned_steps_snapshot(*, manifest: Manifest | None, plan: TestPlan | None) -> tuple[RunPlanStep, ...]:
+    """Build an immutable selected-step snapshot for launch-time run records.
+
+    Args:
+        manifest: Parsed manifest selected for the run, if any.
+        plan: Effective plan used for execution; selected entries are copied
+            into the run snapshot.
+
+    Returns:
+        Tuple of selected plan-step snapshots in manifest order, or an empty
+        tuple for non-manifest runs.
+    """
+    if manifest is None or plan is None:
+        return ()
+
+    selected_step_ids = set(plan.selected_step_ids())
+    if not selected_step_ids:
+        return ()
+
+    planned_steps: list[RunPlanStep] = []
+    for step in manifest.steps:
+        if step.id not in selected_step_ids:
+            continue
+        planned_steps.append(
+            RunPlanStep(
+                step_id=step.id,
+                name=step.name,
+                kind=_manifest_step_kind(step),
+                group=step.group,
+                phase=step.phase,
+                mandatory=step.mandatory,
+                optional=step.optional,
+                order=len(planned_steps),
+            )
+        )
+    return tuple(planned_steps)
+
+
+def _manifest_step_kind(step: V1Step) -> str:
+    """Return the run-store step-kind discriminator for a manifest step.
+
+    Args:
+        step: Parsed v1 manifest step.
+
+    Returns:
+        ``"psu-authorization"`` for PSU authorization steps, otherwise
+        ``"http"``.
+    """
+    return "psu-authorization" if isinstance(step, PsuAuthorizationStep) else "http"
 
 
 def _execute_run(
