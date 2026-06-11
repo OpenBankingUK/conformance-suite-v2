@@ -1421,6 +1421,21 @@ class TestRunDetailUi:
         assert "sessionStorage.setItem(STEP_STATE_STORAGE_KEY" in content
         assert 'window.addEventListener("pagehide", captureStepStates)' in content
 
+    def test_run_detail_includes_local_datetime_rendering_hooks(self) -> None:
+        """Run detail pages localise timestamp elements after load and HTMX swaps."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "data-local-datetime" in content
+        assert "renderLocalDatetimes(document);" in content
+        htmx_swap_hook = (
+            'document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));'
+        )
+        assert htmx_swap_hook in content
+
     def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
         """Completed run detail pages should not keep refreshing."""
         record = run_store.create_run()
@@ -1443,6 +1458,8 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
+        assert "data-local-datetime" in content
+        assert 'datetime="' in content
 
     def test_steps_partial_returns_404_for_unknown_run(self) -> None:
         """Unknown run ids return browser 404 from steps partial endpoint."""
@@ -1487,6 +1504,8 @@ class TestRunDetailUi:
         assert "Live evidence" in content
         assert "request-sent" in content
         assert "Request sent - GET - https://example.com/.well-known/openid-configuration" in content
+        assert "data-local-datetime" in content
+        assert '<time datetime="' in content
 
     def test_steps_partial_disables_interval_polling_when_run_is_terminal(self) -> None:
         """Terminal runs render steps partial without interval polling."""
@@ -1820,8 +1839,8 @@ class TestRunDetailUi:
         assert "Request evidence" in content
         assert "Response evidence" in content
         assert "Raw details" in content
-        assert '&lt;script&gt;alert(1)&lt;/script&gt;' in content
-        assert '<script>alert(1)</script>' not in content
+        assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
+        assert "<script>alert(1)</script>" not in content
         assert 'data-copy-target="step-1-result-request-json"' in content
         assert 'data-copy-target="step-1-result-response-json"' in content
         assert 'data-copy-target="step-2-result-request-json"' in content
