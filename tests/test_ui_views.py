@@ -400,9 +400,9 @@ def _assert_time_elements_use_local_datetime_contract(content: str) -> None:
     assert time_tags
     for tag in time_tags:
         assert "data-local-datetime" in tag
-        assert "datetime=\"" in tag
-        assert "data-utc-datetime=\"" in tag
-        assert "title=\"" in tag
+        assert 'datetime="' in tag
+        assert 'data-utc-datetime="' in tag
+        assert 'title="' in tag
 
 
 def _fixed_utc_timestamp() -> datetime:
@@ -1398,8 +1398,12 @@ class TestRunDetailUi:
         assert "Step psu is waiting for PSU authorisation." in status_content
         assert "Pending" in status_content
         assert f'href="{authorisation_url}"' in status_content
-        assert 'target="_blank"' in status_content
-        assert 'rel="noreferrer noopener"' in status_content
+        assert "data-psu-authorisation-popup" in status_content
+        assert 'document.addEventListener("click", (event) => {' in detail_content
+        assert 'event.target.closest("a[data-psu-authorisation-popup]")' in detail_content
+        assert "event.preventDefault();" in detail_content
+        assert 'window.open(href, "_blank", popupFeatures.join(","))' in detail_content
+        assert "if (!popupWindow) return;" not in detail_content
 
         callback_response = client.get("/callback/", {"state": state, "code": raw_auth_code})
 
@@ -1448,6 +1452,11 @@ class TestRunDetailUi:
         assert '<meta http-equiv="refresh" content="2">' in content
         assert f"/runs/{record.run_id}/log.json" in content
         assert "Result pending" in content
+        assert 'event.target.closest("a[data-psu-authorisation-popup]")' in content
+        assert "event.preventDefault();" in content
+        assert 'window.open(href, "_blank", popupFeatures.join(","))' in content
+        assert "event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey" in content
+        assert "if (!popupWindow) return;" not in content
 
     def test_run_detail_renders_step_progress_panel_and_preserves_step_state(self) -> None:
         """Pending run detail pages include selected-step panel and state preservation script."""
@@ -1637,8 +1646,7 @@ class TestRunDetailUi:
         assert "Pending" in content
         assert "Open authorisation" in content
         assert f'href="{authorisation_url}"' in content
-        assert 'target="_blank"' in content
-        assert 'rel="noreferrer noopener"' in content
+        assert "data-psu-authorisation-popup" in content
 
     def test_status_partial_renders_multiple_actions_with_completion_state(self) -> None:
         """The status partial renders one link per pending action and completion labels."""

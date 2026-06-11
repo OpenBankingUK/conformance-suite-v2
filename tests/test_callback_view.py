@@ -40,6 +40,8 @@ class TestCallbackView:
         assert response.status_code == 200
         body = response.content.decode("utf-8")
         assert "Authorization code received" in body
+        assert "window.setTimeout" in body
+        assert "window.close()" in body
         # Raw values must never appear in the rendered HTML.
         assert state not in body
         assert "auth-code-xyz" not in body
@@ -66,6 +68,8 @@ class TestCallbackView:
         body = response.content.decode("utf-8")
         assert "Authorization failed" in body
         assert "access_denied" in body
+        assert "window.setTimeout" in body
+        assert "window.close()" in body
         # Free-text description must not be reflected.
         assert "psu cancelled" not in body
 
@@ -83,6 +87,7 @@ class TestCallbackView:
         assert response.status_code == 400
         body = response.content.decode("utf-8")
         assert "Invalid or expired callback" in body
+        assert "window.close()" not in body
         # The rejected state value must not be echoed back.
         assert "x" * 32 not in body
 
@@ -115,6 +120,7 @@ class TestCallbackView:
         body = response.content.decode("utf-8")
         assert "Completing authorization" in body
         assert "window.location.hash" in body
+        assert "window.close()" not in body
         assert 'fragment.get("id_token")' not in body
         assert 'query.set("id_token"' not in body
         session = auth_session_store.get(run_id, state)

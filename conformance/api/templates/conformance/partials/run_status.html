@@ -13,7 +13,7 @@
                 {% if action.type == "psu-authorization-url" %}
                     <p class="muted">Step {{ action.step_id }} is waiting for PSU authorisation.</p>
                     {% if action.status == "pending" %}
-                        <p><span class="status pending">Pending</span> <a class="button" href="{{ action.url }}" target="_blank" rel="noreferrer noopener">Open authorisation</a></p>
+                        <p><span class="status pending">Pending</span> <a class="button" href="{{ action.url }}" data-psu-authorisation-popup>Open authorisation</a></p>
                     {% else %}
                         <p><span class="status completed">Completed</span></p>
                     {% endif %}

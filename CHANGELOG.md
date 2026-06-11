@@ -66,6 +66,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Browser PSU authorisation in the run UI now opens via a script-launched small popup (with normal anchor fallback when popups are blocked), and handled callback landing pages for success and ASPSP OAuth-error outcomes now attempt to auto-close after render so participants return to the run page while existing polling clears pending actions.
+
 - Browser-facing timestamp API responses now optionally include additive local-display companions when the caller provides an explicit IANA timezone (`timeZone` query parameter or `X-Time-Zone` header). Canonical machine-readable fields remain unchanged (`createdAt`, `startedAt`, `finishedAt`, `capturedAt`), while response-local fields (for example `createdAtLocal`) and `displayTimeZone` are presentation-only.
 
 - `certificationEligibility` now includes an `approvedRelease` block in generated reports. Participant config can optionally supply `approvedReleasePolicyPath`; when the policy is absent or the current `tool.version` is not listed, the participant-side self-assessment is non-eligible while OBL-side validation remains authoritative and recomputes the decision from independent inputs.

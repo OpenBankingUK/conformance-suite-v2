@@ -462,6 +462,50 @@
         document.body.removeChild(fallback);
     }
 
+    function openPsuAuthorisationPopup(anchor) {
+        const href = anchor.getAttribute("href");
+        if (!href) return null;
+
+        const popupWidth = 520;
+        const popupHeight = 720;
+        const popupFeatures = [
+            "popup=yes",
+            "noopener=yes",
+            "noreferrer=yes",
+            `width=${popupWidth}`,
+            `height=${popupHeight}`,
+        ];
+
+        if (
+            typeof window.screenX === "number"
+            && typeof window.screenY === "number"
+            && typeof window.outerWidth === "number"
+            && typeof window.outerHeight === "number"
+        ) {
+            const popupLeft = Math.max(window.screenX + Math.round((window.outerWidth - popupWidth) / 2), 0);
+            const popupTop = Math.max(window.screenY + Math.round((window.outerHeight - popupHeight) / 2), 0);
+            popupFeatures.push(`left=${popupLeft}`, `top=${popupTop}`);
+        }
+
+        const popupWindow = window.open(href, "_blank", popupFeatures.join(","));
+        if (popupWindow) {
+            try {
+                popupWindow.focus();
+            } catch {
+                return popupWindow;
+            }
+        }
+        return popupWindow;
+    }
+
+    document.addEventListener("click", (event) => {
+        const authorisationLink = event.target.closest("a[data-psu-authorisation-popup]");
+        if (!authorisationLink || event.defaultPrevented) return;
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        openPsuAuthorisationPopup(authorisationLink);
+    });
+
     document.addEventListener("click", async (event) => {
         const button = event.target.closest(".payload-copy-button");
         if (!button) return;
