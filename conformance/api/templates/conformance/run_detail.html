@@ -413,7 +413,7 @@
     <header>
         <div>
             <h1>Run {{ run.run_id }}</h1>
-            <div class="muted">Created <time datetime="{{ run.created_at|date:'c' }}" data-local-datetime data-utc-datetime="{{ run.created_at|date:'c' }}" title="{{ run.created_at|date:'c' }}">{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></div>
+            <div class="muted">Created <time datetime="{{ run_times.created_at.datetime }}" data-local-datetime data-utc-datetime="{{ run_times.created_at.utc_datetime }}" title="{{ run_times.created_at.title }}">{{ run_times.created_at.display }}</time></div>
         </div>
         <a class="button" href="{% url 'plan-builder' %}">New plan</a>
     </header>

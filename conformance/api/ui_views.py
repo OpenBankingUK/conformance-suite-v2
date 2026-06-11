@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
 from django.shortcuts import redirect, render
@@ -14,6 +16,9 @@ from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
 from conformance.execution_log import ExecutionEvent
 from conformance.json_types import JsonObject, JsonValue
+
+_UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
+"""Open Banking UK browser fallback timezone for server-rendered timestamps."""
 
 
 @require_GET
@@ -277,6 +282,11 @@ def _run_context(record: RunRecord) -> dict[str, object]:
     step_progress = _step_progress_rows(record)
     return {
         "run": record,
+        "run_times": {
+            "created_at": _run_time_display(record.created_at),
+            "started_at": _run_time_display(record.started_at),
+            "finished_at": _run_time_display(record.finished_at),
+        },
         "status_url": reverse("ui-run-status", kwargs={"run_id": record.run_id}),
         "steps_partial_url": reverse("ui-run-steps", kwargs={"run_id": record.run_id}),
         "log_partial_url": reverse("ui-run-log", kwargs={"run_id": record.run_id}),
@@ -292,6 +302,31 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_issue_count": _result_issue_count(step_progress),
         "result_status_counts": _result_status_counts(step_progress),
         "developer_mode": _run_developer_mode(record),
+    }
+
+
+def _run_time_display(timestamp: datetime | None) -> dict[str, str] | None:
+    """Build timestamp fields for server-rendered UI fallback and JS enhancement.
+
+    Args:
+        timestamp: A run lifecycle timestamp from :class:`RunRecord`, or
+            ``None`` when that lifecycle point has not been reached.
+
+    Returns:
+        A dictionary containing local display text plus canonical ISO strings
+        for ``datetime``, ``data-utc-datetime``, and ``title`` attributes, or
+        ``None`` when ``timestamp`` is absent.
+    """
+    if timestamp is None:
+        return None
+
+    canonical_iso = timestamp.isoformat()
+    display_local = timestamp.astimezone(_UI_DISPLAY_TIME_ZONE)
+    return {
+        "display": display_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "datetime": canonical_iso,
+        "utc_datetime": canonical_iso,
+        "title": canonical_iso,
     }
 
 

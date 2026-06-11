@@ -79,6 +79,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Run-detail and polled status-partial server-rendered timestamp fallback text now uses Open Banking UK local time (`Europe/London`, including BST/GMT transitions) for `Created`, `Started`, and `Finished`. Canonical machine-readable attributes remain unchanged (`datetime`, `data-utc-datetime`, and ISO values in `title`) so browser-side localization and audit-oriented UTC semantics are preserved.
+
 - Run-detail browser UI timestamps now render in the viewer's local browser timezone. The `renderLocalDatetimes` function in `run_detail.html` now consistently formats every `time[data-local-datetime]` element via the browser's default locale and IANA timezone (using `Intl.DateTimeFormat` with `timeZoneName: "short"`), adds a `data-local-datetime-rendered` marker once conversion succeeds so tests and tooling can distinguish server fallback text from localized output, stores the canonical ISO value in a `title` attribute for accessibility and on-hover inspection, and re-runs on each HTMX `afterSwap` event so status and step partials are localized after every refresh. The `datetime` attribute is preserved as an ISO value for semantic HTML and copy-paste. No server-side timestamp fields are changed.
 
 - Background run terminal transitions now tolerate runs that disappear before terminalization (for example after in-process store reset or terminal-record pruning), preventing unhandled daemon-thread warnings when `mark_running`, `mark_completed`, or `mark_failed` encounters a missing run id.

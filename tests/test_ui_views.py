@@ -7,6 +7,7 @@ import json
 import re
 import time
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock, patch
@@ -402,6 +403,15 @@ def _assert_time_elements_use_local_datetime_contract(content: str) -> None:
         assert "datetime=\"" in tag
         assert "data-utc-datetime=\"" in tag
         assert "title=\"" in tag
+
+
+def _fixed_utc_timestamp() -> datetime:
+    """Return a deterministic UTC timestamp used by UI time-rendering tests.
+
+    Returns:
+        Fixed UTC instant used for local-time fallback assertions.
+    """
+    return datetime(2026, 6, 11, 9, 0, 37, tzinfo=UTC)
 
 
 @pytest.mark.integration
@@ -1484,6 +1494,19 @@ class TestRunDetailUi:
         )
         assert htmx_swap_hook in content
 
+    def test_run_detail_renders_bst_created_timestamp_fallback(self) -> None:
+        """Run detail shows Created fallback text in Open Banking UK local time."""
+        record = run_store.create_run()
+        record.created_at = _fixed_utc_timestamp()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Created" in content
+        assert "2026-06-11 10:00:37 BST" in content
+        _assert_time_elements_use_local_datetime_contract(content)
+
     def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
         """Completed run detail pages should not keep refreshing."""
         record = run_store.create_run()
@@ -1506,6 +1529,21 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
+        _assert_time_elements_use_local_datetime_contract(content)
+
+    def test_status_partial_renders_bst_started_timestamp_fallback(self) -> None:
+        """Status partial shows Started fallback text in Open Banking UK local time."""
+        record = run_store.create_run()
+        record.created_at = _fixed_utc_timestamp()
+        run_store.mark_running(record.run_id)
+        record.started_at = _fixed_utc_timestamp()
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Started" in content
+        assert "2026-06-11 10:00:37 BST" in content
         _assert_time_elements_use_local_datetime_contract(content)
 
     def test_steps_partial_returns_404_for_unknown_run(self) -> None:
