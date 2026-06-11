@@ -2,9 +2,9 @@
     <h2>Status</h2>
     <p><span class="status {{ run.status }}">{{ run.status }}</span></p>
     <div class="grid">
-        <div class="metric"><strong><time datetime="{{ run.created_at|date:'c' }}" data-local-datetime>{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></strong><span>Created</span></div>
-        <div class="metric"><strong>{% if run.started_at %}<time datetime="{{ run.started_at|date:'c' }}" data-local-datetime>{{ run.started_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Started</span></div>
-        <div class="metric"><strong>{% if run.finished_at %}<time datetime="{{ run.finished_at|date:'c' }}" data-local-datetime>{{ run.finished_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Finished</span></div>
+        <div class="metric"><strong><time datetime="{{ run.created_at|date:'c' }}" data-local-datetime data-utc-datetime="{{ run.created_at|date:'c' }}" title="{{ run.created_at|date:'c' }}">{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></strong><span>Created</span></div>
+        <div class="metric"><strong>{% if run.started_at %}<time datetime="{{ run.started_at|date:'c' }}" data-local-datetime data-utc-datetime="{{ run.started_at|date:'c' }}" title="{{ run.started_at|date:'c' }}">{{ run.started_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Started</span></div>
+        <div class="metric"><strong>{% if run.finished_at %}<time datetime="{{ run.finished_at|date:'c' }}" data-local-datetime data-utc-datetime="{{ run.finished_at|date:'c' }}" title="{{ run.finished_at|date:'c' }}">{{ run.finished_at|date:'Y-m-d H:i:s T' }}</time>{% else %}-{% endif %}</strong><span>Finished</span></div>
     </div>
     {% if run.participant_actions %}
         <div class="participant-action" aria-live="polite">

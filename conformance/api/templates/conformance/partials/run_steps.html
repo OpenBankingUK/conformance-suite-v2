@@ -43,8 +43,8 @@
                                 {% endif %}
                             </p>
                             <p><strong>Status code:</strong> {{ step.status_code|default:"-" }}</p>
-                            <p><strong>Started:</strong> {% if step.started_at %}<time datetime="{{ step.started_at }}" data-local-datetime>{{ step.started_at }}</time>{% else %}-{% endif %}</p>
-                            <p><strong>Completed:</strong> {% if step.completed_at %}<time datetime="{{ step.completed_at }}" data-local-datetime>{{ step.completed_at }}</time>{% else %}-{% endif %}</p>
+                            <p><strong>Started:</strong> {% if step.started_at %}<time datetime="{{ step.started_at }}" data-local-datetime data-utc-datetime="{{ step.started_at }}" title="{{ step.started_at }}">{{ step.started_at }}</time>{% else %}-{% endif %}</p>
+                            <p><strong>Completed:</strong> {% if step.completed_at %}<time datetime="{{ step.completed_at }}" data-local-datetime data-utc-datetime="{{ step.completed_at }}" title="{{ step.completed_at }}">{{ step.completed_at }}</time>{% else %}-{% endif %}</p>
                             {% if step.url %}
                                 <p><strong>Step URL:</strong> <a href="{{ step.url }}">{{ step.url }}</a></p>
                             {% endif %}
@@ -128,7 +128,7 @@
                                                 <span class="muted evidence-summary-note">
                                                     <span class="evidence-summary-note-collapsed">Preview shown</span>
                                                     <span class="evidence-summary-note-expanded">Full payload shown</span>
-                                                    at <time datetime="{{ event.timestamp }}" data-local-datetime>{{ event.timestamp }}</time>
+                                                    at <time datetime="{{ event.timestamp }}" data-local-datetime data-utc-datetime="{{ event.timestamp }}" title="{{ event.timestamp }}">{{ event.timestamp }}</time>
                                                 </span>
                                             {% endif %}
                                             {% if event.payload_json_preview %}

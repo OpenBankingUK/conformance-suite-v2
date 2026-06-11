@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import html
 import json
+import re
 import time
 from collections.abc import Iterator
 from pathlib import Path
@@ -382,6 +383,25 @@ def _wait_for_terminal_run(run_id: str) -> None:
             return
         time.sleep(0.05)
     raise AssertionError("Timed out waiting for terminal run")
+
+
+def _assert_time_elements_use_local_datetime_contract(content: str) -> None:
+    """Assert all rendered ``<time>`` elements follow the local-time contract.
+
+    Args:
+        content: Rendered HTML fragment or full document.
+
+    Raises:
+        AssertionError: If no ``<time>`` tags are present or a rendered tag
+            omits required local-time attributes.
+    """
+    time_tags = re.findall(r"<time\b[^>]*>", content)
+    assert time_tags
+    for tag in time_tags:
+        assert "data-local-datetime" in tag
+        assert "datetime=\"" in tag
+        assert "data-utc-datetime=\"" in tag
+        assert "title=\"" in tag
 
 
 @pytest.mark.integration
@@ -1455,8 +1475,10 @@ class TestRunDetailUi:
 
         assert response.status_code == 200
         content = response.content.decode("utf-8")
-        assert "data-local-datetime" in content
+        _assert_time_elements_use_local_datetime_contract(content)
         assert "renderLocalDatetimes(document);" in content
+        assert 'timeZoneName: "short"' in content
+        assert 'node.setAttribute("data-local-datetime-rendered", "true");' in content
         htmx_swap_hook = (
             'document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));'
         )
@@ -1484,8 +1506,7 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
-        assert "data-local-datetime" in content
-        assert 'datetime="' in content
+        _assert_time_elements_use_local_datetime_contract(content)
 
     def test_steps_partial_returns_404_for_unknown_run(self) -> None:
         """Unknown run ids return browser 404 from steps partial endpoint."""
@@ -1530,8 +1551,7 @@ class TestRunDetailUi:
         assert "Live evidence" in content
         assert "request-sent" in content
         assert "Request sent - GET - https://example.com/.well-known/openid-configuration" in content
-        assert "data-local-datetime" in content
-        assert '<time datetime="' in content
+        _assert_time_elements_use_local_datetime_contract(content)
 
     def test_steps_partial_disables_interval_polling_when_run_is_terminal(self) -> None:
         """Terminal runs render steps partial without interval polling."""

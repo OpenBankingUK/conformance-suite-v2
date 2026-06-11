@@ -17,7 +17,9 @@ import ipaddress
 import json
 import logging
 from collections.abc import Callable
+from datetime import datetime
 from pathlib import Path
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
 from django.http import HttpRequest, HttpResponse, JsonResponse
@@ -32,12 +34,105 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
+from conformance.json_types import JsonObject
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
+
+
+def _requested_display_time_zone(request: HttpRequest) -> str | None:
+    """Return an explicit display timezone requested by the caller.
+
+    Args:
+        request: The inbound HTTP request.
+
+    Returns:
+        Trimmed IANA timezone name from ``timeZone`` query parameter or
+        ``X-Time-Zone`` header, or ``None`` when not supplied.
+    """
+    raw_query_time_zone = request.GET.get("timeZone")
+    if raw_query_time_zone is not None:
+        query_time_zone = raw_query_time_zone.strip()
+        if query_time_zone:
+            return query_time_zone
+
+    raw_header_time_zone = request.headers.get("X-Time-Zone")
+    if raw_header_time_zone is None:
+        return None
+    header_time_zone = raw_header_time_zone.strip()
+    return header_time_zone or None
+
+
+def _resolve_display_time_zone(request: HttpRequest) -> tuple[str, ZoneInfo] | None:
+    """Resolve and validate the caller-selected display timezone.
+
+    Args:
+        request: The inbound HTTP request.
+
+    Returns:
+        Tuple of ``(time zone name, ZoneInfo)`` when provided, otherwise
+        ``None``.
+
+    Raises:
+        ValueError: If the caller supplied an unknown IANA timezone.
+    """
+    time_zone_name = _requested_display_time_zone(request)
+    if time_zone_name is None:
+        return None
+    try:
+        return time_zone_name, ZoneInfo(time_zone_name)
+    except ZoneInfoNotFoundError as error:
+        raise ValueError("timeZone must be a valid IANA timezone") from error
+
+
+def _to_local_iso_timestamp(timestamp: str, *, time_zone: ZoneInfo) -> str | None:
+    """Convert an ISO 8601 timestamp string to a timezone-local ISO string.
+
+    Args:
+        timestamp: Canonical ISO 8601 timestamp string.
+        time_zone: Caller-selected display timezone.
+
+    Returns:
+        Localized ISO 8601 timestamp string, or ``None`` if ``timestamp`` is
+        not parseable or is timezone-naive.
+    """
+    normalized_timestamp = timestamp.replace("Z", "+00:00")
+    try:
+        parsed_timestamp = datetime.fromisoformat(normalized_timestamp)
+    except ValueError:
+        return None
+    if parsed_timestamp.tzinfo is None:
+        return None
+    return parsed_timestamp.astimezone(time_zone).isoformat()
+
+
+def _append_local_timestamp_fields(
+    payload: JsonObject,
+    *,
+    canonical_fields: tuple[str, ...],
+    time_zone_name: str,
+    time_zone: ZoneInfo,
+) -> None:
+    """Append additive display-only local timestamp fields to a payload.
+
+    Args:
+        payload: JSON response payload to mutate.
+        canonical_fields: Canonical timestamp field names to localize.
+        time_zone_name: Requested IANA timezone string.
+        time_zone: Parsed timezone object.
+    """
+    payload["displayTimeZone"] = time_zone_name
+    for field_name in canonical_fields:
+        raw_value = payload.get(field_name)
+        if not isinstance(raw_value, str):
+            continue
+        localized_value = _to_local_iso_timestamp(raw_value, time_zone=time_zone)
+        if localized_value is None:
+            continue
+        payload[f"{field_name}Local"] = localized_value
 
 
 def _is_loopback_address(remote_addr: str) -> bool:
@@ -245,10 +340,25 @@ def get_run_status(request: HttpRequest, run_id: str) -> JsonResponse:
     Returns:
         200 with run status JSON, or 404 if the run ID is unknown.
     """
+    try:
+        display_time_zone = _resolve_display_time_zone(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
     record = run_store.get_run(run_id)
     if record is None:
         return JsonResponse({"error": "Run not found"}, status=404)
-    return JsonResponse(record.to_status_json())
+
+    body: JsonObject = record.to_status_json()
+    if display_time_zone is not None:
+        time_zone_name, time_zone = display_time_zone
+        _append_local_timestamp_fields(
+            body,
+            canonical_fields=("createdAt", "startedAt", "finishedAt"),
+            time_zone_name=time_zone_name,
+            time_zone=time_zone,
+        )
+    return JsonResponse(body)
 
 
 @_require_loopback
@@ -265,6 +375,11 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
         unknown, 409 if the run has not yet completed, or 500 if the run
         failed internally.
     """
+    try:
+        display_time_zone = _resolve_display_time_zone(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
     record = run_store.get_run(run_id)
     if record is None:
         return JsonResponse({"error": "Run not found"}, status=404)
@@ -275,7 +390,18 @@ def get_run_result(request: HttpRequest, run_id: str) -> JsonResponse:
         )
     if record.status == "failed":
         return JsonResponse({"error": "Run failed internally"}, status=500)
-    return JsonResponse(record.result)
+
+    result_body = record.result
+    body: JsonObject = dict(result_body) if isinstance(result_body, dict) else {}
+    if display_time_zone is not None:
+        time_zone_name, time_zone = display_time_zone
+        _append_local_timestamp_fields(
+            body,
+            canonical_fields=("startedAt", "finishedAt"),
+            time_zone_name=time_zone_name,
+            time_zone=time_zone,
+        )
+    return JsonResponse(body)
 
 
 @_require_loopback
@@ -355,6 +481,11 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         :meth:`AuthSessionStore.discard` and the corresponding 404/409
         is returned instead of 201.
     """
+    try:
+        display_time_zone = _resolve_display_time_zone(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
     raw_state: str | None = None
     # Parse whenever the caller sent a JSON-shaped payload, regardless of
     # whether they remembered ``Content-Type: application/json``. The
@@ -386,12 +517,12 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
         # decodes internally and raises this before JSONDecodeError); both are
         # parse-boundary caller errors warranting the same 400.
         try:
-            body = json.loads(request.body)
+            parsed_body = json.loads(request.body)
         except json.JSONDecodeError, UnicodeDecodeError:
             return JsonResponse({"error": "Request body must be valid JSON"}, status=400)
-        if not isinstance(body, dict):
+        if not isinstance(parsed_body, dict):
             return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
-        raw_state = body.get("state")
+        raw_state = parsed_body.get("state")
         if raw_state is not None and not isinstance(raw_state, str):
             return JsonResponse({"error": '"state" must be a string if provided'}, status=400)
 
@@ -436,14 +567,20 @@ def register_auth_session(request: HttpRequest, run_id: str) -> JsonResponse:
             payload={"state": session.state, "status": session.status},
         )
 
-    return JsonResponse(
-        {
-            "state": session.state,
-            "status": session.status,
-            "createdAt": session.created_at.isoformat(),
-        },
-        status=201,
-    )
+    body: JsonObject = {
+        "state": session.state,
+        "status": session.status,
+        "createdAt": session.created_at.isoformat(),
+    }
+    if display_time_zone is not None:
+        time_zone_name, time_zone = display_time_zone
+        _append_local_timestamp_fields(
+            body,
+            canonical_fields=("createdAt",),
+            time_zone_name=time_zone_name,
+            time_zone=time_zone,
+        )
+    return JsonResponse(body, status=201)
 
 
 @_require_loopback
@@ -471,13 +608,18 @@ def get_auth_session(request: HttpRequest, run_id: str, state: str) -> JsonRespo
         failure modes so an unauthenticated caller cannot enumerate run
         IDs by probing.
     """
+    try:
+        display_time_zone = _resolve_display_time_zone(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
     if run_store.get_run(run_id) is None:
         return JsonResponse({"error": "Auth session not found"}, status=404)
     session = auth_session_store.get(run_id, state)
     if session is None:
         return JsonResponse({"error": "Auth session not found"}, status=404)
 
-    body: dict[str, str] = {
+    body: JsonObject = {
         "state": session.state,
         "status": session.status,
         "createdAt": session.created_at.isoformat(),
@@ -490,4 +632,13 @@ def get_auth_session(request: HttpRequest, run_id: str, state: str) -> JsonRespo
         body["error"] = session.error
     if session.error_description is not None:
         body["errorDescription"] = session.error_description
+
+    if display_time_zone is not None:
+        time_zone_name, time_zone = display_time_zone
+        _append_local_timestamp_fields(
+            body,
+            canonical_fields=("createdAt", "capturedAt"),
+            time_zone_name=time_zone_name,
+            time_zone=time_zone,
+        )
     return JsonResponse(body, status=200)

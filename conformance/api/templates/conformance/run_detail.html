@@ -413,7 +413,7 @@
     <header>
         <div>
             <h1>Run {{ run.run_id }}</h1>
-            <div class="muted">Created <time datetime="{{ run.created_at|date:'c' }}" data-local-datetime>{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></div>
+            <div class="muted">Created <time datetime="{{ run.created_at|date:'c' }}" data-local-datetime data-utc-datetime="{{ run.created_at|date:'c' }}" title="{{ run.created_at|date:'c' }}">{{ run.created_at|date:'Y-m-d H:i:s T' }}</time></div>
         </div>
         <a class="button" href="{% url 'plan-builder' %}">New plan</a>
     </header>
@@ -436,6 +436,13 @@
             const date = new Date(value);
             if (Number.isNaN(date.getTime())) return;
             node.textContent = formatter.format(date);
+            node.setAttribute("data-local-datetime-rendered", "true");
+            if (!node.hasAttribute("data-utc-datetime")) {
+                node.setAttribute("data-utc-datetime", value);
+            }
+            if (!node.hasAttribute("title")) {
+                node.setAttribute("title", node.getAttribute("data-utc-datetime") || value);
+            }
         });
     }
 

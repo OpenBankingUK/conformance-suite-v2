@@ -2,8 +2,10 @@ import dataclasses
 import json
 import time
 from collections.abc import Callable, Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 from unittest.mock import Mock, patch
+from zoneinfo import ZoneInfo
 
 import httpx
 import pytest
@@ -1516,6 +1518,62 @@ class TestGetRunStatusEndpoint:
         assert response.json()["id"] == run_id
         assert response.json()["status"] == "pending"
 
+    def test_keeps_canonical_timestamp_fields_without_display_time_zone(self) -> None:
+        client = Client()
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.started_at is not None
+        assert updated.finished_at is not None
+
+        response = client.get(f"/api/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["createdAt"] == record.created_at.isoformat()
+        assert body["startedAt"] == updated.started_at.isoformat()
+        assert body["finishedAt"] == updated.finished_at.isoformat()
+        assert "displayTimeZone" not in body
+        assert "createdAtLocal" not in body
+        assert "startedAtLocal" not in body
+        assert "finishedAtLocal" not in body
+
+    def test_appends_local_timestamp_display_fields_when_time_zone_is_requested(self) -> None:
+        client = Client()
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(record.run_id, result={"status": "passed"})
+        updated = run_store.get_run(record.run_id)
+        assert updated is not None
+        assert updated.started_at is not None
+        assert updated.finished_at is not None
+
+        response = client.get(f"/api/runs/{record.run_id}/?timeZone=Europe/London")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["displayTimeZone"] == "Europe/London"
+        assert body["createdAt"] == record.created_at.isoformat()
+        assert body["startedAt"] == updated.started_at.isoformat()
+        assert body["finishedAt"] == updated.finished_at.isoformat()
+        created_at_local = datetime.fromisoformat(body["createdAt"]).astimezone(ZoneInfo("Europe/London"))
+        started_at_local = datetime.fromisoformat(body["startedAt"]).astimezone(ZoneInfo("Europe/London"))
+        finished_at_local = datetime.fromisoformat(body["finishedAt"]).astimezone(ZoneInfo("Europe/London"))
+        assert body["createdAtLocal"] == created_at_local.isoformat()
+        assert body["startedAtLocal"] == started_at_local.isoformat()
+        assert body["finishedAtLocal"] == finished_at_local.isoformat()
+
+    def test_rejects_unknown_time_zone_on_status_endpoint(self) -> None:
+        client = Client()
+        record = run_store.create_run()
+
+        response = client.get(f"/api/runs/{record.run_id}/?timeZone=Mars%2FOlympus")
+
+        assert response.status_code == 400
+        assert "timeZone" in response.json()["error"]
+
     def test_post_method_not_allowed(self) -> None:
         client = Client()
         response = client.post("/api/runs/some-id/", data="{}", content_type="application/json")
@@ -1550,6 +1608,59 @@ class TestGetRunResultEndpoint:
         response = client.get(f"/api/runs/{record.run_id}/result/")
         assert response.status_code == 200
         assert response.json() == {"environment": "test", "status": "passed"}
+
+    def test_keeps_canonical_timestamp_fields_without_display_time_zone(self) -> None:
+        client = Client()
+        started_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+        finished_at = datetime(2026, 1, 2, 4, 5, 6, tzinfo=UTC)
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "environment": "test",
+                "status": "passed",
+                "startedAt": started_at.isoformat(),
+                "finishedAt": finished_at.isoformat(),
+            },
+        )
+
+        response = client.get(f"/api/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["startedAt"] == started_at.isoformat()
+        assert body["finishedAt"] == finished_at.isoformat()
+        assert "displayTimeZone" not in body
+        assert "startedAtLocal" not in body
+        assert "finishedAtLocal" not in body
+
+    def test_appends_local_timestamp_display_fields_when_time_zone_is_requested(self) -> None:
+        client = Client()
+        started_at = datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC)
+        finished_at = datetime(2026, 1, 2, 4, 5, 6, tzinfo=UTC)
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "environment": "test",
+                "status": "passed",
+                "startedAt": started_at.isoformat(),
+                "finishedAt": finished_at.isoformat(),
+            },
+        )
+
+        response = client.get(f"/api/runs/{record.run_id}/result/?timeZone=Europe/London")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "passed"
+        assert body["startedAt"] == started_at.isoformat()
+        assert body["finishedAt"] == finished_at.isoformat()
+        assert body["displayTimeZone"] == "Europe/London"
+        assert body["startedAtLocal"] == started_at.astimezone(ZoneInfo("Europe/London")).isoformat()
+        assert body["finishedAtLocal"] == finished_at.astimezone(ZoneInfo("Europe/London")).isoformat()
 
     def test_returns_500_when_run_failed(self) -> None:
         client = Client()
@@ -1808,6 +1919,18 @@ class TestRegisterAuthSessionEndpoint:
         assert "createdAt" in body
         assert len(body["state"]) >= 32
 
+    def test_appends_local_timestamp_display_fields_when_time_zone_is_requested(self) -> None:
+        client = Client()
+        record = run_store.create_run()
+
+        response = client.post(f"/api/runs/{record.run_id}/auth-sessions/?timeZone=Europe/London")
+
+        assert response.status_code == 201
+        body = response.json()
+        assert body["displayTimeZone"] == "Europe/London"
+        created_at_local = datetime.fromisoformat(body["createdAt"]).astimezone(ZoneInfo("Europe/London"))
+        assert body["createdAtLocal"] == created_at_local.isoformat()
+
     def test_accepts_caller_supplied_state_above_entropy_bar(self) -> None:
         """A caller-supplied state of sufficient length is accepted."""
         client = Client()
@@ -2022,6 +2145,24 @@ class TestGetAuthSessionEndpoint:
         assert "createdAt" in body
         assert "code" not in body
         assert "capturedAt" not in body
+
+    def test_appends_local_timestamp_display_fields_when_time_zone_is_requested(self) -> None:
+        client = Client()
+        record = run_store.create_run()
+        registered = client.post(f"/api/runs/{record.run_id}/auth-sessions/").json()
+        auth_session_store.capture_code(registered["state"], "auth-code-xyz")
+
+        response = client.get(
+            f"/api/runs/{record.run_id}/auth-sessions/{registered['state']}/?timeZone=Europe/London",
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["displayTimeZone"] == "Europe/London"
+        created_at_local = datetime.fromisoformat(body["createdAt"]).astimezone(ZoneInfo("Europe/London"))
+        captured_at_local = datetime.fromisoformat(body["capturedAt"]).astimezone(ZoneInfo("Europe/London"))
+        assert body["createdAtLocal"] == created_at_local.isoformat()
+        assert body["capturedAtLocal"] == captured_at_local.isoformat()
 
     def test_returns_captured_session_with_code(self) -> None:
         """After ``capture_code`` the response includes the code and capturedAt."""

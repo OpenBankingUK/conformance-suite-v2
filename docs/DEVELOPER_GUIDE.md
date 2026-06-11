@@ -448,6 +448,8 @@ POST /api/runs/
 
 `deselectStepIds` must be an array of strings, requires either an inline `manifest` or config-selected `testSuite`, and is rejected with HTTP 400 if any id is unknown.
 
+API timestamp fields remain canonical timezone-aware ISO strings (`createdAt`, `startedAt`, `finishedAt`, `capturedAt`). For browser-facing display, callers may supply an explicit IANA timezone via `?timeZone=Europe/London` (or `X-Time-Zone: Europe/London`). When supplied, responses include additive presentation-only companions such as `createdAtLocal`, `startedAtLocal`, `finishedAtLocal`, and `capturedAtLocal`, plus `displayTimeZone`. Canonical fields are unchanged and remain the audit/source-of-truth fields.
+
 **Browser plan builder UI:**
 
 Run the local Django server and open `http://localhost:8443/plan/`:
