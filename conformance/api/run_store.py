@@ -50,6 +50,7 @@ class ParticipantAction:
         url: Raw PSU authorisation URL to render while awaiting consent.
         status: Current action lifecycle state.
         created_at: UTC timestamp when the action became pending.
+        expires_at: Optional UTC deadline when waiting should time out.
         completed_at: UTC timestamp when the action completed, or None.
     """
 
@@ -58,6 +59,7 @@ class ParticipantAction:
     url: str
     status: ParticipantActionStatus
     created_at: datetime
+    expires_at: datetime | None = None
     completed_at: datetime | None = None
 
 
@@ -98,6 +100,7 @@ class RunRecord:
         finished_at: UTC timestamp when execution ended, or None.
         result: Structured JSON result object, populated on completion.
         error: Human-readable error message if the run failed internally.
+        version: Monotonic change counter used by long-poll waiters.
         participant_actions: In-memory browser actions keyed by ``step_id``.
             Values include pending/completed state and are deliberately
             omitted from status JSON, results, and logs because they can
@@ -120,6 +123,7 @@ class RunRecord:
     finished_at: datetime | None = None
     result: JsonObject | None = None
     error: str | None = None
+    version: int = 0
     participant_actions: dict[str, ParticipantAction] = field(default_factory=dict)
     participant_action: ParticipantAction | None = None
     execution_logger: BufferedExecutionLogger | None = None
@@ -155,6 +159,7 @@ class RunStore:
     def __init__(self) -> None:
         """Initialise an empty run store with a threading lock."""
         self._lock = threading.Lock()
+        self._condition = threading.Condition(self._lock)
         self._runs: dict[str, RunRecord] = {}
         self._active_run_id: str | None = None
 
@@ -236,7 +241,57 @@ class RunStore:
                 key=lambda item: (item.created_at, item.step_id),
             )
 
-    def set_participant_action(self, run_id: str, *, step_id: str, url: str) -> None:
+    def wait_for_run_change(
+        self,
+        run_id: str,
+        *,
+        timeout_seconds: float,
+        since_version: int | None = None,
+    ) -> RunRecord | None:
+        """Block until a run changes or the timeout expires.
+
+        Args:
+            run_id: The unique run identifier.
+            timeout_seconds: Maximum time to wait for a state change.
+            since_version: Optional run version already rendered by the
+                caller. When the live run is newer than this value, the
+                current snapshot is returned immediately.
+
+        Returns:
+            A detached run snapshot after the next change, or ``None`` when
+            the run is unknown or the timeout expires without a change.
+        """
+        with self._condition:
+            record = self._runs.get(run_id)
+            if record is None:
+                return None
+            if record.status in _TERMINAL_STATUSES:
+                return self._snapshot_record_locked(record)
+
+            initial_version = record.version
+            if since_version is not None and since_version < record.version:
+                return self._snapshot_record_locked(record)
+            if since_version is not None and since_version <= record.version:
+                initial_version = since_version
+            if timeout_seconds <= 0:
+                return None
+            if not self._condition.wait_for(
+                lambda: self._run_changed_since_locked(run_id, initial_version),
+                timeout=timeout_seconds,
+            ):
+                return None
+
+            updated_record = self._runs.get(run_id)
+            return self._snapshot_record_locked(updated_record) if updated_record is not None else None
+
+    def set_participant_action(
+        self,
+        run_id: str,
+        *,
+        step_id: str,
+        url: str,
+        expires_at: datetime | None = None,
+    ) -> None:
         """Store a pending raw PSU authorisation URL for browser launch.
 
         The action is intentionally process-local only. It is exposed through
@@ -247,6 +302,8 @@ class RunStore:
             run_id: The unique run identifier.
             step_id: Manifest step that emitted the PSU authorisation URL.
             url: Raw PSU authorisation URL to render for the participant.
+            expires_at: Optional UTC deadline when the participant action is
+                expected to resolve through timeout.
         """
         with self._lock:
             record = self._runs[run_id]
@@ -256,8 +313,10 @@ class RunStore:
                 url=url,
                 status="pending",
                 created_at=datetime.now(UTC),
+                expires_at=expires_at,
             )
             self._sync_legacy_participant_action_locked(record)
+            self._notify_run_changed_locked(record)
 
     def clear_participant_action(self, run_id: str, *, step_id: str | None = None) -> None:
         """Clear or complete browser participant actions.
@@ -278,6 +337,7 @@ class RunStore:
             if step_id is None:
                 record.participant_actions.clear()
                 record.participant_action = None
+                self._notify_run_changed_locked(record)
                 return
             action = record.participant_actions.get(step_id)
             if action is None:
@@ -285,6 +345,7 @@ class RunStore:
             action.status = "completed"
             action.completed_at = datetime.now(UTC)
             self._sync_legacy_participant_action_locked(record)
+            self._notify_run_changed_locked(record)
 
     def get_run_log_bytes(self, run_id: str) -> bytes | None:
         """Snapshot the run's execution log as NDJSON bytes.
@@ -318,6 +379,7 @@ class RunStore:
                 return
             record.status = "running"
             record.started_at = datetime.now(UTC)
+            self._notify_run_changed_locked(record)
 
     def mark_completed(self, run_id: str, *, result: JsonObject) -> None:
         """Transition a running run to completed state with its result.
@@ -341,6 +403,7 @@ class RunStore:
             record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
+            self._notify_run_changed_locked(record)
 
     def mark_failed(self, run_id: str, *, error: str) -> None:
         """Transition a run to failed state with an error message.
@@ -362,6 +425,7 @@ class RunStore:
             record.participant_action = None
             if self._active_run_id == run_id:
                 self._active_run_id = None
+            self._notify_run_changed_locked(record)
 
     def reset(self) -> None:
         """Wipe all run state. Intended for test fixtures only.
@@ -436,6 +500,29 @@ class RunStore:
             record: Live run record stored under ``self._lock``.
         """
         record.participant_action = self._first_pending_action_locked(record)
+
+    def _notify_run_changed_locked(self, record: RunRecord) -> None:
+        """Bump the run version and wake any waiters.
+
+        Args:
+            record: Live run record stored under ``self._lock``.
+        """
+        record.version += 1
+        self._condition.notify_all()
+
+    def _run_changed_since_locked(self, run_id: str, initial_version: int) -> bool:
+        """Return whether a run has changed since the captured version.
+
+        Args:
+            run_id: The unique run identifier.
+            initial_version: The version captured before waiting began.
+
+        Returns:
+            ``True`` when the run record no longer matches the captured
+            version, or when the run has been removed.
+        """
+        record = self._runs.get(run_id)
+        return record is None or record.version != initial_version
 
     def _snapshot_participant_actions(
         self,

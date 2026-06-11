@@ -175,7 +175,7 @@ def _render_fragment_bridge(request: HttpRequest) -> HttpResponse:
 
 
 def _emit_callback_event(session: AuthSession, *, state: str) -> None:
-    """Append an ``auth-callback-received`` event to the parent run's log.
+    """Append an ``auth-callback-received`` event to the parent run's log and clear pending PSU actions.
 
     The event payload is built from the **resolved** :class:`AuthSession`
     rather than from the raw redirect query parameters, so the emitted
@@ -192,7 +192,16 @@ def _emit_callback_event(session: AuthSession, *, state: str) -> None:
     default), the logger masks the ``code`` field via
     :data:`conformance.masking.SENSITIVE_JSON_KEYS` so the raw authorization
     code never lands in NDJSON. If the parent run record has been pruned or
-    never carried a logger, the emission is silently skipped.
+    never carried a logger, the execution-log emission is silently skipped.
+
+    After the log emission, all pending browser participant actions on the
+    run are cleared via :meth:`~conformance.api.run_store.RunStore.clear_participant_action`
+    (no ``step_id``, matching the ``auth-callback-received`` semantics in
+    :class:`~conformance.api.run_lifecycle.BrowserParticipantActionLogger`).
+    This bumps the run version so long-poll waiters in the run-detail page
+    wake up immediately. The call is safe for pruned or unknown runs —
+    :meth:`~conformance.api.run_store.RunStore.clear_participant_action`
+    returns early when the run record is absent.
 
     Args:
         session: The resolved auth session whose status drives the payload
@@ -203,16 +212,16 @@ def _emit_callback_event(session: AuthSession, *, state: str) -> None:
             caller controls the wire-format key.
     """
     record = run_store.get_run(session.run_id)
-    if record is None or record.execution_logger is None:
-        return
-    payload: dict[str, JsonValue] = {"state": state}
-    if session.status == "captured" and session.code is not None:
-        payload["code"] = session.code
-    elif session.status == "error" and session.error is not None:
-        payload["error"] = session.error
-        if session.error_description is not None:
-            payload["error_description"] = session.error_description
-    record.execution_logger.emit(
-        "auth-callback-received",
-        payload=payload,
-    )
+    if record is not None and record.execution_logger is not None:
+        payload: dict[str, JsonValue] = {"state": state}
+        if session.status == "captured" and session.code is not None:
+            payload["code"] = session.code
+        elif session.status == "error" and session.error is not None:
+            payload["error"] = session.error
+            if session.error_description is not None:
+                payload["error_description"] = session.error_description
+        record.execution_logger.emit(
+            "auth-callback-received",
+            payload=payload,
+        )
+    run_store.clear_participant_action(session.run_id)

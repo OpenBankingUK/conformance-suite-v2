@@ -5,9 +5,10 @@ from __future__ import annotations
 import html
 import json
 import re
+import threading
 import time
 from collections.abc import Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock, patch
@@ -1449,6 +1450,7 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert f"Run {record.run_id}" in content
         assert "pending" in content
+        assert '<meta name="conformance-live-polling-enabled" content="true">' in content
         assert '<meta http-equiv="refresh" content="2">' in content
         assert f"/runs/{record.run_id}/log.json" in content
         assert "Result pending" in content
@@ -1495,13 +1497,16 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         _assert_time_elements_use_local_datetime_contract(content)
-        assert "renderLocalDatetimes(document);" in content
+        assert "function createLocalDateTimeFormatter()" in content
         assert 'timeZoneName: "short"' in content
+        assert "date.toLocaleString()" in content
+        assert "date.toISOString()" in content
         assert 'node.setAttribute("data-local-datetime-rendered", "true");' in content
-        htmx_swap_hook = (
-            'document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));'
-        )
-        assert htmx_swap_hook in content
+        assert "function runStartupTask(task)" in content
+        assert "runStartupTask(() => renderLocalDatetimes(document));" in content
+        assert 'document.body.addEventListener("htmx:afterSwap", (event) => {' in content
+        assert "runStartupTask(() => scheduleParticipantActionDeadlineRefresh());" in content
+        assert "runStartupTask(() => waitForParticipantActionUpdate());" in content
 
     def test_run_detail_renders_bst_created_timestamp_fallback(self) -> None:
         """Run detail shows Created fallback text in Open Banking UK local time."""
@@ -1525,7 +1530,193 @@ class TestRunDetailUi:
         response = Client().get(f"/runs/{record.run_id}/")
 
         assert response.status_code == 200
-        assert '<meta http-equiv="refresh" content="2">' not in response.content.decode("utf-8")
+        content = response.content.decode("utf-8")
+        assert '<meta name="conformance-page-auto-refresh-enabled" content="false">' in content
+        assert '<meta name="conformance-live-polling-enabled" content="false">' in content
+        assert '<meta http-equiv="refresh" content="2">' not in content
+
+    def test_run_detail_disables_live_polling_flag_while_psu_authorisation_is_pending(self) -> None:
+        """Awaiting PSU authorisation should refresh the page but pause panel intervals."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=state-123",
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert '<meta name="conformance-page-auto-refresh-enabled" content="true">' in content
+        assert '<meta name="conformance-live-polling-enabled" content="false">' in content
+        assert '<meta http-equiv="refresh" content="2">' in content
+        assert 'hx-trigger="load"' in content
+        assert 'hx-trigger="load, every 2s"' not in content
+
+    def test_run_detail_renders_participant_action_deadline_meta_when_present(self) -> None:
+        """Awaiting PSU actions with deadlines should expose a wake-up timestamp."""
+        record = run_store.create_run()
+        expires_at = datetime.now(UTC) + timedelta(seconds=30)
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=state-123",
+            expires_at=expires_at,
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert '<meta name="conformance-participant-action-deadline"' in content
+        assert expires_at.isoformat() in content
+
+    def test_run_detail_includes_participant_action_deadline_wake_up_hook(self) -> None:
+        """Run detail page schedules one-shot refresh when polling is paused."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "function scheduleParticipantActionDeadlineRefresh" in content
+        assert "conformance-participant-action-deadline" in content
+        assert "refreshRunPanels();" in content
+
+    def test_run_detail_includes_backend_wait_hook(self) -> None:
+        """Run detail page should expose the backend wait endpoint hook."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "function waitForParticipantActionUpdate" in content
+        assert "conformance-participant-action-wait-url" in content
+        assert "conformance-run-version" in content
+        assert 'data-run-version="' in content
+        assert 'url.searchParams.set("since", runVersion)' in content
+
+    def test_run_wait_returns_updated_snapshot_after_participant_action_clears(self) -> None:
+        """The wait endpoint should wake when the pending PSU action clears."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting-wait",
+        )
+
+        def clear_action() -> None:
+            time.sleep(0.05)
+            run_store.clear_participant_action(record.run_id, step_id="psu")
+
+        worker = threading.Thread(target=clear_action, daemon=True)
+        worker.start()
+
+        response = Client().get(f"/runs/{record.run_id}/wait/", {"timeout": "1.0"})
+
+        worker.join(timeout=1.0)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["changed"] is True
+        assert body["run"]["id"] == record.run_id
+        assert body["run"]["status"] == "pending"
+
+    def test_run_wait_wakes_after_callback_capture_clears_participant_action(self) -> None:
+        """Callback capture should wake waiters by clearing pending PSU action state."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting-callback",
+        )
+        session = auth_session_store.register(record.run_id)
+
+        def capture_callback() -> None:
+            time.sleep(0.05)
+            Client().get("/callback/", {"state": session.state, "code": "auth-code-xyz"})
+
+        worker = threading.Thread(target=capture_callback, daemon=True)
+        worker.start()
+
+        response = Client().get(f"/runs/{record.run_id}/wait/", {"timeout": "1.0"})
+
+        worker.join(timeout=1.0)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["changed"] is True
+        assert body["run"]["id"] == record.run_id
+        assert run_store.get_participant_action(record.run_id) is None
+
+    def test_run_wait_returns_immediately_when_rendered_version_is_stale_after_callback(self) -> None:
+        """The wait endpoint should not miss callbacks that completed before the wait request."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting-callback",
+        )
+        rendered_record = run_store.get_run(record.run_id)
+        assert rendered_record is not None
+        session = auth_session_store.register(record.run_id)
+        client = Client()
+
+        callback_response = client.get("/callback/", {"state": session.state, "code": "auth-code-xyz"})
+        response = client.get(
+            f"/runs/{record.run_id}/wait/",
+            {"timeout": "0", "since": str(rendered_record.version)},
+        )
+
+        assert callback_response.status_code == 200
+        assert response.status_code == 200
+        body = response.json()
+        assert body["changed"] is True
+        assert body["run"]["id"] == record.run_id
+        assert run_store.get_participant_action(record.run_id) is None
+
+    def test_run_wait_returns_204_when_timeout_expires(self) -> None:
+        """The wait endpoint should fall back to 204 when nothing changes."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/wait/", {"timeout": "0.01"})
+
+        assert response.status_code == 204
+        assert response.content == b""
+
+    def test_run_detail_contains_psu_callback_message_listener(self) -> None:
+        """Run detail page must include message listener that reacts to PSU callback notification."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "conformance:psu-callback" in content
+        assert 'addEventListener("message"' in content
+        assert "function isTrustedCallbackOrigin(origin)" in content
+        assert "sender.origin === current.origin" in content
+        assert "sender.protocol !== current.protocol || sender.port !== current.port" in content
+        assert '["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(hostname)' in content
+        assert "window.location.reload();" in content
+
+    def test_run_detail_contains_refresh_run_panels_helper(self) -> None:
+        """Run detail page must include refreshRunPanels helper function."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "function refreshRunPanels" in content
+        assert "function fetchAndSwapRunPanel" in content
+        assert 'fetch(panelUrl, { credentials: "same-origin" })' in content
+        assert "panel.replaceWith(replacement);" in content
+        assert "return Promise.all(refreshes).then" in content
+        assert 'panel.getAttribute("hx-get")' in content
+        assert 'htmx.trigger(el, "load")' not in content
+        assert "htmxApi.ajax" not in content
+        assert "window.location.reload" in content
 
     def test_status_partial_renders_current_timestamps(self) -> None:
         """The status partial renders the current run snapshot."""
@@ -1538,7 +1729,24 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "running" in content
         assert "Started" in content
+        assert 'hx-trigger="load, every 2s"' in content
         _assert_time_elements_use_local_datetime_contract(content)
+
+    def test_status_partial_disables_interval_polling_while_awaiting_psu_authorisation(self) -> None:
+        """Awaiting PSU authorisation should disable status-panel interval polling."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting",
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/status/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
 
     def test_status_partial_renders_bst_started_timestamp_fallback(self) -> None:
         """Status partial shows Started fallback text in Open Banking UK local time."""
@@ -1598,6 +1806,7 @@ class TestRunDetailUi:
         assert "Live evidence" in content
         assert "request-sent" in content
         assert "Request sent - GET - https://example.com/.well-known/openid-configuration" in content
+        assert 'hx-trigger="load, every 2s"' in content
         _assert_time_elements_use_local_datetime_contract(content)
 
     def test_steps_partial_disables_interval_polling_when_run_is_terminal(self) -> None:
@@ -1628,8 +1837,39 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert 'id="run-steps"' in content
         assert 'data-step-id="discovery"' in content
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
         # Terminal rows are not forced open by the server.
         assert 'data-step-id="discovery" open>' not in content
+
+    def test_steps_partial_disables_interval_polling_while_awaiting_psu_authorisation(self) -> None:
+        """Awaiting PSU authorisation should disable steps-panel interval polling."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="psu-step",
+                    name="PSU Step",
+                    kind="psu-authorization",
+                    group="consent",
+                    phase="execution",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu-step",
+            url="https://auth.example.com/authorize?state=awaiting-steps",
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/steps/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
 
     def test_status_partial_renders_pending_psu_authorisation_action(self) -> None:
         """The status partial renders active manual PSU browser actions."""
@@ -1695,6 +1935,23 @@ class TestRunDetailUi:
         assert ">2<" in content
         assert f"/runs/{record.run_id}/log.json" in content
         assert "Masked log" in content
+        assert 'hx-trigger="load, every 2s"' in content
+
+    def test_log_partial_disables_interval_polling_while_awaiting_psu_authorisation(self) -> None:
+        """Awaiting PSU authorisation should disable log-panel interval polling."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting-log",
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/log/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
 
     def test_log_partial_counts_events_without_serialising_log(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """Rendering the log partial should count buffered events directly.
@@ -1779,6 +2036,23 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "Result pending" in content
         assert 'hx-trigger="load, every 2s"' in content
+
+    def test_result_partial_disables_interval_polling_while_awaiting_psu_authorisation(self) -> None:
+        """Awaiting PSU authorisation should disable result-panel interval polling."""
+        record = run_store.create_run()
+        run_store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url="https://auth.example.com/authorize?state=awaiting-result",
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Result pending" in content
+        assert 'hx-trigger="load"' in content
+        assert "every 2s" not in content
 
     def test_result_partial_renders_structured_certification_eligibility(self) -> None:
         """The result partial renders the current eligibility object shape."""

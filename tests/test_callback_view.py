@@ -318,3 +318,124 @@ class TestCallbackView:
         assert "code" in payload
         assert "error" not in payload
         assert "error_description" not in payload
+
+    def test_success_callback_contains_opener_notification(self) -> None:
+        """Success outcome should include window.opener.postMessage notification."""
+        run_id, state = _registered_state()
+        client = Client()
+
+        response = client.get("/callback/", {"state": state, "code": "auth-code-xyz"})
+
+        assert response.status_code == 200
+        body = response.content.decode("utf-8")
+        assert "window.opener" in body
+        assert "postMessage" in body
+        assert "conformance:psu-callback" in body
+        assert '"*"' in body
+        assert state not in body
+        assert "auth-code-xyz" not in body
+
+    def test_error_callback_contains_opener_notification(self) -> None:
+        """Error outcome should include window.opener.postMessage notification."""
+        run_id, state = _registered_state()
+        client = Client()
+
+        response = client.get("/callback/", {"state": state, "error": "access_denied"})
+
+        assert response.status_code == 200
+        body = response.content.decode("utf-8")
+        assert "window.opener" in body
+        assert "postMessage" in body
+        assert "conformance:psu-callback" in body
+        assert '"*"' in body
+        assert state not in body
+
+    def test_failure_callback_does_not_contain_opener_notification(self) -> None:
+        """Rejected callbacks must not include opener notification (unknown state)."""
+        client = Client()
+
+        response = client.get("/callback/", {"state": "x" * 32, "code": "irrelevant"})
+
+        assert response.status_code == 400
+        body = response.content.decode("utf-8")
+        assert "conformance:psu-callback" not in body
+
+    def test_fragment_bridge_does_not_contain_opener_notification(self) -> None:
+        """Fragment bridge variant must not include opener notification."""
+        client = Client()
+
+        response = client.get("/callback/")
+
+        assert response.status_code == 200
+        body = response.content.decode("utf-8")
+        assert "conformance:psu-callback" not in body
+
+    def test_success_callback_clears_pending_participant_action(self) -> None:
+        """A successful callback must clear any pending PSU browser action."""
+        run_id, state = _registered_state()
+        from datetime import UTC, datetime
+
+        run_store.set_participant_action(
+            run_id,
+            step_id="step-abc",
+            url="https://aspsp.example/auth?request=foo",
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        assert run_store.get_participant_action(run_id) is not None
+
+        client = Client()
+        client.get("/callback/", {"state": state, "code": "auth-code-xyz"})
+
+        assert run_store.get_participant_action(run_id) is None
+
+    def test_error_callback_clears_pending_participant_action(self) -> None:
+        """An error callback must also clear any pending PSU browser action."""
+        run_id, state = _registered_state()
+        from datetime import UTC, datetime
+
+        run_store.set_participant_action(
+            run_id,
+            step_id="step-abc",
+            url="https://aspsp.example/auth?request=foo",
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        assert run_store.get_participant_action(run_id) is not None
+
+        client = Client()
+        client.get("/callback/", {"state": state, "error": "access_denied"})
+
+        assert run_store.get_participant_action(run_id) is None
+
+    def test_success_callback_bumps_run_version(self) -> None:
+        """A successful callback must increment the run version for long-poll waiters."""
+        run_id, state = _registered_state()
+        from datetime import UTC, datetime
+
+        run_store.set_participant_action(
+            run_id,
+            step_id="step-abc",
+            url="https://aspsp.example/auth?request=foo",
+            expires_at=datetime(2030, 1, 1, tzinfo=UTC),
+        )
+        before = run_store.get_run(run_id)
+        assert before is not None
+        version_before = before.version
+
+        client = Client()
+        client.get("/callback/", {"state": state, "code": "auth-code-xyz"})
+
+        after = run_store.get_run(run_id)
+        assert after is not None
+        assert after.version > version_before
+
+    def test_callback_for_unknown_run_clears_action_without_crashing(self) -> None:
+        """Pruned-run callback must return 200 and not crash on clear_participant_action."""
+        record = run_store.create_run()
+        session = auth_session_store.register(record.run_id)
+        run_store._runs.clear()  # noqa: SLF001 — test-only setup
+        run_store._active_run_id = None  # noqa: SLF001 — test-only setup
+        client = Client()
+
+        response = client.get("/callback/", {"state": session.state, "code": "x"})
+
+        assert response.status_code == 200

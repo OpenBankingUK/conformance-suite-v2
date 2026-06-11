@@ -4537,6 +4537,8 @@ def test_psu_manual_step_captures_code_into_context() -> None:
     url_events = [event for event in execution_logger.events() if event.type == "psu-authorization-url"]
     assert len(url_events) == 1
     assert url_events[0].payload["client_id"] == "***"  # noqa: S105 — masked sentinel, not a real secret
+    assert url_events[0].payload["timeout_seconds"] == 2
+    assert isinstance(url_events[0].payload["expires_at"], str)
 
 
 @pytest.mark.unit

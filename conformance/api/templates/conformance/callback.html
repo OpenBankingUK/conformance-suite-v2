@@ -67,6 +67,16 @@ auto-escaped by the Django template engine.
     {% endif %}
     {% if outcome == "success" or outcome == "error" %}
         <script>
+            try {
+                if (window.opener) {
+                    window.opener.postMessage(
+                        { type: "conformance:psu-callback" },
+                        "*",
+                    );
+                }
+            } catch {
+                // Best-effort: opener unavailable or cross-origin access blocked.
+            }
             window.setTimeout(() => {
                 window.close();
             }, 1200);

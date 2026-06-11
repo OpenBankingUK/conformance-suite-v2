@@ -1,4 +1,4 @@
-<section class="panel" id="run-status" data-run-status="{{ run.status }}" hx-get="{{ status_url }}" hx-trigger="load, every 2s" hx-swap="outerHTML">
+<section class="panel" id="run-status" data-run-status="{{ run.status }}" data-run-version="{{ run.version }}" hx-get="{{ status_url }}" hx-trigger="{% if live_polling_enabled %}load, every 2s{% else %}load{% endif %}" hx-swap="outerHTML">
     <h2>Status</h2>
     <p><span class="status {{ run.status }}">{{ run.status }}</span></p>
     <div class="grid">

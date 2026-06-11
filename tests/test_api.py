@@ -1,8 +1,9 @@
 import dataclasses
 import json
+import threading
 import time
 from collections.abc import Callable, Iterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
@@ -260,6 +261,57 @@ class TestRunStore:
         assert {action.step_id for action in actions} == {"psu-first", "psu-second"}
         assert {action.status for action in actions} == {"pending"}
 
+    def test_participant_action_preserves_expires_at_on_snapshots(self) -> None:
+        """Participant action timeout metadata is retained on run snapshots."""
+        store = RunStore()
+        record = store.create_run()
+        expected_expires_at = datetime.now(UTC) + timedelta(seconds=30)
+
+        store.set_participant_action(
+            record.run_id,
+            step_id="psu",
+            url=self.RAW_PSU_AUTHORIZATION_URL,
+            expires_at=expected_expires_at,
+        )
+
+        action = store.get_participant_action(record.run_id)
+        assert action is not None
+        assert action.expires_at == expected_expires_at
+
+        snapshot = store.get_run(record.run_id)
+        assert snapshot is not None
+        assert snapshot.participant_actions["psu"].expires_at == expected_expires_at
+
+    def test_wait_for_run_change_returns_completed_action_snapshot(self) -> None:
+        """Waiters should wake when a pending PSU action is completed."""
+        store = RunStore()
+        record = store.create_run()
+        store.set_participant_action(record.run_id, step_id="psu", url=self.RAW_PSU_AUTHORIZATION_URL)
+
+        def complete_action() -> None:
+            time.sleep(0.05)
+            store.clear_participant_action(record.run_id, step_id="psu")
+
+        worker = threading.Thread(target=complete_action, daemon=True)
+        worker.start()
+
+        updated = store.wait_for_run_change(record.run_id, timeout_seconds=1.0)
+
+        worker.join(timeout=1.0)
+        assert updated is not None
+        assert updated.status == "pending"
+        assert updated.participant_action is None
+        assert updated.participant_actions["psu"].status == "completed"
+
+    def test_wait_for_run_change_times_out_without_state_change(self) -> None:
+        """Waiters should return ``None`` when nothing changes before timeout."""
+        store = RunStore()
+        record = store.create_run()
+
+        updated = store.wait_for_run_change(record.run_id, timeout_seconds=0.01)
+
+        assert updated is None
+
     def test_participant_action_snapshot_is_not_live_mutable_state(self) -> None:
         """Run snapshots detach participant actions from the live store."""
         store = RunStore()
@@ -379,6 +431,27 @@ class TestBrowserParticipantActionLogger:
         events = wrapped.events()
         assert [event.type for event in events] == ["psu-authorization-url"]
         assert self.RAW_PSU_AUTHORIZATION_URL not in wrapped.to_ndjson_bytes().decode("utf-8")
+
+    def test_stores_psu_deadline_metadata_when_payload_contains_expires_at(self) -> None:
+        """PSU URL events can attach an expiry deadline for paused-poll wake-up."""
+        store = RunStore()
+        record = store.create_run()
+        wrapped = BufferedExecutionLogger(run_id=record.run_id, developer_mode=False)
+        logger = BrowserParticipantActionLogger(wrapped, run_id=record.run_id, store=store)
+        expected_expires_at = datetime.now(UTC) + timedelta(seconds=30)
+
+        logger.emit(
+            "psu-authorization-url",
+            step_id="psu",
+            payload={
+                "url": self.RAW_PSU_AUTHORIZATION_URL,
+                "expires_at": expected_expires_at.isoformat(),
+            },
+        )
+
+        action = store.get_participant_action(record.run_id)
+        assert action is not None
+        assert action.expires_at == expected_expires_at
 
     def test_malformed_psu_url_event_is_forwarded_without_storing_action(self) -> None:
         """Malformed PSU URL events do not create browser actions."""

@@ -12,6 +12,7 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
+from datetime import UTC, datetime
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunStore, run_store
@@ -103,7 +104,34 @@ class BrowserParticipantActionLogger(ExecutionLogger):
         url = (payload or {}).get("url")
         if step_id is None or not isinstance(url, str):
             return
-        self._store.set_participant_action(self._run_id, step_id=step_id, url=url)
+        self._store.set_participant_action(
+            self._run_id,
+            step_id=step_id,
+            url=url,
+            expires_at=self._expires_at_from_payload(payload),
+        )
+
+    def _expires_at_from_payload(self, payload: Mapping[str, JsonValue] | None) -> datetime | None:
+        """Parse an optional participant-action deadline from an event payload.
+
+        Args:
+            payload: Event payload that may contain an ``expires_at`` ISO-8601
+                timestamp.
+
+        Returns:
+            UTC-aware deadline timestamp, or ``None`` when no valid deadline is
+            provided.
+        """
+        raw_expires_at = (payload or {}).get("expires_at")
+        if not isinstance(raw_expires_at, str):
+            return None
+        try:
+            parsed = datetime.fromisoformat(raw_expires_at)
+        except ValueError:
+            return None
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=UTC)
+        return parsed.astimezone(UTC)
 
 
 def start_run(

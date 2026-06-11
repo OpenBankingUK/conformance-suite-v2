@@ -1,4 +1,4 @@
-<section class="panel" id="run-result" hx-get="{{ result_partial_url }}" hx-trigger="{% if run.status == "pending" or run.status == "running" %}load, every 2s{% else %}load{% endif %}" hx-swap="outerHTML">
+<section class="panel" id="run-result" hx-get="{{ result_partial_url }}" hx-trigger="{% if live_polling_enabled %}load, every 2s{% else %}load{% endif %}" hx-swap="outerHTML">
     <h2>Result</h2>
     {% if run.status == "completed" and run.result %}
         {% if developer_mode %}

@@ -5,7 +5,14 @@
     <title>Run {{ run.run_id }}</title>
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="noindex,nofollow">
-    {% if run.status == "pending" or run.status == "running" %}<meta http-equiv="refresh" content="2">{% endif %}
+    <meta name="conformance-page-auto-refresh-enabled" content="{{ page_auto_refresh_enabled|yesno:'true,false' }}">
+    <meta name="conformance-live-polling-enabled" content="{{ live_polling_enabled|yesno:'true,false' }}">
+    <meta name="conformance-run-version" content="{{ run.version }}">
+    <meta name="conformance-participant-action-wait-url" content="{{ participant_action_wait_url }}">
+    {% if participant_action_deadline %}
+    <meta name="conformance-participant-action-deadline" content="{{ participant_action_deadline.utc_datetime }}">
+    {% endif %}
+    {% if page_auto_refresh_enabled %}<meta http-equiv="refresh" content="2">{% endif %}
     <style>
         :root {
             color-scheme: light;
@@ -424,18 +431,47 @@
     {% include "conformance/partials/run_log.html" %}
 </main>
 <script>
+    function createLocalDateTimeFormatter() {
+        try {
+            return new Intl.DateTimeFormat(undefined, {
+                dateStyle: "medium",
+                timeStyle: "medium",
+                timeZoneName: "short",
+            });
+        } catch {
+            try {
+                return new Intl.DateTimeFormat(undefined, {
+                    timeZoneName: "short",
+                });
+            } catch {
+                return null;
+            }
+        }
+    }
+
+    function formatLocalDatetime(date, formatter) {
+        if (formatter) {
+            try {
+                return formatter.format(date);
+            } catch {
+                // Fall through to browser-local formatting below.
+            }
+        }
+        try {
+            return date.toLocaleString();
+        } catch {
+            return date.toISOString();
+        }
+    }
+
     function renderLocalDatetimes(root) {
-        const formatter = new Intl.DateTimeFormat(undefined, {
-            dateStyle: "medium",
-            timeStyle: "medium",
-            timeZoneName: "short",
-        });
+        const formatter = createLocalDateTimeFormatter();
         root.querySelectorAll("time[data-local-datetime]").forEach((node) => {
             const value = node.getAttribute("datetime");
             if (!value) return;
             const date = new Date(value);
             if (Number.isNaN(date.getTime())) return;
-            node.textContent = formatter.format(date);
+            node.textContent = formatLocalDatetime(date, formatter);
             node.setAttribute("data-local-datetime-rendered", "true");
             if (!node.hasAttribute("data-utc-datetime")) {
                 node.setAttribute("data-utc-datetime", value);
@@ -468,10 +504,12 @@
 
         const popupWidth = 520;
         const popupHeight = 720;
+        // noopener/noreferrer are intentionally omitted so the callback page
+        // can notify this window via window.opener.postMessage once PSU
+        // authorisation completes.  The callback URL is same-origin and the
+        // message handler validates origin before acting.
         const popupFeatures = [
             "popup=yes",
-            "noopener=yes",
-            "noreferrer=yes",
             `width=${popupWidth}`,
             `height=${popupHeight}`,
         ];
@@ -497,6 +535,181 @@
         }
         return popupWindow;
     }
+
+    function isLocalhostEquivalentHostname(hostname) {
+        return ["localhost", "127.0.0.1", "0.0.0.0", "::1"].includes(hostname);
+    }
+
+    function isTrustedCallbackOrigin(origin) {
+        try {
+            const sender = new URL(origin);
+            const current = new URL(window.location.origin);
+            if (sender.origin === current.origin) {
+                return true;
+            }
+            if (sender.protocol !== current.protocol || sender.port !== current.port) {
+                return false;
+            }
+            return isLocalhostEquivalentHostname(sender.hostname)
+                && isLocalhostEquivalentHostname(current.hostname);
+        } catch {
+            return false;
+        }
+    }
+
+    function fetchAndSwapRunPanel(panel, panelUrl) {
+        return fetch(panelUrl, { credentials: "same-origin" })
+            .then((response) => {
+                if (!response.ok) {
+                    return null;
+                }
+                return response.text();
+            })
+            .then((html) => {
+                if (!html) {
+                    return false;
+                }
+                const template = document.createElement("template");
+                template.innerHTML = html.trim();
+                const replacement = template.content.firstElementChild;
+                if (!replacement) {
+                    return false;
+                }
+                panel.replaceWith(replacement);
+                renderLocalDatetimes(replacement);
+                return true;
+            })
+            .catch(() => false);
+    }
+
+    function refreshRunPanels() {
+        const panelIds = ["run-status", "run-steps", "run-log", "run-result"];
+        const refreshes = panelIds.flatMap(function (id) {
+            const panel = document.getElementById(id);
+            if (!panel) {
+                return [];
+            }
+            const panelUrl = panel.getAttribute("hx-get");
+            if (!panelUrl) {
+                return [];
+            }
+            return [fetchAndSwapRunPanel(panel, panelUrl)];
+        });
+
+        if (refreshes.length === 0) {
+            window.location.reload();
+            return Promise.resolve(false);
+        }
+
+        return Promise.all(refreshes).then((results) => {
+            if (!results.some(Boolean)) {
+                window.location.reload();
+                return false;
+            }
+            return true;
+        });
+    }
+
+    function currentRunVersion() {
+        const runStatusNode = document.getElementById("run-status");
+        const statusVersion = runStatusNode ? runStatusNode.getAttribute("data-run-version") : null;
+        if (statusVersion) {
+            return statusVersion;
+        }
+
+        const versionMeta = document.querySelector('meta[name="conformance-run-version"]');
+        return versionMeta ? versionMeta.getAttribute("content") : null;
+    }
+
+    function participantActionWaitUrl() {
+        const waitUrlMeta = document.querySelector('meta[name="conformance-participant-action-wait-url"]');
+        const waitUrl = waitUrlMeta ? waitUrlMeta.getAttribute("content") : null;
+        if (!waitUrl) {
+            return null;
+        }
+
+        const runVersion = currentRunVersion();
+        if (!runVersion) {
+            return waitUrl;
+        }
+
+        const url = new URL(waitUrl, window.location.href);
+        url.searchParams.set("since", runVersion);
+        return url.toString();
+    }
+
+    function scheduleParticipantActionDeadlineRefresh() {
+        const pollingEnabledMeta = document.querySelector('meta[name="conformance-live-polling-enabled"]');
+        if (!pollingEnabledMeta || pollingEnabledMeta.getAttribute("content") !== "false") {
+            return;
+        }
+
+        const deadlineMeta = document.querySelector('meta[name="conformance-participant-action-deadline"]');
+        const deadlineIso = deadlineMeta ? deadlineMeta.getAttribute("content") : null;
+        if (!deadlineIso) {
+            return;
+        }
+
+        const deadlineMs = Date.parse(deadlineIso);
+        if (Number.isNaN(deadlineMs)) {
+            return;
+        }
+
+        const refreshDelayMs = Math.max(deadlineMs - Date.now() + 250, 0);
+        window.setTimeout(() => {
+            refreshRunPanels();
+        }, refreshDelayMs);
+    }
+
+    function shouldWaitForParticipantActionUpdate() {
+        const pollingEnabledMeta = document.querySelector('meta[name="conformance-live-polling-enabled"]');
+        if (!pollingEnabledMeta || pollingEnabledMeta.getAttribute("content") !== "false") {
+            return false;
+        }
+
+        const runStatusNode = document.getElementById("run-status");
+        if (!runStatusNode) {
+            return false;
+        }
+
+        return ["pending", "running"].includes(runStatusNode.getAttribute("data-run-status") || "");
+    }
+
+    function waitForParticipantActionUpdate() {
+        if (!shouldWaitForParticipantActionUpdate()) {
+            return;
+        }
+
+        const waitUrl = participantActionWaitUrl();
+        if (!waitUrl) {
+            return;
+        }
+
+        fetch(waitUrl, { credentials: "same-origin" })
+            .then((response) => {
+                if (!shouldWaitForParticipantActionUpdate()) {
+                    return false;
+                }
+                if (response.status === 200) {
+                    return refreshRunPanels();
+                }
+                return false;
+            })
+            .catch(() => {
+                return false;
+            })
+            .finally(() => {
+                if (shouldWaitForParticipantActionUpdate()) {
+                    window.setTimeout(waitForParticipantActionUpdate, 0);
+                }
+            });
+    }
+
+    window.addEventListener("message", function (event) {
+        if (!isTrustedCallbackOrigin(event.origin)) return;
+        if (!event.data || event.data.type !== "conformance:psu-callback") return;
+        window.location.reload();
+    });
 
     document.addEventListener("click", (event) => {
         const authorisationLink = event.target.closest("a[data-psu-authorisation-popup]");
@@ -528,8 +741,26 @@
         }
     });
 
-    renderLocalDatetimes(document);
-    document.body.addEventListener("htmx:afterSwap", (event) => renderLocalDatetimes(event.target));
+    function runStartupTask(task) {
+        try {
+            task();
+        } catch {
+            return;
+        }
+    }
+
+    runStartupTask(() => renderLocalDatetimes(document));
+    runStartupTask(() => {
+        document.body.addEventListener("htmx:afterSwap", (event) => {
+            try {
+                renderLocalDatetimes(event.target);
+            } catch {
+                return;
+            }
+        });
+    });
+    runStartupTask(() => scheduleParticipantActionDeadlineRefresh());
+    runStartupTask(() => waitForParticipantActionUpdate());
 
     (function () {
         const STEP_STATE_STORAGE_KEY = "conformance.runSteps.{{ run.run_id }}";

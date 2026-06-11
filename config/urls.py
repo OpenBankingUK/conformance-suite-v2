@@ -18,6 +18,7 @@ from conformance.api.ui_views import (
     run_result_partial,
     run_status_partial,
     run_steps_partial,
+    run_wait,
 )
 
 
@@ -67,6 +68,7 @@ urlpatterns = [
     path("runs/<str:run_id>/log.json", run_log_download, name="ui-run-log-download"),
     path("runs/<str:run_id>/result/", run_result_partial, name="ui-run-result"),
     path("runs/<str:run_id>/result.json", run_result_download, name="ui-run-result-download"),
+    path("runs/<str:run_id>/wait/", run_wait, name="ui-run-wait"),
     path("api/", include("conformance.api.urls")),
     # PSU authorization callback. Deliberately mounted at the project
     # root (not under ``/api/``) so it is NOT loopback-guarded — the

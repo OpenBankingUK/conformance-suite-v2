@@ -1,4 +1,4 @@
-<section class="panel" id="run-log" hx-get="{{ log_partial_url }}" hx-trigger="load, every 2s" hx-swap="outerHTML">
+<section class="panel" id="run-log" hx-get="{{ log_partial_url }}" hx-trigger="{% if live_polling_enabled %}load, every 2s{% else %}load{% endif %}" hx-swap="outerHTML">
     <h2>Log</h2>
     <div class="grid">
         <div class="metric"><strong>{{ log_event_count }}</strong><span>Events</span></div>

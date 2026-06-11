@@ -9,7 +9,7 @@ import time
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -1064,6 +1064,7 @@ def _execute_v1_psu_step_inner(
     # The browser-facing URL is emitted as the raw event payload so the CLI
     # decorator can print it for manual consent; BufferedExecutionLogger masks
     # sensitive query values before persisting or serving the structured log.
+    expires_at = datetime.now(UTC) + timedelta(seconds=manifest_step.timeout_seconds)
     execution_logger.emit(
         "psu-authorization-url",
         step_id=manifest_step.id,
@@ -1074,6 +1075,8 @@ def _execute_v1_psu_step_inner(
             "state": session.state,
             "nonce": resolved_nonce,
             "mode": manifest_step.mode,
+            "timeout_seconds": manifest_step.timeout_seconds,
+            "expires_at": expires_at.isoformat(),
         },
     )
 

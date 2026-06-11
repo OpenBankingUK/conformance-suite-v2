@@ -20,6 +20,9 @@ from conformance.json_types import JsonObject, JsonValue
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
 
+_RUN_WAIT_MAX_TIMEOUT_SECONDS = 30.0
+"""Maximum server-side wait duration for the browser long-poll endpoint."""
+
 
 @require_GET
 def plan_builder(request: HttpRequest) -> HttpResponse:
@@ -194,6 +197,32 @@ def run_result_partial(request: HttpRequest, run_id: str) -> HttpResponse:
 
 
 @require_GET
+def run_wait(request: HttpRequest, run_id: str) -> HttpResponse:
+    """Block until a run changes or the wait timeout expires.
+
+    Args:
+        request: The incoming browser GET request.
+        run_id: The unique run identifier from the URL path.
+
+    Returns:
+        JSON response with the updated run status after a state change, a
+        204 response when the wait times out, or 404 when the run is unknown.
+    """
+    record = run_store.get_run(run_id)
+    if record is None:
+        return HttpResponseNotFound("Run not found")
+
+    waited_record = run_store.wait_for_run_change(
+        run_id,
+        timeout_seconds=_run_wait_timeout_seconds(request),
+        since_version=_run_wait_since_version(request),
+    )
+    if waited_record is None:
+        return HttpResponse(status=204)
+    return JsonResponse({"changed": True, "run": waited_record.to_status_json()})
+
+
+@require_GET
 def run_log_download(request: HttpRequest, run_id: str) -> HttpResponse:
     """Return the browser-accessible masked JSON execution log.
 
@@ -280,6 +309,9 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         and summarised result fields.
     """
     step_progress = _step_progress_rows(record)
+    is_active_run = record.status in {"pending", "running"}
+    has_pending_psu_authorisation_action = _has_pending_psu_authorisation_action(record)
+    pending_psu_authorisation_deadline = _pending_psu_authorisation_deadline(record)
     return {
         "run": record,
         "run_times": {
@@ -293,6 +325,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_partial_url": reverse("ui-run-result", kwargs={"run_id": record.run_id}),
         "raw_log_url": reverse("ui-run-log-download", kwargs={"run_id": record.run_id}),
         "raw_result_url": reverse("ui-run-result-download", kwargs={"run_id": record.run_id}),
+        "participant_action_wait_url": reverse("ui-run-wait", kwargs={"run_id": record.run_id}),
         "log_event_count": _log_event_count(record),
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
@@ -302,7 +335,88 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_issue_count": _result_issue_count(step_progress),
         "result_status_counts": _result_status_counts(step_progress),
         "developer_mode": _run_developer_mode(record),
+        "page_auto_refresh_enabled": is_active_run,
+        "live_polling_enabled": is_active_run and not has_pending_psu_authorisation_action,
+        "participant_action_deadline": _run_time_display(pending_psu_authorisation_deadline),
     }
+
+
+def _run_wait_timeout_seconds(request: HttpRequest) -> float:
+    """Parse the browser wait timeout and clamp it to the server maximum.
+
+    Args:
+        request: The incoming browser GET request.
+
+    Returns:
+        Non-negative timeout seconds for the wait endpoint, capped at the
+        module-level maximum wait duration.
+    """
+    raw_timeout = request.GET.get("timeout")
+    if raw_timeout is None:
+        return _RUN_WAIT_MAX_TIMEOUT_SECONDS
+    try:
+        requested_timeout = float(raw_timeout)
+    except TypeError, ValueError:
+        return _RUN_WAIT_MAX_TIMEOUT_SECONDS
+    return min(max(requested_timeout, 0.0), _RUN_WAIT_MAX_TIMEOUT_SECONDS)
+
+
+def _run_wait_since_version(request: HttpRequest) -> int | None:
+    """Parse the browser-rendered run version from the wait request.
+
+    Args:
+        request: The incoming browser GET request.
+
+    Returns:
+        Non-negative run version supplied by the caller, or ``None`` when the
+        parameter is missing or malformed.
+    """
+    raw_version = request.GET.get("since")
+    if raw_version is None:
+        return None
+    try:
+        version = int(raw_version)
+    except ValueError:
+        return None
+    if version < 0:
+        return None
+    return version
+
+
+def _has_pending_psu_authorisation_action(record: RunRecord) -> bool:
+    """Return whether the run is waiting on a PSU authorisation action.
+
+    Args:
+        record: Snapshot of the run record to inspect.
+
+    Returns:
+        ``True`` when at least one pending participant action has type
+        ``psu-authorization-url``; otherwise ``False``.
+    """
+    return any(
+        action.type == "psu-authorization-url" and action.status == "pending"
+        for action in record.participant_actions.values()
+    )
+
+
+def _pending_psu_authorisation_deadline(record: RunRecord) -> datetime | None:
+    """Return the earliest deadline among pending PSU authorisation actions.
+
+    Args:
+        record: Snapshot of the run record to inspect.
+
+    Returns:
+        Earliest pending PSU action deadline, or ``None`` when no pending
+        action carries timeout metadata.
+    """
+    pending_deadlines = [
+        action.expires_at
+        for action in record.participant_actions.values()
+        if action.type == "psu-authorization-url" and action.status == "pending" and action.expires_at is not None
+    ]
+    if not pending_deadlines:
+        return None
+    return min(pending_deadlines)
 
 
 def _run_time_display(timestamp: datetime | None) -> dict[str, str] | None:
