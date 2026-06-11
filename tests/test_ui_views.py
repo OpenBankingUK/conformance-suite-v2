@@ -5,6 +5,7 @@ from __future__ import annotations
 import html
 import json
 import time
+from collections.abc import Iterator
 from pathlib import Path
 from typing import cast
 from unittest.mock import Mock, patch
@@ -82,10 +83,35 @@ AIS_BASELINE_CONFIG: dict[str, JsonValue] = {
 
 
 @pytest.fixture(autouse=True)
-def _reset_global_stores() -> None:
-    """Reset process-local singleton stores between UI tests."""
+def _reset_global_stores() -> Iterator[None]:
+    """Reset process-local singleton stores around each UI test.
+
+    Yields:
+        Control back to pytest while the test executes.
+    """
     run_store.reset()
     auth_session_store.reset()
+    yield
+    _wait_for_active_run_to_settle(timeout_seconds=1.0)
+    run_store.reset()
+    auth_session_store.reset()
+
+
+def _wait_for_active_run_to_settle(*, timeout_seconds: float) -> None:
+    """Best-effort wait for active runs to leave pending/running states.
+
+    Args:
+        timeout_seconds: Maximum wall-clock time to wait before teardown
+            proceeds with store reset.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with run_store._lock:
+            active_run_id = run_store._active_run_id
+            active_record = run_store._runs.get(active_run_id) if active_run_id is not None else None
+            if active_record is None or active_record.status in {"completed", "failed"}:
+                return
+        time.sleep(0.01)
 
 
 def _http_step(

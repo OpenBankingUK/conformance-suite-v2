@@ -250,13 +250,19 @@ def _execute_run(
             PSU authorisation URLs are exposed only as transient browser
             participant actions.
     """
-    run_store.mark_running(run_id)
     try:
+        run_store.mark_running(run_id)
         run_record = run_store.get_run(run_id)
+        if run_record is None:
+            logger.debug(
+                "Run %s disappeared before execution started; skipping lifecycle processing",
+                run_id,
+            )
+            return
         # ``get_run`` returns a shallow copy whose ``execution_logger``
         # reference points at the same live buffer the API exposes; either
         # accessing the live record or the copy yields the same logger.
-        run_logger = run_record.execution_logger if run_record is not None else None
+        run_logger = run_record.execution_logger
         logger_sink: ExecutionLogger = run_logger or NullExecutionLogger()
         if browser_psu_prompts:
             logger_sink = BrowserParticipantActionLogger(logger_sink, run_id=run_id, store=run_store)

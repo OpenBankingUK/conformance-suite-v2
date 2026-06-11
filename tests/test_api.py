@@ -1,7 +1,7 @@
 import dataclasses
 import json
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from unittest.mock import Mock, patch
 
@@ -63,6 +63,14 @@ class TestRunStore:
         assert updated.status == "running"
         assert updated.started_at is not None
 
+    def test_mark_running_ignores_unknown_run_id(self) -> None:
+        """Missing runs are ignored to keep lifecycle transitions idempotent."""
+        store = RunStore()
+
+        store.mark_running("missing-run-id")
+
+        assert store.get_run("missing-run-id") is None
+
     def test_mark_completed_stores_result(self) -> None:
         store = RunStore()
         record = store.create_run()
@@ -74,6 +82,14 @@ class TestRunStore:
         assert updated.result == {"environment": "test"}
         assert updated.finished_at is not None
 
+    def test_mark_completed_ignores_unknown_run_id(self) -> None:
+        """Terminal completion on a missing run is a no-op."""
+        store = RunStore()
+
+        store.mark_completed("missing-run-id", result={"status": "passed"})
+
+        assert store.get_run("missing-run-id") is None
+
     def test_mark_failed_stores_error(self) -> None:
         store = RunStore()
         record = store.create_run()
@@ -83,6 +99,14 @@ class TestRunStore:
         assert updated is not None
         assert updated.status == "failed"
         assert updated.error == "timeout"
+
+    def test_mark_failed_ignores_unknown_run_id(self) -> None:
+        """Terminal failure on a missing run is a no-op."""
+        store = RunStore()
+
+        store.mark_failed("missing-run-id", error="boom")
+
+        assert store.get_run("missing-run-id") is None
 
     def test_to_status_json_minimal(self) -> None:
         store = RunStore()
@@ -541,10 +565,35 @@ def _wait_for_value[WaitValue](producer: Callable[[], WaitValue | None], *, time
 
 
 @pytest.fixture(autouse=True)
-def _reset_global_stores() -> None:
-    """Reset process-local singleton stores between tests."""
+def _reset_global_stores() -> Iterator[None]:
+    """Reset process-local singleton stores around each test.
+
+    Yields:
+        Control back to pytest while the test executes.
+    """
     run_store.reset()
     auth_session_store.reset()
+    yield
+    _wait_for_active_run_to_settle(timeout_seconds=1.0)
+    run_store.reset()
+    auth_session_store.reset()
+
+
+def _wait_for_active_run_to_settle(*, timeout_seconds: float) -> None:
+    """Best-effort wait for active runs to leave pending/running states.
+
+    Args:
+        timeout_seconds: Maximum wall-clock time to wait before teardown
+            proceeds with store reset.
+    """
+    deadline = time.monotonic() + timeout_seconds
+    while time.monotonic() < deadline:
+        with run_store._lock:
+            active_run_id = run_store._active_run_id
+            active_record = run_store._runs.get(active_run_id) if active_run_id is not None else None
+            if active_record is None or active_record.status in {"completed", "failed"}:
+                return
+        time.sleep(0.01)
 
 
 @pytest.mark.integration
@@ -2104,6 +2153,47 @@ class TestExecuteRunDiscardsAuthSessions:
         # The run itself transitioned to completed (sanity check).
         assert run_store.get_run(record.run_id) is not None
         assert run_store.get_run(record.run_id).status == "completed"  # type: ignore[union-attr]
+
+    def test_reset_run_before_terminal_transition_does_not_raise_and_discards_sessions(self) -> None:
+        """Lifecycle cleanup tolerates run-store resets that remove the run."""
+        from datetime import UTC, datetime
+        from pathlib import Path
+
+        from conformance.api.auth_session_store import auth_session_store
+        from conformance.api.run_lifecycle import _execute_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.results import SmokeCheckResult
+
+        record = run_store.create_run()
+        auth_session_store.register(record.run_id)
+        assert len(auth_session_store.for_run(record.run_id)) == 1
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        fake_result = SmokeCheckResult(
+            environment="test-env",
+            status="passed",
+            started_at=datetime.now(UTC),
+            finished_at=datetime.now(UTC),
+            steps=(),
+        )
+
+        def reset_store_then_return_result(*args: object, **kwargs: object) -> SmokeCheckResult:
+            """Simulate fixture teardown/reset racing with lifecycle terminalization."""
+            run_store.reset()
+            return fake_result
+
+        with patch(
+            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            side_effect=reset_store_then_return_result,
+        ):
+            _execute_run(record.run_id, config, manifest=None, plan=None)
+
+        assert run_store.get_run(record.run_id) is None
+        assert auth_session_store.for_run(record.run_id) == []
 
     def test_completed_run_writes_configured_artifacts(self, tmp_path: Path) -> None:
         """Successful API/browser lifecycle runs persist configured artifacts.

@@ -77,6 +77,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Background run terminal transitions now tolerate runs that disappear before terminalization (for example after in-process store reset or terminal-record pruning), preventing unhandled daemon-thread warnings when `mark_running`, `mark_completed`, or `mark_failed` encounters a missing run id.
 - AIS account-resource assertions no longer require `Data.Account[*].Status`. The v4 Account and Transaction OpenAPI defines `Status` as an optional `OBAccount6` property while requiring only `AccountId`, so Ozone/model-bank account responses without account status now pass the baseline account checks; transaction `Status` checks remain because `OBTransaction6` requires them.
 - Local dev server targets now serve HTTPS on port `8443` with a generated local certificate, so registered Ozone redirects to `https://0.0.0.0:8443/conformancesuite/callback` reach the callback endpoint instead of failing with `ERR_SSL_PROTOCOL_ERROR`.
 - PSU callback handling now bridges OAuth hybrid fragment redirects by replaying browser-only `#code`/`state` or `#error` fields as a normal server-visible query callback while deliberately dropping `id_token`.

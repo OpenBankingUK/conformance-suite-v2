@@ -313,7 +313,9 @@ class RunStore:
             run_id: The unique run identifier.
         """
         with self._lock:
-            record = self._runs[run_id]
+            record = self._runs.get(run_id)
+            if record is None:
+                return
             record.status = "running"
             record.started_at = datetime.now(UTC)
 
@@ -329,7 +331,9 @@ class RunStore:
             result: The structured JSON result object from the engine.
         """
         with self._lock:
-            record = self._runs[run_id]
+            record = self._runs.get(run_id)
+            if record is None:
+                return
             record.status = "completed"
             record.finished_at = datetime.now(UTC)
             record.result = result
@@ -348,7 +352,9 @@ class RunStore:
             error: Human-readable error description.
         """
         with self._lock:
-            record = self._runs[run_id]
+            record = self._runs.get(run_id)
+            if record is None:
+                return
             record.status = "failed"
             record.finished_at = datetime.now(UTC)
             record.error = error
