@@ -1,5 +1,8 @@
 .PHONY: check lint test integration secrets audit dev dev-unmasked serve docker help
 
+PYTEST_XDIST ?= -n auto --dist loadfile
+PYTEST_ARGS ?=
+
 check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
 secrets: ## Scan for leaked secrets
@@ -16,7 +19,7 @@ lint: ## Ruff + mypy + docstring coverage + docstring structure
 	uv run pydoclint .
 
 test: ## Run unit + offline Django integration tests (excludes live-network Ozone and Docker e2e tiers)
-	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov
+	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov $(PYTEST_XDIST) $(PYTEST_ARGS)
 
 integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
 	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration
