@@ -48,8 +48,19 @@ Mapping decisions:
 - Use the current FAPI signing directives for consent creation, PSU request object generation, and token-endpoint authentication.
 - Keep `certificationCoverage: partial`.
 - Treat legacy `optional` and `conditional` resource rows as v2 `optional: true`, deselected by default.
-- Use only current typed v2 assertions: `http_status`, `header`, and `json_field` structural checks.
-- Do not claim full permission-differentiation parity while the v2 suite creates one broad account-access consent.
+- Use current typed v2 assertions for migrated checks. The transaction-basic alignment also uses the bundled OpenAPI response schema primitive for `OBTransaction6Basic` where present.
+- Keep broad account-access consent for the original migrated slice, but use a separate basic-only consent, PSU authorisation, and token exchange for transaction-basic parity checks so they are not run under `ReadTransactionsDetail`. The current v4.0 AIS certification baseline mirrors this permission-boundary shape with a basic-only transaction flow and optional basic bulk coverage.
+
+### v4.0 AIS Transaction-Basic Alignment
+
+The bundled v2 suite now represents legacy manifest parity for:
+
+- `OB-400-TRA-105000`, a mandatory account transactions check.
+- `OB-400-TRA-105200`, an optional bulk transactions check.
+
+Both checks use a basic-only token created from consent permissions `ReadAccountsBasic`, `ReadTransactionsBasic`, `ReadTransactionsDebits`, and `ReadTransactionsCredits`. `ReadTransactionsDetail` is deliberately excluded to match the legacy basic-permission scenario. `OB-400-TRA-105200` remains optional and deselected by default; when explicitly selected it runs through the same basic-only path and is expected to reproduce the known Model Bank failure.
+
+For these two checks, the v2 assertions represent the legacy detail-absence treatment by asserting that detail-only transaction fields are absent on all returned transaction items. They also include the bundled OpenAPI `OBTransaction6Basic` response schema assertion where present in the suite. This remains partial legacy coverage and does not imply that all 95 legacy AIS scripts are implemented.
 
 ## Implemented Legacy Step IDs
 
@@ -58,6 +69,7 @@ Mandatory default legacy endpoint checks:
 - `OB-400-ACC-100400`
 - `OB-400-ACC-100200`
 - `OB-400-BAL-101200`
+- `OB-400-TRA-105000`
 - `OB-400-TRA-105100`
 - `OB-400-TRA-105110`
 - `OB-400-TRA-105120`
@@ -82,8 +94,8 @@ Optional or conditional opt-in endpoint checks:
 Next slices should add typed primitives before widening parity claims:
 
 1. Add an assertion-group primitive for `asserts_one_of`.
-2. Add schema validation or document a formal waiver for `schemaCheck`.
-3. Add flow support for separate permission profiles, no-token, and client-credentials-token protected-resource checks.
+2. Extend schema validation coverage or document a formal waiver for remaining legacy `schemaCheck` gaps.
+3. Add flow support for remaining permission profiles, no-token, and client-credentials-token protected-resource checks.
 4. Generate or maintain a machine-readable inventory report that maps all 95 v4 AIS legacy scripts to implemented, waived, or blocked status.
 5. Repeat the migration for v3.1 AIS, PIS/payment, CBPII, VRP, and cVRP only after each family's setup and consent/payment-flow requirements are modelled.
 6. Promote this suite to `complete` only after every mandatory legacy script is represented and Standards stakeholders sign off any waivers.

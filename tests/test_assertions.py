@@ -181,6 +181,100 @@ def test_evaluate_absent_json_field_fails_when_field_is_present() -> None:
 
 
 @pytest.mark.unit
+def test_evaluate_all_items_absent_field_passes_when_all_items_omit_field() -> None:
+    assertion = parsed_assertion(
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"}
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": [{"Amount": {"Amount": "1.00"}}, {"Status": "Booked"}]}},
+    )
+
+    assert result.passed is True
+    assert result.message == "Every item in JSON field Data.Transaction omits field Balance"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_field_passes_for_empty_array() -> None:
+    assertion = parsed_assertion(
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"}
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": []}},
+    )
+
+    assert result.passed is True
+    assert result.message == "Every item in JSON field Data.Transaction omits field Balance"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_field_fails_when_first_item_contains_field() -> None:
+    assertion = parsed_assertion(
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"}
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": [{"Balance": {}}, {"Status": "Booked"}]}},
+    )
+
+    assert result.passed is False
+    assert result.message == "Every item in JSON field Data.Transaction must omit field Balance"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_field_fails_when_non_first_item_contains_field() -> None:
+    assertion = parsed_assertion(
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"}
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": [{"Status": "Booked"}, {"Balance": {}}]}},
+    )
+
+    assert result.passed is False
+    assert result.message == "Every item in JSON field Data.Transaction must omit field Balance"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_field_fails_when_path_is_not_an_array() -> None:
+    assertion = parsed_assertion(
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"}
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": {}}},
+    )
+
+    assert result.passed is False
+    assert result.message == "JSON field Data.Transaction must be an array"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_field_fails_when_forbidden_field_name_is_blank() -> None:
+    assertion = JsonFieldAssertion(type="json_field", path="Data.Transaction", rule="all_items_absent_field", field="")
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": []}},
+    )
+
+    assert result.passed is False
+    assert result.message == "JSON field Data.Transaction has an invalid forbidden item field"
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("rule", "body", "message"),
     [

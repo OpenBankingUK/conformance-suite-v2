@@ -512,10 +512,15 @@ def test_blank_manifest_resolves_ais_baseline_suite_with_optional_steps_deselect
         "accounts-list",
         "account-detail",
         "account-balances",
+        "account-access-consent-transactions-basic",
+        "psu-authorization-transactions-basic",
+        "token-exchange-transactions-basic",
+        "account-transactions-basic",
         "account-transactions",
         "transactions-list",
     ]
     optional_step_ids = [
+        "transactions-list-basic",
         "balances-list",
         "account-beneficiaries",
         "beneficiaries-list",
@@ -568,6 +573,10 @@ def test_blank_manifest_resolves_ais_fcs_legacy_benchmark_with_optional_steps_de
         "OB-400-ACC-100400",
         "OB-400-ACC-100200",
         "OB-400-BAL-101200",
+        "account-access-consent-transactions-basic",
+        "psu-authorization-transactions-basic",
+        "token-exchange-transactions-basic",
+        "OB-400-TRA-105000",
         "OB-400-TRA-105100",
         "OB-400-TRA-105110",
         "OB-400-TRA-105120",
@@ -594,6 +603,11 @@ def test_blank_manifest_resolves_ais_fcs_legacy_benchmark_with_optional_steps_de
     assert [row.id for row in preview.rows] == mandatory_step_ids + optional_step_ids
     assert [row.id for row in preview.rows if row.default_selected] == mandatory_step_ids
     assert [row.id for row in preview.rows if row.optional and not row.default_selected] == optional_step_ids
+    rows_by_id = {row.id: row for row in preview.rows}
+    assert rows_by_id["OB-400-TRA-105000"].mandatory is True
+    assert rows_by_id["OB-400-TRA-105000"].default_selected is True
+    assert rows_by_id["OB-400-TRA-105200"].optional is True
+    assert rows_by_id["OB-400-TRA-105200"].default_selected is False
     assert preview.launch_supported is True
 
 

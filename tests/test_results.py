@@ -481,6 +481,26 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
             suite="ais-certification-baseline",
         )
     )
+    mandatory_step_ids = [step.id for step in resolved.manifest.steps if step.mandatory]
+    assert mandatory_step_ids == [
+        "openid-discovery",
+        "jwks-fetch",
+        "client-credentials-token",
+        "account-access-consent",
+        "psu-authorization",
+        "token-exchange",
+        "accounts-list",
+        "account-detail",
+        "account-balances",
+        "account-access-consent-transactions-basic",
+        "psu-authorization-transactions-basic",
+        "token-exchange-transactions-basic",
+        "account-transactions-basic",
+        "account-transactions",
+        "transactions-list",
+    ]
+    optional_step_ids = [step.id for step in resolved.manifest.steps if not step.mandatory]
+    assert "transactions-list-basic" in optional_step_ids
     steps = [
         StepResult(name=step.id, status="passed", message=step.id, mandatory=step.mandatory)
         for step in resolved.manifest.steps
@@ -499,8 +519,8 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     block = rendered["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 11
-    assert block["mandatoryPassed"] == 11
+    assert block["mandatoryTotal"] == 15
+    assert block["mandatoryPassed"] == 15
     assert block["reason"] == "Manifest is not marked as complete certification coverage"
     assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
     assert rendered["suite"] == {

@@ -23,7 +23,7 @@ from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
 from conformance.masking import MASKED_VALUE
-from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
+from conformance.model_bank_config import FapiSigningConfig, SuiteName, TokenEndpointClientAuthMode
 from conformance.results import SmokeCheckResult
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
@@ -3790,7 +3790,16 @@ def _run_v4_ais_baseline_through_accounts_list(
     resolved = resolve_suite(selection)
     manifest = resolved.manifest
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
-        ["account-detail", "account-balances", "account-transactions", "transactions-list"]
+        [
+            "account-detail",
+            "account-balances",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "account-transactions-basic",
+            "account-transactions",
+            "transactions-list",
+        ]
     )
 
     auth_store = AuthSessionStore()
@@ -4025,6 +4034,448 @@ def test_ais_certification_baseline_accounts_resource_schema_failure_masks_evide
         "access_token": "***",
     }
     assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
+
+
+def _plan_selecting_step_ids(manifest: Any, *, selected_step_ids: set[str]) -> Any:
+    """Return a plan with exactly ``selected_step_ids`` enabled.
+
+    Args:
+        manifest: Parsed v1 manifest used to derive plan entries.
+        selected_step_ids: Step ids that should remain selected.
+
+    Returns:
+        Test plan with only the provided step ids selected.
+
+    Raises:
+        ValueError: If any selected id does not exist in the manifest plan rows.
+    """
+    from conformance.test_plan import TestPlan, TestPlanEntry
+
+    default_plan = TestPlan.default_plan_from_manifest(manifest)
+    known_ids = {entry.step_id for entry in default_plan.entries}
+    unknown_ids = selected_step_ids - known_ids
+    if unknown_ids:
+        unknown_list = ", ".join(sorted(unknown_ids))
+        raise ValueError(f"Unknown step id(s) in selection: {unknown_list}")
+    return TestPlan(
+        entries=tuple(
+            TestPlanEntry(
+                step_id=entry.step_id,
+                mandatory=entry.mandatory,
+                optional=entry.optional,
+                selected=entry.step_id in selected_step_ids,
+            )
+            for entry in default_plan.entries
+        )
+    )
+
+
+def _run_v4_ais_transactions_basic_suite(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    *,
+    suite_name: str,
+    plan: Any | None = None,
+) -> tuple[SmokeCheckResult, list[httpx.Request]]:
+    """Execute a bundled v4 AIS suite with mocked transaction-basic leak responses.
+
+    Args:
+        monkeypatch: Fixture used to patch executor time for deterministic PSU polling.
+        tmp_path: Pytest temporary directory used to hold generated signing keys.
+        suite_name: Catalog suite slug (for example ``ais-fcs-legacy-benchmark``).
+        plan: Optional pre-built plan. Defaults to the suite's default plan.
+
+    Returns:
+        Tuple of smoke-check result and captured outbound HTTP requests.
+    """
+    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+    from conformance.test_plan import TestPlan
+
+    selection = SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite=cast(SuiteName, suite_name),
+    )
+    resolved = resolve_suite(selection)
+    execution_plan = plan or TestPlan.default_plan_from_manifest(resolved.manifest)
+    detail_token_step_selected = "token-exchange" in execution_plan.selected_step_ids()
+
+    auth_store = AuthSessionStore()
+    registered_states: list[str] = []
+    original_register = auth_store.register
+
+    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
+        """Record PSU states while delegating registration to the real store.
+
+        Args:
+            run_id_inner: Parent run identifier passed through by the executor.
+            state: Optional caller-supplied state token.
+
+        Returns:
+            Newly registered auth session.
+        """
+        session = original_register(run_id_inner, state=state)
+        registered_states.append(session.state)
+        return session
+
+    monkeypatch.setattr(auth_store, "register", intercepting_register)
+
+    issued_codes: dict[str, str] = {}
+    expected_psu_codes = ("suite-auth-code-detail", "suite-auth-code-basic")
+
+    def capture_psu_code_once() -> None:
+        """Capture a deterministic auth code for each newly registered PSU state."""
+        if not registered_states:
+            return
+        latest_state = registered_states[-1]
+        if latest_state in issued_codes:
+            return
+        code_index = min(len(issued_codes), len(expected_psu_codes) - 1)
+        code = expected_psu_codes[code_index]
+        issued_codes[latest_state] = code
+        auth_store.capture_code(latest_state, code)
+
+    fake_clock = _FakeClock(on_sleep=capture_psu_code_once)
+    monkeypatch.setattr("conformance.executor.time.monotonic", fake_clock.monotonic)
+    monkeypatch.setattr("conformance.executor.time.sleep", fake_clock.sleep)
+
+    captured_requests: list[httpx.Request] = []
+    auth_code_exchange_count = 0
+    basic_leak_transactions: JsonObject = {
+        "Data": {
+            "Transaction": [
+                {
+                    "AccountId": "account-123",
+                    "CreditDebitIndicator": "Credit",
+                    "Status": "Booked",
+                    "BookingDateTime": "2025-04-23T15:47:00+00:00",
+                    "Amount": {"Amount": "12.34", "Currency": "GBP"},
+                },
+                {
+                    "AccountId": "account-123",
+                    "CreditDebitIndicator": "Debit",
+                    "Status": "Booked",
+                    "BookingDateTime": "2025-04-23T15:48:00+00:00",
+                    "Amount": {"Amount": "20.00", "Currency": "GBP"},
+                    "Balance": {
+                        "Amount": {"Amount": "50.00", "Currency": "GBP"},
+                        "CreditDebitIndicator": "Credit",
+                        "Type": "InterimAvailable",
+                    },
+                },
+            ]
+        },
+        "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/transactions"},
+        "Meta": {},
+    }
+    detail_transactions: JsonObject = {
+        "Data": {
+            "Transaction": [
+                {
+                    "AccountId": "account-123",
+                    "CreditDebitIndicator": "Credit",
+                    "Status": "Booked",
+                    "BookingDateTime": "2025-04-23T15:47:00+00:00",
+                    "Amount": {"Amount": "12.34", "Currency": "GBP"},
+                    "TransactionInformation": "Salary payment",
+                }
+            ]
+        },
+        "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/transactions"},
+        "Meta": {},
+    }
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return mocked HTTP responses for transactions-basic runtime coverage.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Mock response body matching the requested endpoint.
+
+        Raises:
+            AssertionError: If the executor requests an unexpected endpoint.
+        """
+        captured_requests.append(request)
+        url = str(request.url)
+        path = urlsplit(url).path
+
+        if url == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://aspsp.example.com",
+                    "authorization_endpoint": "https://aspsp.example.com/authorize",
+                    "token_endpoint": "https://aspsp.example.com/token",
+                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+                    "response_types_supported": ["code id_token"],
+                },
+            )
+        if url == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+        if url == "https://aspsp.example.com/token":
+            nonlocal auth_code_exchange_count
+            form_fields = dict(httpx.QueryParams(request.content.decode("utf-8")))
+            if form_fields.get("grant_type") == "client_credentials":
+                return httpx.Response(
+                    200,
+                    json={
+                        "access_token": "suite-consent-access-token",
+                        "token_type": "Bearer",
+                        "expires_in": 300,
+                    },
+                )
+            auth_code_exchange_count += 1
+            use_basic_token = (not detail_token_step_selected) or auth_code_exchange_count > 1
+            token_value = (
+                "suite-basic-resource-access-token" if use_basic_token else "suite-detail-resource-access-token"
+            )
+            return httpx.Response(
+                200,
+                json={
+                    "access_token": token_value,
+                    "id_token": "suite-id-token",
+                    "token_type": "Bearer",
+                    "expires_in": 300,
+                },
+            )
+        if path == "/open-banking/v4.0/aisp/account-access-consents":
+            body = json.loads(request.content.decode("utf-8"))
+            assert isinstance(body, dict)
+            data = body.get("Data")
+            assert isinstance(data, dict)
+            permissions = data.get("Permissions")
+            assert isinstance(permissions, list)
+            is_basic_consent = "ReadTransactionsBasic" in permissions and "ReadTransactionsDetail" not in permissions
+            return httpx.Response(
+                201,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
+                json={
+                    "Data": {
+                        "ConsentId": "consent-basic-123" if is_basic_consent else "consent-detail-123",
+                        "Permissions": permissions,
+                    },
+                    "Risk": {},
+                },
+            )
+        if path == "/open-banking/v4.0/aisp/accounts":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "accounts-123"},
+                json={
+                    "Data": {"Account": [{"AccountId": "account-123", "Status": "Enabled"}]},
+                    "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
+                    "Meta": {},
+                },
+            )
+        if path == "/open-banking/v4.0/aisp/accounts/account-123":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "account-detail-123"},
+                json={"Data": {"Account": [{"AccountId": "account-123", "Status": "Enabled"}]}},
+            )
+        if path == "/open-banking/v4.0/aisp/accounts/account-123/balances":
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "balances-123"},
+                json={
+                    "Data": {
+                        "Balance": [
+                            {
+                                "Type": "ClosingAvailable",
+                                "Amount": {"Amount": "123.45", "Currency": "GBP"},
+                                "CreditDebitIndicator": "Credit",
+                            }
+                        ]
+                    }
+                },
+            )
+        if path in {
+            "/open-banking/v4.0/aisp/accounts/account-123/transactions",
+            "/open-banking/v4.0/aisp/transactions",
+        }:
+            authorization_header = request.headers.get("authorization")
+            response_body = (
+                basic_leak_transactions
+                if authorization_header == "Bearer suite-basic-resource-access-token"
+                else detail_transactions
+            )
+            return httpx.Response(
+                200,
+                headers={"content-type": "application/json", "x-fapi-interaction-id": "transactions-123"},
+                json=response_body,
+            )
+        raise AssertionError(f"Unexpected request URL: {url}")
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="suite-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+    )
+    run_id = f"e2e-{suite_name}-transactions-basic"
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            resolved.manifest,
+            environment="test",
+            client=client,
+            runtime_config=runtime_config,
+            run_id=run_id,
+            auth_session_store=auth_store,
+            suite_metadata=resolved.metadata,
+            plan=execution_plan,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+    return result, captured_requests
+
+
+def _assert_transactions_basic_balance_leak_failure(result: SmokeCheckResult, *, step_id: str) -> None:
+    """Assert a transactions-basic step failed from a non-first-item ``Balance`` leak.
+
+    Args:
+        result: Smoke-check result produced by the executor.
+        step_id: Step identifier expected to fail.
+    """
+    failed_step = next(step for step in result.steps if step.name == step_id)
+    assert failed_step.status == "failed"
+    details = cast("dict[str, Any]", failed_step.details)
+    assertion_rows = cast(list[dict[str, Any]], details["assertions"])
+    assert any(
+        row == {"status": "failed", "message": "Every item in JSON field Data.Transaction must omit field Balance"}
+        for row in assertion_rows
+    )
+    response = cast(dict[str, Any], details["response"])
+    body = cast(dict[str, Any], response["body"])
+    data = cast(dict[str, Any], body["Data"])
+    transactions = cast(list[dict[str, Any]], data["Transaction"])
+    assert "Balance" not in transactions[0]
+    assert "Balance" in transactions[1]
+
+
+@pytest.mark.integration
+def test_ais_fcs_legacy_benchmark_transactions_basic_step_fails_on_non_first_item_detail_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Legacy benchmark default plan fails ``OB-400-TRA-105000`` on a second-item detail leak."""
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+    from conformance.test_plan import TestPlan
+
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-fcs-legacy-benchmark",
+        )
+    )
+    default_plan = TestPlan.default_plan_from_manifest(resolved.manifest)
+    assert "OB-400-TRA-105000" in default_plan.selected_step_ids()
+    assert "OB-400-TRA-105200" not in default_plan.selected_step_ids()
+
+    result, _captured_requests = _run_v4_ais_transactions_basic_suite(
+        monkeypatch,
+        tmp_path,
+        suite_name="ais-fcs-legacy-benchmark",
+        plan=default_plan,
+    )
+
+    _assert_transactions_basic_balance_leak_failure(result, step_id="OB-400-TRA-105000")
+    detail_step = next(step for step in result.steps if step.name == "OB-400-TRA-105100")
+    assert detail_step.status == "passed"
+
+
+@pytest.mark.integration
+def test_ais_fcs_legacy_benchmark_opted_in_bulk_transactions_basic_step_fails_on_detail_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Selecting optional ``OB-400-TRA-105200`` reproduces basic-token detail-field failure."""
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-fcs-legacy-benchmark",
+        )
+    )
+    plan = _plan_selecting_step_ids(
+        resolved.manifest,
+        selected_step_ids={
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "OB-400-TRA-105200",
+        },
+    )
+    assert "OB-400-TRA-105200" in plan.selected_step_ids()
+
+    result, _captured_requests = _run_v4_ais_transactions_basic_suite(
+        monkeypatch,
+        tmp_path,
+        suite_name="ais-fcs-legacy-benchmark",
+        plan=plan,
+    )
+
+    _assert_transactions_basic_balance_leak_failure(result, step_id="OB-400-TRA-105200")
+
+
+@pytest.mark.integration
+def test_ais_certification_baseline_account_transactions_basic_step_fails_on_detail_field(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Baseline run reproduces ``account-transactions-basic`` failure with detail fields under basic token."""
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            suite="ais-certification-baseline",
+        )
+    )
+    plan = _plan_selecting_step_ids(
+        resolved.manifest,
+        selected_step_ids={
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
+            "psu-authorization",
+            "token-exchange",
+            "accounts-list",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "account-transactions-basic",
+        },
+    )
+    assert "account-transactions-basic" in plan.selected_step_ids()
+
+    result, _captured_requests = _run_v4_ais_transactions_basic_suite(
+        monkeypatch,
+        tmp_path,
+        suite_name="ais-certification-baseline",
+        plan=plan,
+    )
+
+    _assert_transactions_basic_balance_leak_failure(result, step_id="account-transactions-basic")
+    assert all(step.name != "account-transactions" for step in result.steps)
 
 
 @pytest.mark.unit

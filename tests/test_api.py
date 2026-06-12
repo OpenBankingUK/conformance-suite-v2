@@ -1008,6 +1008,10 @@ class TestCreateRunEndpoint:
             "accounts-list",
             "account-detail",
             "account-balances",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "account-transactions-basic",
             "account-transactions",
             "transactions-list",
         ]
@@ -1068,6 +1072,10 @@ class TestCreateRunEndpoint:
             "OB-400-ACC-100400",
             "OB-400-ACC-100200",
             "OB-400-BAL-101200",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "OB-400-TRA-105000",
             "OB-400-TRA-105100",
             "OB-400-TRA-105110",
             "OB-400-TRA-105120",
@@ -1358,6 +1366,28 @@ class TestPsuAuthorizationApiRun:
             if url == "https://example.com/jwks":
                 return httpx.Response(200, headers=json_headers, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
             if url == "https://example.com/token":
+                body = request.content.decode("ascii")
+                if "grant_type=client_credentials" in body:
+                    return httpx.Response(
+                        200,
+                        headers=json_headers,
+                        json={
+                            "access_token": "baseline-access-token",
+                            "token_type": "Bearer",
+                            "expires_in": 300,
+                        },
+                    )
+                if "code=baseline-basic-auth-code" in body:
+                    return httpx.Response(
+                        200,
+                        headers=json_headers,
+                        json={
+                            "access_token": "baseline-basic-access-token",
+                            "id_token": "baseline-basic-id-token",
+                            "token_type": "Bearer",
+                            "expires_in": 300,
+                        },
+                    )
                 return httpx.Response(
                     200,
                     headers=json_headers,
@@ -1369,6 +1399,24 @@ class TestPsuAuthorizationApiRun:
                     },
                 )
             if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+                request_body = request.content.decode("utf-8")
+                if "ReadTransactionsBasic" in request_body:
+                    return httpx.Response(
+                        201,
+                        headers={**json_headers, "x-fapi-interaction-id": "consent-basic-123"},
+                        json={
+                            "Data": {
+                                "ConsentId": "consent-basic-123",
+                                "Permissions": [
+                                    "ReadAccountsBasic",
+                                    "ReadTransactionsBasic",
+                                    "ReadTransactionsDebits",
+                                    "ReadTransactionsCredits",
+                                ],
+                            },
+                            "Risk": {},
+                        },
+                    )
                 return httpx.Response(
                     201,
                     headers={**json_headers, "x-fapi-interaction-id": "consent-123"},
@@ -1411,6 +1459,25 @@ class TestPsuAuthorizationApiRun:
                     },
                 )
             if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
+                authorization_header = request.headers["Authorization"]
+                if authorization_header == "Bearer baseline-basic-access-token":
+                    return httpx.Response(
+                        200,
+                        headers={**json_headers, "x-fapi-interaction-id": "account-transactions-basic-123"},
+                        json={
+                            "Data": {
+                                "Transaction": [
+                                    {
+                                        "AccountId": "acct-123",
+                                        "CreditDebitIndicator": "Debit",
+                                        "Status": "BOOK",
+                                        "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                        "Amount": {"Amount": "3.14", "Currency": "GBP"},
+                                    }
+                                ]
+                            }
+                        },
+                    )
                 return httpx.Response(
                     200,
                     headers={**json_headers, "x-fapi-interaction-id": "account-transactions-123"},
@@ -1485,17 +1552,36 @@ class TestPsuAuthorizationApiRun:
             assert create_response.status_code == 201
             run_id = create_response.json()["id"]
 
-            session = _wait_for_value(
-                lambda: auth_session_store.for_run(run_id)[0] if auth_session_store.for_run(run_id) else None,
+            first_session = _wait_for_value(
+                lambda: next(
+                    (session for session in auth_session_store.for_run(run_id) if session.status == "awaiting"),
+                    None,
+                ),
                 timeout_seconds=2.0,
             )
-            callback_response = client.get("/callback/", {"state": session.state, "code": "baseline-auth-code"})
+            callback_response = client.get("/callback/", {"state": first_session.state, "code": "baseline-auth-code"})
+            assert callback_response.status_code == 200
+            second_session = _wait_for_value(
+                lambda: next(
+                    (
+                        session
+                        for session in auth_session_store.for_run(run_id)
+                        if session.status == "awaiting" and session.state != first_session.state
+                    ),
+                    None,
+                ),
+                timeout_seconds=2.0,
+            )
+            callback_response = client.get(
+                "/callback/",
+                {"state": second_session.state, "code": "baseline-basic-auth-code"},
+            )
             assert callback_response.status_code == 200
 
             result = _wait_for_value(lambda: completed_result(run_id), timeout_seconds=4.0)
 
         assert result["status"] == "passed"
-        assert result["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
+        assert result["summary"] == {"total": 15, "passed": 15, "failed": 0, "warn": 0, "skipped": 0}
         serialised_result = json.dumps(result)
         assert "Response body matches schema #/components/schemas/OBReadAccount6" in serialised_result
         assert "Response body matches schema #/components/schemas/OBReadBalance1" in serialised_result
@@ -1510,17 +1596,17 @@ class TestPsuAuthorizationApiRun:
             "suite": "ais-certification-baseline",
         }
         assert result["plan"] == {
-            "totalSteps": 28,
-            "selectedSteps": 11,
-            "deselectedSteps": 17,
-            "mandatorySelected": 11,
+            "totalSteps": 33,
+            "selectedSteps": 15,
+            "deselectedSteps": 18,
+            "mandatorySelected": 15,
             "mandatoryDeselected": 0,
         }
         eligibility = result["certificationEligibility"]
         assert isinstance(eligibility, dict)
         assert eligibility["eligible"] is False
-        assert eligibility["mandatoryTotal"] == 11
-        assert eligibility["mandatoryPassed"] == 11
+        assert eligibility["mandatoryTotal"] == 15
+        assert eligibility["mandatoryPassed"] == 15
         assert eligibility["reason"] == "Manifest is not marked as complete certification coverage"
 
         assert [(request.method, str(request.url)) for request in captured_requests] == [
@@ -1532,29 +1618,56 @@ class TestPsuAuthorizationApiRun:
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
+            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("POST", "https://example.com/token"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
         ]
         consent_token_wire_body = captured_requests[2].content.decode("ascii")
         assert "grant_type=client_credentials" in consent_token_wire_body
         assert "client_id=test-client-id" in consent_token_wire_body
-        token_wire_body = captured_requests[4].content.decode("ascii")
-        assert "grant_type=authorization_code" in token_wire_body
-        assert "code=baseline-auth-code" in token_wire_body
-        assert "client_id=test-client-id" in token_wire_body
-        assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in token_wire_body
+        detail_token_wire_body = captured_requests[4].content.decode("ascii")
+        assert "grant_type=authorization_code" in detail_token_wire_body
+        assert "code=baseline-auth-code" in detail_token_wire_body
+        assert "client_id=test-client-id" in detail_token_wire_body
+        assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in detail_token_wire_body
         assert (
-            "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer" in token_wire_body
+            "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer"
+            in detail_token_wire_body
         )
-        assert "client_assertion=" in token_wire_body
+        assert "client_assertion=" in detail_token_wire_body
+        basic_token_wire_body = captured_requests[9].content.decode("ascii")
+        assert "grant_type=authorization_code" in basic_token_wire_body
+        assert "code=baseline-basic-auth-code" in basic_token_wire_body
+        assert "client_id=test-client-id" in basic_token_wire_body
+        assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in basic_token_wire_body
+        assert "client_assertion=" in basic_token_wire_body
         assert captured_requests[3].headers["Authorization"] == "Bearer baseline-access-token"
-        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[5:]]
-        assert resource_authorization_headers == ["Bearer baseline-access-token"] * 5
+        assert captured_requests[8].headers["Authorization"] == "Bearer baseline-access-token"
+        resource_authorization_headers = [
+            request.headers["Authorization"]
+            for request in captured_requests
+            if str(request.url).startswith("https://resource.example.com")
+        ]
+        assert resource_authorization_headers == [
+            "Bearer baseline-access-token",
+            "Bearer baseline-access-token",
+            "Bearer baseline-access-token",
+            "Bearer baseline-access-token",
+            "Bearer baseline-access-token",
+            "Bearer baseline-basic-access-token",
+            "Bearer baseline-access-token",
+            "Bearer baseline-access-token",
+        ]
 
         serialised_result = json.dumps(result, sort_keys=True)
         assert "baseline-auth-code" not in serialised_result
+        assert "baseline-basic-auth-code" not in serialised_result
         assert "baseline-access-token" not in serialised_result
         assert "baseline-id-token" not in serialised_result
+        assert "baseline-basic-access-token" not in serialised_result
+        assert "baseline-basic-id-token" not in serialised_result
         assert "signingCertificatePath" not in serialised_result
         assert "signingPrivateKeyPath" not in serialised_result
         assert "request=***" in serialised_result
@@ -1563,8 +1676,11 @@ class TestPsuAuthorizationApiRun:
         assert log_response.status_code == 200
         log_json = log_response.content.decode("utf-8")
         assert "baseline-auth-code" not in log_json
+        assert "baseline-basic-auth-code" not in log_json
         assert "baseline-access-token" not in log_json
         assert "baseline-id-token" not in log_json
+        assert "baseline-basic-access-token" not in log_json
+        assert "baseline-basic-id-token" not in log_json
         assert '"client_assertion": "***"' in log_json
         assert '"request_object": "***"' in log_json
         assert '"Authorization": "***"' in log_json

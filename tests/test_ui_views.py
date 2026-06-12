@@ -812,6 +812,10 @@ class TestPlanBuilderUi:
                     "accounts-list",
                     "account-detail",
                     "account-balances",
+                    "account-access-consent-transactions-basic",
+                    "psu-authorization-transactions-basic",
+                    "token-exchange-transactions-basic",
+                    "account-transactions-basic",
                     "account-transactions",
                     "transactions-list",
                 ],
@@ -839,6 +843,10 @@ class TestPlanBuilderUi:
             "accounts-list",
             "account-detail",
             "account-balances",
+            "account-access-consent-transactions-basic",
+            "psu-authorization-transactions-basic",
+            "token-exchange-transactions-basic",
+            "account-transactions-basic",
             "account-transactions",
             "transactions-list",
         ]
@@ -992,6 +1000,17 @@ class TestRunDetailUi:
                         },
                         headers=json_headers,
                     )
+                if "code=browser-baseline-basic-auth-code" in body:
+                    return httpx.Response(
+                        200,
+                        json={
+                            "access_token": "browser-baseline-basic-access-token",
+                            "id_token": "browser-baseline-basic-id-token",
+                            "token_type": "Bearer",
+                            "expires_in": 300,
+                        },
+                        headers=json_headers,
+                    )
                 return httpx.Response(
                     200,
                     json={
@@ -1003,6 +1022,24 @@ class TestRunDetailUi:
                     headers=json_headers,
                 )
             if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
+                request_body = request.content.decode("utf-8")
+                if "ReadTransactionsBasic" in request_body:
+                    return httpx.Response(
+                        201,
+                        json={
+                            "Data": {
+                                "ConsentId": "consent-basic-123",
+                                "Permissions": [
+                                    "ReadAccountsBasic",
+                                    "ReadTransactionsBasic",
+                                    "ReadTransactionsDebits",
+                                    "ReadTransactionsCredits",
+                                ],
+                            },
+                            "Risk": {},
+                        },
+                        headers={**json_headers, "x-fapi-interaction-id": "consent-basic-123"},
+                    )
                 return httpx.Response(
                     201,
                     json={"Data": {"ConsentId": "consent-123", "Permissions": ["ReadTransactionsDetail"]}, "Risk": {}},
@@ -1039,6 +1076,25 @@ class TestRunDetailUi:
                     headers={**json_headers, "x-fapi-interaction-id": "balances-123"},
                 )
             if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
+                authorization_header = request.headers["Authorization"]
+                if authorization_header == "Bearer browser-baseline-basic-access-token":
+                    return httpx.Response(
+                        200,
+                        json={
+                            "Data": {
+                                "Transaction": [
+                                    {
+                                        "AccountId": "acct-123",
+                                        "CreditDebitIndicator": "Debit",
+                                        "Status": "BOOK",
+                                        "BookingDateTime": "2024-01-01T00:00:00+00:00",
+                                        "Amount": {"Amount": "3.14", "Currency": "GBP"},
+                                    }
+                                ]
+                            }
+                        },
+                        headers={**json_headers, "x-fapi-interaction-id": "account-transactions-basic-123"},
+                    )
                 return httpx.Response(
                     200,
                     json={
@@ -1104,6 +1160,10 @@ class TestRunDetailUi:
                     "accounts-list",
                     "account-detail",
                     "account-balances",
+                    "account-access-consent-transactions-basic",
+                    "psu-authorization-transactions-basic",
+                    "token-exchange-transactions-basic",
+                    "account-transactions-basic",
                     "account-transactions",
                     "transactions-list",
                 ],
@@ -1118,6 +1178,28 @@ class TestRunDetailUi:
         callback_response = client.get("/callback/", {"state": state, "code": "browser-baseline-auth-code"})
 
         assert callback_response.status_code == 200
+        second_authorisation_url = _wait_for_participant_action(run_id)
+        second_raw_request_object = _query_parameter(second_authorisation_url, "request")
+        second_state: str | None = None
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            second_state = next(
+                (
+                    session.state
+                    for session in auth_session_store.for_run(run_id)
+                    if session.status == "awaiting" and session.state != state
+                ),
+                None,
+            )
+            if second_state is not None:
+                break
+            time.sleep(0.05)
+        assert second_state is not None
+        callback_response = client.get(
+            "/callback/",
+            {"state": second_state, "code": "browser-baseline-basic-auth-code"},
+        )
+        assert callback_response.status_code == 200
         _wait_for_terminal_run(run_id)
 
         result_response = client.get(f"/runs/{run_id}/result.json")
@@ -1127,19 +1209,25 @@ class TestRunDetailUi:
         assert log_response.status_code == 200
 
         result_body = result_response.json()
-        token_form_fields = parse_qs(captured_requests[4].content.decode("ascii"), keep_blank_values=True)
-        raw_client_assertion = token_form_fields["client_assertion"][0]
-        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[5:]]
+        detail_token_form_fields = parse_qs(captured_requests[4].content.decode("ascii"), keep_blank_values=True)
+        basic_token_form_fields = parse_qs(captured_requests[9].content.decode("ascii"), keep_blank_values=True)
+        raw_client_assertion = detail_token_form_fields["client_assertion"][0]
+        raw_basic_client_assertion = basic_token_form_fields["client_assertion"][0]
+        resource_authorization_headers = [
+            request.headers["Authorization"]
+            for request in captured_requests
+            if str(request.url).startswith("https://resource.example.com")
+        ]
         result_json = json.dumps(result_body, sort_keys=True)
         log_json = log_response.content.decode("utf-8")
 
         assert result_body["status"] == "passed"
-        assert result_body["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
+        assert result_body["summary"] == {"total": 15, "passed": 15, "failed": 0, "warn": 0, "skipped": 0}
         assert result_body["plan"] == {
-            "totalSteps": 28,
-            "selectedSteps": 11,
-            "deselectedSteps": 17,
-            "mandatorySelected": 11,
+            "totalSteps": 33,
+            "selectedSteps": 15,
+            "deselectedSteps": 18,
+            "mandatorySelected": 15,
             "mandatoryDeselected": 0,
         }
         assert result_body["suite"] == {
@@ -1163,36 +1251,70 @@ class TestRunDetailUi:
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
+            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
+            ("POST", "https://example.com/token"),
+            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
             ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
         ]
         consent_token_form_fields = parse_qs(captured_requests[2].content.decode("ascii"), keep_blank_values=True)
         assert consent_token_form_fields["grant_type"] == ["client_credentials"]
         assert consent_token_form_fields["client_id"] == ["test-client-id"]
-        assert token_form_fields["grant_type"] == ["authorization_code"]
-        assert token_form_fields["code"] == ["browser-baseline-auth-code"]
-        assert token_form_fields["client_id"] == ["test-client-id"]
-        assert token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
-        assert token_form_fields["client_assertion_type"] == ["urn:ietf:params:oauth:client-assertion-type:jwt-bearer"]
+        assert detail_token_form_fields["grant_type"] == ["authorization_code"]
+        assert detail_token_form_fields["code"] == ["browser-baseline-auth-code"]
+        assert detail_token_form_fields["client_id"] == ["test-client-id"]
+        assert detail_token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
+        assert detail_token_form_fields["client_assertion_type"] == [
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        ]
+        assert basic_token_form_fields["grant_type"] == ["authorization_code"]
+        assert basic_token_form_fields["code"] == ["browser-baseline-basic-auth-code"]
+        assert basic_token_form_fields["client_id"] == ["test-client-id"]
+        assert basic_token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
+        assert basic_token_form_fields["client_assertion_type"] == [
+            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+        ]
         assert raw_client_assertion
+        assert raw_basic_client_assertion
         assert raw_request_object
+        assert second_raw_request_object
         assert captured_requests[3].headers["Authorization"] == "Bearer browser-baseline-access-token"
-        assert resource_authorization_headers == ["Bearer browser-baseline-access-token"] * 5
+        assert captured_requests[8].headers["Authorization"] == "Bearer browser-baseline-access-token"
+        assert resource_authorization_headers == [
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-basic-access-token",
+            "Bearer browser-baseline-access-token",
+            "Bearer browser-baseline-access-token",
+        ]
 
         assert "browser-baseline-auth-code" not in result_json
+        assert "browser-baseline-basic-auth-code" not in result_json
         assert "browser-baseline-access-token" not in result_json
         assert "browser-baseline-id-token" not in result_json
+        assert "browser-baseline-basic-access-token" not in result_json
+        assert "browser-baseline-basic-id-token" not in result_json
         assert raw_request_object not in result_json
+        assert second_raw_request_object not in result_json
         assert raw_client_assertion not in result_json
+        assert raw_basic_client_assertion not in result_json
         assert "signingCertificatePath" not in result_json
         assert "signingPrivateKeyPath" not in result_json
         assert "request=***" in result_json
 
         assert "browser-baseline-auth-code" not in log_json
+        assert "browser-baseline-basic-auth-code" not in log_json
         assert "browser-baseline-access-token" not in log_json
         assert "browser-baseline-id-token" not in log_json
+        assert "browser-baseline-basic-access-token" not in log_json
+        assert "browser-baseline-basic-id-token" not in log_json
         assert raw_request_object not in log_json
+        assert second_raw_request_object not in log_json
         assert raw_client_assertion not in log_json
+        assert raw_basic_client_assertion not in log_json
         assert '"code": "***"' in log_json
         assert '"client_assertion": "***"' in log_json
         assert '"request_object": "***"' in log_json

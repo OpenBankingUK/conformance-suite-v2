@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
 from typing import cast
 
 import pytest
 
 import conformance.suite_catalog as suite_catalog
+from conformance.json_types import JsonValue
 from conformance.manifest import (
     FormBody,
     GeneratedRequestObject,
@@ -18,6 +21,40 @@ from conformance.manifest import (
 )
 from conformance.model_bank_config import SuiteApiFamily, SuiteName, SuiteSelection, SuiteSpecVersion
 from conformance.suite_catalog import SuiteCatalogError, resolve_suite
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+LEGACY_FCS_MANIFEST_PATH = (
+    REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "v4_0" / "legacy-ob_4.0_accounts_transactions_fca.json"
+)
+LEGACY_FCS_PARITY_TARGET_IDS = ("OB-400-TRA-105000", "OB-400-TRA-105200")
+"""Legacy v4.0 FCS scripts currently targeted by the bundled parity guard."""
+LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS = (
+    "TransactionInformation",
+    "Balance",
+    "MerchantDetails",
+    "CreditorAgent",
+    "CreditorAccount",
+    "DebtorAgent",
+    "DebtorAccount",
+    "UltimateCreditor",
+    "UltimateDebtor",
+)
+"""Detail fields that ReadTransactionsBasic responses must omit on all items."""
+
+
+def _legacy_fcs_script_index() -> dict[str, dict[str, JsonValue]]:
+    """Load the legacy v4.0 AIS FCS manifest scripts keyed by test id.
+
+    Returns:
+        Legacy script declarations keyed by their Open Banking test id.
+    """
+    raw_manifest = cast(dict[str, JsonValue], json.loads(LEGACY_FCS_MANIFEST_PATH.read_text(encoding="utf-8")))
+    scripts = cast(list[JsonValue], raw_manifest["scripts"])
+    indexed_scripts: dict[str, dict[str, JsonValue]] = {}
+    for raw_script in scripts:
+        script = cast(dict[str, JsonValue], raw_script)
+        indexed_scripts[cast(str, script["id"])] = script
+    return indexed_scripts
 
 
 def _selection(
@@ -263,10 +300,15 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         "accounts-list",
         "account-detail",
         "account-balances",
+        "account-access-consent-transactions-basic",
+        "psu-authorization-transactions-basic",
+        "token-exchange-transactions-basic",
+        "account-transactions-basic",
         "account-transactions",
         "transactions-list",
     ]
     optional_step_ids = [
+        "transactions-list-basic",
         "balances-list",
         "account-beneficiaries",
         "beneficiaries-list",
@@ -296,8 +338,13 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     accounts_step = cast(ManifestStep, manifest.steps[6])
     account_detail_step = cast(ManifestStep, manifest.steps[7])
     balances_step = cast(ManifestStep, manifest.steps[8])
-    transactions_step = cast(ManifestStep, manifest.steps[9])
-    transactions_list_step = cast(ManifestStep, manifest.steps[10])
+    basic_consent_step = cast(ManifestStep, manifest.steps[9])
+    basic_psu_step = cast(PsuAuthorizationStep, manifest.steps[10])
+    basic_token_exchange_step = cast(ManifestStep, manifest.steps[11])
+    transactions_basic_step = cast(ManifestStep, manifest.steps[12])
+    transactions_step = cast(ManifestStep, manifest.steps[13])
+    transactions_list_step = cast(ManifestStep, manifest.steps[14])
+    transactions_list_basic_step = cast(ManifestStep, manifest.steps[15])
 
     assert psu_step.request_object == GeneratedRequestObject(
         source="fapi-signing",
@@ -334,6 +381,29 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     permissions = consent_data["Permissions"]
     assert isinstance(permissions, list)
     assert "ReadTransactionsDetail" in permissions
+    basic_consent_body = basic_consent_step.request.body
+    assert isinstance(basic_consent_body, JsonBody)
+    assert isinstance(basic_consent_body.value, dict)
+    basic_consent_data = basic_consent_body.value["Data"]
+    assert isinstance(basic_consent_data, dict)
+    basic_permissions = basic_consent_data["Permissions"]
+    assert isinstance(basic_permissions, list)
+    assert basic_permissions == [
+        "ReadAccountsBasic",
+        "ReadTransactionsBasic",
+        "ReadTransactionsDebits",
+        "ReadTransactionsCredits",
+    ]
+    assert "ReadTransactionsDetail" not in basic_permissions
+    assert basic_psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.openid-discovery.response.body.issuer}",
+        openbanking_intent_id="${steps.account-access-consent-transactions-basic.response.body.Data.ConsentId}",
+    )
+    assert isinstance(basic_token_exchange_step.request.body, FormBody)
+    assert dict(basic_token_exchange_step.request.body.fields)["code"] == (
+        "${steps.psu-authorization-transactions-basic.response.body.code}"
+    )
     assert accounts_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
     assert account_detail_step.request.url == (
         "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
@@ -356,13 +426,23 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
         "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
     }
     assert transactions_list_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/transactions"
+    assert transactions_basic_step.request.headers == {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}",
+    }
+    assert transactions_list_basic_step.request.headers == {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}",
+    }
 
     consent_assertions = consent_step.assertions
     accounts_assertions = accounts_step.assertions
     account_detail_assertions = account_detail_step.assertions
     balances_assertions = balances_step.assertions
+    transactions_basic_assertions = transactions_basic_step.assertions
     transactions_assertions = transactions_step.assertions
     transactions_list_assertions = transactions_list_step.assertions
+    transactions_list_basic_assertions = transactions_list_basic_step.assertions
     assert any(
         isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.ConsentId" and assertion.rule == "string"
         for assertion in consent_assertions
@@ -405,6 +485,24 @@ def test_resolve_v4_ais_certification_baseline_returns_bundled_manifest() -> Non
     )
     assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="Status")
     assert _has_all_items_field_assertion(transactions_list_step, path="Data.Transaction", field="BookingDateTime")
+    for transaction_basic_assertions in (transactions_basic_assertions, transactions_list_basic_assertions):
+        assert any(
+            isinstance(assertion, JsonFieldAssertion)
+            and assertion.path == "Data.Transaction"
+            and assertion.rule == "array"
+            for assertion in transaction_basic_assertions
+        )
+        all_items_absent_assertions = [
+            assertion
+            for assertion in transaction_basic_assertions
+            if isinstance(assertion, JsonFieldAssertion)
+            and assertion.path == "Data.Transaction"
+            and assertion.rule == "all_items_absent_field"
+        ]
+        assert len(all_items_absent_assertions) == len(LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS)
+        assert {assertion.field for assertion in all_items_absent_assertions} == set(
+            LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS
+        )
 
 
 @pytest.mark.unit
@@ -521,6 +619,10 @@ def test_resolve_v4_ais_fcs_legacy_benchmark_returns_bundled_manifest() -> None:
         "OB-400-ACC-100400",
         "OB-400-ACC-100200",
         "OB-400-BAL-101200",
+        "account-access-consent-transactions-basic",
+        "psu-authorization-transactions-basic",
+        "token-exchange-transactions-basic",
+        "OB-400-TRA-105000",
         "OB-400-TRA-105100",
         "OB-400-TRA-105110",
         "OB-400-TRA-105120",
@@ -550,7 +652,12 @@ def test_resolve_v4_ais_fcs_legacy_benchmark_returns_bundled_manifest() -> None:
     consent_step = cast(ManifestStep, manifest.steps[3])
     psu_step = cast(PsuAuthorizationStep, manifest.steps[4])
     accounts_step = cast(ManifestStep, manifest.steps[6])
-    transactions_filter_step = cast(ManifestStep, manifest.steps[10])
+    basic_consent_step = cast(ManifestStep, manifest.steps[9])
+    basic_psu_step = cast(PsuAuthorizationStep, manifest.steps[10])
+    basic_token_exchange_step = cast(ManifestStep, manifest.steps[11])
+    transactions_basic_step = cast(ManifestStep, manifest.steps[12])
+    transactions_filter_step = cast(ManifestStep, manifest.steps[14])
+    bulk_transactions_basic_step = cast(ManifestStep, manifest.steps[-1])
 
     assert consent_token_step.token_endpoint_auth_policy == TokenEndpointAuthPolicy(source="fapi-signing")
     assert psu_step.request_object == GeneratedRequestObject(
@@ -569,17 +676,94 @@ def test_resolve_v4_ais_fcs_legacy_benchmark_returns_bundled_manifest() -> None:
     assert "ReadStatementsDetail" in permissions
     assert "ReadTransactionsDetail" in permissions
     assert accounts_step.request.url == "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"
+    basic_consent_body = basic_consent_step.request.body
+    assert isinstance(basic_consent_body, JsonBody)
+    assert isinstance(basic_consent_body.value, dict)
+    basic_consent_data = basic_consent_body.value["Data"]
+    assert isinstance(basic_consent_data, dict)
+    basic_permissions = basic_consent_data["Permissions"]
+    assert isinstance(basic_permissions, list)
+    assert basic_permissions == [
+        "ReadAccountsBasic",
+        "ReadTransactionsBasic",
+        "ReadTransactionsDebits",
+        "ReadTransactionsCredits",
+    ]
+    assert "ReadTransactionsDetail" not in basic_permissions
+    assert basic_psu_step.request_object == GeneratedRequestObject(
+        source="fapi-signing",
+        audience="${steps.openid-discovery.response.body.issuer}",
+        openbanking_intent_id="${steps.account-access-consent-transactions-basic.response.body.Data.ConsentId}",
+    )
+    assert isinstance(basic_token_exchange_step.request.body, FormBody)
+    assert dict(basic_token_exchange_step.request.body.fields)["code"] == (
+        "${steps.psu-authorization-transactions-basic.response.body.code}"
+    )
+    assert transactions_basic_step.request.headers == {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}",
+    }
     assert transactions_filter_step.request.url == (
         "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
         "${steps.OB-400-ACC-100400.response.body.Data.Account.0.AccountId}/transactions"
         "?fromBookingDateTime=2025-04-23T15%3A47%3A00&toBookingDateTime=2025-04-23T15%3A48%3A00"
     )
+    assert bulk_transactions_basic_step.request.headers == {
+        "Accept": "application/json",
+        "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}",
+    }
     assert any(
         isinstance(assertion, HeaderAssertion)
         and assertion.name == "x-fapi-interaction-id"
         and assertion.rule == "present"
         for assertion in accounts_step.assertions
     )
+
+
+@pytest.mark.unit
+def test_v4_ais_fcs_legacy_benchmark_matches_target_legacy_classification() -> None:
+    """Guard the current legacy parity target subset without requiring every legacy script yet."""
+    legacy_scripts = _legacy_fcs_script_index()
+    manifest = resolve_suite(_selection("v4.0", suite_name="ais-fcs-legacy-benchmark")).manifest
+    bundled_steps = {step.id: step for step in manifest.steps}
+
+    for target_id in LEGACY_FCS_PARITY_TARGET_IDS:
+        legacy_script = legacy_scripts[target_id]
+        legacy_uri_implementation = legacy_script["uriImplementation"]
+        assert legacy_uri_implementation in {"mandatory", "optional"}
+
+        bundled_step = bundled_steps[target_id]
+        assert bundled_step.mandatory is (legacy_uri_implementation == "mandatory")
+        assert bundled_step.optional is (legacy_uri_implementation == "optional")
+
+
+@pytest.mark.unit
+def test_v4_ais_fcs_legacy_benchmark_uses_all_items_absent_field_for_transactions_basic_steps() -> None:
+    manifest = resolve_suite(_selection("v4.0", suite_name="ais-fcs-legacy-benchmark")).manifest
+    bundled_steps = {step.id: step for step in manifest.steps}
+    expected_fields = set(LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS)
+    legacy_first_item_paths = {
+        f"Data.Transaction.0.{detail_field}" for detail_field in LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS
+    }
+
+    for target_id in LEGACY_FCS_PARITY_TARGET_IDS:
+        target_step = bundled_steps[target_id]
+        assert isinstance(target_step, ManifestStep)
+        all_items_absent_assertions = [
+            assertion
+            for assertion in target_step.assertions
+            if isinstance(assertion, JsonFieldAssertion)
+            and assertion.path == "Data.Transaction"
+            and assertion.rule == "all_items_absent_field"
+        ]
+        assert len(all_items_absent_assertions) == len(LEGACY_TRANSACTIONS_BASIC_DETAIL_FIELDS)
+        assert {assertion.field for assertion in all_items_absent_assertions} == expected_fields
+        assert not any(
+            isinstance(assertion, JsonFieldAssertion)
+            and assertion.rule == "absent"
+            and assertion.path in legacy_first_item_paths
+            for assertion in target_step.assertions
+        )
 
 
 @pytest.mark.unit

@@ -245,6 +245,7 @@ def test_parse_v1_manifest_accepts_extended_assertion_vocabulary() -> None:
             "values": ["private_key_jwt", "tls_client_auth"],
         },
         {"type": "json_field", "path": "keys", "rule": "all_items_have_field", "field": "kid"},
+        {"type": "json_field", "path": "keys", "rule": "all_items_absent_field", "field": "d"},
         {"type": "header", "name": "content-type", "rule": "present"},
         {"type": "header", "name": "set-cookie", "rule": "absent"},
         {"type": "header", "name": "cache-control", "rule": "equals", "value": "no-store"},
@@ -260,9 +261,9 @@ def test_parse_v1_manifest_accepts_extended_assertion_vocabulary() -> None:
     manifest = parse_manifest(raw_manifest)
 
     parsed_step = cast("ManifestStep", manifest.steps[0])
-    assert len(parsed_step.assertions) == 18
-    assert parsed_step.assertions[13].type == "header"
-    assert parsed_step.assertions[17].type == "response_schema"
+    assert len(parsed_step.assertions) == 19
+    assert parsed_step.assertions[14].type == "header"
+    assert parsed_step.assertions[18].type == "response_schema"
 
 
 @pytest.mark.unit
@@ -434,6 +435,10 @@ def test_parse_v1_manifest_rejects_invalid_response_schema_assertion_shape(
             r"steps\[0\]\.assertions\[0\]\.field must be a non-empty string",
         ),
         (
+            {"type": "json_field", "path": "keys", "rule": "all_items_absent_field"},
+            r"steps\[0\]\.assertions\[0\]\.field must be a non-empty string",
+        ),
+        (
             {"type": "header", "name": "content-type", "rule": "equals"},
             r"steps\[0\]\.assertions\[0\]\.value must be a non-empty string for header rule equals",
         ),
@@ -507,6 +512,16 @@ def test_parse_v1_manifest_rejects_missing_rule_specific_fields(
         (
             {"type": "header", "name": "content-type", "rule": "present", "value": "application/json"},
             r"Unknown steps\[0\]\.assertions\[0\] field: value",
+        ),
+        (
+            {
+                "type": "json_field",
+                "path": "keys",
+                "rule": "all_items_absent_field",
+                "field": "kid",
+                "value": "unexpected",
+            },
+            r"Unknown steps\[0\]\.assertions\[0\] field\(s\): value",
         ),
     ],
 )

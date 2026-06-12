@@ -73,6 +73,7 @@ JsonFieldRule = Literal[
     "equals",
     "one_of",
     "all_items_have_field",
+    "all_items_absent_field",
 ]
 """JSON field validation rules supported by manifest assertions."""
 
@@ -239,8 +240,8 @@ class JsonFieldAssertion:
         value: Exact JSON value expected for ``equals`` rules.
         values: Candidate JSON values accepted by ``one_of`` rules.
         min_items: Minimum array length required by ``min_items`` rules.
-        field: Field that every array item must contain for
-            ``all_items_have_field`` rules.
+        field: Field evaluated by ``all_items_have_field`` and
+            ``all_items_absent_field`` rules.
     """
 
     type: Literal["json_field"]
@@ -1929,7 +1930,7 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
         allowed_keys.add("values")
     elif rule == "min_items":
         allowed_keys.add("minItems")
-    elif rule == "all_items_have_field":
+    elif rule == "all_items_have_field" or rule == "all_items_absent_field":
         allowed_keys.add("field")
     _reject_unknown_keys(raw_assertion, allowed_keys=allowed_keys, location=location)
 
@@ -1964,7 +1965,7 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
             rule=assertion.rule,
             min_items=_required_min_items(raw_assertion, location=location),
         )
-    if rule == "all_items_have_field":
+    if rule == "all_items_have_field" or rule == "all_items_absent_field":
         return JsonFieldAssertion(
             type=assertion.type,
             path=assertion.path,
@@ -2222,9 +2223,11 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
         return "one_of"
     if rule == "all_items_have_field":
         return "all_items_have_field"
+    if rule == "all_items_absent_field":
+        return "all_items_absent_field"
     raise ManifestError(
         f"{location}.rule must be one of: required, https_url, array, absent, string, number, boolean, object, "
-        "non_empty_array, min_items, equals, one_of, all_items_have_field"
+        "non_empty_array, min_items, equals, one_of, all_items_have_field, all_items_absent_field"
     )
 
 

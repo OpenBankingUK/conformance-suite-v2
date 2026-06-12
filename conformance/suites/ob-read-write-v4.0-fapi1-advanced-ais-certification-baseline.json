@@ -243,6 +243,120 @@
       "mandatory": true
     },
     {
+      "id": "account-access-consent-transactions-basic",
+      "name": "Account access consent creation for transactions basic permissions",
+      "request": {
+        "method": "POST",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}"
+        },
+        "body": {
+          "Data": {
+            "Permissions": [
+              "ReadAccountsBasic",
+              "ReadTransactionsBasic",
+              "ReadTransactionsDebits",
+              "ReadTransactionsCredits"
+            ]
+          },
+          "Risk": {}
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 201},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
+        {"type": "json_field", "path": "Data.ConsentId", "rule": "string"},
+        {"type": "json_field", "path": "Data.Permissions", "rule": "array"},
+        {"type": "json_field", "path": "Risk", "rule": "object"}
+      ],
+      "mandatory": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization-transactions-basic",
+      "name": "PSU authorisation for transactions basic (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "requestObject": {
+        "source": "fapi-signing",
+        "audience": "${steps.openid-discovery.response.body.issuer}",
+        "openbankingIntentId": "${steps.account-access-consent-transactions-basic.response.body.Data.ConsentId}"
+      },
+      "scope": "openid accounts",
+      "timeoutSeconds": 180,
+      "mandatory": true
+    },
+    {
+      "id": "token-exchange-transactions-basic",
+      "name": "OAuth token exchange for transactions basic",
+      "request": {
+        "method": "POST",
+        "url": "${steps.openid-discovery.response.body.token_endpoint}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "${steps.psu-authorization-transactions-basic.response.body.code}",
+            "redirect_uri": "${config.oauth.redirectUri}",
+            "client_id": "${config.oauth.clientId}"
+          }
+        }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "json_field", "path": "access_token", "rule": "string"},
+        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
+        {"type": "json_field", "path": "expires_in", "rule": "number"}
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "account-transactions-basic",
+      "name": "Account transactions basic resource",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
+        {"type": "json_field", "path": "Data", "rule": "object"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "TransactionInformation"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "MerchantDetails"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAgent"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAccount"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAgent"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAccount"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateCreditor"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateDebtor"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "bodyPath": "Data.Transaction", "schema": {"type": "array", "items": {"$ref": "#/components/schemas/OBTransaction6Basic"}}}
+      ],
+      "mandatory": true
+    },
+    {
       "id": "account-transactions",
       "name": "Account transactions resource",
       "request": {
@@ -293,6 +407,36 @@
         {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadTransaction6"}
       ],
       "mandatory": true
+    },
+    {
+      "id": "transactions-list-basic",
+      "name": "Bulk transactions basic resource",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/transactions",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange-transactions-basic.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {"type": "http_status", "expected": 200},
+        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
+        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
+        {"type": "json_field", "path": "Data", "rule": "object"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "TransactionInformation"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "MerchantDetails"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAgent"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAccount"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAgent"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAccount"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateCreditor"},
+        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateDebtor"},
+        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "bodyPath": "Data.Transaction", "schema": {"type": "array", "items": {"$ref": "#/components/schemas/OBTransaction6Basic"}}}
+      ],
+      "optional": true
     },
     {
       "id": "balances-list",

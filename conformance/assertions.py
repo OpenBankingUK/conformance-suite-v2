@@ -161,7 +161,9 @@ def _evaluate_json_field(assertion: JsonFieldAssertion, *, body: JsonObject) -> 
         return _evaluate_json_equals(assertion.path, value, assertion.value)
     if assertion.rule == "one_of":
         return _evaluate_json_one_of(assertion.path, value, assertion.values)
-    return _evaluate_all_items_have_field(assertion.path, value, assertion.field)
+    if assertion.rule == "all_items_have_field":
+        return _evaluate_all_items_have_field(assertion.path, value, assertion.field)
+    return _evaluate_all_items_absent_field(assertion.path, value, assertion.field)
 
 
 def _describe_response_schema(assertion: ResponseSchemaAssertion) -> str:
@@ -378,6 +380,33 @@ def _evaluate_all_items_have_field(path: str, value: JsonValue, field_name: str 
     return AssertionResult(
         passed=True,
         message=f"Every item in JSON field {path} contains field {field_name}",
+    )
+
+
+def _evaluate_all_items_absent_field(path: str, value: JsonValue, field_name: str | None) -> AssertionResult:
+    """Evaluate whether every object in an array omits ``field_name``.
+
+    Args:
+        path: Dot-separated JSON path used for diagnostic messages.
+        value: Resolved JSON value to validate.
+        field_name: Field name that must be absent from every object item.
+
+    Returns:
+        Assertion result indicating whether every object item omits the field.
+    """
+    if not isinstance(value, list):
+        return AssertionResult(passed=False, message=f"JSON field {path} must be an array")
+    if not field_name:
+        return AssertionResult(passed=False, message=f"JSON field {path} has an invalid forbidden item field")
+    for item in value:
+        if isinstance(item, Mapping) and field_name in item:
+            return AssertionResult(
+                passed=False,
+                message=f"Every item in JSON field {path} must omit field {field_name}",
+            )
+    return AssertionResult(
+        passed=True,
+        message=f"Every item in JSON field {path} omits field {field_name}",
     )
 
 
