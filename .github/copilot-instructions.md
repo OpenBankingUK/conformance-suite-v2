@@ -8,6 +8,32 @@ This repository is the **Open Banking UK Conformance Test Tool**, distributed as
 
 ---
 
+## Local Validation Commands
+
+- Run the full local gate with `make check` (`secrets`, `lint`, and offline tests).
+- Run lint/type/docstring checks with `make lint`; this executes `ruff check`, `ruff format --check`, `mypy`, `interrogate`, and `pydoclint`.
+- Run offline tests with `make test`; this excludes `e2e` and live-network `ozone` tests.
+- Run a focused test through the Makefile with `PYTEST_ARGS='tests/test_example.py::test_name' make test`.
+- Run live-network Ozone integration tests with `make integration`; these require the relevant tier environment variables.
+- Use `uv run python main.py <config.json>` for CLI smoke/config-selected suite runs, and `uv run python -m conformance.certification_cli ...` for certification report validation.
+
+## Architecture Map
+
+- `conformance/model_bank_config.py` validates participant config and resolves file paths; it is the boundary for TLS, FAPI signing, OAuth, suite selection, and approved-release policy inputs.
+- `conformance/manifest.py` parses manifest v0/v1 definitions, including request templating, assertions, PSU authorisation, token-endpoint auth policy, detached JWS, and grouped execution metadata.
+- `conformance/executor.py` is the core run engine: it resolves placeholders, applies runtime auth/signing policies, executes HTTP requests, evaluates assertions, and produces step results.
+- `conformance/results.py`, `conformance/execution_log.py`, and `conformance/masking.py` define persisted result JSON, NDJSON execution logs, and sensitive-value masking.
+- `conformance/suite_catalog.py` resolves bundled suite manifests under `conformance/suites/` and standards snapshots under `conformance/standards/`.
+- `conformance/api/` contains the Django REST/UI lifecycle: run creation, run storage, background execution, callback coordination, plan builder views, and downloadable artifacts.
+- `config/` contains runnable examples and Django settings; README/docs must stay aligned when schema, suite, API, CLI, or workflow behaviour changes.
+
+## Implementation Rules
+
+- Masking is mandatory for persisted result JSON, NDJSON execution logs, API log snapshots, browser downloads, and error payloads. When adding failure paths after URL/header/body/form resolution, attach the best-available masked request evidence immediately so failures remain diagnosable without exposing secrets.
+- Participant-controlled file paths, including TLS, FAPI signing, and approved-release policy paths, must resolve under their configured root using `Path.resolve()` containment checks before use.
+- Do not make `fapiSigning` values, TLS key material, certificates, private keys, request objects, client assertions, access/ID tokens, detached JWS values, or arbitrary participant config traversal available through manifest placeholders.
+- Changes to pytest marker semantics, bundled suite names, manifest schema, API run behaviour, result/certification eligibility shape, or GitHub workflow tiers usually require coordinated updates to `pyproject.toml`, `Makefile`, README/docs, `config/` examples, tests, and `CHANGELOG.md` under `[Unreleased]` when behaviour changes.
+
 ## 1. Security — Highest Priority
 
 - **Injection** (OWASP A03): No raw SQL. Use Django ORM. No `str.format()` or f-strings building SQL, shell commands, or file paths from user input.
