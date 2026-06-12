@@ -12,7 +12,15 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
 
+from conformance.auth_metadata import (
+    AuthBundleDeclaration,
+    AuthBundleError,
+    AuthBundleInventory,
+    AuthStepRequirement,
+    validate_inventory,
+)
 from conformance.json_types import JsonValue
+from conformance.model_bank_config import TokenEndpointClientAuthMode
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
@@ -575,6 +583,14 @@ class Manifest:
         steps: Ordered sequential steps to execute (v1 only, empty for v0).
             Each entry is either a plain HTTP step or a PSU authorisation
             step — see :data:`V1Step` for the discriminated union.
+        auth_inventory: Optional durable, non-secret auth bundle inventory
+            declared by a v1 manifest's ``authMetadata`` root key.  When
+            present, every bundle's step references must resolve against
+            :attr:`steps` and the whole inventory is validated via
+            :func:`conformance.auth_metadata.validate_inventory`.  V0
+            manifests and v1 manifests without ``authMetadata`` leave this
+            as ``None``; all existing parsing and execution paths treat
+            ``None`` as "no explicit auth metadata declared".
     """
 
     schema_version: ManifestSchemaVersion
@@ -582,6 +598,7 @@ class Manifest:
     certification_coverage: CertificationCoverage = "partial"
     tests: tuple[ManifestTest, ...] = ()
     steps: tuple[V1Step, ...] = ()
+    auth_inventory: AuthBundleInventory | None = None
 
 
 def load_manifest(manifest_path: Path) -> Manifest:
@@ -804,7 +821,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     """
     _reject_unknown_keys(
         raw_manifest,
-        allowed_keys={"schemaVersion", "name", "certificationCoverage", "steps"},
+        allowed_keys={"schemaVersion", "name", "certificationCoverage", "steps", "authMetadata"},
         location="manifest",
     )
 
@@ -819,12 +836,305 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
         seen_ids.add(step.id)
         steps.append(step)
 
+    known_step_ids = frozenset(seen_ids)
+    auth_inventory = _parse_v1_auth_metadata(raw_manifest, known_step_ids=known_step_ids)
+
     return Manifest(
         schema_version="v1",
         name=name,
         certification_coverage=certification_coverage,
         steps=tuple(steps),
+        auth_inventory=auth_inventory,
     )
+
+
+# ---------------------------------------------------------------------------
+# Auth metadata parsing helpers
+# ---------------------------------------------------------------------------
+
+_AUTH_TOKEN_ENDPOINT_AUTH_METHODS: frozenset[str] = frozenset({"private_key_jwt", "tls_client_auth"})
+"""Token-endpoint client auth method identifiers accepted in auth bundle declarations.
+
+Must stay aligned with :data:`conformance.model_bank_config.TokenEndpointClientAuthMode`
+so the manifest parser produces only values the executor auth-routing logic
+can act on.
+"""
+
+
+def _parse_v1_auth_metadata(
+    raw_manifest: dict[str, JsonValue],
+    *,
+    known_step_ids: frozenset[str],
+) -> AuthBundleInventory | None:
+    """Parse the optional ``authMetadata`` section from a v1 manifest root.
+
+    ``authMetadata`` carries durable, non-secret auth bundle declarations and
+    per-step bundle mappings that downstream plan-preview, execution routing,
+    and certification-coverage tooling can consume without re-parsing the full
+    manifest.  Manifests that omit the key remain fully compatible — the field
+    defaults to ``None`` on the returned :class:`Manifest`.
+
+    Validation steps performed:
+
+    1. ``authMetadata`` must be a JSON object when present.
+    2. Unknown keys inside the object are rejected.
+    3. ``bundles`` must be a non-empty array of bundle declaration objects.
+    4. ``stepRequirements`` is optional; when present it must be an array.
+    5. Every bundle and step-requirement is parsed and validated via
+       :func:`conformance.auth_metadata.validate_inventory` with the full
+       manifest step-id set so that stale or typo'd step references fail at
+       parse time rather than silently producing wrong execution routing.
+
+    Args:
+        raw_manifest: Full v1 manifest JSON object (after top-level key check).
+        known_step_ids: Frozen set of all step ids declared by the v1 manifest
+            steps array.  Passed to :func:`validate_inventory` to detect
+            unknown step references in bundle and step-requirement fields.
+
+    Returns:
+        Parsed and validated :class:`AuthBundleInventory`, or ``None`` when
+        the ``authMetadata`` key is absent.
+
+    Raises:
+        ManifestError: If the section is malformed, contains unknown keys,
+            references step ids not declared in the manifest's steps array,
+            contains credential material, or fails any structural check in
+            :func:`conformance.auth_metadata.validate_inventory`.
+    """
+    if "authMetadata" not in raw_manifest:
+        return None
+    raw_auth = raw_manifest["authMetadata"]
+    location = "manifest.authMetadata"
+    if not isinstance(raw_auth, dict):
+        raise ManifestError(f"{location} must be a JSON object when present")
+    _reject_unknown_keys(raw_auth, allowed_keys={"bundles", "stepRequirements"}, location=location)
+
+    raw_bundles = _required_object_array(raw_auth, "bundles", location=location)
+    bundles = tuple(
+        _parse_auth_bundle_declaration(raw_bundle, index=i, location=f"{location}.bundles")
+        for i, raw_bundle in enumerate(raw_bundles)
+    )
+    step_requirements = _parse_auth_step_requirements(raw_auth, location=location)
+
+    inventory = AuthBundleInventory(bundles=bundles, step_requirements=step_requirements)
+    try:
+        validate_inventory(inventory, known_step_ids=known_step_ids)
+    except AuthBundleError as error:
+        raise ManifestError(f"{location}: {error}") from error
+    return inventory
+
+
+def _parse_auth_bundle_declaration(
+    raw_bundle: dict[str, JsonValue],
+    *,
+    index: int,
+    location: str,
+) -> AuthBundleDeclaration:
+    """Parse one auth bundle declaration from the ``authMetadata.bundles`` array.
+
+    All string fields are validated as non-credential values so that a
+    misauthored manifest cannot accidentally embed token material in the
+    non-secret auth contract.  Step-id cross-references are validated later
+    by :func:`conformance.auth_metadata.validate_inventory`.
+
+    Args:
+        raw_bundle: Raw JSON object representing one bundle declaration.
+        index: Zero-based position in the ``bundles`` array, used in error
+            messages.
+        location: Dot-path location prefix for the ``bundles`` array
+            (e.g. ``"manifest.authMetadata.bundles"``).
+
+    Returns:
+        Parsed :class:`conformance.auth_metadata.AuthBundleDeclaration`.
+
+    Raises:
+        ManifestError: If required fields are missing, optional fields are
+            malformed, or any field value contains credential material.
+    """
+    loc = f"{location}[{index}]"
+    _reject_unknown_keys(
+        raw_bundle,
+        allowed_keys={
+            "id",
+            "tokenStepId",
+            "consentStepId",
+            "psuStepId",
+            "tokenEndpointAuthMethod",
+            "requiredScopes",
+            "requiredObPermissions",
+            "excludedObPermissions",
+            "consumingStepIds",
+            "capabilityRefs",
+        },
+        location=loc,
+    )
+    bundle_id = _required_string(raw_bundle, "id", location=loc)
+    token_step_id = _required_string(raw_bundle, "tokenStepId", location=loc)
+    consent_step_id = _parse_optional_id_field(raw_bundle, key="consentStepId", location=loc)
+    psu_step_id = _parse_optional_id_field(raw_bundle, key="psuStepId", location=loc)
+    token_endpoint_auth_method = _parse_optional_bundle_auth_method(raw_bundle, location=loc)
+    required_scopes = tuple(_parse_optional_string_array(raw_bundle, "requiredScopes", location=loc))
+    required_ob_permissions = tuple(_parse_optional_string_array(raw_bundle, "requiredObPermissions", location=loc))
+    excluded_ob_permissions = tuple(_parse_optional_string_array(raw_bundle, "excludedObPermissions", location=loc))
+    consuming_step_ids = tuple(_parse_optional_string_array(raw_bundle, "consumingStepIds", location=loc))
+    capability_refs = tuple(_parse_optional_string_array(raw_bundle, "capabilityRefs", location=loc))
+    return AuthBundleDeclaration(
+        id=bundle_id,
+        token_step_id=token_step_id,
+        consent_step_id=consent_step_id,
+        psu_step_id=psu_step_id,
+        token_endpoint_auth_method=token_endpoint_auth_method,
+        required_scopes=required_scopes,
+        required_ob_permissions=required_ob_permissions,
+        excluded_ob_permissions=excluded_ob_permissions,
+        consuming_step_ids=consuming_step_ids,
+        capability_refs=capability_refs,
+    )
+
+
+def _parse_auth_step_requirements(
+    raw_auth: dict[str, JsonValue],
+    *,
+    location: str,
+) -> tuple[AuthStepRequirement, ...]:
+    """Parse the optional ``stepRequirements`` array from an ``authMetadata`` object.
+
+    When absent the field defaults to an empty tuple.  When present each
+    element must be a JSON object containing ``stepId`` and ``bundleId``.
+    Cross-reference validation (bundle id must exist in declared bundles,
+    step id must exist in the manifest) is performed later by
+    :func:`conformance.auth_metadata.validate_inventory`.
+
+    Args:
+        raw_auth: ``authMetadata`` JSON object.
+        location: Dot-path location of the ``authMetadata`` object, used in
+            error messages.
+
+    Returns:
+        Parsed tuple of :class:`conformance.auth_metadata.AuthStepRequirement`
+        objects.  Empty when the key is absent or the array is empty.
+
+    Raises:
+        ManifestError: If ``stepRequirements`` is present but is not an array,
+            or any element is not a JSON object with the required string fields.
+    """
+    if "stepRequirements" not in raw_auth:
+        return ()
+    raw_reqs = raw_auth["stepRequirements"]
+    if not isinstance(raw_reqs, list):
+        raise ManifestError(f"{location}.stepRequirements must be an array when present")
+    requirements: list[AuthStepRequirement] = []
+    for i, raw_req in enumerate(raw_reqs):
+        if not isinstance(raw_req, dict):
+            raise ManifestError(f"{location}.stepRequirements[{i}] must be a JSON object")
+        req_loc = f"{location}.stepRequirements[{i}]"
+        _reject_unknown_keys(raw_req, allowed_keys={"stepId", "bundleId"}, location=req_loc)
+        step_id = _required_string(raw_req, "stepId", location=req_loc)
+        bundle_id = _required_string(raw_req, "bundleId", location=req_loc)
+        requirements.append(AuthStepRequirement(step_id=step_id, bundle_id=bundle_id))
+    return tuple(requirements)
+
+
+def _parse_optional_id_field(
+    raw_obj: dict[str, JsonValue],
+    *,
+    key: str,
+    location: str,
+) -> str | None:
+    """Extract an optional non-empty string identifier field from a JSON object.
+
+    Args:
+        raw_obj: The JSON object to extract from.
+        key: The field name to look up.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The stripped string value, or ``None`` when the key is absent.
+
+    Raises:
+        ManifestError: If the key is present but the value is not a
+            non-empty string.
+    """
+    if key not in raw_obj:
+        return None
+    value = raw_obj[key]
+    if not isinstance(value, str) or not value.strip():
+        raise ManifestError(f"{location}.{key} must be a non-empty string when present")
+    return value.strip()
+
+
+def _parse_optional_bundle_auth_method(
+    raw_bundle: dict[str, JsonValue],
+    *,
+    location: str,
+) -> TokenEndpointClientAuthMode | None:
+    """Extract the optional token-endpoint auth method from a bundle declaration.
+
+    Validates the value against the known set of token-endpoint client-auth
+    method identifiers accepted by the executor (``private_key_jwt`` and
+    ``tls_client_auth``).  Corresponds to the FAPI 1.0 Advanced permitted
+    token-endpoint client-authentication methods.
+
+    Args:
+        raw_bundle: Raw JSON object for the bundle declaration.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        The validated :data:`conformance.model_bank_config.TokenEndpointClientAuthMode`
+        literal, or ``None`` when the field is absent.
+
+    Raises:
+        ManifestError: If the field is present but is not a string or is not
+            one of the accepted method identifiers.
+    """
+    if "tokenEndpointAuthMethod" not in raw_bundle:
+        return None
+    value = raw_bundle["tokenEndpointAuthMethod"]
+    if not isinstance(value, str):
+        raise ManifestError(f"{location}.tokenEndpointAuthMethod must be a string when present")
+    if value not in _AUTH_TOKEN_ENDPOINT_AUTH_METHODS:
+        allowed = ", ".join(sorted(_AUTH_TOKEN_ENDPOINT_AUTH_METHODS))
+        raise ManifestError(f"{location}.tokenEndpointAuthMethod must be one of: {allowed} (got: {value!r})")
+    return cast(TokenEndpointClientAuthMode, value)
+
+
+def _parse_optional_string_array(
+    raw_obj: dict[str, JsonValue],
+    key: str,
+    *,
+    location: str,
+) -> list[str]:
+    """Extract an optional array of non-empty strings from a JSON object.
+
+    Used to parse auth bundle fields such as ``requiredScopes``,
+    ``requiredObPermissions``, ``excludedObPermissions``, ``consumingStepIds``,
+    and ``capabilityRefs``.  Returns an empty list when the key is absent so
+    optional bundle metadata fields default to empty collections.
+
+    Args:
+        raw_obj: The JSON object to extract from.
+        key: The field name to look up.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        List of stripped non-empty strings.  Empty when the key is absent or
+        the value is an empty array.
+
+    Raises:
+        ManifestError: If the key is present but the value is not an array,
+            or any element is not a non-empty string.
+    """
+    if key not in raw_obj:
+        return []
+    raw_value = raw_obj[key]
+    if not isinstance(raw_value, list):
+        raise ManifestError(f"{location}.{key} must be an array when present")
+    result: list[str] = []
+    for i, item in enumerate(raw_value):
+        if not isinstance(item, str) or not item.strip():
+            raise ManifestError(f"{location}.{key}[{i}] must be a non-empty string")
+        result.append(item.strip())
+    return result
 
 
 def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> V1Step:

@@ -45,6 +45,8 @@ Only show fields required by the selected suite and auth bundle:
 
 The builder needs structured capability metadata for known environments and a declaration path for custom environments.
 
+The implemented evidence blocks use the names `authMetadata` for auth-bundle inventory and `environmentCapabilities` for environment support decisions.
+
 Example capability dimensions:
 
 - supported spec versions
@@ -80,4 +82,3 @@ The two surfaces should share the same underlying capability and suite metadata 
 4. Add auth-method preset selection.
 5. Add compatibility validation and launch blockers.
 6. Keep advanced JSON mode as a visible escape hatch.
-

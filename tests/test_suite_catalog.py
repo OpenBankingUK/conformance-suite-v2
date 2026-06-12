@@ -173,6 +173,58 @@ def test_list_supported_suites_is_deterministic() -> None:
 
 
 @pytest.mark.unit
+@pytest.mark.parametrize(
+    ("spec_version", "suite_name", "api", "expected_bundle_ids", "expected_step_ids"),
+    [
+        ("v4.0.1", "discovery-jwks", "ais", ("discovery-no-auth",), set()),
+        ("v4.0.1", "psu-auth-starter", "pis", ("starter-manual",), set()),
+        (
+            "v4.0.1",
+            "ais-certification-slice",
+            "ais",
+            ("ais-protected-resource",),
+            {"accounts-list", "account-balances", "account-transactions"},
+        ),
+        (
+            "v4.0.1",
+            "ais-certification-baseline",
+            "ais",
+            ("ais-protected-resource",),
+            {"accounts-list", "account-detail", "transactions-list", "statements-list"},
+        ),
+        (
+            "v4.0",
+            "ais-certification-baseline",
+            "ais",
+            ("ais-protected-resource", "ais-transactions-basic"),
+            {"account-transactions-basic", "transactions-list-basic"},
+        ),
+        (
+            "v4.0",
+            "ais-fcs-legacy-benchmark",
+            "ais",
+            ("ais-protected-resource", "ais-transactions-basic"),
+            {"OB-400-TRA-105200"},
+        ),
+    ],
+)
+def test_bundled_suites_expose_explicit_auth_inventory(
+    spec_version: SuiteSpecVersion,
+    suite_name: str,
+    api: SuiteApiFamily,
+    expected_bundle_ids: tuple[str, ...],
+    expected_step_ids: set[str],
+) -> None:
+    """Bundled suites should parse explicit auth inventories for each category."""
+    resolved = resolve_suite(_selection(spec_version, suite_name=suite_name, api=api))
+    inventory = resolved.manifest.auth_inventory
+
+    assert inventory is not None
+    assert tuple(bundle.id for bundle in inventory.bundles) == expected_bundle_ids
+    assert expected_step_ids.issubset({req.step_id for req in inventory.step_requirements})
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
 def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_versions(
     spec_version: SuiteSpecVersion,
@@ -933,3 +985,104 @@ def test_resolve_suite_reports_invalid_bundled_manifest(monkeypatch: pytest.Monk
 
     with pytest.raises(SuiteCatalogError, match="Invalid bundled suite manifest .*steps must be a non-empty array"):
         resolve_suite(_selection())
+
+
+# ---------------------------------------------------------------------------
+# SuiteMetadata.to_suite_selection() tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("spec_version", "api", "suite_name"),
+    [
+        ("v4.0", "ais", "discovery-jwks"),
+        ("v4.0", "ais", "psu-auth-starter"),
+        ("v4.0.1", "ais", "ais-certification-baseline"),
+        ("v4.0", "pis", "psu-auth-starter"),
+        ("v4.0", "cbpii", "discovery-jwks"),
+        ("v4.0.1", "vrp", "psu-auth-starter"),
+        ("v3.1.11", "ais", "discovery-jwks"),
+    ],
+)
+def test_suite_metadata_to_suite_selection_roundtrips_resolve_suite(
+    spec_version: SuiteSpecVersion,
+    api: SuiteApiFamily,
+    suite_name: str,
+) -> None:
+    """to_suite_selection must produce a key that resolves back to the same catalog entry."""
+    original = _selection(spec_version=spec_version, suite_name=suite_name, api=api)
+    resolved = resolve_suite(original)
+
+    rebuilt_selection = resolved.metadata.to_suite_selection()
+    re_resolved = resolve_suite(rebuilt_selection)
+
+    assert re_resolved.metadata.catalog_id == resolved.metadata.catalog_id
+    assert re_resolved.metadata.standard == resolved.metadata.standard
+    assert re_resolved.metadata.spec_version == resolved.metadata.spec_version
+    assert re_resolved.metadata.api == resolved.metadata.api
+    assert re_resolved.metadata.suite == resolved.metadata.suite
+
+
+@pytest.mark.unit
+def test_suite_metadata_to_suite_selection_fields_match_metadata() -> None:
+    """The selection returned by to_suite_selection must reflect each metadata field."""
+    resolved = resolve_suite(_selection(spec_version="v4.0", suite_name="ais-certification-baseline"))
+    metadata = resolved.metadata
+
+    selection = metadata.to_suite_selection()
+
+    assert selection.standard == metadata.standard
+    assert selection.spec_version == metadata.spec_version
+    assert selection.profile == metadata.profile
+    assert selection.api == metadata.api
+    assert selection.suite == metadata.suite
+
+
+@pytest.mark.unit
+def test_suite_metadata_to_suite_selection_enables_capability_lookup() -> None:
+    """Passing to_suite_selection() to resolve_suite_environment_capability must return a capability."""
+    from conformance.environment_capabilities import resolve_suite_environment_capability
+
+    resolved = resolve_suite(_selection(spec_version="v4.0", suite_name="ais-certification-baseline"))
+    selection = resolved.metadata.to_suite_selection()
+
+    capability = resolve_suite_environment_capability(selection)
+
+    assert capability is not None
+    assert capability.suite == "ais-certification-baseline"
+    assert capability.spec_version == "v4.0"
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("spec_version", "api", "suite_name"),
+    [
+        ("v4.0", "ais", "discovery-jwks"),
+        ("v4.0.1", "ais", "ais-certification-slice"),
+        ("v3.1.11", "ais", "psu-auth-starter"),
+    ],
+)
+def test_suite_metadata_to_suite_selection_capability_lookup_various_suites(
+    spec_version: SuiteSpecVersion,
+    api: SuiteApiFamily,
+    suite_name: str,
+) -> None:
+    """Selected bundled catalog entries resolve a non-None capability via to_suite_selection()."""
+    from conformance.environment_capabilities import resolve_suite_environment_capability
+
+    resolved = resolve_suite(_selection(spec_version=spec_version, suite_name=suite_name, api=api))
+    capability = resolve_suite_environment_capability(resolved.metadata.to_suite_selection())
+
+    assert capability is not None
+
+
+@pytest.mark.unit
+def test_all_bundled_suite_metadata_produce_valid_suite_selections() -> None:
+    """Every catalog entry's to_suite_selection() must round-trip through resolve_suite."""
+    all_metadata = suite_catalog.list_supported_suites()
+
+    for metadata in all_metadata:
+        selection = metadata.to_suite_selection()
+        re_resolved = resolve_suite(selection)
+        assert re_resolved.metadata.catalog_id == metadata.catalog_id

@@ -206,6 +206,37 @@ def _manifest_json(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tu
     return {"schemaVersion": "v1", "name": "validator", "certificationCoverage": "complete", "steps": steps}
 
 
+def _manifest_json_with_auth_metadata(*, certification_coverage: str = "complete") -> JsonObject:
+    """Build a complete v1 manifest fixture with explicit auth metadata evidence contract.
+
+    Args:
+        certification_coverage: Coverage declaration to embed at the root.
+
+    Returns:
+        Manifest JSON object containing mandatory token/resource steps and one
+        auth bundle mapping.
+    """
+    return {
+        "schemaVersion": "v1",
+        "name": "validator-auth-metadata",
+        "certificationCoverage": certification_coverage,
+        "steps": [
+            _manifest_step(step_id="token-exchange", mandatory=True, optional=False),
+            _manifest_step(step_id="accounts-list", mandatory=True, optional=False),
+        ],
+        "authMetadata": {
+            "bundles": [
+                {
+                    "id": "ais-primary",
+                    "tokenStepId": "token-exchange",
+                    "consumingStepIds": ["accounts-list"],
+                }
+            ],
+            "stepRequirements": [{"stepId": "accounts-list", "bundleId": "ais-primary"}],
+        },
+    }
+
+
 def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObject:
     request: JsonObject = {"method": "GET", "url": f"https://example.com/{step_id}"}
     assertions: list[JsonValue] = [{"type": "http_status", "expected": 200}]
@@ -222,23 +253,268 @@ def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObje
     return step
 
 
-def _report(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> SubmittedReport:
-    return parse_submitted_report(_report_json(tool_version=tool_version, steps=steps))
+def _report(
+    *,
+    tool_version: str,
+    steps: tuple[tuple[str, CheckStatus], ...],
+    auth_metadata: JsonObject | None = None,
+    environment_capabilities: JsonObject | None = None,
+    suite: JsonObject | None = None,
+) -> SubmittedReport:
+    """Build and parse a submitted-report fixture with optional evidence blocks.
+
+    Args:
+        tool_version: Tool version embedded in the fixture report.
+        steps: Report step-id/status tuples.
+        auth_metadata: Optional ``authMetadata`` evidence block.
+        environment_capabilities: Optional ``environmentCapabilities`` block.
+        suite: Optional ``suite`` metadata block.
+
+    Returns:
+        Parsed submitted report fixture.
+    """
+    return parse_submitted_report(
+        _report_json(
+            tool_version=tool_version,
+            steps=steps,
+            auth_metadata=auth_metadata,
+            environment_capabilities=environment_capabilities,
+            suite=suite,
+        )
+    )
 
 
-def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> JsonObject:
+def _report_json(
+    *,
+    tool_version: str,
+    steps: tuple[tuple[str, CheckStatus], ...],
+    auth_metadata: JsonObject | None = None,
+    environment_capabilities: JsonObject | None = None,
+    suite: JsonObject | None = None,
+) -> JsonObject:
+    """Build a report JSON fixture with optional auth/capability/suite evidence.
+
+    Args:
+        tool_version: Tool version embedded in the fixture report.
+        steps: Report step-id/status tuples.
+        auth_metadata: Optional ``authMetadata`` evidence block.
+        environment_capabilities: Optional ``environmentCapabilities`` block.
+        suite: Optional ``suite`` metadata block.
+
+    Returns:
+        Report JSON object.
+    """
     rendered_steps: list[JsonValue] = []
     for step_id, status in steps:
         rendered_steps.append({"name": step_id, "status": status, "message": "ok"})
-    return {
+    report: JsonObject = {
         "metadata": {"reportVersion": "1.0"},
         "tool": {"version": tool_version},
         "steps": rendered_steps,
     }
+    if auth_metadata is not None:
+        report["authMetadata"] = auth_metadata
+    if environment_capabilities is not None:
+        report["environmentCapabilities"] = environment_capabilities
+    if suite is not None:
+        report["suite"] = suite
+    return report
 
 
 def _write_json(path: Path, value: object) -> None:
     path.write_text(json.dumps(value), encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_validate_report_partial_manifest_unaffected_when_auth_evidence_missing() -> None:
+    """Partial manifests keep the existing partial-coverage blocker behaviour."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata(certification_coverage="partial"))
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.reasons == ("manifest_coverage_partial",)
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_auth_inventory_rejects_missing_auth_evidence() -> None:
+    """Complete manifests with auth metadata must include report auth evidence."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "auth_metadata_missing" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_accepts_matching_auth_evidence() -> None:
+    """Matching auth bundle evidence validates for complete manifests."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+        auth_metadata={
+            "bundles": [
+                {
+                    "id": "ais-primary",
+                    "tokenStepId": "token-exchange",
+                    "consumingStepIds": ["accounts-list"],
+                }
+            ],
+            "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais-primary"}],
+        },
+        environment_capabilities={
+            "suiteSelection": {"standard": "ob-read-write"},
+            "environment": {"source": "custom", "label": "env"},
+            "decisions": [{"support": "supported", "warnings": [], "blockers": []}],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "auth_metadata_missing" not in result.reasons
+    assert "auth_metadata_mismatch" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_auth_manifest_requires_capability_evidence_without_suite_block() -> None:
+    """Trusted auth metadata requires capability evidence even if submitted suite metadata is omitted."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+        auth_metadata={
+            "bundles": [
+                {
+                    "id": "ais-primary",
+                    "tokenStepId": "token-exchange",
+                    "consumingStepIds": ["accounts-list"],
+                }
+            ],
+            "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais-primary"}],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "environment_capabilities_missing" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_mismatched_step_to_bundle_mapping() -> None:
+    """A selected step mapped to the wrong bundle id is rejected."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+        auth_metadata={
+            "bundles": [
+                {
+                    "id": "ais-primary",
+                    "tokenStepId": "token-exchange",
+                    "consumingStepIds": ["accounts-list"],
+                }
+            ],
+            "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais-secondary"}],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "auth_metadata_mismatch" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_blocked_environment_capability_decision() -> None:
+    """Blocked environment-capability support in complete-suite evidence is rejected."""
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("discovery", "passed"),),
+        suite={
+            "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais/ais-certification-baseline",
+        },
+        environment_capabilities={
+            "suiteSelection": {"standard": "ob-read-write"},
+            "environment": {"source": "custom", "label": "env"},
+            "decisions": [{"support": "blocked", "warnings": [], "blockers": ["unsupported"]}],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "environment_capabilities_blocked" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_empty_environment_capability_decisions() -> None:
+    """An empty capability decision list is missing evidence, not an unblocked result."""
+    manifest = parse_manifest(_manifest_json_with_auth_metadata())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("token-exchange", "passed"), ("accounts-list", "passed")),
+        auth_metadata={
+            "bundles": [
+                {
+                    "id": "ais-primary",
+                    "tokenStepId": "token-exchange",
+                    "consumingStepIds": ["accounts-list"],
+                }
+            ],
+            "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais-primary"}],
+        },
+        environment_capabilities={
+            "suiteSelection": {"standard": "ob-read-write"},
+            "environment": {"source": "custom", "label": "env"},
+            "decisions": [],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "environment_capabilities_missing" in result.reasons
 
 
 # ─── Packet B: certification coverage gating ─────────────────────────────────

@@ -20,6 +20,8 @@ An auth bundle is the unit that connects:
 - consuming resource steps
 - environment capability requirements
 
+The manifest-side contract for that bundle inventory is `authMetadata`; the result-side evidence blocks are `authMetadata` and `environmentCapabilities`.
+
 ## Example AIS bundles
 
 | Bundle | Permissions | Consuming steps | Purpose |
@@ -42,7 +44,7 @@ An auth bundle is the unit that connects:
 
 ## Environment compatibility
 
-The guided UI should not let users launch impossible combinations. Environment capability metadata should eventually answer:
+The guided UI should not let users launch impossible combinations. Environment capability metadata answers:
 
 - Does the environment support manual PSU?
 - Does it support headless PSU?
@@ -57,7 +59,7 @@ Custom environments can still be supported by requiring participants to declare 
 
 ## UI requirements
 
-- Show auth bundles in plan preview and tree view.
+- Show auth bundles in plan preview and tree view, together with capability blockers/warnings.
 - Show selected steps that consume each bundle.
 - Show required config fields for each bundle and auth method.
 - Show compatibility blockers before launch.
@@ -67,7 +69,7 @@ Custom environments can still be supported by requiring participants to declare 
 
 - Runtime context should bind tokens to their producing auth bundle or token step.
 - Placeholder resolution must not allow cross-group/token leakage beyond intended step references.
-- Result JSON should expose safe auth-bundle metadata, not secrets.
+- Result JSON should expose safe auth-bundle metadata, not secrets, via `authMetadata` and `environmentCapabilities`.
 - Execution logs should record auth decisions and bundle identifiers with masked credential values.
 - Certification validator should be able to detect whether mandatory rows used required auth/content variants.
 
@@ -78,4 +80,3 @@ Custom environments can still be supported by requiring participants to declare 
 3. Render auth bundle inventory in the visual tree.
 4. Add environment capability validation for manual/headless and token auth methods.
 5. Add prior-FCS negative/no-token/client-credentials variants as separate agent slices.
-

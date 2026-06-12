@@ -11,15 +11,52 @@
         "url": "${config.discoveryUrl}"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "json_field", "path": "issuer", "rule": "string"},
-        {"type": "json_field", "path": "issuer", "rule": "https_url"},
-        {"type": "json_field", "path": "authorization_endpoint", "rule": "https_url"},
-        {"type": "json_field", "path": "token_endpoint", "rule": "https_url"},
-        {"type": "json_field", "path": "jwks_uri", "rule": "https_url"},
-        {"type": "json_field", "path": "response_types_supported", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "response_types_supported", "rule": "min_items", "minItems": 1}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "authorization_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "token_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "jwks_uri",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "response_types_supported",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "response_types_supported",
+          "rule": "min_items",
+          "minItems": 1
+        }
       ],
       "mandatory": true
     },
@@ -31,12 +68,38 @@
         "url": "${steps.openid-discovery.response.body.jwks_uri}"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "json"},
-        {"type": "json_field", "path": "keys", "rule": "array"},
-        {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "keys", "rule": "all_items_have_field", "field": "kty"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "json"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "min_items",
+          "minItems": 1
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "all_items_have_field",
+          "field": "kty"
+        }
       ],
       "mandatory": true
     },
@@ -58,5 +121,23 @@
       "timeoutSeconds": 180,
       "mandatory": true
     }
-  ]
+  ],
+  "authMetadata": {
+    "bundles": [
+      {
+        "id": "starter-manual",
+        "tokenStepId": "psu-authorization",
+        "psuStepId": "psu-authorization",
+        "requiredScopes": [
+          "openid",
+          "fundsconfirmations"
+        ],
+        "requiredObPermissions": [],
+        "excludedObPermissions": [],
+        "consumingStepIds": [],
+        "capabilityRefs": []
+      }
+    ],
+    "stepRequirements": []
+  }
 }

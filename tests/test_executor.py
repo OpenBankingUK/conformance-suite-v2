@@ -2798,6 +2798,163 @@ def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
     assert result.to_json_object()["suite"] == expected_suite
 
 
+@pytest.mark.unit
+def test_run_manifest_v1_auth_and_capability_evidence_are_filtered_by_selected_plan() -> None:
+    """Selected-plan filtering applies to auth metadata evidence in logs/results."""
+    from conformance.suite_catalog import SuiteMetadata
+    from conformance.test_plan import TestPlan
+
+    metadata = SuiteMetadata(
+        catalog_id="ob-read-write/v4.0/fapi1-advanced/ais-certification-slice",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice",
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        api="ais",
+        suite="ais-certification-slice",
+        manifest_resource="ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+        description="Partial AIS certification slice.",
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "auth evidence",
+            "steps": [
+                {
+                    "id": "token-a",
+                    "name": "Token A",
+                    "request": {"method": "GET", "url": "https://example.com/token-a"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "accounts-a",
+                    "name": "Accounts A",
+                    "request": {"method": "GET", "url": "https://example.com/accounts-a"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "token-b",
+                    "name": "Token B",
+                    "request": {"method": "GET", "url": "https://example.com/token-b"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "balances-b",
+                    "name": "Balances B",
+                    "request": {"method": "GET", "url": "https://example.com/balances-b"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+            "authMetadata": {
+                "bundles": [
+                    {
+                        "id": "ais-primary",
+                        "tokenStepId": "token-a",
+                        "tokenEndpointAuthMethod": "private_key_jwt",
+                        "requiredScopes": ["openid", "accounts"],
+                        "consumingStepIds": ["accounts-a"],
+                        "capabilityRefs": ["psu.manual"],
+                    },
+                    {
+                        "id": "ais-secondary",
+                        "tokenStepId": "token-b",
+                        "tokenEndpointAuthMethod": "tls_client_auth",
+                        "requiredScopes": ["openid", "accounts"],
+                        "consumingStepIds": ["balances-b"],
+                        "capabilityRefs": ["auth.tls_client_auth"],
+                    },
+                ],
+                "stepRequirements": [
+                    {"stepId": "accounts-a", "bundleId": "ais-primary"},
+                    {"stepId": "balances-b", "bundleId": "ais-secondary"},
+                ],
+            },
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["token-b", "balances-b"])
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="ozone-model-bank",
+            client=client,
+            execution_logger=execution_logger,
+            suite_metadata=metadata,
+            plan=plan,
+        )
+
+    result_auth = cast(JsonObject, result.to_json_object()["authMetadata"])
+    assert [bundle["id"] for bundle in cast(list[JsonObject], result_auth["bundles"])] == ["ais-primary"]
+    assert result_auth["selectedStepRequirements"] == [{"stepId": "accounts-a", "bundleId": "ais-primary"}]
+    capability_block = cast(JsonObject, result.to_json_object()["environmentCapabilities"])
+    decisions = cast(list[JsonObject], capability_block["decisions"])
+    assert len(decisions) == 1
+    assert decisions[0]["bundleId"] == "ais-primary"
+
+    auth_events = [event for event in execution_logger.events() if event.type == "auth-metadata-evaluated"]
+    capability_events = [
+        event for event in execution_logger.events() if event.type == "environment-capability-evaluated"
+    ]
+    assert len(auth_events) == 1
+    assert len(capability_events) == 1
+    assert auth_events[0].payload["selectedStepRequirements"] == [{"stepId": "accounts-a", "bundleId": "ais-primary"}]
+
+
+@pytest.mark.unit
+def test_run_manifest_does_not_serialize_invalid_auth_metadata_strings() -> None:
+    """Invalid auth metadata values are suppressed from result and execution log."""
+    from conformance.auth_metadata import AuthBundleDeclaration, AuthBundleInventory
+    from conformance.manifest import Manifest, ManifestRequest, ManifestStep
+
+    secret_like_value = "Bearer super-secret-token-value"  # noqa: S105  # pragma: allowlist secret
+    manifest = Manifest(
+        schema_version="v1",
+        name="unsafe-auth-metadata",
+        steps=(
+            ManifestStep(
+                id="accounts",
+                name="Accounts",
+                request=ManifestRequest(method="GET", url="https://example.com/accounts"),
+                assertions=(),
+            ),
+        ),
+        auth_inventory=AuthBundleInventory(
+            bundles=(
+                AuthBundleDeclaration(
+                    id="unsafe",
+                    token_step_id="accounts",  # noqa: S106 - step id fixture, not a secret
+                    consent_step_id=None,
+                    psu_step_id=None,
+                    token_endpoint_auth_method=None,
+                    required_scopes=(secret_like_value,),
+                    required_ob_permissions=(),
+                    excluded_ob_permissions=(),
+                    consuming_step_ids=("accounts",),
+                    capability_refs=(),
+                ),
+            ),
+            step_requirements=(),
+        ),
+    )
+    execution_logger = BufferedExecutionLogger(run_id="run-auth-safety", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+        )
+
+    rendered = json.dumps(result.to_json_object(), sort_keys=True)
+    log_payload = execution_logger.to_ndjson_bytes().decode("utf-8")
+    assert secret_like_value not in rendered
+    assert secret_like_value not in log_payload
+    assert "authMetadata" not in result.to_json_object()
+    assert not any(event.type == "auth-metadata-evaluated" for event in execution_logger.events())
+
+
 @pytest.mark.integration
 def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """End-to-end mocked execution of the bundled ``psu-auth-starter`` catalog suite.

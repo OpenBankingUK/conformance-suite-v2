@@ -10,7 +10,7 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import cast
+from typing import Literal, cast
 from urllib.parse import urlsplit
 
 import httpx
@@ -26,6 +26,13 @@ from conformance.api.auth_session_store import (
 )
 from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.assertions import AssertionResult, evaluate_assertion
+from conformance.auth_metadata import (
+    AuthBundleDeclaration,
+    AuthBundleError,
+    AuthBundleInventory,
+    AuthStepRequirement,
+    validate_inventory,
+)
 from conformance.context import (
     ExecutionContext,
     MissingPredecessorResponseError,
@@ -37,6 +44,15 @@ from conformance.context import (
     record_token,
     resolve_in_structure,
     resolve_placeholders,
+)
+from conformance.environment_capabilities import (
+    CapabilityEvaluation,
+    EnvironmentReference,
+    SuiteEnvironmentCapability,
+    evaluate_suite_environment_support,
+    list_environment_presets,
+    make_custom_environment_reference,
+    make_preset_environment_reference,
 )
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
@@ -199,6 +215,325 @@ def _mask_result_url_query(url: str) -> str:
     return mask_url_query(url, SENSITIVE_JSON_KEYS)
 
 
+def _resolve_environment_reference(
+    *,
+    environment: str,
+    runtime_config: RuntimeConfig | None,
+) -> EnvironmentReference:
+    """Resolve the safest available environment capability reference.
+
+    Prefers known preset metadata when the run environment/discovery URL matches
+    a bundled preset declaration; otherwise falls back to a custom reference
+    with no declaration so capability evaluation remains conservative.
+
+    Args:
+        environment: Run environment label supplied to :func:`run_manifest`.
+        runtime_config: Optional runtime config carrying discovery URL and
+            environment values.
+
+    Returns:
+        Environment reference for capability evaluation.
+    """
+    discovery_url = runtime_config.discovery_url if runtime_config is not None else None
+    for preset in list_environment_presets():
+        if environment == preset.environment or (discovery_url is not None and discovery_url == preset.discovery_url):
+            preset_reference = make_preset_environment_reference(preset.key)
+            if preset_reference is not None:
+                return preset_reference
+    return make_custom_environment_reference(label=environment)
+
+
+def _serialize_auth_bundle(bundle: AuthBundleDeclaration) -> JsonObject:
+    """Convert one auth-bundle declaration to participant-safe JSON evidence.
+
+    Args:
+        bundle: Auth bundle declaration to serialise.
+
+    Returns:
+        Non-secret JSON object carrying durable auth bundle metadata.
+    """
+    serialised: JsonObject = {
+        "id": bundle.id,
+        "tokenStepId": bundle.token_step_id,
+        "requiredScopes": list(bundle.required_scopes),
+        "requiredObPermissions": list(bundle.required_ob_permissions),
+        "excludedObPermissions": list(bundle.excluded_ob_permissions),
+        "consumingStepIds": list(bundle.consuming_step_ids),
+        "capabilityRefs": list(bundle.capability_refs),
+    }
+    if bundle.consent_step_id is not None:
+        serialised["consentStepId"] = bundle.consent_step_id
+    if bundle.psu_step_id is not None:
+        serialised["psuStepId"] = bundle.psu_step_id
+    if bundle.token_endpoint_auth_method is not None:
+        serialised["tokenEndpointAuthMethod"] = bundle.token_endpoint_auth_method
+    return serialised
+
+
+def _serialize_step_requirement(requirement: AuthStepRequirement) -> JsonObject:
+    """Convert one selected step-to-bundle mapping to JSON evidence.
+
+    Args:
+        requirement: Step requirement mapping to serialise.
+
+    Returns:
+        JSON object containing the selected step id and bundle id.
+    """
+    return {"stepId": requirement.step_id, "bundleId": requirement.bundle_id}
+
+
+def _select_inventory_for_steps(
+    inventory: AuthBundleInventory,
+    *,
+    selected_step_ids: frozenset[str],
+) -> AuthBundleInventory:
+    """Filter auth inventory to selected-plan step mappings and relevant bundles.
+
+    Args:
+        inventory: Parsed manifest auth bundle inventory.
+        selected_step_ids: Selected/executed step ids for the run plan.
+
+    Returns:
+        Inventory containing only selected step requirements and bundles that are
+        directly referenced by selected steps.
+    """
+    if not selected_step_ids:
+        return inventory
+    selected_requirements = tuple(req for req in inventory.step_requirements if req.step_id in selected_step_ids)
+    selected_bundle_ids = {req.bundle_id for req in selected_requirements}
+    selected_bundles = tuple(
+        bundle
+        for bundle in inventory.bundles
+        if (
+            bundle.id in selected_bundle_ids
+            or bundle.token_step_id in selected_step_ids
+            or (bundle.consent_step_id is not None and bundle.consent_step_id in selected_step_ids)
+            or (bundle.psu_step_id is not None and bundle.psu_step_id in selected_step_ids)
+            or any(step_id in selected_step_ids for step_id in bundle.consuming_step_ids)
+        )
+    )
+    return AuthBundleInventory(bundles=selected_bundles, step_requirements=selected_requirements)
+
+
+def _safe_auth_inventory_for_evidence(
+    *,
+    manifest: Manifest,
+    selected_step_ids: frozenset[str],
+) -> AuthBundleInventory | None:
+    """Return a validated selected-step auth inventory safe for result/log output.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        selected_step_ids: Selected/executed step ids for the run plan.
+
+    Returns:
+        Validated selected-step auth inventory, or ``None`` when the manifest
+        has no auth metadata or the metadata fails validation.
+    """
+    if manifest.auth_inventory is None:
+        return None
+    selected_inventory = _select_inventory_for_steps(manifest.auth_inventory, selected_step_ids=selected_step_ids)
+    known_step_ids = frozenset(step.id for step in manifest.steps)
+    try:
+        validate_inventory(selected_inventory, known_step_ids=known_step_ids)
+    except AuthBundleError:
+        return None
+    return selected_inventory
+
+
+def _build_auth_metadata_evidence(
+    *,
+    manifest: Manifest,
+    selected_step_ids: frozenset[str],
+) -> JsonObject | None:
+    """Build non-secret auth metadata evidence for result JSON and execution logs.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        selected_step_ids: Selected/executed step ids for the run plan.
+
+    Returns:
+        Auth metadata evidence block, or ``None`` when metadata is unavailable
+        or unsafe.
+    """
+    safe_inventory = _safe_auth_inventory_for_evidence(manifest=manifest, selected_step_ids=selected_step_ids)
+    if safe_inventory is None:
+        return None
+    return {
+        "bundles": [_serialize_auth_bundle(bundle) for bundle in safe_inventory.bundles],
+        "selectedStepRequirements": [
+            _serialize_step_requirement(requirement) for requirement in safe_inventory.step_requirements
+        ],
+    }
+
+
+def _bundle_psu_mode(
+    *,
+    bundle: AuthBundleDeclaration,
+    manifest: Manifest,
+) -> Literal["manual", "headless"] | None:
+    """Resolve the PSU mode for one auth bundle from manifest PSU step metadata.
+
+    Args:
+        bundle: Auth bundle declaration whose PSU mode is required.
+        manifest: Parsed manifest containing step definitions.
+
+    Returns:
+        ``manual`` or ``headless`` when the bundle references a PSU step;
+        otherwise ``None``.
+    """
+    if bundle.psu_step_id is None:
+        return None
+    step_by_id = {step.id: step for step in manifest.steps}
+    psu_step = step_by_id.get(bundle.psu_step_id)
+    if isinstance(psu_step, PsuAuthorizationStep):
+        return psu_step.mode
+    return None
+
+
+def _serialize_suite_capability(capability: SuiteEnvironmentCapability | None) -> JsonObject | None:
+    """Convert suite capability metadata into JSON-safe evidence.
+
+    Args:
+        capability: Suite capability declaration returned by evaluation.
+
+    Returns:
+        JSON object with non-secret capability metadata, or ``None`` when the
+        suite key has no capability row.
+    """
+    if capability is None:
+        return None
+    return {
+        "standard": capability.standard,
+        "specVersion": capability.spec_version,
+        "api": capability.api,
+        "suite": capability.suite,
+        "supportedPsuModes": cast("JsonValue", sorted(capability.supported_psu_modes)),
+        "supportedTokenEndpointAuthMethods": cast(
+            "JsonValue",
+            sorted(capability.supported_token_endpoint_auth_methods),
+        ),
+        "mtlsRequirement": capability.mtls_requirement,
+        "fapiSigningRequirement": capability.fapi_signing_requirement,
+        "redirectUriRequirement": capability.redirect_uri_requirement,
+        "resourceBaseUrlRequirement": capability.resource_base_url_requirement,
+    }
+
+
+def _serialize_capability_evaluation(
+    *,
+    bundle_id: str | None,
+    psu_mode: str | None,
+    token_endpoint_auth_method: str | None,
+    evaluation: CapabilityEvaluation,
+) -> JsonObject:
+    """Convert one compatibility evaluation to participant-safe JSON evidence.
+
+    Args:
+        bundle_id: Optional auth bundle identifier driving this decision.
+        psu_mode: Optional selected PSU mode for this decision.
+        token_endpoint_auth_method: Optional selected token-endpoint client-auth
+            method for this decision.
+        evaluation: Capability evaluation outcome.
+
+    Returns:
+        JSON object containing support status, blockers, warnings, selected auth
+        inputs, and matched suite capability metadata.
+    """
+    decision: JsonObject = {
+        "support": evaluation.support,
+        "blockers": list(evaluation.blockers),
+        "warnings": list(evaluation.warnings),
+    }
+    if bundle_id is not None:
+        decision["bundleId"] = bundle_id
+    if psu_mode is not None or token_endpoint_auth_method is not None:
+        auth_inputs: JsonObject = {}
+        if psu_mode is not None:
+            auth_inputs["psuMode"] = psu_mode
+        if token_endpoint_auth_method is not None:
+            auth_inputs["tokenEndpointAuthMethod"] = token_endpoint_auth_method
+        decision["authInputs"] = auth_inputs
+    suite_capability = _serialize_suite_capability(evaluation.suite_capability)
+    if suite_capability is not None:
+        decision["suiteCapability"] = suite_capability
+    return decision
+
+
+def _build_environment_capability_evidence(
+    *,
+    manifest: Manifest,
+    suite_metadata: SuiteMetadata | None,
+    environment: str,
+    runtime_config: RuntimeConfig | None,
+    selected_step_ids: frozenset[str],
+) -> JsonObject | None:
+    """Build suite/environment capability-decision evidence for this run.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        suite_metadata: Optional metadata for a config-resolved bundled suite.
+        environment: Run environment label.
+        runtime_config: Optional runtime config carrying discovery/environment
+            values for preset matching.
+        selected_step_ids: Selected/executed step ids for the run plan.
+
+    Returns:
+        Capability-decision evidence block, or ``None`` when suite metadata is
+        unavailable.
+    """
+    if suite_metadata is None:
+        return None
+    environment_reference = _resolve_environment_reference(environment=environment, runtime_config=runtime_config)
+    suite_selection = suite_metadata.to_suite_selection()
+    safe_inventory = _safe_auth_inventory_for_evidence(manifest=manifest, selected_step_ids=selected_step_ids)
+    decisions: list[JsonObject] = []
+    if safe_inventory is None or not safe_inventory.bundles:
+        decisions.append(
+            _serialize_capability_evaluation(
+                bundle_id=None,
+                psu_mode=None,
+                token_endpoint_auth_method=None,
+                evaluation=evaluate_suite_environment_support(
+                    selection=suite_selection,
+                    environment=environment_reference,
+                ),
+            )
+        )
+    else:
+        for bundle in safe_inventory.bundles:
+            psu_mode = _bundle_psu_mode(bundle=bundle, manifest=manifest)
+            decision = evaluate_suite_environment_support(
+                selection=suite_selection,
+                environment=environment_reference,
+                psu_mode=psu_mode,
+                token_endpoint_auth_method=bundle.token_endpoint_auth_method,
+            )
+            decisions.append(
+                _serialize_capability_evaluation(
+                    bundle_id=bundle.id,
+                    psu_mode=psu_mode,
+                    token_endpoint_auth_method=bundle.token_endpoint_auth_method,
+                    evaluation=decision,
+                )
+            )
+    return {
+        "suiteSelection": {
+            "standard": suite_selection.standard,
+            "specVersion": suite_selection.spec_version,
+            "profile": suite_selection.profile,
+            "api": suite_selection.api,
+            "suite": suite_selection.suite,
+        },
+        "environment": {
+            "source": environment_reference.source,
+            "key": environment_reference.key,
+            "label": environment_reference.label,
+        },
+        "decisions": cast("JsonValue", decisions),
+    }
+
+
 def run_manifest(
     manifest: Manifest,
     *,
@@ -265,13 +600,30 @@ def run_manifest(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
+    effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
+    selected_step_ids = (
+        frozenset(effective_plan.selected_step_ids())
+        if manifest.schema_version == "v1"
+        else frozenset(step.id for step in manifest.steps)
+    )
+    auth_metadata_evidence = _build_auth_metadata_evidence(manifest=manifest, selected_step_ids=selected_step_ids)
+    environment_capability_evidence = _build_environment_capability_evidence(
+        manifest=manifest,
+        suite_metadata=suite_metadata,
+        environment=environment,
+        runtime_config=runtime_config,
+        selected_step_ids=selected_step_ids,
+    )
     run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
     if suite_metadata is not None:
         run_started_payload["suite"] = suite_metadata.to_json_object()
     logger_sink.emit("run-started", payload=run_started_payload)
+    if auth_metadata_evidence is not None:
+        logger_sink.emit("auth-metadata-evaluated", payload=auth_metadata_evidence)
+    if environment_capability_evidence is not None:
+        logger_sink.emit("environment-capability-evaluated", payload=environment_capability_evidence)
     try:
         if manifest.schema_version == "v1":
-            effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
             result = _run_manifest_v1(
                 manifest,
                 environment=environment,
@@ -285,6 +637,8 @@ def run_manifest(
                 mtls_client_configured=mtls_client_configured,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
+                auth_metadata_evidence=auth_metadata_evidence,
+                environment_capability_evidence=environment_capability_evidence,
             )
         else:
             result = _run_manifest_v0(
@@ -297,6 +651,8 @@ def run_manifest(
                 runtime_config=runtime_config,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
+                auth_metadata_evidence=auth_metadata_evidence,
+                environment_capability_evidence=environment_capability_evidence,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -406,6 +762,8 @@ def _run_manifest_v1(
     mtls_client_configured: bool,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
+    auth_metadata_evidence: Mapping[str, JsonValue] | None,
+    environment_capability_evidence: Mapping[str, JsonValue] | None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -446,6 +804,10 @@ def _run_manifest_v1(
             config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
+        auth_metadata_evidence: Optional non-secret auth metadata evidence
+            emitted for selected steps in this run.
+        environment_capability_evidence: Optional non-secret suite/environment
+            capability decisions emitted for this run.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -503,6 +865,8 @@ def _run_manifest_v1(
         suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
         certification_coverage=manifest.certification_coverage,
+        auth_metadata_evidence=auth_metadata_evidence,
+        environment_capability_evidence=environment_capability_evidence,
     )
 
 
@@ -2190,6 +2554,8 @@ def _run_manifest_v0(
     runtime_config: RuntimeConfig | None,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
+    auth_metadata_evidence: Mapping[str, JsonValue] | None,
+    environment_capability_evidence: Mapping[str, JsonValue] | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -2215,6 +2581,10 @@ def _run_manifest_v0(
             config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
+        auth_metadata_evidence: Optional non-secret auth metadata evidence
+            emitted for selected steps in this run.
+        environment_capability_evidence: Optional non-secret suite/environment
+            capability decisions emitted for this run.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -2320,6 +2690,8 @@ def _run_manifest_v0(
         started_at=started_at,
         suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
+        auth_metadata_evidence=auth_metadata_evidence,
+        environment_capability_evidence=environment_capability_evidence,
     )
 
 

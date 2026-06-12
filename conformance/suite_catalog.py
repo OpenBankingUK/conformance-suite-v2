@@ -71,6 +71,26 @@ class SuiteMetadata:
             "suite": self.suite,
         }
 
+    def to_suite_selection(self) -> SuiteSelection:
+        """Build a :class:`~conformance.model_bank_config.SuiteSelection` from this metadata.
+
+        Convenience accessor that converts the catalog metadata fields into a
+        :class:`~conformance.model_bank_config.SuiteSelection` value, allowing
+        callers to resolve environment capability data via
+        :func:`conformance.environment_capabilities.resolve_suite_environment_capability`
+        without having to re-construct the selection key manually.
+
+        Returns:
+            Suite selection whose key fields match this catalog metadata row.
+        """
+        return SuiteSelection(
+            standard=self.standard,
+            spec_version=self.spec_version,
+            profile=self.profile,
+            api=self.api,
+            suite=self.suite,
+        )
+
 
 @dataclass(frozen=True)
 class ResolvedSuite:

@@ -539,3 +539,21 @@ def test_buffered_logger_masks_psu_authorization_url_payload_fields() -> None:
     assert payload["client_id"] == "***"  # noqa: S105 — masked sentinel, not a real secret
     assert payload["request_object"] == "***"  # noqa: S105 — masked sentinel, not a real secret
     assert payload["state"] == "s" * 32
+
+
+@pytest.mark.unit
+def test_buffered_logger_supports_auth_and_capability_evidence_event_types() -> None:
+    """Auth/capability evidence events are accepted and serialised."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit(
+        "auth-metadata-evaluated",
+        payload={"bundles": [{"id": "ais"}], "selectedStepRequirements": [{"stepId": "x", "bundleId": "ais"}]},
+    )
+    logger.emit(
+        "environment-capability-evaluated",
+        payload={"decisions": [{"support": "supported", "blockers": [], "warnings": []}]},
+    )
+
+    events = logger.events()
+    assert events[0].type == "auth-metadata-evaluated"
+    assert events[1].type == "environment-capability-evaluated"

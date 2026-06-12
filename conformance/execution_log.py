@@ -19,6 +19,7 @@ release artefact's only protection).
 
 Event taxonomy (``type`` field):
     run-started, run-completed,
+    auth-metadata-evaluated, environment-capability-evaluated,
     step-started, step-completed, step-deselected,
     request-sent, response-received,
     assertion-evaluated,
@@ -49,6 +50,8 @@ logger = logging.getLogger(__name__)
 EventType = Literal[
     "run-started",
     "run-completed",
+    "auth-metadata-evaluated",
+    "environment-capability-evaluated",
     "step-started",
     "step-completed",
     "step-deselected",

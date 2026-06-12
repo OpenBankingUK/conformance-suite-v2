@@ -195,7 +195,7 @@ Generated reports carry the metadata consumed by the validator as top-level fiel
 }
 ```
 
-The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy.
+The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy. For complete-suite reports it also checks submitted `authMetadata` and `environmentCapabilities` evidence against the manifest and catalog metadata; partial manifests still fail on coverage before those evidence blocks can matter.
 
 Participant config may include optional `approvedReleasePolicyPath` to populate the generated report's advisory `certificationEligibility.approvedRelease` block. CLI config resolves the path relative to the config file directory; API and browser-submitted config resolves it relative to the process working directory. In both cases the path must remain inside that root and point to an existing JSON file. Policy absence and unapproved `tool.version` values both make the participant-side `certificationEligibility.eligible` value `false`, with reasons retained in the report for audit/debugging. This participant self-assessment is useful feedback, but it is not trusted for certification decisions; OBL-side validation still supplies its own policy and recomputes the result.
 
@@ -405,6 +405,8 @@ Every CLI and REST API run produces a structured **execution log** in [NDJSON](h
 | `request-sent` | Before each outbound HTTP request, with the masked request evidence. |
 | `response-received` | After each HTTP response (status code + URL only; bodies are captured in the result file, not duplicated in the log). |
 | `assertion-evaluated` | One event per declared assertion (re-read from `details.assertions`; never re-evaluated). |
+| `auth-metadata-evaluated` | After auth-bundle inventory is derived from manifest `authMetadata` and filtered to selected steps. Payload includes non-secret bundle ids and selected-step requirements. |
+| `environment-capability-evaluated` | After suite/environment compatibility is evaluated. Payload includes support, warnings, and blockers for the selected environment. |
 | `placeholder-error` | Manifest placeholder could not be resolved (`payload.location` is `url` / `headers` / `body`, or `reason: "missing-predecessor-response"` for skipped steps). |
 | `application-error` | Transport failure or other engine-side exception. Step-scoped occurrences (with a `step_id`) are non-terminal — the run continues and `run-completed` is still emitted. A top-level occurrence (no `step_id`) is terminal: the engine re-raises immediately afterwards and `run-completed` will not appear. |
 
@@ -458,7 +460,7 @@ Run the local Django server and open `http://localhost:8443/plan/`:
 make dev
 ```
 
-The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. The guided-flow selector can populate known model-bank environment and discovery values while still leaving those fields editable for custom endpoints. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification.
+The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. The guided-flow selector can populate known model-bank environment and discovery values while still leaving those fields editable for custom endpoints. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification. The preview also shows auth-bundle inventory plus capability blockers and warnings before launch.
 
 Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and browser-accessible links to masked JSON/NDJSON outputs. The loopback-guarded REST API still exposes the same masked result and log for automation. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
 
@@ -477,6 +479,8 @@ Manual `psu-authorization` steps can be previewed and launched from the browser 
 ```
 
 `certificationEligibility` gains two related fields: `mandatoryDeselected` (count) and `mandatoryDeselectedStepIds` (ordered list). Whenever `mandatoryDeselected > 0` the run is **not eligible** and the dedicated reason `"Mandatory steps were deselected from the plan"` takes precedence over every other failure reason — a mandatory step that never ran cannot demonstrate coverage, regardless of why.
+
+When present, result JSON also carries top-level `authMetadata` and `environmentCapabilities` blocks. `authMetadata` echoes the non-secret bundle inventory and selected-step requirements used for the run; `environmentCapabilities` records the evaluated environment support decisions. Those blocks are used by the validator for complete-suite evidence checks and remain omitted when a run has no auth or capability evidence to report.
 
 ## PSU Authorization Callback Coordination
 

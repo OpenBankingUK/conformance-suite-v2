@@ -11,15 +11,52 @@
         "url": "${config.discoveryUrl}"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "json_field", "path": "issuer", "rule": "string"},
-        {"type": "json_field", "path": "issuer", "rule": "https_url"},
-        {"type": "json_field", "path": "authorization_endpoint", "rule": "https_url"},
-        {"type": "json_field", "path": "token_endpoint", "rule": "https_url"},
-        {"type": "json_field", "path": "jwks_uri", "rule": "https_url"},
-        {"type": "json_field", "path": "response_types_supported", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "response_types_supported", "rule": "min_items", "minItems": 1}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "authorization_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "token_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "jwks_uri",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "response_types_supported",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "response_types_supported",
+          "rule": "min_items",
+          "minItems": 1
+        }
       ],
       "mandatory": true
     },
@@ -31,12 +68,38 @@
         "url": "${steps.openid-discovery.response.body.jwks_uri}"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "json"},
-        {"type": "json_field", "path": "keys", "rule": "array"},
-        {"type": "json_field", "path": "keys", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "keys", "rule": "all_items_have_field", "field": "kty"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "json"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "min_items",
+          "minItems": 1
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "all_items_have_field",
+          "field": "kty"
+        }
       ],
       "mandatory": true
     },
@@ -62,11 +125,35 @@
         "source": "fapi-signing"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "json_field", "path": "access_token", "rule": "string"},
-        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
-        {"type": "json_field", "path": "expires_in", "rule": "number"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "access_token",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "token_type",
+          "rule": "one_of",
+          "values": [
+            "Bearer",
+            "bearer"
+          ]
+        },
+        {
+          "type": "json_field",
+          "path": "expires_in",
+          "rule": "number"
+        }
       ],
       "mandatory": true
     },
@@ -110,12 +197,36 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 201},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data.ConsentId", "rule": "string"},
-        {"type": "json_field", "path": "Data.Permissions", "rule": "array"},
-        {"type": "json_field", "path": "Risk", "rule": "object"}
+        {
+          "type": "http_status",
+          "expected": 201
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ConsentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Permissions",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Risk",
+          "rule": "object"
+        }
       ],
       "mandatory": true
     },
@@ -160,11 +271,35 @@
         "source": "fapi-signing"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "json_field", "path": "access_token", "rule": "string"},
-        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
-        {"type": "json_field", "path": "expires_in", "rule": "number"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "access_token",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "token_type",
+          "rule": "one_of",
+          "values": [
+            "Bearer",
+            "bearer"
+          ]
+        },
+        {
+          "type": "json_field",
+          "path": "expires_in",
+          "rule": "number"
+        }
       ],
       "mandatory": true
     },
@@ -180,15 +315,54 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Account", "rule": "array"},
-        {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "min_items",
+          "minItems": 1
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "all_items_have_field",
+          "field": "AccountId"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "schemaRef": "#/components/schemas/OBReadAccount6"
+        }
       ],
       "mandatory": true
     },
@@ -204,15 +378,54 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Account", "rule": "array"},
-        {"type": "json_field", "path": "Data.Account", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "Data.Account", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Account", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "min_items",
+          "minItems": 1
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Account",
+          "rule": "all_items_have_field",
+          "field": "AccountId"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "schemaRef": "#/components/schemas/OBReadAccount6"
+        }
       ],
       "mandatory": true
     },
@@ -228,17 +441,66 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "array"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "non_empty_array"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "min_items", "minItems": 1},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadBalance1"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "non_empty_array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "min_items",
+          "minItems": 1
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "Type"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "Amount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "CreditDebitIndicator"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "schemaRef": "#/components/schemas/OBReadBalance1"
+        }
       ],
       "mandatory": true
     },
@@ -268,12 +530,36 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 201},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data.ConsentId", "rule": "string"},
-        {"type": "json_field", "path": "Data.Permissions", "rule": "array"},
-        {"type": "json_field", "path": "Risk", "rule": "object"}
+        {
+          "type": "http_status",
+          "expected": 201
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ConsentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Permissions",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Risk",
+          "rule": "object"
+        }
       ],
       "mandatory": true
     },
@@ -318,11 +604,35 @@
         "source": "fapi-signing"
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "json_field", "path": "access_token", "rule": "string"},
-        {"type": "json_field", "path": "token_type", "rule": "one_of", "values": ["Bearer", "bearer"]},
-        {"type": "json_field", "path": "expires_in", "rule": "number"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "access_token",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "token_type",
+          "rule": "one_of",
+          "values": [
+            "Bearer",
+            "bearer"
+          ]
+        },
+        {
+          "type": "json_field",
+          "path": "expires_in",
+          "rule": "number"
+        }
       ],
       "mandatory": true
     },
@@ -338,21 +648,97 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "TransactionInformation"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "MerchantDetails"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAgent"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAccount"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAgent"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAccount"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateCreditor"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateDebtor"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "bodyPath": "Data.Transaction", "schema": {"type": "array", "items": {"$ref": "#/components/schemas/OBTransaction6Basic"}}}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "TransactionInformation"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "Balance"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "MerchantDetails"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "CreditorAgent"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "CreditorAccount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "DebtorAgent"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "DebtorAccount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "UltimateCreditor"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "UltimateDebtor"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "bodyPath": "Data.Transaction",
+          "schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OBTransaction6Basic"
+            }
+          }
+        }
       ],
       "mandatory": true
     },
@@ -368,17 +754,67 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadTransaction6"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "AccountId"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "CreditDebitIndicator"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "Status"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "BookingDateTime"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "Amount"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "schemaRef": "#/components/schemas/OBReadTransaction6"
+        }
       ],
       "mandatory": true
     },
@@ -394,17 +830,67 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "AccountId"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "CreditDebitIndicator"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Status"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "BookingDateTime"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadTransaction6"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "AccountId"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "CreditDebitIndicator"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "Status"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "BookingDateTime"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_have_field",
+          "field": "Amount"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "schemaRef": "#/components/schemas/OBReadTransaction6"
+        }
       ],
       "mandatory": true
     },
@@ -420,21 +906,97 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "array"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "TransactionInformation"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "Balance"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "MerchantDetails"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAgent"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "CreditorAccount"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAgent"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "DebtorAccount"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateCreditor"},
-        {"type": "json_field", "path": "Data.Transaction", "rule": "all_items_absent_field", "field": "UltimateDebtor"},
-        {"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "bodyPath": "Data.Transaction", "schema": {"type": "array", "items": {"$ref": "#/components/schemas/OBTransaction6Basic"}}}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "TransactionInformation"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "Balance"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "MerchantDetails"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "CreditorAgent"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "CreditorAccount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "DebtorAgent"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "DebtorAccount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "UltimateCreditor"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Transaction",
+          "rule": "all_items_absent_field",
+          "field": "UltimateDebtor"
+        },
+        {
+          "type": "response_schema",
+          "source": "bundled_openapi",
+          "document": "ob-read-write-v4.0-account-info-openapi",
+          "bodyPath": "Data.Transaction",
+          "schema": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/OBTransaction6Basic"
+            }
+          }
+        }
       ],
       "optional": true
     },
@@ -450,14 +1012,49 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "array"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Type"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "Amount"},
-        {"type": "json_field", "path": "Data.Balance", "rule": "all_items_have_field", "field": "CreditDebitIndicator"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "array"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "Type"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "Amount"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Balance",
+          "rule": "all_items_have_field",
+          "field": "CreditDebitIndicator"
+        }
       ],
       "optional": true
     },
@@ -473,11 +1070,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Beneficiary", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Beneficiary",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -493,11 +1110,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Beneficiary", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Beneficiary",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -513,11 +1150,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.DirectDebit", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.DirectDebit",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -533,11 +1190,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.DirectDebit", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.DirectDebit",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -553,11 +1230,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Offer", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Offer",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -573,11 +1270,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Offer", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Offer",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -593,11 +1310,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Party", "rule": "object"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Party",
+          "rule": "object"
+        }
       ],
       "optional": true
     },
@@ -613,11 +1350,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Party", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Party",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -633,11 +1390,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Party", "rule": "object"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Party",
+          "rule": "object"
+        }
       ],
       "optional": true
     },
@@ -653,11 +1430,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Product", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Product",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -673,11 +1470,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Product", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Product",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -693,11 +1510,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.ScheduledPayment", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ScheduledPayment",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -713,11 +1550,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.ScheduledPayment", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ScheduledPayment",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -733,11 +1590,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.StandingOrder", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.StandingOrder",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -753,11 +1630,31 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.StandingOrder", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.StandingOrder",
+          "rule": "array"
+        }
       ],
       "optional": true
     },
@@ -773,13 +1670,213 @@
         }
       },
       "assertions": [
-        {"type": "http_status", "expected": 200},
-        {"type": "header", "name": "content-type", "rule": "contains", "value": "application/json"},
-        {"type": "header", "name": "x-fapi-interaction-id", "rule": "present"},
-        {"type": "json_field", "path": "Data", "rule": "object"},
-        {"type": "json_field", "path": "Data.Statement", "rule": "array"}
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data",
+          "rule": "object"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Statement",
+          "rule": "array"
+        }
       ],
       "optional": true
     }
-  ]
+  ],
+  "authMetadata": {
+    "bundles": [
+      {
+        "id": "ais-protected-resource",
+        "tokenStepId": "token-exchange",
+        "consentStepId": "account-access-consent",
+        "psuStepId": "psu-authorization",
+        "requiredScopes": [
+          "openid",
+          "accounts"
+        ],
+        "requiredObPermissions": [
+          "ReadAccountsBasic",
+          "ReadAccountsDetail",
+          "ReadBalances",
+          "ReadBeneficiariesBasic",
+          "ReadDirectDebits",
+          "ReadOffers",
+          "ReadParty",
+          "ReadPartyPSU",
+          "ReadProducts",
+          "ReadScheduledPaymentsBasic",
+          "ReadScheduledPaymentsDetail",
+          "ReadStandingOrdersBasic",
+          "ReadStandingOrdersDetail",
+          "ReadStatementsBasic",
+          "ReadTransactionsBasic",
+          "ReadTransactionsCredits",
+          "ReadTransactionsDebits",
+          "ReadTransactionsDetail"
+        ],
+        "excludedObPermissions": [],
+        "consumingStepIds": [
+          "accounts-list",
+          "account-detail",
+          "account-balances",
+          "account-transactions",
+          "transactions-list",
+          "balances-list",
+          "account-beneficiaries",
+          "beneficiaries-list",
+          "account-direct-debits",
+          "direct-debits-list",
+          "account-offers",
+          "offers-list",
+          "account-party",
+          "account-parties",
+          "party-list",
+          "account-product",
+          "products-list",
+          "account-scheduled-payments",
+          "scheduled-payments-list",
+          "account-standing-orders",
+          "standing-orders-list",
+          "statements-list"
+        ],
+        "capabilityRefs": []
+      },
+      {
+        "id": "ais-transactions-basic",
+        "tokenStepId": "token-exchange-transactions-basic",
+        "consentStepId": "account-access-consent-transactions-basic",
+        "psuStepId": "psu-authorization-transactions-basic",
+        "requiredScopes": [
+          "openid",
+          "accounts"
+        ],
+        "requiredObPermissions": [
+          "ReadAccountsBasic",
+          "ReadTransactionsBasic",
+          "ReadTransactionsDebits",
+          "ReadTransactionsCredits"
+        ],
+        "excludedObPermissions": [],
+        "consumingStepIds": [
+          "account-transactions-basic",
+          "transactions-list-basic"
+        ],
+        "capabilityRefs": []
+      }
+    ],
+    "stepRequirements": [
+      {
+        "stepId": "accounts-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-detail",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-balances",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-transactions",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "transactions-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "balances-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-beneficiaries",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "beneficiaries-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-direct-debits",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "direct-debits-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-offers",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "offers-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-party",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-parties",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "party-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-product",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "products-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-scheduled-payments",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "scheduled-payments-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-standing-orders",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "standing-orders-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "statements-list",
+        "bundleId": "ais-protected-resource"
+      },
+      {
+        "stepId": "account-transactions-basic",
+        "bundleId": "ais-transactions-basic"
+      },
+      {
+        "stepId": "transactions-list-basic",
+        "bundleId": "ais-transactions-basic"
+      }
+    ]
+  }
 }

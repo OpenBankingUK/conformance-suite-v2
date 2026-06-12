@@ -110,6 +110,12 @@ class SmokeCheckResult:
             certification eligibility model. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        auth_metadata_evidence: Optional non-secret auth-bundle evidence block
+            derived from manifest ``authMetadata`` and filtered by the selected
+            or executed plan.
+        environment_capability_evidence: Optional non-secret environment
+            capability decisions describing suite/auth/environment compatibility
+            for this run.
     """
 
     environment: str
@@ -122,6 +128,8 @@ class SmokeCheckResult:
     approved_release_policy: ApprovedReleasePolicy | None = None
     suite_metadata: SuiteMetadata | None = None
     certification_coverage: CertificationCoverage = "partial"
+    auth_metadata_evidence: Mapping[str, JsonValue] | None = None
+    environment_capability_evidence: Mapping[str, JsonValue] | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -157,6 +165,10 @@ class SmokeCheckResult:
             body["suite"] = self.suite_metadata.to_json_object()
         if self.plan_summary is not None:
             body["plan"] = dict(self.plan_summary)
+        if self.auth_metadata_evidence is not None:
+            body["authMetadata"] = deepcopy(dict(self.auth_metadata_evidence))
+        if self.environment_capability_evidence is not None:
+            body["environmentCapabilities"] = deepcopy(dict(self.environment_capability_evidence))
         return body
 
 
@@ -169,6 +181,8 @@ def build_smoke_check_result(
     approved_release_policy: ApprovedReleasePolicy | None = None,
     suite_metadata: SuiteMetadata | None = None,
     certification_coverage: CertificationCoverage = "partial",
+    auth_metadata_evidence: Mapping[str, JsonValue] | None = None,
+    environment_capability_evidence: Mapping[str, JsonValue] | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -194,6 +208,11 @@ def build_smoke_check_result(
             v0 manifest callers are safe by default. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        auth_metadata_evidence: Optional non-secret auth-bundle evidence block
+            derived from manifest ``authMetadata``.
+        environment_capability_evidence: Optional non-secret environment
+            capability decisions for the selected suite/auth/environment
+            combination.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -220,6 +239,8 @@ def build_smoke_check_result(
         approved_release_policy=approved_release_policy,
         suite_metadata=suite_metadata,
         certification_coverage=certification_coverage,
+        auth_metadata_evidence=auth_metadata_evidence,
+        environment_capability_evidence=environment_capability_evidence,
     )
 
 

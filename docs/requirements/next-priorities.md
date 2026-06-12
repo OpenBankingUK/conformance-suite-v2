@@ -39,11 +39,12 @@ Each blocker should become one or more agent slices only after the affected rows
 
 Why third: negative flows, basic/detail variants, headless PSU, mTLS, and guided UI all depend on explicit auth modelling.
 
+Status: implemented. Manifest `authMetadata`, environment capability presets, and selected-step-to-auth-bundle mappings now flow through plan preview, result evidence, and validator inputs.
+
 Outputs:
 
-- auth bundle metadata shape
-- environment capability metadata shape
-- model-bank capability presets
+- authMetadata manifest contract
+- environmentCapabilities evidence and capability presets
 - selected-step-to-auth-bundle mapping in UI/report surfaces
 
 ## Priority 4: Visual plan builder and guided config revamp
@@ -87,4 +88,3 @@ Outputs:
 - PIS/CBPII/VRP/cVRP/DCR certifiable coverage should wait until the AIS method is proven, except for reusable primitives that also unblock AIS.
 - Phase 2 portal implementation should remain architecture constraints unless business priority changes.
 - Mobile QR code auth should remain a separate feature track until manual/headless/mTLS paths are clearer.
-

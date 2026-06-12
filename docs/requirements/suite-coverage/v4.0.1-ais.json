@@ -185,6 +185,6 @@
     "Map optional and conditional prior scripts to tree-view selection groups and opt-in plan rows.",
     "Confirm which v4.0 legacy benchmark records apply unchanged to v4.0.1.",
     "Add Standards-owned mandatory matrix rows and sign-off metadata.",
-    "Add validator expectations required before changing the suite to `certificationCoverage: complete`."
+    "Add validator expectations required before changing the suite to `certificationCoverage: complete`, including `authMetadata` and `environmentCapabilities` evidence parity."
   ]
 }

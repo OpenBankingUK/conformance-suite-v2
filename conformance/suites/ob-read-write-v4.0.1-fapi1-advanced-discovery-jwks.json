@@ -48,5 +48,19 @@
       ],
       "mandatory": true
     }
-  ]
+  ],
+  "authMetadata": {
+    "bundles": [
+      {
+        "id": "discovery-no-auth",
+        "tokenStepId": "openid-discovery",
+        "requiredScopes": [],
+        "requiredObPermissions": [],
+        "excludedObPermissions": [],
+        "consumingStepIds": [],
+        "capabilityRefs": []
+      }
+    ],
+    "stepRequirements": []
+  }
 }

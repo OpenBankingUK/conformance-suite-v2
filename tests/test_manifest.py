@@ -4,6 +4,7 @@ from typing import cast
 
 import pytest
 
+from conformance.auth_metadata import AuthBundleInventory
 from conformance.json_types import JsonValue
 from conformance.manifest import (
     CertificationCoverage,
@@ -1076,6 +1077,16 @@ def test_load_bundled_discovery_jwks_suite_is_partial(
         assert manifest.certification_coverage == "partial", (
             f"{suite_path.name} must have certificationCoverage: partial"
         )
+
+
+@pytest.mark.unit
+def test_load_bundled_suites_include_explicit_auth_metadata() -> None:
+    """Every bundled suite manifest should carry parsed auth metadata."""
+    suites_dir = REPO_ROOT / "conformance" / "suites"
+
+    for suite_path in suites_dir.glob("*.json"):
+        manifest = load_manifest(suite_path)
+        assert manifest.auth_inventory is not None, f"{suite_path.name} must declare authMetadata"
 
 
 @pytest.mark.unit
@@ -3237,4 +3248,403 @@ def test_parse_v1_psu_step_rejects_duplicate_id() -> None:
         ],
     }
     with pytest.raises(ManifestError, match=r"steps\[1\]\.id 'shared' is a duplicate"):
+        parse_manifest(raw_manifest)
+
+
+# ---------------------------------------------------------------------------
+# Auth metadata parsing tests
+# ---------------------------------------------------------------------------
+
+
+def _v1_manifest_with_auth_step() -> dict[str, JsonValue]:
+    """Return a minimal valid v1 manifest with one HTTP step.
+
+    Returns:
+        Base v1 manifest dict used by auth metadata tests.
+    """
+    return {
+        "schemaVersion": "v1",
+        "name": "auth-metadata test suite",
+        "steps": [
+            {
+                "id": "token-exchange",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://auth.example.com/token",
+                    "body": {"encoding": "form", "fields": {"grant_type": "client_credentials"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "get-accounts",
+                "name": "Get accounts",
+                "request": {
+                    "method": "GET",
+                    "url": "https://rs.example.com/open-banking/v4.0/aisp/accounts",
+                    "headers": {"Authorization": "Bearer ${tokens.ais.access_token}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+                "requiredTokenId": "ais",
+            },
+        ],
+    }
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_without_auth_metadata_has_none_inventory() -> None:
+    """Manifests without authMetadata must parse successfully with auth_inventory=None."""
+    raw_manifest = _v1_manifest_with_auth_step()
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.auth_inventory is None
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_with_minimal_auth_metadata() -> None:
+    """A v1 manifest with a valid authMetadata section must parse into AuthBundleInventory."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "consumingStepIds": ["get-accounts"],
+            }
+        ],
+        "stepRequirements": [{"stepId": "get-accounts", "bundleId": "ais"}],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert isinstance(manifest.auth_inventory, AuthBundleInventory)
+    assert len(manifest.auth_inventory.bundles) == 1
+    bundle = manifest.auth_inventory.bundles[0]
+    assert bundle.id == "ais"
+    assert bundle.token_step_id == "token-exchange"  # noqa: S105 — step id string, not a password
+    assert bundle.consent_step_id is None
+    assert bundle.psu_step_id is None
+    assert bundle.token_endpoint_auth_method is None
+    assert bundle.consuming_step_ids == ("get-accounts",)
+    assert bundle.required_scopes == ()
+    assert bundle.required_ob_permissions == ()
+    assert bundle.excluded_ob_permissions == ()
+    assert bundle.capability_refs == ()
+    assert len(manifest.auth_inventory.step_requirements) == 1
+    req = manifest.auth_inventory.step_requirements[0]
+    assert req.step_id == "get-accounts"
+    assert req.bundle_id == "ais"
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_with_full_auth_metadata() -> None:
+    """Auth bundle declaration with all optional fields populates every attribute."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais-detail",
+                "tokenStepId": "token-exchange",
+                "tokenEndpointAuthMethod": "private_key_jwt",
+                "requiredScopes": ["openid", "accounts"],
+                "requiredObPermissions": ["ReadAccountsDetail", "ReadBalances"],
+                "excludedObPermissions": [],
+                "consumingStepIds": ["get-accounts"],
+                "capabilityRefs": ["psu.manual"],
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.auth_inventory is not None
+    bundle = manifest.auth_inventory.bundles[0]
+    assert bundle.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105 — auth method label, not a password
+    assert bundle.required_scopes == ("openid", "accounts")
+    assert bundle.required_ob_permissions == ("ReadAccountsDetail", "ReadBalances")
+    assert bundle.excluded_ob_permissions == ()
+    assert bundle.capability_refs == ("psu.manual",)
+    assert manifest.auth_inventory.step_requirements == ()
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_tls_client_auth_method() -> None:
+    """``tls_client_auth`` is a valid token-endpoint auth method in bundle declarations."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "tokenEndpointAuthMethod": "tls_client_auth",
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.auth_inventory is not None
+    assert manifest.auth_inventory.bundles[0].token_endpoint_auth_method == "tls_client_auth"  # noqa: S105 — auth method label, not a password
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_unknown_step_in_consuming_ids() -> None:
+    """Consuming step ids referencing steps not declared in the manifest must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "consumingStepIds": ["not-a-real-step"],
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="unknown step id 'not-a-real-step'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_unknown_step_in_step_requirements() -> None:
+    """Step requirement referencing an undeclared step id must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+            }
+        ],
+        "stepRequirements": [{"stepId": "nonexistent-step", "bundleId": "ais"}],
+    }
+
+    with pytest.raises(ManifestError, match="unknown step id 'nonexistent-step'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_unknown_bundle_in_step_requirement() -> None:
+    """Step requirement referencing a bundle id not declared in the inventory must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+            }
+        ],
+        "stepRequirements": [{"stepId": "get-accounts", "bundleId": "no-such-bundle"}],
+    }
+
+    with pytest.raises(ManifestError, match="unknown bundle id 'no-such-bundle'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_duplicate_bundle_id() -> None:
+    """Two bundle declarations with the same id in one inventory must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {"id": "ais", "tokenStepId": "token-exchange"},
+            {"id": "ais", "tokenStepId": "token-exchange"},
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="Duplicate bundle id 'ais'"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_jwt_in_scope() -> None:
+    """JWT-shaped string in requiredScopes must be rejected as credential material."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    # Compact-serialisation JWT heuristic: aaa.bbb.ccc
+    jwt_like = "eyJhbGciOiJQUzI1NiJ9.eyJzdWIiOiJ0ZXN0In0.fakesig"  # pragma: allowlist secret
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "requiredScopes": [jwt_like],
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="credential material"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_pem_in_capability_ref() -> None:
+    """PEM block in capabilityRefs must be rejected as credential material."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "capabilityRefs": ["-----BEGIN PRIVATE KEY-----"],  # pragma: allowlist secret
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="credential material"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_bearer_token_in_ob_permission() -> None:
+    """Bearer-token-shaped string in requiredObPermissions must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "requiredObPermissions": ["Bearer supersecrettoken123"],
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="credential material"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_non_object_auth_metadata() -> None:
+    """authMetadata must be a JSON object, not an array or scalar."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = ["bundles"]
+
+    with pytest.raises(ManifestError, match="authMetadata must be a JSON object"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_empty_bundles_array() -> None:
+    """An empty bundles array must be rejected — at least one bundle is required."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {"bundles": [], "stepRequirements": []}
+
+    with pytest.raises(ManifestError, match="bundles must be a non-empty array"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_unknown_bundle_key() -> None:
+    """Unknown keys inside a bundle declaration object must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "unknownField": "bad",
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="Unknown .*field.*unknownField"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_unknown_top_level_key() -> None:
+    """Unknown keys inside the authMetadata object must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [{"id": "ais", "tokenStepId": "token-exchange"}],
+        "stepRequirements": [],
+        "extraField": "bad",
+    }
+
+    with pytest.raises(ManifestError, match="Unknown .*field.*extraField"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_invalid_auth_method() -> None:
+    """An unrecognised tokenEndpointAuthMethod value must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "tokenEndpointAuthMethod": "basic",
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="tokenEndpointAuthMethod must be one of"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v0_manifest_rejects_auth_metadata_key() -> None:
+    """authMetadata is a v1-only feature; v0 manifests must reject it as an unknown key."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v0",
+        "name": "Smoke check",
+        "tests": [
+            {
+                "id": "openid-discovery",
+                "name": "OpenID discovery",
+                "request": {
+                    "method": "GET",
+                    "url": "https://auth.example.com/.well-known/openid-configuration",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+        "authMetadata": {"bundles": [], "stepRequirements": []},
+    }
+
+    with pytest.raises(ManifestError, match="Unknown manifest field.*authMetadata"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_step_requirements_absent_defaults_to_empty() -> None:
+    """Omitting stepRequirements must produce an empty tuple on the inventory."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [{"id": "ais", "tokenStepId": "token-exchange"}],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    assert manifest.auth_inventory is not None
+    assert manifest.auth_inventory.step_requirements == ()
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_auth_metadata_rejects_overlapping_permissions() -> None:
+    """A permission appearing in both required and excluded lists must be rejected."""
+    raw_manifest = _v1_manifest_with_auth_step()
+    raw_manifest["authMetadata"] = {
+        "bundles": [
+            {
+                "id": "ais",
+                "tokenStepId": "token-exchange",
+                "requiredObPermissions": ["ReadAccountsDetail"],
+                "excludedObPermissions": ["ReadAccountsDetail"],
+            }
+        ],
+        "stepRequirements": [],
+    }
+
+    with pytest.raises(ManifestError, match="both required_ob_permissions and excluded_ob_permissions"):
         parse_manifest(raw_manifest)

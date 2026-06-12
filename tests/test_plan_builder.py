@@ -982,3 +982,469 @@ def test_preview_auth_inventory_splits_basic_and_detail_permission_bundles() -> 
     assert requirement_by_step["accounts-list"] == basic_bundle.id
     assert requirement_by_step["account-detail"] == detail_bundle.id
     assert basic_bundle.id != detail_bundle.id
+
+
+# ---------------------------------------------------------------------------
+# Explicit authMetadata tests
+# ---------------------------------------------------------------------------
+
+
+def _explicit_auth_metadata_manifest(
+    *,
+    selected_step_ids_in_reqs: list[str] | None = None,
+) -> dict[str, JsonValue]:
+    """Build a v1 manifest with explicit ``authMetadata`` for plan-builder tests.
+
+    The manifest contains a client-credentials token step, a consent step, PSU
+    step, authorization-code token step, and two protected resource steps.  The
+    ``authMetadata`` section declares one bundle covering both protected steps,
+    using the declared step ids directly rather than heuristic name matching.
+
+    Args:
+        selected_step_ids_in_reqs: Optional override for the step ids listed in
+            ``authMetadata.stepRequirements``.  Defaults to both resource steps.
+
+    Returns:
+        JSON object representing a v1 manifest with an ``authMetadata`` section.
+    """
+    reqs_step_ids: list[str] = selected_step_ids_in_reqs or ["resource-a", "resource-b"]
+    step_requirements: list[JsonValue] = [{"stepId": step_id, "bundleId": "ais-bundle"} for step_id in reqs_step_ids]
+    return {
+        "schemaVersion": "v1",
+        "name": "Explicit metadata manifest",
+        "steps": cast(
+            list[JsonValue],
+            [
+                {
+                    "id": "cc-token",
+                    "name": "Client credentials token",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://auth.example.com/token",
+                        "body": {
+                            "encoding": "form",
+                            "fields": {
+                                "grant_type": "client_credentials",
+                                "client_id": "client-123",
+                            },
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "consent-step",
+                    "name": "Create consent",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                        "headers": {
+                            "Authorization": "Bearer ${steps.cc-token.response.body.access_token}",
+                        },
+                        "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 201}],
+                    "mandatory": True,
+                },
+                {
+                    "kind": "psu-authorization",
+                    "id": "psu-step",
+                    "name": "PSU authorisation",
+                    "mode": "manual",
+                    "authorizationEndpoint": "https://auth.example.com/authorize",
+                    "clientId": "client-123",
+                    "redirectUri": "https://conformance.example.com/callback",
+                    "scope": "openid accounts",
+                    "requestObject": {
+                        "source": "fapi-signing",
+                        "openbankingIntentId": "${steps.consent-step.response.body.Data.ConsentId}",
+                    },
+                    "mandatory": True,
+                },
+                {
+                    "id": "auth-token",
+                    "name": "Authorization code token",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://auth.example.com/token",
+                        "body": {
+                            "encoding": "form",
+                            "fields": {
+                                "grant_type": "authorization_code",
+                                "code": "${steps.psu-step.response.body.code}",
+                            },
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "resource-a",
+                    "name": "Get resource A",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
+                        "headers": {
+                            "Authorization": "Bearer ${steps.auth-token.response.body.access_token}",
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "resource-b",
+                    "name": "Get resource B",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/123",
+                        "headers": {
+                            "Authorization": "Bearer ${steps.auth-token.response.body.access_token}",
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+            ],
+        ),
+        "authMetadata": {
+            "bundles": [
+                {
+                    "id": "ais-bundle",
+                    "tokenStepId": "auth-token",
+                    "consentStepId": "consent-step",
+                    "psuStepId": "psu-step",
+                    "requiredScopes": ["openid", "accounts"],
+                    "requiredObPermissions": ["ReadAccountsBasic"],
+                    "consumingStepIds": ["resource-a", "resource-b"],
+                }
+            ],
+            "stepRequirements": step_requirements,
+        },
+    }
+
+
+@pytest.mark.unit
+def test_explicit_auth_metadata_uses_declared_bundle_id_not_heuristics() -> None:
+    """Explicit authMetadata path uses declared bundle id without Basic/Detail heuristics."""
+    form = _bound_form(
+        _explicit_auth_metadata_manifest(),
+        selection_mode="select",
+        selected_step_ids=["cc-token", "consent-step", "psu-step", "auth-token", "resource-a", "resource-b"],
+    )
+
+    preview = _validated_preview(form)
+
+    assert len(preview.auth_inventory) == 1
+    bundle = preview.auth_inventory[0]
+    assert bundle.id == "ais-bundle"
+    assert bundle.token_step_id == "auth-token"  # noqa: S105 - manifest step id literal
+    assert bundle.consent_step_id == "consent-step"
+    assert bundle.required_scopes == ("openid", "accounts")
+    assert bundle.required_ob_permissions == ("ReadAccountsBasic",)
+    assert bundle.consuming_step_ids == ("resource-a", "resource-b")
+
+    step_req_ids = {req.step_id for req in preview.step_auth_requirements}
+    assert step_req_ids == {"resource-a", "resource-b"}
+    for req in preview.step_auth_requirements:
+        assert req.bundle_id == "ais-bundle"
+
+
+@pytest.mark.unit
+def test_explicit_auth_metadata_filters_deselected_steps_from_bundle() -> None:
+    """When a consuming step is deselected, the bundle omits it and step requirements are filtered."""
+    form = _bound_form(
+        _explicit_auth_metadata_manifest(),
+        selection_mode="deselect",
+        deselect_step_ids=["resource-b"],
+    )
+
+    preview = _validated_preview(form)
+
+    assert len(preview.auth_inventory) == 1
+    bundle = preview.auth_inventory[0]
+    assert bundle.id == "ais-bundle"
+    assert bundle.consuming_step_ids == ("resource-a",)
+
+    step_req_ids = {req.step_id for req in preview.step_auth_requirements}
+    assert step_req_ids == {"resource-a"}
+    assert "resource-b" not in step_req_ids
+
+
+@pytest.mark.unit
+def test_explicit_auth_metadata_excludes_bundle_when_all_consuming_steps_deselected() -> None:
+    """A bundle with all consuming steps deselected is excluded from auth_inventory."""
+    form = _bound_form(
+        _explicit_auth_metadata_manifest(),
+        selection_mode="deselect",
+        deselect_step_ids=["resource-a", "resource-b"],
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.auth_inventory == ()
+    assert preview.step_auth_requirements == ()
+
+
+@pytest.mark.unit
+def test_fallback_heuristic_used_when_no_explicit_auth_metadata() -> None:
+    """Manifests without authMetadata continue to use the heuristic inventory builder."""
+    # Use _auth_inventory_manifest which has no authMetadata section
+    form = _bound_form(
+        _auth_inventory_manifest(permissions=["ReadBalances"]),
+        selection_mode="select",
+        selected_step_ids=[
+            "openid-discovery",
+            "client-credentials-token",
+            "account-access-consent",
+            "psu-authorization",
+            "token-exchange",
+            "accounts-list",
+            "account-balances",
+        ],
+    )
+
+    preview = _validated_preview(form)
+
+    # Heuristic path uses sha256-based bundle id, not a declared name
+    assert len(preview.auth_inventory) == 1
+    bundle = preview.auth_inventory[0]
+    assert bundle.id.startswith("auth-token-exchange-")
+    assert bundle.token_step_id == "token-exchange"  # noqa: S105 - manifest step id
+    assert bundle.required_ob_permissions == ("ReadBalances",)
+
+
+@pytest.mark.unit
+def test_explicit_auth_metadata_no_name_heuristic_applied() -> None:
+    """Explicit metadata produces no Basic/Detail split — heuristic is suppressed."""
+    # Build a manifest with explicit authMetadata naming two steps with "list" and "detail"
+    # in their names; in the heuristic path these would be split into different bundles.
+    manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "No heuristic split manifest",
+        "steps": cast(
+            list[JsonValue],
+            [
+                {
+                    "id": "token",
+                    "name": "Token exchange",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://auth.example.com/token",
+                        "body": {
+                            "encoding": "form",
+                            "fields": {"grant_type": "client_credentials"},
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "accounts-list",
+                    "name": "Accounts list",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://resource.example.com/accounts",
+                        "headers": {
+                            "Authorization": "Bearer ${steps.token.response.body.access_token}",
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "account-detail",
+                    "name": "Account detail",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://resource.example.com/accounts/123",
+                        "headers": {
+                            "Authorization": "Bearer ${steps.token.response.body.access_token}",
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+            ],
+        ),
+        "authMetadata": {
+            "bundles": [
+                {
+                    "id": "single-bundle",
+                    "tokenStepId": "token",
+                    "requiredScopes": ["accounts"],
+                    "consumingStepIds": ["accounts-list", "account-detail"],
+                }
+            ],
+            "stepRequirements": [
+                {"stepId": "accounts-list", "bundleId": "single-bundle"},
+                {"stepId": "account-detail", "bundleId": "single-bundle"},
+            ],
+        },
+    }
+
+    form = _bound_form(
+        manifest,
+        selection_mode="select",
+        selected_step_ids=["token", "accounts-list", "account-detail"],
+    )
+    preview = _validated_preview(form)
+
+    # Explicit metadata: only one bundle despite list/detail names
+    assert len(preview.auth_inventory) == 1
+    assert preview.auth_inventory[0].id == "single-bundle"
+    assert set(preview.auth_inventory[0].consuming_step_ids) == {"accounts-list", "account-detail"}
+
+
+@pytest.mark.unit
+def test_preview_has_empty_capability_warnings_for_explicit_manifest() -> None:
+    """Explicit manifest (no suite_metadata) produces no capability warnings."""
+    form = _bound_form(_v1_manifest([_http_step("step-a", mandatory=True)]))
+
+    preview = _validated_preview(form)
+
+    assert preview.capability_warnings == ()
+
+
+@pytest.mark.unit
+def test_preview_capability_warnings_empty_for_catalog_suite_without_declaration() -> None:
+    """Catalog suite preview with custom environment and no declaration produces warnings only."""
+    # discovery-jwks suite — no PSU mode or token auth method required
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(SUITE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    # Custom environment without declaration — each unknown dimension is a warning
+    # discovery-jwks has no PSU or token-auth requirements, so only dimension
+    # warnings are generated (standard, spec_version, api, suite).
+    assert isinstance(preview.capability_warnings, tuple)
+    assert preview.launch_blockers == ()
+
+
+@pytest.mark.unit
+def test_discovery_suite_ignores_unrelated_fapi_signing_auth_method_for_capabilities() -> None:
+    """No-auth discovery suites must not inherit config-level token auth choices."""
+    config_with_signing: dict[str, JsonValue] = {
+        **SUITE_CONFIG,
+        "fapiSigning": {
+            "certificatePathRoot": ".",
+            "signingCertificatePath": "dummy-signing.crt",
+            "signingPrivateKeyPath": "dummy-signing.key",  # pragma: allowlist secret
+            "kid": "test-kid",
+            "clientAssertionIssuer": "test-client",
+            "clientAssertionSubject": "test-client",
+            "tokenEndpointAuthMethod": "private_key_jwt",
+        },
+    }
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(config_with_signing),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.launch_blockers == ()
+
+
+@pytest.mark.unit
+def test_preview_launch_blockers_includes_capability_blockers_from_known_preset(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capability hard blockers from environment evaluation are merged into launch_blockers."""
+    from conformance.api import plan_builder as pb
+    from conformance.environment_capabilities import CapabilityEvaluation
+
+    fake_evaluation = CapabilityEvaluation(
+        support="blocked",
+        blockers=("Unsupported suite/auth combination.",),
+        warnings=(),
+        suite_capability=None,
+    )
+
+    def _fake_evaluate_capability_support(
+        *,
+        config: object,
+        manifest: object,
+        suite_metadata: object,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return fake capability blockers for testing.
+
+        Args:
+            config: Ignored mock config argument.
+            manifest: Ignored mock manifest argument.
+            suite_metadata: Ignored mock suite metadata argument.
+
+        Returns:
+            Two-tuple of capability blockers and empty warnings.
+        """
+        return fake_evaluation.blockers, fake_evaluation.warnings
+
+    monkeypatch.setattr(pb, "_evaluate_capability_support", _fake_evaluate_capability_support)
+
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_SLICE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert "Unsupported suite/auth combination." in preview.launch_blockers
+    assert preview.launch_supported is False
+
+
+@pytest.mark.unit
+def test_preview_capability_warnings_surfaced_without_blocking_launch(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Capability warnings are stored in capability_warnings and do not block launch."""
+    from conformance.api import plan_builder as pb
+
+    def _fake_evaluate_capability_support(
+        *,
+        config: object,
+        manifest: object,
+        suite_metadata: object,
+    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
+        """Return fake capability warnings for testing.
+
+        Args:
+            config: Ignored mock config argument.
+            manifest: Ignored mock manifest argument.
+            suite_metadata: Ignored mock suite metadata argument.
+
+        Returns:
+            Two-tuple of empty blockers and one capability warning.
+        """
+        return (), ("Custom environment capability for PSU mode is undeclared; compatibility is unknown.",)
+
+    monkeypatch.setattr(pb, "_evaluate_capability_support", _fake_evaluate_capability_support)
+
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_SLICE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    expected_warning = "Custom environment capability for PSU mode is undeclared; compatibility is unknown."
+    assert expected_warning in preview.capability_warnings
+    assert preview.launch_supported is True
+    assert preview.launch_blockers == ()

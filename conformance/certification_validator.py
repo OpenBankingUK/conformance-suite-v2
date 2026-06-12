@@ -12,6 +12,7 @@ from typing import Literal, cast
 from conformance import approved_releases
 from conformance.approved_releases import ApprovedReleasePolicy as ApprovedReleasePolicy
 from conformance.approved_releases import ApprovedReleasePolicyError
+from conformance.auth_metadata import AuthBundleInventory, AuthStepRequirement
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage, Manifest, ManifestError, load_manifest
 from conformance.results import CheckStatus
@@ -30,6 +31,10 @@ type CertificationValidationReason = Literal[
     "mandatory_step_missing",
     "mandatory_step_failed",
     "mandatory_step_skipped",
+    "auth_metadata_missing",
+    "auth_metadata_mismatch",
+    "environment_capabilities_missing",
+    "environment_capabilities_blocked",
     "manifest_coverage_partial",
 ]
 """Machine-readable blocking reasons emitted by validation results."""
@@ -40,6 +45,12 @@ _REASON_LABELS: Mapping[CertificationValidationReason, str] = MappingProxyType(
         "mandatory_step_missing": "Mandatory step is missing from the submitted report",
         "mandatory_step_failed": "Mandatory step failed in the submitted report",
         "mandatory_step_skipped": "Mandatory step was skipped in the submitted report",
+        "auth_metadata_missing": "Auth metadata evidence is required for complete coverage manifests",
+        "auth_metadata_mismatch": "Auth metadata evidence is inconsistent with the trusted manifest selection",
+        "environment_capabilities_missing": (
+            "Environment capability evidence is required for this complete-suite submission"
+        ),
+        "environment_capabilities_blocked": "Environment capability evidence reports blocked support",
         "manifest_coverage_partial": "Manifest is not marked as complete certification coverage",
     }
 )
@@ -72,11 +83,47 @@ class SubmittedReport:
         report_version: Report metadata version from ``metadata.reportVersion``.
         tool_version: FCS tool version from ``tool.version``.
         steps: Parsed step outcomes from the report's ``steps`` array.
+        auth_metadata: Optional parsed ``authMetadata`` evidence.
+        environment_capability_supports: Optional support decisions extracted
+            from ``environmentCapabilities.decisions[*].support``.
+        suite_catalog_id: Optional suite catalog id from ``suite.catalogId``.
+            Presence indicates a config-resolved bundled suite run.
     """
 
     report_version: str
     tool_version: str
     steps: tuple[ReportStep, ...]
+    auth_metadata: SubmittedAuthMetadataEvidence | None = None
+    environment_capability_supports: tuple[str, ...] | None = None
+    suite_catalog_id: str | None = None
+
+
+@dataclass(frozen=True)
+class SubmittedAuthBundleEvidence:
+    """Submitted auth bundle evidence entry.
+
+    Attributes:
+        bundle_id: Auth bundle identifier from submitted evidence.
+        token_step_id: Token-step identifier associated with the bundle.
+        consuming_step_ids: Consuming protected-resource step identifiers.
+    """
+
+    bundle_id: str
+    token_step_id: str
+    consuming_step_ids: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SubmittedAuthMetadataEvidence:
+    """Submitted non-secret auth metadata evidence.
+
+    Attributes:
+        bundles: Submitted auth bundle evidence entries.
+        selected_step_requirements: Submitted selected step-to-bundle mappings.
+    """
+
+    bundles: tuple[SubmittedAuthBundleEvidence, ...]
+    selected_step_requirements: tuple[AuthStepRequirement, ...]
 
 
 @dataclass(frozen=True)
@@ -257,6 +304,9 @@ def parse_submitted_report(raw_report: object) -> SubmittedReport:
         report_version=_required_non_empty_string(metadata, "reportVersion", location="report.metadata"),
         tool_version=_required_non_empty_string(tool, "version", location="report.tool"),
         steps=_parse_report_steps(raw_steps),
+        auth_metadata=_parse_optional_auth_metadata(report, location="report"),
+        environment_capability_supports=_parse_optional_environment_capabilities(report, location="report"),
+        suite_catalog_id=_parse_optional_suite_catalog_id(report, location="report"),
     )
 
 
@@ -327,10 +377,18 @@ def validate_report(
         _validate_mandatory_step(step_id=step_id, report_steps=report_steps) for step_id in mandatory_step_ids
     )
     tool_version_approved = policy.is_tool_version_approved(report.tool_version)
+    auth_evidence_reasons = _validate_complete_manifest_auth_evidence(
+        report=report,
+        manifest=manifest,
+        report_steps=report_steps,
+    )
+    capability_evidence_reasons = _validate_environment_capability_evidence(report=report, manifest=manifest)
 
     reasons = _validation_reasons(
         mandatory_steps=mandatory_step_results,
         tool_version_approved=tool_version_approved,
+        auth_evidence_reasons=auth_evidence_reasons,
+        capability_evidence_reasons=capability_evidence_reasons,
         manifest_coverage_partial=(manifest_coverage != "complete"),
     )
     return CertificationValidationResult(
@@ -457,6 +515,8 @@ def _validation_reasons(
     *,
     mandatory_steps: tuple[MandatoryStepValidation, ...],
     tool_version_approved: bool,
+    auth_evidence_reasons: tuple[CertificationValidationReason, ...],
+    capability_evidence_reasons: tuple[CertificationValidationReason, ...],
     manifest_coverage_partial: bool,
 ) -> tuple[CertificationValidationReason, ...]:
     """Build unique machine-readable reasons for a validation result.
@@ -464,6 +524,10 @@ def _validation_reasons(
     Args:
         mandatory_steps: Per-step mandatory validation outcomes.
         tool_version_approved: Whether the submitted tool version is approved.
+        auth_evidence_reasons: Auth evidence blockers for complete-coverage
+            manifest submissions.
+        capability_evidence_reasons: Environment capability evidence blockers
+            for complete-coverage submissions.
         manifest_coverage_partial: Whether the manifest declares partial
             (non-complete) certification coverage. When ``True``, the
             ``manifest_coverage_partial`` reason is appended after step-level
@@ -484,6 +548,9 @@ def _validation_reasons(
     for step in mandatory_steps:
         if step.reason is not None and step.reason not in reasons:
             reasons.append(step.reason)
+    for reason in (*auth_evidence_reasons, *capability_evidence_reasons):
+        if reason not in reasons:
+            reasons.append(reason)
     if manifest_coverage_partial:
         reasons.append("manifest_coverage_partial")
     return tuple(reasons)
@@ -553,13 +620,158 @@ def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
     for reason in result.reasons:
         if reason == "tool_version_not_approved":
             lines.append(f"- {_REASON_LABELS[reason]}: {result.tool_version}")
-        elif reason == "manifest_coverage_partial":
+        elif reason == "manifest_coverage_partial" or reason in {
+            "auth_metadata_missing",
+            "auth_metadata_mismatch",
+            "environment_capabilities_missing",
+            "environment_capabilities_blocked",
+        }:
             lines.append(f"- {_REASON_LABELS[reason]}")
         else:
             for step in result.mandatory_steps:
                 if step.reason == reason:
                     lines.append(f"- {_REASON_LABELS[reason]}: {step.step_id}")
     return lines
+
+
+def _validate_complete_manifest_auth_evidence(
+    *,
+    report: SubmittedReport,
+    manifest: Manifest,
+    report_steps: Mapping[str, CheckStatus],
+) -> tuple[CertificationValidationReason, ...]:
+    """Validate submitted auth evidence for complete-coverage manifests.
+
+    Args:
+        report: Parsed submitted report.
+        manifest: Trusted manifest used for the certified run.
+        report_steps: Mapping of submitted report step ids to statuses.
+
+    Returns:
+        Tuple containing zero or more auth evidence blocking reasons.
+    """
+    if manifest.certification_coverage != "complete" or manifest.auth_inventory is None:
+        return ()
+    if report.auth_metadata is None:
+        return ("auth_metadata_missing",)
+    expected_inventory = _select_manifest_auth_inventory_for_report(
+        manifest.auth_inventory,
+        report_step_ids=frozenset(report_steps.keys()),
+    )
+    if not _auth_evidence_matches_expected(report=report.auth_metadata, expected=expected_inventory):
+        return ("auth_metadata_mismatch",)
+    return ()
+
+
+def _validate_environment_capability_evidence(
+    *,
+    report: SubmittedReport,
+    manifest: Manifest,
+) -> tuple[CertificationValidationReason, ...]:
+    """Validate submitted environment capability evidence for complete suites.
+
+    Args:
+        report: Parsed submitted report.
+        manifest: Trusted manifest used for the certified run.
+
+    Returns:
+        Tuple containing zero or more capability evidence blocking reasons.
+    """
+    if manifest.certification_coverage != "complete":
+        return ()
+    if not _requires_environment_capability_evidence(report=report, manifest=manifest):
+        return ()
+    if not report.environment_capability_supports:
+        return ("environment_capabilities_missing",)
+    if any(support == "blocked" for support in report.environment_capability_supports):
+        return ("environment_capabilities_blocked",)
+    return ()
+
+
+def _requires_environment_capability_evidence(*, report: SubmittedReport, manifest: Manifest) -> bool:
+    """Decide whether environment capability evidence is mandatory.
+
+    Args:
+        report: Parsed submitted report.
+        manifest: Trusted manifest used for certification validation.
+
+    Returns:
+        True when suite/catalog metadata indicates bundled-suite validation or
+        when trusted manifest auth metadata declares any auth bundles.
+    """
+    if report.suite_catalog_id is not None:
+        return True
+    if manifest.auth_inventory is None:
+        return False
+    return bool(manifest.auth_inventory.bundles)
+
+
+def _select_manifest_auth_inventory_for_report(
+    inventory: AuthBundleInventory,
+    *,
+    report_step_ids: frozenset[str],
+) -> AuthBundleInventory:
+    """Filter trusted manifest auth inventory to submitted report step coverage.
+
+    Args:
+        inventory: Trusted manifest auth inventory.
+        report_step_ids: Step ids present in the submitted report.
+
+    Returns:
+        Filtered inventory containing selected step requirements and directly
+        related bundles.
+    """
+    if not report_step_ids:
+        return inventory
+    selected_requirements = tuple(req for req in inventory.step_requirements if req.step_id in report_step_ids)
+    selected_bundle_ids = {req.bundle_id for req in selected_requirements}
+    selected_bundles = tuple(
+        bundle
+        for bundle in inventory.bundles
+        if (
+            bundle.id in selected_bundle_ids
+            or bundle.token_step_id in report_step_ids
+            or (bundle.consent_step_id is not None and bundle.consent_step_id in report_step_ids)
+            or (bundle.psu_step_id is not None and bundle.psu_step_id in report_step_ids)
+            or any(step_id in report_step_ids for step_id in bundle.consuming_step_ids)
+        )
+    )
+    return AuthBundleInventory(bundles=selected_bundles, step_requirements=selected_requirements)
+
+
+def _auth_evidence_matches_expected(
+    *,
+    report: SubmittedAuthMetadataEvidence,
+    expected: AuthBundleInventory,
+) -> bool:
+    """Return whether submitted auth evidence matches trusted manifest evidence.
+
+    Args:
+        report: Submitted auth metadata evidence block.
+        expected: Trusted manifest inventory filtered to report coverage.
+
+    Returns:
+        True when selected step-to-bundle mappings and bundle metadata align.
+    """
+    expected_requirements = {req.step_id: req.bundle_id for req in expected.step_requirements}
+    report_requirements = {req.step_id: req.bundle_id for req in report.selected_step_requirements}
+    if report_requirements != expected_requirements:
+        return False
+    expected_bundles = {
+        bundle.id: (
+            bundle.token_step_id,
+            frozenset(bundle.consuming_step_ids),
+        )
+        for bundle in expected.bundles
+    }
+    report_bundles = {
+        bundle.bundle_id: (
+            bundle.token_step_id,
+            frozenset(bundle.consuming_step_ids),
+        )
+        for bundle in report.bundles
+    }
+    return report_bundles == expected_bundles
 
 
 def _as_object(value: object, *, location: str) -> dict[str, object]:
@@ -603,6 +815,26 @@ def _required_object(parent: Mapping[str, object], key: str, *, location: str) -
     return _as_object(parent[key], location=f"{location}.{key}")
 
 
+def _optional_object(parent: Mapping[str, object], key: str, *, location: str) -> dict[str, object] | None:
+    """Extract an optional JSON object field.
+
+    Args:
+        parent: Parent JSON object.
+        key: Field name to extract.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Child JSON object, or ``None`` when the key is absent.
+
+    Raises:
+        CertificationValidationError: If the field is present but is not a
+            JSON object.
+    """
+    if key not in parent:
+        return None
+    return _as_object(parent[key], location=f"{location}.{key}")
+
+
 def _required_array(parent: Mapping[str, object], key: str, *, location: str) -> list[object]:
     """Extract a required JSON array field.
 
@@ -620,6 +852,29 @@ def _required_array(parent: Mapping[str, object], key: str, *, location: str) ->
     """
     if key not in parent:
         raise CertificationValidationError(f"{location}.{key} is required")
+    value = parent[key]
+    if not isinstance(value, list):
+        raise CertificationValidationError(f"{location}.{key} must be a JSON array")
+    return cast(list[object], value)
+
+
+def _optional_array(parent: Mapping[str, object], key: str, *, location: str) -> list[object] | None:
+    """Extract an optional JSON array field.
+
+    Args:
+        parent: Parent JSON object.
+        key: Field name to extract.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Child JSON array, or ``None`` when the key is absent.
+
+    Raises:
+        CertificationValidationError: If the field is present but is not a JSON
+            array.
+    """
+    if key not in parent:
+        return None
     value = parent[key]
     if not isinstance(value, list):
         raise CertificationValidationError(f"{location}.{key} must be a JSON array")
@@ -672,3 +927,171 @@ def _required_report_step_status(parent: Mapping[str, object], key: str, *, loca
         allowed_values = ", ".join(sorted(VALID_REPORT_STEP_STATUSES))
         raise CertificationValidationError(f"{location}.{key} must be one of: {allowed_values}")
     return cast(CheckStatus, value)
+
+
+def _parse_optional_auth_metadata(
+    report: Mapping[str, object],
+    *,
+    location: str,
+) -> SubmittedAuthMetadataEvidence | None:
+    """Parse optional submitted ``authMetadata`` evidence.
+
+    Args:
+        report: Submitted report root object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed auth metadata evidence, or ``None`` when absent.
+
+    Raises:
+        CertificationValidationError: If the evidence block is malformed.
+    """
+    auth_metadata = _optional_object(report, "authMetadata", location=location)
+    if auth_metadata is None:
+        return None
+    raw_bundles = _required_array(auth_metadata, "bundles", location=f"{location}.authMetadata")
+    raw_requirements = _required_array(auth_metadata, "selectedStepRequirements", location=f"{location}.authMetadata")
+    bundles: list[SubmittedAuthBundleEvidence] = []
+    seen_bundle_ids: set[str] = set()
+    for index, raw_bundle in enumerate(raw_bundles):
+        bundle = _as_object(raw_bundle, location=f"{location}.authMetadata.bundles[{index}]")
+        bundle_id = _required_non_empty_string(bundle, "id", location=f"{location}.authMetadata.bundles[{index}]")
+        token_step_id = _required_non_empty_string(
+            bundle,
+            "tokenStepId",
+            location=f"{location}.authMetadata.bundles[{index}]",
+        )
+        if bundle_id in seen_bundle_ids:
+            raise CertificationValidationError(
+                f"{location}.authMetadata.bundles[{index}].id {bundle_id!r} is duplicated"
+            )
+        seen_bundle_ids.add(bundle_id)
+        consuming_step_ids = _parse_optional_non_empty_string_array(
+            bundle,
+            key="consumingStepIds",
+            location=f"{location}.authMetadata.bundles[{index}]",
+        )
+        bundles.append(
+            SubmittedAuthBundleEvidence(
+                bundle_id=bundle_id,
+                token_step_id=token_step_id,
+                consuming_step_ids=consuming_step_ids,
+            )
+        )
+    requirements: list[AuthStepRequirement] = []
+    seen_requirement_step_ids: set[str] = set()
+    for index, raw_requirement in enumerate(raw_requirements):
+        requirement = _as_object(raw_requirement, location=f"{location}.authMetadata.selectedStepRequirements[{index}]")
+        step_id = _required_non_empty_string(
+            requirement,
+            "stepId",
+            location=f"{location}.authMetadata.selectedStepRequirements[{index}]",
+        )
+        bundle_id = _required_non_empty_string(
+            requirement,
+            "bundleId",
+            location=f"{location}.authMetadata.selectedStepRequirements[{index}]",
+        )
+        if step_id in seen_requirement_step_ids:
+            raise CertificationValidationError(
+                f"{location}.authMetadata.selectedStepRequirements[{index}].stepId {step_id!r} is duplicated"
+            )
+        seen_requirement_step_ids.add(step_id)
+        requirements.append(AuthStepRequirement(step_id=step_id, bundle_id=bundle_id))
+    return SubmittedAuthMetadataEvidence(
+        bundles=tuple(bundles),
+        selected_step_requirements=tuple(requirements),
+    )
+
+
+def _parse_optional_environment_capabilities(
+    report: Mapping[str, object],
+    *,
+    location: str,
+) -> tuple[str, ...] | None:
+    """Parse optional ``environmentCapabilities`` evidence support outcomes.
+
+    Args:
+        report: Submitted report root object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of decision support labels, or ``None`` when absent.
+
+    Raises:
+        CertificationValidationError: If the evidence block is malformed.
+    """
+    capability_block = _optional_object(report, "environmentCapabilities", location=location)
+    if capability_block is None:
+        return None
+    decisions = _required_array(capability_block, "decisions", location=f"{location}.environmentCapabilities")
+    supports: list[str] = []
+    allowed_supports = {"supported", "blocked", "unknown"}
+    for index, raw_decision in enumerate(decisions):
+        decision = _as_object(raw_decision, location=f"{location}.environmentCapabilities.decisions[{index}]")
+        support = _required_non_empty_string(
+            decision,
+            "support",
+            location=f"{location}.environmentCapabilities.decisions[{index}]",
+        )
+        if support not in allowed_supports:
+            allowed = ", ".join(sorted(allowed_supports))
+            raise CertificationValidationError(
+                f"{location}.environmentCapabilities.decisions[{index}].support must be one of: {allowed}"
+            )
+        supports.append(support)
+    return tuple(supports)
+
+
+def _parse_optional_suite_catalog_id(report: Mapping[str, object], *, location: str) -> str | None:
+    """Parse optional ``suite.catalogId`` evidence for bundled suite runs.
+
+    Args:
+        report: Submitted report root object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Suite catalog id when present, else ``None``.
+
+    Raises:
+        CertificationValidationError: If ``suite`` is present but malformed.
+    """
+    suite = _optional_object(report, "suite", location=location)
+    if suite is None:
+        return None
+    return _required_non_empty_string(suite, "catalogId", location=f"{location}.suite")
+
+
+def _parse_optional_non_empty_string_array(
+    parent: Mapping[str, object],
+    *,
+    key: str,
+    location: str,
+) -> tuple[str, ...]:
+    """Extract an optional array of non-empty strings.
+
+    Args:
+        parent: Parent JSON object.
+        key: Array field name.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of stripped non-empty string values, or an empty tuple when
+        absent.
+
+    Raises:
+        CertificationValidationError: If the field is present but is not a
+            JSON array of non-empty strings.
+    """
+    raw_values = _optional_array(parent, key, location=location)
+    if raw_values is None:
+        return ()
+    values: list[str] = []
+    for index, raw_value in enumerate(raw_values):
+        if not isinstance(raw_value, str):
+            raise CertificationValidationError(f"{location}.{key}[{index}] must be a string")
+        stripped = raw_value.strip()
+        if not stripped:
+            raise CertificationValidationError(f"{location}.{key}[{index}] must not be empty")
+        values.append(stripped)
+    return tuple(values)

@@ -14,6 +14,12 @@ from django import forms
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import MultiValueDict
 
+from conformance.auth_metadata import AuthBundleDeclaration
+from conformance.environment_capabilities import (
+    PsuMode,
+    evaluate_suite_environment_support,
+    make_custom_environment_reference,
+)
 from conformance.json_types import JsonValue
 from conformance.manifest import (
     FormBody,
@@ -26,7 +32,12 @@ from conformance.manifest import (
     StepPhase,
     load_manifest_from_object,
 )
-from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
+from conformance.model_bank_config import (
+    ConfigError,
+    ModelBankConfig,
+    TokenEndpointClientAuthMode,
+    parse_model_bank_config,
+)
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
 from conformance.test_plan import TestPlan, TestPlanEntry
 
@@ -183,11 +194,17 @@ class PlanPreview:
         selected_plan: Plan after applying submitted selection or deselection input.
         rows: Step presenters in manifest order.
         launch_supported: Whether this preview can be launched by the browser UI slice.
-        launch_blockers: Human-readable reasons launch is disabled.
+        launch_blockers: Human-readable reasons launch is disabled, including
+            hard environment capability blockers for known unsupported
+            suite/auth/environment combinations.
         certification_eligible_by_selection: Whether the submitted selection preserves certification eligibility.
         auth_inventory: Stable consent/token bundles required by selected
             token-protected steps.
         step_auth_requirements: Selected step to auth-bundle mappings.
+        capability_warnings: Conservative warnings from environment capability
+            evaluation where compatibility is unknown (e.g. undeclared custom
+            environment capabilities).  These do not block launch but are
+            surfaced to the participant for awareness.
     """
 
     config: ModelBankConfig
@@ -201,6 +218,7 @@ class PlanPreview:
     certification_eligible_by_selection: bool
     auth_inventory: tuple[PlanAuthBundle, ...]
     step_auth_requirements: tuple[PlanStepAuthRequirement, ...]
+    capability_warnings: tuple[str, ...]
 
 
 class StepIdListField(forms.Field):
@@ -593,6 +611,17 @@ def build_plan_preview(
 ) -> PlanPreview:
     """Build the typed step-row presenter for a validated v1 manifest.
 
+    When the manifest carries an explicit ``authMetadata`` section, auth
+    bundles and step requirements are derived from the declared inventory,
+    filtered to selected steps only.  When ``authMetadata`` is absent, the
+    legacy heuristic inventory builder is used as a fallback so that existing
+    suites continue to behave correctly.
+
+    When ``suite_metadata`` is available, environment capability evaluation is
+    performed and hard blockers are merged into ``launch_blockers``.
+    Capability warnings (unknown custom environment dimensions) are stored
+    separately in ``capability_warnings`` and do not block launch.
+
     Args:
         config: Validated model-bank configuration to carry into launch.
         manifest: Validated v1 manifest to preview.
@@ -618,11 +647,25 @@ def build_plan_preview(
         selected_plan = default_plan.with_deselection(deselect_step_ids or [])
 
     rows = _build_step_rows(manifest=manifest, default_plan=default_plan, selected_plan=selected_plan)
-    auth_inventory, step_auth_requirements = _build_auth_inventory(
+
+    if manifest.auth_inventory is not None:
+        auth_inventory, step_auth_requirements = _build_auth_inventory_from_explicit_metadata(
+            manifest=manifest,
+            selected_plan=selected_plan,
+        )
+    else:
+        auth_inventory, step_auth_requirements = _build_auth_inventory(
+            manifest=manifest,
+            selected_plan=selected_plan,
+        )
+
+    capability_blockers, capability_warnings = _evaluate_capability_support(
+        config=config,
         manifest=manifest,
-        selected_plan=selected_plan,
+        suite_metadata=suite_metadata,
     )
-    launch_blockers = _launch_blockers(manifest)
+    manifest_blockers = _launch_blockers(manifest)
+    all_blockers = (*manifest_blockers, *capability_blockers)
     return PlanPreview(
         config=config,
         manifest=manifest,
@@ -630,11 +673,12 @@ def build_plan_preview(
         default_plan=default_plan,
         selected_plan=selected_plan,
         rows=rows,
-        launch_supported=not launch_blockers,
-        launch_blockers=launch_blockers,
+        launch_supported=not all_blockers,
+        launch_blockers=all_blockers,
         certification_eligible_by_selection=selected_plan.is_eligible_by_selection(),
         auth_inventory=auth_inventory,
         step_auth_requirements=step_auth_requirements,
+        capability_warnings=capability_warnings,
     )
 
 
@@ -1154,6 +1198,176 @@ def _launch_blockers(manifest: Manifest) -> tuple[str, ...]:
         Human-readable launch blockers. Empty when browser launch is supported.
     """
     return ()
+
+
+def _manifest_psu_mode(manifest: Manifest) -> PsuMode | None:
+    """Return the PSU authorisation mode declared by the first PSU step in the manifest.
+
+    The PSU mode is extracted from the first :class:`~conformance.manifest.PsuAuthorizationStep`
+    encountered in manifest step order.  Both ``"manual"`` and ``"headless"`` are
+    valid :data:`~conformance.environment_capabilities.PsuMode` values.
+
+    Args:
+        manifest: Validated v1 manifest to inspect.
+
+    Returns:
+        The PSU mode string when a PSU step is present, or ``None`` when the
+        manifest contains no PSU authorisation steps.
+    """
+    for step in manifest.steps:
+        if isinstance(step, PsuAuthorizationStep):
+            return step.mode  # PsuAuthorizationMode is a subset of PsuMode
+    return None
+
+
+def _manifest_token_endpoint_auth_methods(
+    *,
+    config: ModelBankConfig,
+    manifest: Manifest,
+) -> tuple[TokenEndpointClientAuthMode | None, ...]:
+    """Return token endpoint auth methods that should drive capability checks.
+
+    Explicit ``authMetadata`` is authoritative: no-auth and PSU-starter bundles
+    must not inherit an unrelated config-level FAPI signing method. Legacy
+    manifests without explicit metadata keep the previous behaviour and use the
+    participant config when present.
+
+    Args:
+        config: Validated model-bank configuration for this preview.
+        manifest: Validated v1 manifest being previewed.
+
+    Returns:
+        Ordered unique token endpoint auth methods to evaluate. A single
+        ``None`` entry means no token endpoint auth method is selected.
+    """
+    if manifest.auth_inventory is None:
+        method = config.fapi_signing.token_endpoint_auth_method if config.fapi_signing is not None else None
+        return (method,)
+
+    declared_methods = tuple(
+        dict.fromkeys(
+            bundle.token_endpoint_auth_method
+            for bundle in manifest.auth_inventory.bundles
+            if bundle.token_endpoint_auth_method is not None
+        )
+    )
+    if not declared_methods:
+        return (None,)
+    return declared_methods
+
+
+def _evaluate_capability_support(
+    *,
+    config: ModelBankConfig,
+    manifest: Manifest,
+    suite_metadata: SuiteMetadata | None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Evaluate environment capability compatibility and return blockers and warnings.
+
+    When ``suite_metadata`` is ``None`` (explicit manifest without a catalog
+    suite), capability evaluation is skipped and empty tuples are returned.
+
+    For catalog suites, the evaluation calls
+    :func:`~conformance.environment_capabilities.evaluate_suite_environment_support`
+    using a custom :class:`~conformance.environment_capabilities.EnvironmentReference`
+    built from :attr:`~conformance.model_bank_config.ModelBankConfig.environment`.
+    Known hard blockers (e.g. unsupported suite/auth/PSU combinations) are
+    returned as capability blockers.  Unknown custom environment dimensions
+    produce warnings rather than blockers, matching the contract defined by
+    :func:`~conformance.environment_capabilities.evaluate_suite_environment_support`.
+
+    Args:
+        config: Validated model-bank configuration for this preview.
+        manifest: Validated v1 manifest being previewed.
+        suite_metadata: Optional catalog metadata for the config-resolved suite.
+
+    Returns:
+        Two-tuple of ``(blockers, warnings)`` where each is a tuple of
+        human-readable strings.  Both are empty when ``suite_metadata`` is
+        ``None``.
+    """
+    if suite_metadata is None:
+        return (), ()
+
+    selection = suite_metadata.to_suite_selection()
+    environment = make_custom_environment_reference(label=config.environment)
+    psu_mode = _manifest_psu_mode(manifest)
+    blockers: list[str] = []
+    warnings: list[str] = []
+    for token_endpoint_auth_method in _manifest_token_endpoint_auth_methods(config=config, manifest=manifest):
+        evaluation = evaluate_suite_environment_support(
+            selection=selection,
+            environment=environment,
+            psu_mode=psu_mode,
+            token_endpoint_auth_method=token_endpoint_auth_method,
+        )
+        blockers.extend(evaluation.blockers)
+        warnings.extend(evaluation.warnings)
+    return tuple(dict.fromkeys(blockers)), tuple(dict.fromkeys(warnings))
+
+
+def _build_auth_inventory_from_explicit_metadata(
+    *,
+    manifest: Manifest,
+    selected_plan: TestPlan,
+) -> tuple[tuple[PlanAuthBundle, ...], tuple[PlanStepAuthRequirement, ...]]:
+    """Build auth bundle inventory from a manifest's explicit ``authMetadata``.
+
+    This path is used when the manifest author has supplied an explicit
+    ``authMetadata`` section carrying :class:`~conformance.auth_metadata.AuthBundleInventory`
+    data.  The inventory is filtered to the selected plan:
+
+    * Step requirements are retained only for selected step ids.
+    * Bundle consuming-step lists are narrowed to selected steps only.
+    * Bundles referenced by no selected step requirement are omitted.
+    * Bundle order reflects first-use order within the selected step sequence.
+
+    Unlike the heuristic fallback (:func:`_build_auth_inventory`), this path
+    uses the declared bundle ids directly and does not apply Basic/Detail name
+    heuristics.
+
+    Args:
+        manifest: Validated v1 manifest carrying a non-``None``
+            :attr:`~conformance.manifest.Manifest.auth_inventory`.
+        selected_plan: Plan after applying participant selection input.
+
+    Returns:
+        Two-tuple of filtered auth bundles and selected step-to-bundle mappings.
+    """
+    inventory = manifest.auth_inventory
+    assert inventory is not None, "_build_auth_inventory_from_explicit_metadata requires auth_inventory"  # noqa: S101
+
+    selected_ids = set(selected_plan.selected_step_ids())
+
+    # Filter step requirements to selected steps only, preserving manifest order.
+    selected_step_reqs: list[PlanStepAuthRequirement] = [
+        PlanStepAuthRequirement(step_id=req.step_id, bundle_id=req.bundle_id)
+        for req in inventory.step_requirements
+        if req.step_id in selected_ids
+    ]
+
+    # Build index of referenced bundle ids in first-use order from selected requirements.
+    ordered_bundle_ids: list[str] = list(dict.fromkeys(req.bundle_id for req in selected_step_reqs))
+    bundles_by_id: dict[str, AuthBundleDeclaration] = {bundle.id: bundle for bundle in inventory.bundles}
+
+    bundles: list[PlanAuthBundle] = []
+    for bundle_id in ordered_bundle_ids:
+        decl = bundles_by_id.get(bundle_id)
+        if decl is None:
+            continue
+        selected_consuming = tuple(step_id for step_id in decl.consuming_step_ids if step_id in selected_ids)
+        bundles.append(
+            PlanAuthBundle(
+                id=decl.id,
+                token_step_id=decl.token_step_id,
+                consent_step_id=decl.consent_step_id,
+                required_scopes=decl.required_scopes,
+                required_ob_permissions=decl.required_ob_permissions,
+                consuming_step_ids=selected_consuming,
+            )
+        )
+
+    return tuple(bundles), tuple(selected_step_reqs)
 
 
 @dataclass(frozen=True)

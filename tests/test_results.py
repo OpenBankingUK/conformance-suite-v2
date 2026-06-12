@@ -653,6 +653,40 @@ def test_suite_metadata_serialized_when_supplied() -> None:
     }
 
 
+@pytest.mark.unit
+def test_auth_and_environment_evidence_blocks_are_serialized_when_supplied() -> None:
+    """Result JSON includes optional auth/capability evidence blocks when present."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+        auth_metadata_evidence={
+            "bundles": [{"id": "ais", "tokenStepId": "token-exchange"}],
+            "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais"}],
+        },
+        environment_capability_evidence={
+            "suiteSelection": {"standard": "ob-read-write"},
+            "environment": {"source": "custom", "label": "env"},
+            "decisions": [{"support": "unknown", "warnings": ["undeclared"], "blockers": []}],
+        },
+    ).to_json_object()
+
+    assert rendered["authMetadata"] == {
+        "bundles": [{"id": "ais", "tokenStepId": "token-exchange"}],
+        "selectedStepRequirements": [{"stepId": "accounts-list", "bundleId": "ais"}],
+    }
+    assert rendered["environmentCapabilities"] == {
+        "suiteSelection": {"standard": "ob-read-write"},
+        "environment": {"source": "custom", "label": "env"},
+        "decisions": [{"support": "unknown", "warnings": ["undeclared"], "blockers": []}],
+    }
+
+
 # ─── Packet B: certification coverage gating ─────────────────────────────────
 
 
