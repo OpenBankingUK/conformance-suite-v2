@@ -1,0 +1,303 @@
+schemaVersion: 1
+updated: "2026-06-12"
+statusValues:
+  - proposed
+  - planned
+  - in_progress
+  - implemented
+  - blocked
+  - superseded
+  - waived
+firstCertifiableTarget:
+  standard: ob-read-write
+  specVersion: v4.0.1
+  api: ais
+  profile: fapi1-advanced
+  suite: ais-certification-baseline
+epics:
+  - id: EPIC-AGENT
+    title: AI-agent-compatible delivery model
+    status: planned
+    outcome: Make requirements and implementation slices explicit, stable, and machine-readable for AI-agent execution.
+  - id: EPIC-PARITY
+    title: Prior-FCS parity baseline
+    status: planned
+    outcome: Prove v2 covers previous FCS behaviour before adding new certification requirements.
+  - id: EPIC-CERT-V401-AIS
+    title: v4.0.1 AIS certification readiness
+    status: planned
+    outcome: Promote the first v4.0.1 AIS suite from partial to complete only after coverage, validation, and Standards sign-off are complete.
+  - id: EPIC-UX
+    title: Visual guided participant UX
+    status: planned
+    outcome: Let participants build config and select tests visually with minimal raw JSON editing.
+  - id: EPIC-CUSTOM
+    title: Custom test values and certification profiles
+    status: proposed
+    outcome: Allow exploratory custom values without weakening certification integrity.
+  - id: EPIC-AUTH
+    title: Multi-auth and auth-method selection
+    status: planned
+    outcome: Represent multiple auth bundles and validate environment/auth compatibility before launch.
+  - id: EPIC-RELEASE
+    title: Phase 1 release readiness
+    status: proposed
+    outcome: Close Docker, signing, CI/CD, documentation, and operator readiness gaps.
+  - id: EPIC-PHASE2
+    title: Phase 2 architecture constraints
+    status: proposed
+    outcome: Keep local Phase 1 choices compatible with future hosted portal operation.
+requirements:
+  - id: REQ-AGENT-001
+    epic: EPIC-AGENT
+    title: Maintain repo-native machine-readable requirement index
+    status: in_progress
+    source: docs/requirements/requirements.yml
+    affectedSurfaces:
+      - docs/requirements
+      - .github
+    acceptanceCriteria:
+      - Stable requirement IDs exist before agent implementation starts.
+      - Each requirement records status, parent epic, acceptance criteria, and affected surfaces.
+      - Agent slices reference requirement IDs and update status when scope changes.
+    validation:
+      - Review YAML structure and linked docs.
+  - id: REQ-AGENT-002
+    epic: EPIC-AGENT
+    title: Use standard agent implementation slice template
+    status: planned
+    source: docs/requirements/agent-slice-template.md
+    affectedSurfaces:
+      - docs/requirements
+      - .github/PULL_REQUEST_TEMPLATE.md
+    acceptanceCriteria:
+      - Agent tasks include in-scope, out-of-scope, affected surfaces, acceptance criteria, security notes, and validation commands.
+      - Definition of Ready and Definition of Done are explicit.
+    validation:
+      - Review generated implementation issues or prompts against the template.
+  - id: REQ-AGENT-003
+    epic: EPIC-AGENT
+    title: Maintain next-priority sequence for agent-managed delivery
+    status: implemented
+    source: docs/requirements/next-priorities.md
+    affectedSurfaces:
+      - docs/requirements/next-priorities.md
+      - docs/requirements/roadmap.md
+      - docs/requirements/suite-coverage
+    acceptanceCriteria:
+      - Next implementation priorities are ordered around v4.0.1 AIS certification readiness.
+      - The sequence identifies work that should not be started before coverage/auth decisions are clear.
+    validation:
+      - Review priority sequence against coverage matrix and open decisions.
+  - id: REQ-PARITY-001
+    epic: EPIC-PARITY
+    title: Create prior-FCS parity inventory
+    status: in_progress
+    source: docs/requirements/suite-coverage/v4-ais-prior-fcs-inventory.json
+    affectedSurfaces:
+      - docs/FCS_LEGACY_BENCHMARK_MAPPING.md
+      - docs/requirements/suite-coverage
+      - conformance/suites
+    acceptanceCriteria:
+      - Previous FCS scripts for the target are mapped to v2 manifest steps or explicit statuses.
+      - Known legacy issues, waivers, superseded behaviours, blockers, and required primitives are recorded.
+      - Mandatory prior-FCS coverage can be queried from the ledger.
+    validation:
+      - Compare ledger entries against legacy manifest inventory and v2 suite manifests.
+  - id: REQ-PARITY-002
+    epic: EPIC-PARITY
+    title: Preserve prior script traceability
+    status: planned
+    affectedSurfaces:
+      - conformance/suites
+      - docs/requirements/suite-coverage
+    acceptanceCriteria:
+      - V2 steps preserve previous FCS script IDs where the step represents the legacy script.
+      - V2-native setup/auth steps use clear IDs and link to consuming legacy or standards requirements.
+    validation:
+      - Inspect manifest step IDs and coverage ledger references.
+  - id: REQ-CERT-001
+    epic: EPIC-CERT-V401-AIS
+    title: Confirm v4.0.1 AIS mandatory matrix
+    status: blocked
+    blockedBy:
+      - OPEN-001
+    affectedSurfaces:
+      - docs/requirements/suite-coverage/v4.0.1-ais.json
+      - conformance/suites/ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json
+    acceptanceCriteria:
+      - Standards-owned mandatory matrix is represented in the coverage ledger.
+      - Each mandatory row has an implementation, waiver, legacy issue, superseded status, or blocker.
+    validation:
+      - Standards review and ledger diff.
+  - id: REQ-CERT-003
+    epic: EPIC-CERT-V401-AIS
+    title: Maintain v4.0.1 AIS certification scope
+    status: implemented
+    source: docs/requirements/v4.0.1-ais-certification-scope.md
+    affectedSurfaces:
+      - docs/requirements/v4.0.1-ais-certification-scope.md
+      - docs/requirements/suite-coverage/v4.0.1-ais.json
+      - conformance/suites/ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json
+    acceptanceCriteria:
+      - Target suite identity, baseline counts, work packages, blockers, and complete-suite readiness checklist are documented.
+      - The scope links prior-FCS parity, Standards mandatory matrix, missing primitives, manifest completion, validator completion, and release docs.
+    validation:
+      - Review scope document against coverage matrix and generated parity inventory.
+  - id: REQ-CERT-002
+    epic: EPIC-CERT-V401-AIS
+    title: Define partial-to-complete promotion gate
+    status: planned
+    affectedSurfaces:
+      - conformance/manifest.py
+      - conformance/results.py
+      - conformance/certification_validator.py
+      - docs/requirements/suite-coverage
+    acceptanceCriteria:
+      - Suite remains partial until mandatory coverage, tests, validator behaviour, docs, and sign-off are complete.
+      - Promotion requires an explicit manifest `certificationCoverage: complete` change.
+      - OBL-side validator rejects incomplete or partial coverage.
+    validation:
+      - make test
+      - focused certification validator tests
+  - id: REQ-UX-001
+    epic: EPIC-UX
+    title: Add tree-style visual test-plan selection
+    status: planned
+    affectedSurfaces:
+      - conformance/api/plan_builder.py
+      - conformance/api/templates/conformance/plan_builder.html
+      - tests/test_plan_builder.py
+      - tests/test_ui_views.py
+    acceptanceCriteria:
+      - UI groups selectable tests by standard, version, API, resource, endpoint, content/permission variant, auth bundle, and step.
+      - Branch and row selection preserve mandatory/optional/conditional state.
+      - Certification impact is visible before launch.
+    validation:
+      - PYTEST_ARGS='tests/test_plan_builder.py tests/test_ui_views.py' make test
+  - id: REQ-UX-002
+    epic: EPIC-UX
+    title: Revamp guided config builder with presets
+    status: in_progress
+    source: docs/requirements/guided-config-builder.md
+    affectedSurfaces:
+      - conformance/api/plan_builder.py
+      - conformance/api/templates/conformance/plan_builder.html
+      - config
+    acceptanceCriteria:
+      - Common model-bank flows require minimal free-text JSON.
+      - Custom environments remain supported.
+      - Unsupported suite/auth/environment combinations fail with clear errors.
+    validation:
+      - PYTEST_ARGS='tests/test_plan_builder.py tests/test_ui_views.py' make test
+  - id: REQ-CUSTOM-001
+    epic: EPIC-CUSTOM
+    title: Define certification and exploratory test-data profiles
+    status: proposed
+    blockedBy:
+      - OPEN-003
+    affectedSurfaces:
+      - conformance/manifest.py
+      - conformance/results.py
+      - conformance/execution_log.py
+      - conformance/api/plan_builder.py
+    acceptanceCriteria:
+      - Certification profile enforces OBL defaults.
+      - Exploratory profile permits participant overrides.
+      - Unapproved overrides block certification eligibility or follow an approved override policy.
+    validation:
+      - Focused manifest/results/API tests after design is accepted.
+  - id: REQ-CUSTOM-002
+    epic: EPIC-CUSTOM
+    title: Audit custom test-value deviations
+    status: proposed
+    affectedSurfaces:
+      - conformance/results.py
+      - conformance/execution_log.py
+      - conformance/masking.py
+      - conformance/api/templates
+    acceptanceCriteria:
+      - Result JSON and logs record affected step/requirement, default profile reference, override source, masked value evidence, and certification impact.
+      - Sensitive override values remain masked in all persisted and downloadable artefacts.
+    validation:
+      - Focused masking/result/log tests after schema is designed.
+  - id: REQ-AUTH-001
+    epic: EPIC-AUTH
+    title: Represent multi-auth bundles in plan and execution metadata
+    status: in_progress
+    source: docs/requirements/multi-auth-model.md
+    affectedSurfaces:
+      - conformance/api/plan_builder.py
+      - conformance/executor.py
+      - conformance/context.py
+      - conformance/results.py
+    acceptanceCriteria:
+      - Selected steps map to explicit auth bundles.
+      - Multiple consent/token paths can coexist in one plan.
+      - Basic/detail or equivalent content variants can require separate auth bundles.
+    validation:
+      - PYTEST_ARGS='tests/test_plan_builder.py tests/test_executor.py tests/test_results.py' make test
+  - id: REQ-AUTH-002
+    epic: EPIC-AUTH
+    title: Validate auth method against environment capability
+    status: proposed
+    blockedBy:
+      - OPEN-004
+      - OPEN-005
+    affectedSurfaces:
+      - conformance/model_bank_config.py
+      - conformance/api/plan_builder.py
+      - config
+    acceptanceCriteria:
+      - Manual PSU, headless PSU, private_key_jwt, tls_client_auth/mTLS, and mobile QR scope are explicitly modelled.
+      - Unsupported auth/environment combinations fail before launch.
+    validation:
+      - Focused config and plan-builder tests after capability schema is designed.
+  - id: REQ-RELEASE-001
+    epic: EPIC-RELEASE
+    title: Close Phase 1 Docker runtime hardening
+    status: proposed
+    blockedBy:
+      - OPEN-006
+    affectedSurfaces:
+      - Dockerfile
+      - Makefile
+      - docs/DEVELOPER_GUIDE.md
+      - README.md
+    acceptanceCriteria:
+      - Runtime hardening decisions are documented and implemented where applicable.
+      - Participant run guidance covers read-only filesystem, tmpfs scratch, dropped capabilities, no-new-privileges, and localhost binding.
+    validation:
+      - make check
+      - Docker build and healthcheck smoke test
+  - id: REQ-RELEASE-002
+    epic: EPIC-RELEASE
+    title: Define image signing and approved-release operations
+    status: proposed
+    blockedBy:
+      - OPEN-007
+    affectedSurfaces:
+      - conformance/approved_releases.py
+      - conformance/certification_validator.py
+      - docs/DEVELOPER_GUIDE.md
+      - docs/requirements
+    acceptanceCriteria:
+      - Release signing process and approved-release policy ownership are documented.
+      - Certification validator inputs are aligned with release process.
+    validation:
+      - Focused certification validator tests and release-doc review.
+  - id: REQ-PHASE2-001
+    epic: EPIC-PHASE2
+    title: Preserve portal-compatible architecture boundaries
+    status: proposed
+    affectedSurfaces:
+      - conformance/executor.py
+      - conformance/api
+      - conformance/results.py
+      - conformance/execution_log.py
+    acceptanceCriteria:
+      - Engine remains independent of Django persistence and portal-specific identity.
+      - Local callback coordination assumptions are isolated from future multi-worker coordination.
+      - Result/log artefacts remain suitable for future stored/downloadable portal records.
+    validation:
+      - Architecture review for changes touching run lifecycle, executor, or callback coordination.

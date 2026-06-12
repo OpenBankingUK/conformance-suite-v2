@@ -6,6 +6,10 @@ This repository is purely for development and should not be used as the official
 
 Please see the official repo for the Open Banking Conformance Suite [here](https://github.com/OpenBankingUK/conformance-suite).
 
+## Requirements and roadmap
+
+The active product requirements and AI-agent-compatible delivery artefacts live under [`docs/requirements/`](docs/requirements/). Start there for the refreshed PRD v4 draft, roadmap, machine-readable requirement index, v4.0.1 AIS coverage ledger seed, agent slice template, and decision register. The older PRD in `docs/FCS Rebuild - PRD v3 [DRAFT].md` is retained for history.
+
 ## Model-bank smoke check
 
 The first Ozone model-bank interaction is available as a small manual runner. It reads a JSON config and fetches the OpenID discovery document. The runner can also fetch the discovered JWKS endpoint when `followUp.mode` is set to `jwks` and the required certificate trust chain is available locally.

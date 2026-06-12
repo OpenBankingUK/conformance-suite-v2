@@ -1,0 +1,190 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-06-12",
+  "target": {
+    "standard": "ob-read-write",
+    "specVersion": "v4.0.1",
+    "api": "ais",
+    "profile": "fapi1-advanced",
+    "suite": "ais-certification-baseline",
+    "manifestResource": "conformance/suites/ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+    "firstCertifiableTarget": true
+  },
+  "currentCertificationCoverage": "partial",
+  "promotionStatus": "blocked",
+  "promotionBlockers": [
+    "Standards-owned v4.0.1 AIS mandatory matrix is not yet recorded in this ledger.",
+    "Prior-FCS parity has only been seeded from the current v4.0 AIS legacy benchmark notes.",
+    "Known prior-FCS assertion and flow gaps still need implemented primitives, waivers, or superseding decisions.",
+    "OBL-side certification validator expectations for complete v4.0.1 AIS coverage are not yet finalised."
+  ],
+  "statusValues": [
+    "implemented",
+    "partially_implemented",
+    "requires_new_primitive",
+    "blocked",
+    "waived",
+    "legacy_issue",
+    "superseded",
+    "not_started",
+    "requires_v401_confirmation"
+  ],
+  "baselineSources": [
+    {
+      "id": "v4-legacy-benchmark-doc",
+      "type": "repo-doc",
+      "path": "docs/FCS_LEGACY_BENCHMARK_MAPPING.md",
+      "notes": "Records the first v4 AIS previous-FCS parity slice and known gaps."
+    },
+    {
+      "id": "v4-legacy-benchmark-manifest",
+      "type": "suite-manifest",
+      "path": "conformance/suites/ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+      "notes": "Partial v4 AIS legacy benchmark preserving selected previous FCS script IDs."
+    },
+    {
+      "id": "v4-ais-prior-fcs-inventory",
+      "type": "generated-coverage-ledger",
+      "path": "docs/requirements/suite-coverage/v4-ais-prior-fcs-inventory.json",
+      "notes": "Generated 95-row previous-FCS AIS inventory. Each row still requires v4.0.1 applicability review."
+    },
+    {
+      "id": "v401-ais-baseline-manifest",
+      "type": "suite-manifest",
+      "path": "conformance/suites/ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+      "notes": "Current v4.0.1 AIS baseline suite. Still partial."
+    },
+    {
+      "id": "v401-account-info-openapi",
+      "type": "bundled-standard",
+      "path": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json",
+      "notes": "Bundled v4.0.1 Account Info OpenAPI snapshot used for schema-backed assertions."
+    }
+  ],
+  "knownGapsFromPriorFcs": [
+    {
+      "id": "GAP-ASSERTS-ONE-OF",
+      "status": "requires_new_primitive",
+      "description": "Previous FCS `asserts_one_of` assertion-group semantics are not fully represented by current v2 primitives."
+    },
+    {
+      "id": "GAP-SCHEMA-COVERAGE",
+      "status": "partially_implemented",
+      "description": "Schema-backed `response_schema` exists, but remaining legacy `schemaCheck` parity must be completed or formally waived."
+    },
+    {
+      "id": "GAP-GOESSNER-PREDICATES",
+      "status": "requires_new_primitive",
+      "description": "Goessner-style array predicates such as `Data.Transaction.#(BankTransactionCode)` need a generic v2 representation or waiver."
+    },
+    {
+      "id": "GAP-FAPI-INTERACTION-ID",
+      "status": "requires_v401_confirmation",
+      "description": "Exact request-header playback assertions for `x-fapi-interaction-id` need v4.0.1 policy confirmation."
+    },
+    {
+      "id": "GAP-PERMISSION-NEGATIVE-FLOWS",
+      "status": "requires_new_primitive",
+      "description": "Permission-negative flows require separate consent/token variants and explicit auth-bundle modelling."
+    },
+    {
+      "id": "GAP-NO-TOKEN-CLIENT-CREDENTIALS",
+      "status": "requires_new_primitive",
+      "description": "No-token and client-credentials-token protected-resource variants from prior FCS need coverage decisions."
+    },
+    {
+      "id": "GAP-REUSABLE-LEGACY-ASSERTIONS",
+      "status": "requires_v401_confirmation",
+      "description": "Reusable assertion references from previous `assertions.json` need mapping to v2 assertion primitives or waivers."
+    }
+  ],
+  "currentV401BaselineSteps": [
+    {"stepId": "openid-discovery", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "jwks-fetch", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "client-credentials-token", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "account-access-consent", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "psu-authorization", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "token-exchange", "status": "implemented", "coverageType": "setup"},
+    {"stepId": "accounts-list", "status": "implemented", "coverageType": "mandatory-default"},
+    {"stepId": "account-detail", "status": "implemented", "coverageType": "mandatory-default"},
+    {"stepId": "account-balances", "status": "implemented", "coverageType": "mandatory-default"},
+    {"stepId": "account-transactions", "status": "implemented", "coverageType": "mandatory-default"},
+    {"stepId": "transactions-list", "status": "implemented", "coverageType": "mandatory-default"},
+    {"stepId": "balances-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-beneficiaries", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "beneficiaries-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-direct-debits", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "direct-debits-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-offers", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "offers-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-party", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-parties", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "party-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-product", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "products-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-scheduled-payments", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "scheduled-payments-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "account-standing-orders", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "standing-orders-list", "status": "implemented", "coverageType": "optional"},
+    {"stepId": "statements-list", "status": "implemented", "coverageType": "optional"}
+  ],
+  "seededPriorFcsParityRecords": [
+    {
+      "legacyScriptId": "OB-400-ACC-100400",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-ACC-100400",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-ACC-100200",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-ACC-100200",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-BAL-101200",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-BAL-101200",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-TRA-105000",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-TRA-105000",
+      "notes": "Implemented in the v4.0 legacy benchmark with basic-only transaction permissions. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-TRA-105100",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-TRA-105100",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-TRA-105110",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-TRA-105110",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    },
+    {
+      "legacyScriptId": "OB-400-TRA-105120",
+      "legacySourceVersion": "v4.0",
+      "v2Status": "requires_v401_confirmation",
+      "currentV2StepId": "OB-400-TRA-105120",
+      "notes": "Implemented in the v4.0 legacy benchmark. Needs v4.0.1 applicability check."
+    }
+  ],
+  "nextInventoryActions": [
+    "Review every row in the generated previous FCS AIS inventory for v4.0.1 applicability.",
+    "Map every prior mandatory script to a v4.0.1 v2 step, waiver, legacy issue, superseding requirement, or blocker.",
+    "Map optional and conditional prior scripts to tree-view selection groups and opt-in plan rows.",
+    "Confirm which v4.0 legacy benchmark records apply unchanged to v4.0.1.",
+    "Add Standards-owned mandatory matrix rows and sign-off metadata.",
+    "Add validator expectations required before changing the suite to `certificationCoverage: complete`."
+  ]
+}
