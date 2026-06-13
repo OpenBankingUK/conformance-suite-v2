@@ -79,8 +79,9 @@
     },
     {
       "id": "GAP-FAPI-INTERACTION-ID",
-      "status": "requires_v401_confirmation",
-      "description": "Exact request-header playback assertions for `x-fapi-interaction-id` need v4.0.1 policy confirmation."
+      "status": "partially_implemented",
+      "description": "Exact request-header playback assertions for `x-fapi-interaction-id` need v4.0.1 policy confirmation.",
+      "implementation_notes": "matches_request_header rule implemented. All 23 mandatory AIS steps in the v4.0.1 baseline now send x-fapi-interaction-id and assert echo-back. Suite remains partial pending Standards confirmation."
     },
     {
       "id": "GAP-PERMISSION-NEGATIVE-FLOWS",

@@ -284,7 +284,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "blocks_complete_if_mandatory",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -315,7 +315,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "blocks_complete_if_mandatory",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -664,7 +664,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "blocks_complete_if_mandatory",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -696,7 +696,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -963,7 +963,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -995,7 +995,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1190,7 +1190,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1221,7 +1221,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1417,7 +1417,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1448,7 +1448,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1745,7 +1745,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1776,7 +1776,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -1873,7 +1873,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2067,7 +2067,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2098,7 +2098,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2293,7 +2293,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2324,7 +2324,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2553,7 +2553,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2584,7 +2584,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "opt_in_or_standards_decision",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2916,7 +2916,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "blocks_complete_if_mandatory",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."
@@ -2949,7 +2949,7 @@
       "v4BenchmarkStepIds": [],
       "v4BenchmarkStatus": "not_implemented",
       "v401Applicability": "requires_standards_confirmation",
-      "v2Status": "not_started",
+      "v2Status": "partially_implemented",
       "requiredPrimitiveOrDecision": [],
       "certificationImpact": "blocks_complete_if_mandatory",
       "notes": "Seeded from bundled previous FCS v4 AIS source; requires v4.0.1 applicability review."

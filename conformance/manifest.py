@@ -85,7 +85,7 @@ JsonFieldRule = Literal[
 ]
 """JSON field validation rules supported by manifest assertions."""
 
-HeaderRule = Literal["present", "absent", "equals", "contains"]
+HeaderRule = Literal["present", "absent", "equals", "contains", "matches_request_header"]
 """HTTP header validation rules supported by manifest assertions."""
 
 FollowUpType = Literal["jwks"]
@@ -271,12 +271,18 @@ class HeaderAssertion:
         rule: Validation rule applied to the response header value.
         value: Expected or required substring for ``equals`` and ``contains``
             rules.
+        request_header: Name of the outbound request header whose value the
+            response header must echo back for the ``matches_request_header``
+            rule. Populated from the manifest ``requestHeader`` field when
+            present, otherwise defaults to ``name``. Always ``None`` for all
+            other rules.
     """
 
     type: Literal["header"]
     name: str
     rule: HeaderRule
     value: str | None = None
+    request_header: str | None = None
 
 
 @dataclass(frozen=True)
@@ -2305,6 +2311,13 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
         case "equals" | "contains":
             _reject_unknown_keys(raw_assertion, allowed_keys={"type", "name", "rule", "value"}, location=location)
             value = _required_header_rule_value(raw_assertion, rule=rule, location=location)
+        case "matches_request_header":
+            _reject_unknown_keys(
+                raw_assertion,
+                allowed_keys={"type", "name", "rule", "requestHeader"},
+                location=location,
+            )
+            value = None
         case _:
             _reject_unknown_keys_with_singular_message(
                 raw_assertion,
@@ -2317,7 +2330,22 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
     if not _HEADER_NAME_PATTERN.fullmatch(name):
         raise ManifestError(f"{location}.name is not a valid HTTP header name")
 
-    return HeaderAssertion(type="header", name=name, rule=rule, value=value)
+    # Resolve request_header for matches_request_header rule.
+    request_header: str | None = None
+    if rule == "matches_request_header":
+        if "requestHeader" not in raw_assertion:
+            # Default: use the response header name as the request header name.
+            request_header = name
+        else:
+            raw_rh = raw_assertion.get("requestHeader")
+            if not isinstance(raw_rh, str) or not raw_rh.strip():
+                raise ManifestError(f"{location}.requestHeader must be a non-empty string")
+            stripped_rh = raw_rh.strip()
+            if not _HEADER_NAME_PATTERN.fullmatch(stripped_rh):
+                raise ManifestError(f"{location}.requestHeader is not a valid HTTP header name")
+            request_header = stripped_rh
+
+    return HeaderAssertion(type="header", name=name, rule=rule, value=value, request_header=request_header)
 
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
@@ -2563,7 +2591,9 @@ def _required_header_rule(raw_assertion: dict[str, JsonValue], *, location: str)
         return "equals"
     if rule == "contains":
         return "contains"
-    raise ManifestError(f"{location}.rule must be one of: present, absent, equals, contains")
+    if rule == "matches_request_header":
+        return "matches_request_header"
+    raise ManifestError(f"{location}.rule must be one of: present, absent, equals, contains, matches_request_header")
 
 
 def _required_header_rule_value(

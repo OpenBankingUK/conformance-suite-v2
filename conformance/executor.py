@@ -2353,6 +2353,7 @@ def _execute_v1_step_inner(
         response=response,
         assertions=manifest_step.assertions,
         warning=manifest_step.warning,
+        request_headers=resolved_headers,
     )
     # Emit one assertion-evaluated event per assertion, using the structured
     # results already attached to step_result.details to avoid re-evaluating.
@@ -2731,6 +2732,7 @@ def _build_assertion_step(
     response: JsonHttpResponse,
     assertions: tuple[ManifestAssertion, ...],
     warning: str | None = None,
+    request_headers: Mapping[str, str] | None = None,
 ) -> StepResult:
     """Build a step result by evaluating all assertions for a response.
 
@@ -2749,6 +2751,10 @@ def _build_assertion_step(
         assertions: The manifest assertions to apply to the response.
         warning: Optional deprecation/risk message declared by the manifest
             step. Only applied when all assertions pass.
+        request_headers: Resolved outbound request headers for the step.
+            Forwarded to the assertion evaluator to support the
+            ``matches_request_header`` header rule. Defaults to ``None``;
+            existing callers need not change.
 
     Returns:
         A completed step result containing the overall pass/fail/warn status
@@ -2760,6 +2766,7 @@ def _build_assertion_step(
             status_code=response.status_code,
             headers=response.headers,
             body=response.body,
+            request_headers=request_headers,
         )
         for assertion in assertions
     )

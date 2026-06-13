@@ -38,6 +38,7 @@ def evaluate_assertion(
     status_code: int,
     headers: Mapping[str, str] | None = None,
     body: JsonObject,
+    request_headers: Mapping[str, str] | None = None,
 ) -> AssertionResult:
     """Evaluate a manifest assertion against an HTTP response.
 
@@ -46,6 +47,9 @@ def evaluate_assertion(
         status_code: HTTP response status code.
         headers: HTTP response headers available for header assertions.
         body: Parsed JSON object response body.
+        request_headers: Resolved outbound HTTP request headers for the step.
+            Only used by the ``matches_request_header`` header rule. When
+            ``None``, that rule produces a failing result.
 
     Returns:
         Assertion outcome and a concise diagnostic message.
@@ -55,7 +59,7 @@ def evaluate_assertion(
     if isinstance(assertion, ResponseSchemaAssertion):
         return _evaluate_response_schema(assertion, body=body)
     if isinstance(assertion, HeaderAssertion):
-        return _evaluate_header(assertion, headers=headers)
+        return _evaluate_header(assertion, headers=headers, request_headers=request_headers)
     return _evaluate_json_field(assertion, body=body)
 
 
@@ -410,12 +414,19 @@ def _evaluate_all_items_absent_field(path: str, value: JsonValue, field_name: st
     )
 
 
-def _evaluate_header(assertion: HeaderAssertion, *, headers: Mapping[str, str] | None) -> AssertionResult:
+def _evaluate_header(
+    assertion: HeaderAssertion,
+    *,
+    headers: Mapping[str, str] | None,
+    request_headers: Mapping[str, str] | None = None,
+) -> AssertionResult:
     """Evaluate a response-header assertion.
 
     Args:
         assertion: Parsed header assertion with name and rule.
         headers: Response header mapping available for lookup.
+        request_headers: Resolved outbound request headers. Only used by the
+            ``matches_request_header`` rule.
 
     Returns:
         Assertion result indicating whether the header satisfied the rule.
@@ -435,9 +446,40 @@ def _evaluate_header(assertion: HeaderAssertion, *, headers: Mapping[str, str] |
         if header_value == assertion.value:
             return AssertionResult(passed=True, message=f"Header {assertion.name} equals the expected value")
         return AssertionResult(passed=False, message=f"Header {assertion.name} must equal the expected value")
-    if assertion.value is not None and assertion.value in header_value:
-        return AssertionResult(passed=True, message=f"Header {assertion.name} contains the expected value")
-    return AssertionResult(passed=False, message=f"Header {assertion.name} must contain the expected value")
+    if assertion.rule == "contains":
+        if assertion.value is not None and assertion.value in header_value:
+            return AssertionResult(passed=True, message=f"Header {assertion.name} contains the expected value")
+        return AssertionResult(passed=False, message=f"Header {assertion.name} must contain the expected value")
+    if assertion.rule == "matches_request_header":
+        req_header_name = assertion.request_header if assertion.request_header is not None else assertion.name
+        sent_value = _resolve_header_value(request_headers, req_header_name)
+        if sent_value is None:
+            return AssertionResult(
+                passed=False,
+                message=(
+                    f"Request header {req_header_name} was not sent; "
+                    f"cannot verify response playback of {assertion.name}"
+                ),
+            )
+        response_value = _resolve_header_value(headers, assertion.name)
+        if response_value is None:
+            return AssertionResult(
+                passed=False,
+                message=(
+                    f"Response header {assertion.name} is missing; "
+                    f"expected playback of request header {req_header_name}"
+                ),
+            )
+        if response_value == sent_value:
+            return AssertionResult(
+                passed=True,
+                message=f"Response header {assertion.name} echoes request header {req_header_name}",
+            )
+        return AssertionResult(
+            passed=False,
+            message=(f"Response header {assertion.name} does not match request header {req_header_name}"),
+        )
+    return AssertionResult(passed=False, message=f"Header {assertion.name} has unsupported rule {assertion.rule}")
 
 
 def _resolve_header_value(headers: Mapping[str, str] | None, name: str) -> str | None:

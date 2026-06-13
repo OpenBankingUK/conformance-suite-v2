@@ -5,6 +5,7 @@ import pytest
 from conformance.assertions import evaluate_assertion
 from conformance.json_types import JsonValue
 from conformance.manifest import (
+    HeaderAssertion,
     HttpStatusAssertion,
     JsonFieldAssertion,
     ManifestAssertion,
@@ -708,3 +709,141 @@ def test_evaluate_response_schema_reports_unknown_schema_ref_as_assertion_failur
     assert result.message == (
         "Response body failed schema validation: Schema reference '#/components/schemas/DoesNotExist' was not found"
     )
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_passes_for_matching_values() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-fapi-interaction-id": "abc-123"},
+        request_headers={"x-fapi-interaction-id": "abc-123"},
+        body={},
+    )
+
+    assert result.passed is True
+    assert result.message == "Response header x-fapi-interaction-id echoes request header x-fapi-interaction-id"
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_uses_case_insensitive_name_lookup() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-fapi-interaction-id": "abc-123"},
+        request_headers={"X-Fapi-Interaction-Id": "abc-123"},
+        body={},
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_fails_when_response_header_missing() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={},
+        request_headers={"x-fapi-interaction-id": "abc-123"},
+        body={},
+    )
+
+    assert result.passed is False
+    assert "x-fapi-interaction-id" in result.message
+    assert "abc-123" not in result.message
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("request_headers", [None, {}])
+def test_evaluate_header_matches_request_header_fails_when_request_header_not_sent(
+    request_headers: dict[str, str] | None,
+) -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-fapi-interaction-id": "abc-123"},
+        request_headers=request_headers,
+        body={},
+    )
+
+    assert result.passed is False
+    assert "was not sent" in result.message
+    assert "x-fapi-interaction-id" in result.message
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_fails_on_value_mismatch_without_leaking_values() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-fapi-interaction-id": "xyz-999"},
+        request_headers={"x-fapi-interaction-id": "abc-123"},
+        body={},
+    )
+
+    assert result.passed is False
+    assert "x-fapi-interaction-id" in result.message
+    assert "abc-123" not in result.message
+    assert "xyz-999" not in result.message
+
+
+@pytest.mark.unit
+def test_evaluate_header_present_still_works_when_request_headers_is_none() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "content-type", "rule": "present"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"Content-Type": "application/json"},
+        request_headers=None,
+        body={},
+    )
+
+    assert result.passed is True
+    assert result.message == "Header content-type is present"
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_uses_explicit_request_header_name() -> None:
+    assertion = HeaderAssertion(
+        type="header",
+        name="x-response-id",
+        rule="matches_request_header",
+        request_header="x-request-id",
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-response-id": "abc-123"},
+        request_headers={"x-request-id": "abc-123"},
+        body={},
+    )
+
+    assert result.passed is True
+    assert result.message == "Response header x-response-id echoes request header x-request-id"
+
+
+@pytest.mark.unit
+def test_evaluate_header_matches_request_header_compares_values_case_sensitively() -> None:
+    assertion = parsed_assertion({"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"x-fapi-interaction-id": "abc-123"},
+        request_headers={"x-fapi-interaction-id": "Abc-123"},
+        body={},
+    )
+
+    assert result.passed is False

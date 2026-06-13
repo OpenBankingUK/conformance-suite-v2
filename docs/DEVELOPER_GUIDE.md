@@ -281,14 +281,14 @@ Bundle authors must not expose certificate paths, private keys, client secrets, 
 
 See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), `config/model-bank-ais-certification-baseline-example.json` (v4 AIS baseline), and `config/model-bank-ais-certification-slice-example.json` (preserved v4 AIS proof slice) for complete config examples.
 
-The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python. The v4 AIS baseline and legacy benchmark slices additionally use `response_schema` assertions for schema-backed response checks against bundled standards assets.
+The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python. The v4 AIS baseline and legacy benchmark slices additionally use `response_schema` assertions for schema-backed response checks against bundled standards assets. `matches_request_header` is the FAPI header echo-back rule for cases where a response must mirror a request header such as `x-fapi-interaction-id`; it supports an optional `requestHeader` field that defaults to the assertion `name`, compares header names case-insensitively, compares values case-sensitively, and keeps assertion messages free of header values for security.
 
 Supported v1 assertion shapes are:
 
 | Assertion type | Rules | Notes |
 | --- | --- | --- |
 | `http_status` | Exact `expected` status code | Existing status assertion. |
-| `header` | `present`, `absent`, `equals`, `contains` | Header names are case-insensitive. |
+| `header` | `present`, `absent`, `equals`, `contains`, `matches_request_header` | Header names are case-insensitive. `matches_request_header` echoes the request header value and defaults `requestHeader` to the assertion `name`. |
 | `json_field` | `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, `all_items_have_field` | `required` treats explicit JSON `null` as present; `all_items_have_field` is a lightweight array-of-objects constraint. |
 | `response_schema` | `source` + `document` + exactly one of `schemaRef` or inline `schema`; optional `bodyPath` | Source/document are allowlisted; placeholders are rejected for schema selector fields. |
 

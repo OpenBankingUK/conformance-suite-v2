@@ -19,9 +19,10 @@ from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
-from conformance.executor import _execute_v1_psu_step, run_manifest
+from conformance.executor import _build_assertion_step, _execute_v1_psu_step, run_manifest
+from conformance.http import JsonHttpResponse
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.manifest import GeneratedRequestObject, ManifestStep, PsuAuthorizationStep, parse_manifest
 from conformance.masking import MASKED_VALUE
 from conformance.model_bank_config import FapiSigningConfig, SuiteName, TokenEndpointClientAuthMode
 from conformance.results import SmokeCheckResult
@@ -5913,3 +5914,105 @@ def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> Non
     assert result.status_code == 200
     assert "did not return a redirect" in result.message
     assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_build_assertion_step_forwards_request_headers_for_matches_request_header() -> None:
+    response = JsonHttpResponse(
+        url="https://example.com/resource",
+        status_code=200,
+        body={},
+        headers={"x-fapi-interaction-id": "abc-123"},
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "matches request header",
+            "steps": [
+                {
+                    "id": "step-a",
+                    "name": "Step A",
+                    "request": {"method": "GET", "url": "https://example.com/resource"},
+                    "assertions": [
+                        {"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"}
+                    ],
+                }
+            ],
+        }
+    )
+    assertion = cast("ManifestStep", manifest.steps[0]).assertions[0]
+
+    step_result = _build_assertion_step(
+        name="step-a",
+        success_message="all good",
+        failure_message="bad",
+        response=response,
+        assertions=(assertion,),
+        request_headers={"x-fapi-interaction-id": "abc-123"},
+    )
+
+    assert step_result.status == "passed"
+
+
+@pytest.mark.unit
+def test_build_assertion_step_defaults_request_headers_to_none_without_regressing_existing_rules() -> None:
+    response = JsonHttpResponse(
+        url="https://example.com/resource",
+        status_code=200,
+        body={},
+        headers={"content-type": "application/json"},
+    )
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "present header",
+            "steps": [
+                {
+                    "id": "step-a",
+                    "name": "Step A",
+                    "request": {"method": "GET", "url": "https://example.com/resource"},
+                    "assertions": [{"type": "header", "name": "content-type", "rule": "present"}],
+                }
+            ],
+        }
+    )
+    assertion = cast("ManifestStep", manifest.steps[0]).assertions[0]
+
+    step_result = _build_assertion_step(
+        name="step-a",
+        success_message="all good",
+        failure_message="bad",
+        response=response,
+        assertions=(assertion,),
+    )
+
+    assert step_result.status == "passed"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_matches_request_header_assertion_uses_resolved_headers() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={}, headers={"x-fapi-interaction-id": request.headers["x-fapi-interaction-id"]})
+
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "header echo",
+        "steps": [
+            {
+                "id": "step-a",
+                "name": "Step A",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/resource",
+                    "headers": {"x-fapi-interaction-id": "abc-123"},
+                },
+                "assertions": [{"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"}],
+            }
+        ],
+    }
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(parse_manifest(raw_manifest), environment="test", client=client)
+
+    assert result.status == "passed"
+    assert result.steps[0].status == "passed"

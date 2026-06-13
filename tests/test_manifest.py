@@ -11,6 +11,7 @@ from conformance.manifest import (
     DetachedJwsPolicy,
     FormBody,
     GeneratedRequestObject,
+    HeaderAssertion,
     JsonBody,
     ManifestError,
     ManifestStep,
@@ -3648,3 +3649,120 @@ def test_parse_v1_manifest_auth_metadata_rejects_overlapping_permissions() -> No
 
     with pytest.raises(ManifestError, match="both required_ob_permissions and excluded_ob_permissions"):
         parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_header_matches_request_header_minimal() -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [{"type": "header", "name": "x-fapi-interaction-id", "rule": "matches_request_header"}]
+
+    manifest = parse_manifest(raw_manifest)
+    assertion = cast("HeaderAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+
+    assert assertion == HeaderAssertion(
+        type="header",
+        name="x-fapi-interaction-id",
+        rule="matches_request_header",
+        request_header="x-fapi-interaction-id",
+    )
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_accepts_header_matches_request_header_with_explicit_request_header() -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [
+        {
+            "type": "header",
+            "name": "x-fapi-interaction-id",
+            "rule": "matches_request_header",
+            "requestHeader": "x-custom-id",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+    assertion = cast("HeaderAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+
+    assert assertion == HeaderAssertion(
+        type="header",
+        name="x-fapi-interaction-id",
+        rule="matches_request_header",
+        request_header="x-custom-id",
+    )
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_non_string_request_header_for_matches_request_header() -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [
+        {
+            "type": "header",
+            "name": "x-fapi-interaction-id",
+            "rule": "matches_request_header",
+            "requestHeader": 123,
+        }
+    ]
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.assertions\[0\]\.requestHeader must be a non-empty string"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_empty_request_header_for_matches_request_header() -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [
+        {
+            "type": "header",
+            "name": "x-fapi-interaction-id",
+            "rule": "matches_request_header",
+            "requestHeader": "   ",
+        }
+    ]
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.assertions\[0\]\.requestHeader must be a non-empty string"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_manifest_rejects_invalid_request_header_name_for_matches_request_header() -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [
+        {
+            "type": "header",
+            "name": "x-fapi-interaction-id",
+            "rule": "matches_request_header",
+            "requestHeader": "invalid header!",
+        }
+    ]
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.assertions\[0\]\.requestHeader is not a valid HTTP header name",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "raw_assertion",
+    [
+        {"type": "header", "name": "content-type", "rule": "present"},
+        {"type": "header", "name": "cache-control", "rule": "equals", "value": "no-store"},
+    ],
+)
+def test_parse_v1_manifest_header_existing_rules_remain_backwards_compatible(
+    raw_assertion: dict[str, JsonValue],
+) -> None:
+    raw_manifest = valid_v1_manifest()
+    first_step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    first_step["assertions"] = [raw_assertion]
+
+    manifest = parse_manifest(raw_manifest)
+    assertion = cast("HeaderAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+
+    assert assertion.name == cast(str, raw_assertion["name"])
+    assert assertion.rule == cast(str, raw_assertion["rule"])
