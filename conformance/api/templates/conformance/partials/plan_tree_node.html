@@ -1,0 +1,42 @@
+{# Recursive tree node partial. Variables: node, rows_by_id, depth #}
+{% if node.node_type == "step" %}
+  {% for row in node.step_rows_at_node %}
+    <div class="tree-leaf" data-plan-step-row data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}" data-step-selected="{% if row.selected_after_form %}true{% else %}false{% endif %}">
+      <label class="tree-leaf-label">
+        <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="{{ row.name }}" data-plan-step-checkbox data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}">
+        <span class="tree-step-name">{{ row.name }}</span>
+        <span class="step-id">{{ row.id }}</span>
+      </label>
+      <span class="tree-leaf-meta">
+        <span class="badge">{{ row.kind }}</span>
+        <span class="badge">{{ row.phase }}</span>
+        {% if row.mandatory %}<span class="badge required">Mandatory</span>{% endif %}
+        {% if row.optional %}<span class="badge optional">Optional</span>{% endif %}
+        {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
+      </span>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="tree-group tree-group--depth-{{ depth }}" data-plan-tree-node data-node-id="{{ node.id }}" data-descendant-ids="{{ node.descendant_step_ids|join:',' }}">
+    <div class="tree-group-header">
+      <div class="tree-header-content">
+        <button type="button" class="tree-chevron" data-plan-tree-chevron data-node-id="{{ node.id }}" aria-expanded="false" aria-controls="tree-children-{{ node.id }}" aria-label="Expand {{ node.label }}">
+          <span aria-hidden="true">›</span>
+        </button>
+        <label class="tree-parent-label">
+          <input type="checkbox" class="tree-parent-checkbox" data-plan-parent-checkbox data-node-id="{{ node.id }}" aria-label="Select all {{ node.label }} steps">
+          <span class="tree-group-name">{{ node.label }}</span>
+        </label>
+      </div>
+      <span class="tree-counts">
+        <span class="badge" data-node-count="{{ node.id }}">{{ node.selected_count }}/{{ node.total_count }}</span>
+        {% if node.cert_impact_count > 0 %}<span class="badge required">{{ node.cert_impact_count }} mandatory</span>{% endif %}
+      </span>
+    </div>
+    <div class="tree-children" id="tree-children-{{ node.id }}" hidden>
+      {% for child in node.children %}
+        {% include "conformance/partials/plan_tree_node.html" with node=child rows_by_id=rows_by_id depth=depth|add:1 %}
+      {% endfor %}
+    </div>
+  </div>
+{% endif %}

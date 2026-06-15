@@ -2,6 +2,7 @@
 
 PYTEST_XDIST ?= -n auto --dist loadfile
 PYTEST_ARGS ?=
+COV_FAIL_UNDER ?= $(if $(strip $(PYTEST_ARGS)),0,80)
 
 check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
@@ -19,7 +20,7 @@ lint: ## Ruff + mypy + docstring coverage + docstring structure
 	uv run pydoclint .
 
 test: ## Run unit + offline Django integration tests (excludes live-network Ozone and Docker e2e tiers)
-	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov $(PYTEST_XDIST) $(PYTEST_ARGS)
+	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov --cov-fail-under=$(COV_FAIL_UNDER) $(PYTEST_XDIST) $(PYTEST_ARGS)
 
 integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
 	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration

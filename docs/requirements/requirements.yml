@@ -163,10 +163,11 @@ requirements:
   - id: REQ-UX-001
     epic: EPIC-UX
     title: Add tree-style visual test-plan selection
-    status: planned
+    status: in_progress
     affectedSurfaces:
       - conformance/api/plan_builder.py
       - conformance/api/templates/conformance/plan_builder.html
+      - conformance/openapi_plan_metadata.py
       - tests/test_plan_builder.py
       - tests/test_ui_views.py
     acceptanceCriteria:

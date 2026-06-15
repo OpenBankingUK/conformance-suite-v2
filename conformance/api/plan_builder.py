@@ -38,6 +38,7 @@ from conformance.model_bank_config import (
     TokenEndpointClientAuthMode,
     parse_model_bank_config,
 )
+from conformance.openapi_plan_metadata import StepTreeNode, build_plan_tree
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
 from conformance.test_plan import TestPlan, TestPlanEntry
 
@@ -205,6 +206,10 @@ class PlanPreview:
             evaluation where compatibility is unknown (e.g. undeclared custom
             environment capabilities).  These do not block launch but are
             surfaced to the participant for awareness.
+        tree_nodes: Hierarchical tree nodes derived from OpenAPI standards
+            documents and manifest step analysis, for visual tree selection
+            rendering. Empty when ``suite_metadata`` is ``None`` or the suite
+            has no bundled OpenAPI document.
     """
 
     config: ModelBankConfig
@@ -219,6 +224,7 @@ class PlanPreview:
     auth_inventory: tuple[PlanAuthBundle, ...]
     step_auth_requirements: tuple[PlanStepAuthRequirement, ...]
     capability_warnings: tuple[str, ...]
+    tree_nodes: tuple[StepTreeNode, ...]
 
 
 class StepIdListField(forms.Field):
@@ -658,6 +664,13 @@ def build_plan_preview(
             manifest=manifest,
             selected_plan=selected_plan,
         )
+    tree_nodes = build_plan_tree(
+        manifest=manifest,
+        suite_metadata=suite_metadata,
+        selected_plan=selected_plan,
+        rows=rows,
+        auth_bundles=auth_inventory,
+    )
 
     capability_blockers, capability_warnings = _evaluate_capability_support(
         config=config,
@@ -679,6 +692,7 @@ def build_plan_preview(
         auth_inventory=auth_inventory,
         step_auth_requirements=step_auth_requirements,
         capability_warnings=capability_warnings,
+        tree_nodes=tree_nodes,
     )
 
 

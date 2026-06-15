@@ -1448,3 +1448,37 @@ def test_preview_capability_warnings_surfaced_without_blocking_launch(
     assert expected_warning in preview.capability_warnings
     assert preview.launch_supported is True
     assert preview.launch_blockers == ()
+
+
+@pytest.mark.unit
+def test_build_plan_preview_populates_tree_nodes_for_catalog_suite() -> None:
+    """build_plan_preview populates tree_nodes when suite_metadata is available."""
+    from conformance.openapi_plan_metadata import StepTreeNode
+
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(AIS_BASELINE_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is not None
+    assert preview.tree_nodes
+    assert all(isinstance(node, StepTreeNode) for node in preview.tree_nodes)
+
+
+@pytest.mark.unit
+def test_build_plan_preview_tree_nodes_empty_without_suite_metadata() -> None:
+    """build_plan_preview returns empty tree_nodes when suite_metadata is None."""
+    from conformance.openapi_plan_metadata import StepTreeNode
+
+    manifest = _v1_manifest([_http_step("single")])
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert preview.suite_metadata is None
+    assert isinstance(preview.tree_nodes, tuple)
+    assert all(isinstance(node, StepTreeNode) for node in preview.tree_nodes)

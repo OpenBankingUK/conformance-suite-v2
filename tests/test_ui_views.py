@@ -438,7 +438,7 @@ class TestPlanBuilderUi:
         assert "hx-post" not in content
 
     def test_preview_post_renders_step_selection_table(self) -> None:
-        """POST /plan/preview/ renders selectable v1 manifest rows."""
+        """POST /plan/preview/ renders selectable step rows in the tree UI."""
         manifest = _v1_manifest(
             [
                 _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
@@ -455,12 +455,12 @@ class TestPlanBuilderUi:
         assert "Step optional" in content
         assert "Mandatory" in content
         assert "Optional" in content
-        assert "Phase" in content
-        assert "Group" in content
         assert "setup" in content
         assert "execution" in content
         assert "bootstrap" in content
         assert "accounts" in content
+        assert "data-plan-tree" in content
+        assert "data-plan-step-row" in content
         assert "hx-post" not in content
 
     def test_preview_post_renders_bulk_selection_controls_and_metadata(self) -> None:
@@ -486,6 +486,89 @@ class TestPlanBuilderUi:
         assert 'data-plan-step-row data-step-id="optional" data-step-mandatory="false"' in content
         assert 'data-plan-step-checkbox data-step-id="mandatory" data-step-mandatory="true"' in content
         assert 'data-plan-step-checkbox data-step-id="optional" data-step-mandatory="false"' in content
+
+    def test_preview_post_renders_chevron_and_separated_controls(self) -> None:
+        """Preview renders chevrons, node wrappers, and header controls without details tags."""
+        manifest = _v1_manifest(
+            [
+                _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
+                _http_step("optional", optional=True, phase="execution", group="accounts"),
+            ]
+        )
+
+        response = Client().post("/plan/preview/", data=_plan_form_data(manifest, selected_step_ids=["mandatory"]))
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "data-plan-tree-chevron" in content
+        assert "data-plan-tree-node" in content
+        assert "data-node-count" in content
+        assert "<details" not in content
+        assert "<summary" not in content
+        assert "tree-group-header" in content
+        assert "aria-expanded" in content
+        assert "tree-header-content" in content
+        assert "tree-group-name" in content
+        assert "tree-step-name" in content
+        # Root groups start expanded
+        assert 'aria-expanded="true"' in content
+        assert "tree-group-header--open" in content
+        # Nested groups start collapsed
+        assert 'aria-expanded="false"' in content
+        # CSS [hidden] override ensures hidden attribute works over display:flex
+        assert "[hidden]" in content
+        # JS uses node-local targeting
+        assert "closest('[data-plan-tree-node]')" in content
+
+    def test_preview_post_tree_renders_node_count_badges_for_catalog_suite(self) -> None:
+        """Preview renders node count badges and chevrons for catalog-resolved suites."""
+        response = Client().post(
+            "/plan/preview/",
+            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "data-node-count" in content
+        assert "data-plan-tree-chevron" in content
+
+    def test_preview_post_tree_layout_has_left_aligned_header_content_wrapper(self) -> None:
+        """Preview renders tree-header-content wrapper div for left-aligned chevron and label."""
+        manifest = _v1_manifest(
+            [
+                _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
+                _http_step("optional", optional=True, phase="execution", group="accounts"),
+            ]
+        )
+
+        response = Client().post("/plan/preview/", data=_plan_form_data(manifest, selected_step_ids=["mandatory"]))
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "tree-header-content" in content
+        assert "tree-group-name" in content
+        assert "tree-counts" in content
+
+    def test_preview_post_tree_nested_groups_render_closed_and_root_groups_open(self) -> None:
+        """Nested tree groups start closed; root groups start open; JS uses node-local targeting."""
+        manifest = _v1_manifest(
+            [
+                _http_step("step-a", mandatory=True, phase="setup", group="groupA"),
+                _http_step("step-b", optional=True, phase="execution", group="groupB"),
+            ]
+        )
+
+        response = Client().post("/plan/preview/", data=_plan_form_data(manifest, selected_step_ids=["step-a"]))
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        # Root groups are open
+        assert 'aria-expanded="true"' in content
+        assert "tree-group-header--open" in content
+        # CSS ensures the hidden attribute hides display:flex containers
+        assert "[hidden]" in content
+        # JavaScript uses node-local targeting for robustness
+        assert "closest('[data-plan-tree-node]')" in content
 
     @pytest.mark.parametrize(
         ("selected_step_ids", "expected_checked_ids", "expected_mandatory_off_count", "expected_eligible_message"),

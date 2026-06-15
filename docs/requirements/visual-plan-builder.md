@@ -1,12 +1,12 @@
 # Visual plan builder design
 
-The current plan builder already validates config/manifest input, previews rows, supports selection, and launches runs. The next UX step is to make test selection visual and structured enough for participants who should not need to edit raw manifests or JSON for common flows.
+The plan builder already validates config/manifest input, previews rows, supports selection, and launches runs. The visual tree selection UI makes that existing plan structure easier to explore without requiring participants to edit raw manifests or JSON for common flows.
 
 ## Product outcome
 
 Participants can select a test plan through a tree of API capabilities, understand mandatory/optional/conditional coverage, see auth requirements, and launch compatible runs with minimal free-text input.
 
-## Proposed tree model
+## Implemented tree model
 
 ```text
 OB Read/Write
@@ -14,33 +14,47 @@ OB Read/Write
     AIS
       Accounts
         GET /accounts
-          ReadAccountsDetail
+          detail
             Auth bundle: ais-detail-consent
               accounts-list
-          ReadAccountsBasic
+          basic
             Auth bundle: ais-basic-consent
               accounts-basic-list
       Transactions
         GET /accounts/{AccountId}/transactions
-          ReadTransactionsDetail
-          ReadTransactionsBasic
-      Optional and conditional resources
-        Beneficiaries
-        Direct Debits
-        Offers
+          detail
+          basic
+      Setup and discovery
+      Consent setup
+      PSU authorisation
+      Token exchange
 ```
 
-Tree nodes should support:
+The hierarchy is derived from:
+
+- `SuiteMetadata` for `standard`, `specVersion`, `api`, and `profile`
+- OpenAPI paths and tags for `resourceGroup` and `endpoint`
+- manifest step analysis for non-resource groups
+- auth bundle permissions for variant labels
+
+Tree nodes follow this hierarchy:
 
 - `standard`
 - `specVersion`
 - `api`
 - `resourceGroup`
 - `endpoint`
-- `contentVariant`
-- `permissionSet`
-- `authBundle`
+- `variant`
 - `step`
+
+The UI must not take tree metadata from participant config. Config remains the source for execution inputs such as URLs, credentials, and environment capability, but the tree structure itself is derived from bundled suite metadata and manifests.
+
+Non-resource steps are grouped under generated sections:
+
+- Setup and discovery
+- Consent setup
+- PSU authorisation
+- Token exchange
 
 ## Selection behaviour
 
@@ -52,11 +66,11 @@ Tree nodes should support:
 
 ## Data needed by the UI
 
-The current manifest and `PlanPreview` model already expose some of this data, including step ID, name, kind, group, phase, mandatory, optional, and auth inventory. The tree view will need additional structured metadata from manifests or companion coverage/profile artefacts:
+The current manifest and `PlanPreview` model already expose some of this data, including step ID, name, kind, group, phase, mandatory, optional, and auth inventory. The tree view now relies on derived metadata from `conformance/openapi_plan_metadata.py` rather than participant-supplied tree hints:
 
 - resource group
 - endpoint family
-- content/permission variant
+- variant labels
 - conditional rationale
 - auth bundle requirement
 - default selected profile
@@ -85,4 +99,3 @@ The current manifest and `PlanPreview` model already expose some of this data, i
 3. Add branch selection/deselection.
 4. Add environment/auth compatibility blockers.
 5. Replace common raw text fields with presets while preserving advanced custom mode.
-

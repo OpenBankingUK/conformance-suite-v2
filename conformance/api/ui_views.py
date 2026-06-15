@@ -291,6 +291,7 @@ def _plan_context(
     context: dict[str, object] = {"form": form, "preview": preview, **guided_flow_context(form)}
     if preview is not None:
         context["preview_counts"] = preview_step_counts(preview)
+    context["rows_by_id"] = {row.id: row for row in preview.rows} if preview else {}
     if launch_error is not None:
         context["launch_error"] = launch_error
     if active_run_id is not None:

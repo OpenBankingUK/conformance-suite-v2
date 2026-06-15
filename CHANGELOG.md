@@ -11,6 +11,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Visual tree-style selection UI metadata for the v4.0.1 AIS baseline now derives its tree from suite metadata, OpenAPI structure, manifest step analysis, and auth bundle permissions via `conformance/openapi_plan_metadata.py`, with non-resource steps grouped into generated sections instead of participant-supplied tree hints. This implements REQ-UX-001 without changing certification eligibility rules.
 - First-class manifest `authMetadata` and environment capability metadata now flow through plan preview, suite-resolved result evidence, execution-log evidence, and certification validation. The browser plan preview surfaces capability blockers/warnings, participant-visible results can carry `authMetadata` and `environmentCapabilities`, and all bundled suites remain explicitly `certificationCoverage: partial`.
 - `matches_request_header` header assertion rule for manifest `header` assertions. Verifies that a response header echoes back the value sent in the corresponding request header. Supports an optional `requestHeader` field (defaults to the same name as `name`). Header name lookup is case-insensitive; value comparison is case-sensitive. Assertion messages include header names but never values. ([FAPI 1.0 Advanced §6.2.1](https://openid.net/specs/openid-financial-api-part-2-1_0.html))
 - All 23 mandatory AIS resource steps in the v4.0.1 baseline now send `x-fapi-interaction-id` and assert echo-back using `matches_request_header`.
