@@ -96,8 +96,7 @@ jobs:
             --cov=. \
             --cov-report=xml:coverage.xml \
             --cov-report=term-missing \
-            --json-report \
-            --json-report-file=test-results.json \
+            --junit-xml=test-results.xml \
             -m "not e2e" \
             -v \
             -n auto \
@@ -115,7 +114,7 @@ jobs:
         if: always()
         with:
           name: test-results-${{ github.run_id }}
-          path: test-results.json
+          path: test-results.xml
 
   # ────────────────────────────────────────────────
   # Job 3: Docker Build
