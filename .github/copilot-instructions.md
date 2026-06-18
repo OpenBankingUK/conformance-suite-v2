@@ -16,17 +16,23 @@ This repository is the **Open Banking UK Conformance Test Tool**, distributed as
 - Run a focused test through the Makefile with `PYTEST_ARGS='tests/test_example.py::test_name' make test`.
 - Run live-network Ozone integration tests with `make integration`; these require the relevant tier environment variables.
 - Use `uv run python main.py <config.json>` for CLI smoke/config-selected suite runs, and `uv run python -m conformance.certification_cli ...` for certification report validation.
-- For local engine debugging, prefer CLI runs over browser/UI reruns: `CONFORMANCE_DEVELOPER_MODE=true uv run python main.py <config.json>`. Inspect the configured `resultOutputPath` and `executionLogPath` under `out/` for unmasked local diagnostics. Never use developer mode on shared infrastructure, release builds, or real participant data.
+- Prefer Make targets for local CLI runs: `make run-cli CONFIG=path/to/config.json`, `make run-cli-dev CONFIG=path/to/config.json` (developer mode, unmasked), `make run-pis-consent CONFIG=path/to/config.json` (consent-creation-only PIS debug). Pass extra CLI options via `CLI_ARGS='...'`.
+- For local engine debugging, prefer CLI runs over browser/UI reruns: `CONFORMANCE_DEVELOPER_MODE=true uv run python main.py <config.json>`. Inspect the configured `resultOutputPath` and `executionLogPath` under `out/` for unmasked local diagnostics. Run artifacts are written to `out/` using the naming pattern `out/local-{suite-slug}-results.json` and `out/local-{suite-slug}-execution-log.ndjson`. Never use developer mode on shared infrastructure, release builds, or real participant data.
 
 ## Architecture Map
 
 - `conformance/model_bank_config.py` validates participant config and resolves file paths; it is the boundary for TLS, FAPI signing, OAuth, suite selection, and approved-release policy inputs.
 - `conformance/manifest.py` parses manifest v0/v1 definitions, including request templating, assertions, PSU authorisation, token-endpoint auth policy, detached JWS, and grouped execution metadata.
-- `conformance/executor.py` is the core run engine: it resolves placeholders, applies runtime auth/signing policies, executes HTTP requests, evaluates assertions, and produces step results.
+- `conformance/executor.py` is the core run engine: it resolves placeholders, applies runtime auth/signing policies, executes HTTP requests, evaluates assertions, and produces step results. The PIS detached-JWS allowlist (suites that require OB-spec `x-jws-signature`) is kept in `executor.py`.
 - `conformance/results.py`, `conformance/execution_log.py`, and `conformance/masking.py` define persisted result JSON, NDJSON execution logs, and sensitive-value masking.
 - `conformance/suite_catalog.py` resolves bundled suite manifests under `conformance/suites/` and standards snapshots under `conformance/standards/`.
-- `conformance/api/` contains the Django REST/UI lifecycle: run creation, run storage, background execution, callback coordination, plan builder views, and downloadable artifacts.
-- `config/` contains runnable examples and Django settings; README/docs must stay aligned when schema, suite, API, CLI, or workflow behaviour changes.
+- `conformance/api/` contains the Django REST/UI lifecycle: run creation, run storage, background execution, callback coordination, plan builder views, and downloadable artifacts. `conformance/api/templates/plan_builder.html` is the plan-builder UI entry point; it uses `plan_tree_node.html` as a recursive Jinja fragment for tree rendering — always read both together.
+- `config/` contains runnable example/template configs and Django settings; README/docs must stay aligned when schema, suite, API, CLI, or workflow behaviour changes. **Do not put live participant credentials or certs here.**
+- `local-config/` is gitignored and holds live participant configs, certificates, private keys, and reference artefacts (e.g. old-FCS request/response logs used for debugging). When a user asks to run against a real ASPSP or references an old-FCS config, look here first. The canonical subdirectory for configs is `local-config/configs/`.
+
+### PIS Suite Conventions
+
+Open Banking v3.1.4+ detached JWS (`x-jws-signature`) on PIS write requests must use the **current OB protected-header shape**: base64url-encoded payload, `typ: JOSE`, `cty: application/json`, and the three OB-specific header claims (`http://openbanking.org.uk/iat`, `http://openbanking.org.uk/iss`, `http://openbanking.org.uk/tan`). The older pre-v3.1.4 shape (`b64: false` + `crit: [b64]`) is rejected by Ozone. When debugging `U018 verification_failed` errors on PIS consent creation, check the protected header shape first before investigating certificates or token auth.
 
 ## Implementation Rules
 
