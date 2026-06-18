@@ -16,6 +16,7 @@ This repository is the **Open Banking UK Conformance Test Tool**, distributed as
 - Run a focused test through the Makefile with `PYTEST_ARGS='tests/test_example.py::test_name' make test`.
 - Run live-network Ozone integration tests with `make integration`; these require the relevant tier environment variables.
 - Use `uv run python main.py <config.json>` for CLI smoke/config-selected suite runs, and `uv run python -m conformance.certification_cli ...` for certification report validation.
+- For local engine debugging, prefer CLI runs over browser/UI reruns: `CONFORMANCE_DEVELOPER_MODE=true uv run python main.py <config.json>`. Inspect the configured `resultOutputPath` and `executionLogPath` under `out/` for unmasked local diagnostics. Never use developer mode on shared infrastructure, release builds, or real participant data.
 
 ## Architecture Map
 
