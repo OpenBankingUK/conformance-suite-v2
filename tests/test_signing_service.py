@@ -15,6 +15,7 @@ from joserfc import jwk, jws, jwt
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 from conformance.signing_service import (
+    _OB_JWS_HEADER_REGISTRY,
     ClientAssertionSigningInput,
     FapiSigningService,
     JwtSigningError,
@@ -338,5 +339,100 @@ def test_sign_detached_json_payload_builds_detached_ps256_signature(tmp_path: Pa
     )
 
     assert detached_signature.split(".")[1] == ""
-    assert verified.headers() == {"alg": "PS256", "kid": "signing-key-001", "b64": False, "crit": ["b64"]}
+    assert verified.headers() == {
+        "alg": "PS256",
+        "kid": "signing-key-001",
+        "typ": "JOSE",
+        "cty": "application/json",
+    }
     assert verified.payload == payload
+
+
+@pytest.mark.unit
+def test_sign_detached_json_payload_includes_ob_headers_when_metadata_configured(tmp_path: Path) -> None:
+    """OB JOSE header claims must appear and be in crit when signatureIssuer/signatureTrustAnchor are configured."""
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=certificate_path,
+        signing_private_key_path=private_key_path,
+        key_id="ob-signing-key",
+        client_assertion_issuer="client-issuer",
+        client_assertion_subject="client-subject",
+        token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
+        signature_issuer="0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
+        signature_trust_anchor="openbanking.org.uk",
+    )
+    service = _build_signing_service(config)
+    payload = b'{"Data":{"ConsentId":"consent-123"},"Risk":{}}'
+
+    before_sign = int(datetime.now(UTC).timestamp())
+    detached_signature = service.sign_detached_json_payload(payload)
+    after_sign = int(datetime.now(UTC).timestamp())
+
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        registry=_OB_JWS_HEADER_REGISTRY,
+        payload=payload,
+    )
+    headers = verified.headers()
+
+    assert detached_signature.split(".")[1] == "", "payload segment must be detached (empty)"
+    assert headers["alg"] == "PS256"
+    assert headers["kid"] == "ob-signing-key"
+    assert headers["typ"] == "JOSE"
+    assert headers["cty"] == "application/json"
+    assert "b64" not in headers
+    assert headers["http://openbanking.org.uk/iss"] == "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00"
+    assert headers["http://openbanking.org.uk/tan"] == "openbanking.org.uk"
+    ob_iat = headers["http://openbanking.org.uk/iat"]
+    assert isinstance(ob_iat, int), "iat must be an integer timestamp"
+    assert before_sign <= ob_iat <= after_sign, "iat must be within the signing window"
+    assert set(headers["crit"]) == {
+        "http://openbanking.org.uk/iat",
+        "http://openbanking.org.uk/iss",
+        "http://openbanking.org.uk/tan",
+    }, "all OB claims must appear in crit"
+    assert verified.payload == payload
+
+
+@pytest.mark.unit
+def test_sign_detached_json_payload_minimal_header_when_ob_metadata_absent(tmp_path: Path) -> None:
+    """Absent signatureIssuer/signatureTrustAnchor must produce the minimal header without OB claims."""
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = FapiSigningConfig(
+        certificate_path_root=certificate_root,
+        signing_certificate_path=certificate_path,
+        signing_private_key_path=private_key_path,
+        key_id="signing-key-001",
+        client_assertion_issuer="client-issuer",
+        client_assertion_subject="client-subject",
+        token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
+    )
+    service = _build_signing_service(config)
+    payload = b'{"Data":{"ConsentId":"consent-456"},"Risk":{}}'
+
+    detached_signature = service.sign_detached_json_payload(payload)
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=payload,
+    )
+    headers = verified.headers()
+
+    assert headers == {
+        "alg": "PS256",
+        "kid": "signing-key-001",
+        "typ": "JOSE",
+        "cty": "application/json",
+    }
+    assert "http://openbanking.org.uk/iat" not in headers
+    assert "http://openbanking.org.uk/iss" not in headers
+    assert "http://openbanking.org.uk/tan" not in headers

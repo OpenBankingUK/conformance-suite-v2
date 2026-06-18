@@ -9,6 +9,7 @@ from conformance.json_types import JsonValue
 from conformance.model_bank_config import (
     ConfigError,
     FapiSigningConfig,
+    OpenBankingConfig,
     SuiteSelection,
     SuiteSpecVersion,
     load_model_bank_config,
@@ -17,6 +18,8 @@ from conformance.model_bank_config import (
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
+EXAMPLE_PIS_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-pis-domestic-payment-starter-example.json"
+"""Committed example config for the bundled PIS domestic-payment starter suite."""
 
 
 def _write_approved_release_policy(tmp_path: Path, *, versions: list[str] | None = None) -> Path:
@@ -71,6 +74,44 @@ def test_example_model_bank_config_is_valid_json_config(monkeypatch: pytest.Monk
     assert config.follow_up_mode == "discovery_only"
     assert config.result_output_path == tmp_path / "out" / "test-results.json"
     assert config.test_suite is None
+
+
+@pytest.mark.unit
+def test_example_pis_domestic_payment_starter_model_bank_config_is_valid_json_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Committed PIS starter example config should parse with bundled signing fixtures.
+
+    Args:
+        monkeypatch: Pytest fixture used to isolate the output directory.
+        tmp_path: Temporary directory used as the active working directory.
+    """
+    monkeypatch.chdir(tmp_path)
+    expected_method = "private_key_jwt"
+
+    config = load_model_bank_config(EXAMPLE_PIS_CONFIG_PATH)
+
+    assert config.environment == "ozone-model-bank"
+    assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+    assert config.result_output_path == tmp_path / "out" / "test-results.json"
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="pis-domestic-payment-starter",
+        api="pis",
+    )
+    assert config.oauth is not None
+    assert config.oauth.resource_base_url == "https://rs1.obie.uk.ozoneapi.io"
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.token_endpoint_auth_method == expected_method
+    assert config.test_values is not None
+    assert config.test_values.profile == "ozone-demo"
+    assert dict(config.test_values.overrides) == {
+        "creditorName": "Ozone Demo Merchant",
+        "remittanceInformation": "Ozone domestic payment starter",
+    }
 
 
 @pytest.mark.unit
@@ -173,6 +214,175 @@ def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: Su
     assert config.oauth.client_id == "my-client-id"
     assert config.oauth.redirect_uri == "https://example.com/callback"
     assert config.oauth.open_banking_intent_id == "consent-123"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_pis_domestic_payment_starter_suite(tmp_path: Path) -> None:
+    """The new PIS domestic-payment starter suite should parse with fapiSigning and testValues."""
+    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    expected_method = "private_key_jwt"
+
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": "v4.0",
+                "api": "pis",
+                "profile": "fapi1-advanced",
+                "suite": "pis-domestic-payment-starter",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+            "fapiSigning": {
+                "certificatePathRoot": str(certificate_root),
+                "signingCertificatePath": certificate_path.name,
+                "signingPrivateKeyPath": private_key_path.name,
+                "kid": "starter-signing-key",
+                "clientAssertionIssuer": "my-client-id",
+                "clientAssertionSubject": "my-client-id",
+                "tokenEndpointAuthMethod": expected_method,
+            },
+            "testValues": {
+                "profile": "ozone-demo",
+                "overrides": {
+                    "creditorName": "Ozone Demo Merchant",
+                    "remittanceInformation": "Ozone domestic payment starter",
+                },
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="pis-domestic-payment-starter",
+        api="pis",
+    )
+    assert config.oauth is not None
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.certificate_path_root == certificate_root
+    assert config.fapi_signing.signing_certificate_path == certificate_path
+    assert config.fapi_signing.signing_private_key_path == private_key_path
+    assert config.fapi_signing.token_endpoint_auth_method == expected_method
+    assert config.test_values is not None
+    assert config.test_values.profile == "ozone-demo"
+    assert dict(config.test_values.overrides) == {
+        "creditorName": "Ozone Demo Merchant",
+        "remittanceInformation": "Ozone domestic payment starter",
+    }
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_fapi_signing_ob_metadata(tmp_path: Path) -> None:
+    """fapiSigning.signatureIssuer and signatureTrustAnchor should be parsed into FapiSigningConfig."""
+    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "fapiSigning": {
+                "certificatePathRoot": str(certificate_root),
+                "signingCertificatePath": certificate_path.name,
+                "signingPrivateKeyPath": private_key_path.name,
+                "kid": "ob-signing-key",
+                "clientAssertionIssuer": "my-client-id",
+                "clientAssertionSubject": "my-client-id",
+                "tokenEndpointAuthMethod": "private_key_jwt",
+                "signatureIssuer": "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
+                "signatureTrustAnchor": "openbanking.org.uk",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.signature_issuer == "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00"
+    assert config.fapi_signing.signature_trust_anchor == "openbanking.org.uk"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_fapi_signing_ob_metadata_partial(tmp_path: Path) -> None:
+    """Supplying only one of signatureIssuer/signatureTrustAnchor must be rejected."""
+    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    with pytest.raises(
+        ConfigError,
+        match="fapiSigning.signatureIssuer and fapiSigning.signatureTrustAnchor must be supplied together",
+    ):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "fapiSigning": {
+                    "certificatePathRoot": str(certificate_root),
+                    "signingCertificatePath": certificate_path.name,
+                    "signingPrivateKeyPath": private_key_path.name,
+                    "kid": "ob-key",
+                    "clientAssertionIssuer": "client-id",
+                    "clientAssertionSubject": "client-id",
+                    "tokenEndpointAuthMethod": "private_key_jwt",
+                    "signatureIssuer": "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_open_banking_section(tmp_path: Path) -> None:
+    """openBanking.financialId should be parsed into OpenBankingConfig."""
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "openBanking": {
+                "financialId": "0015800001041RHAAY",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.open_banking is not None
+    assert config.open_banking == OpenBankingConfig(financial_id="0015800001041RHAAY")
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_open_banking_absent_yields_none(tmp_path: Path) -> None:
+    """Omitting openBanking should leave open_banking as None."""
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.open_banking is None
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_open_banking_unknown_keys(tmp_path: Path) -> None:
+    """openBanking with unknown keys must raise ConfigError."""
+    with pytest.raises(ConfigError, match="Unknown openBanking field"):
+        parse_model_bank_config(
+            {
+                "environment": "ozone-model-bank",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "openBanking": {
+                    "financialId": "0015800001041RHAAY",
+                    "unknownField": "value",
+                },
+            },
+            base_dir=tmp_path,
+        )
 
 
 @pytest.mark.unit
@@ -308,6 +518,40 @@ def test_parse_model_bank_config_accepts_v4_ais_fcs_legacy_benchmark_suite(tmp_p
         profile="fapi1-advanced",
         suite="ais-fcs-legacy-benchmark",
         api="ais",
+    )
+    assert config.oauth is not None
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_pis_fcs_legacy_benchmark_suite(tmp_path: Path) -> None:
+    """The v4 PIS FCS legacy benchmark suite should parse as a valid PIS suite selection."""
+    config = parse_model_bank_config(
+        {
+            "environment": "ozone-model-bank",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testSuite": {
+                "standard": "ob-read-write",
+                "specVersion": "v4.0",
+                "api": "pis",
+                "profile": "fapi1-advanced",
+                "suite": "pis-fcs-legacy-benchmark",
+            },
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://example.com/callback",
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0",
+        profile="fapi1-advanced",
+        suite="pis-fcs-legacy-benchmark",
+        api="pis",
     )
     assert config.oauth is not None
     assert config.oauth.resource_base_url == "https://rs.example.com"
@@ -593,8 +837,11 @@ def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path
         (
             "suite",
             "full-read-write",
-            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, ais-certification-slice, "
-            "ais-certification-baseline, ais-fcs-legacy-benchmark",
+            (
+                "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
+                "pis-domestic-payment-starter, ais-certification-slice, "
+                "ais-certification-baseline, ais-fcs-legacy-benchmark"
+            ),
         ),
     ],
 )

@@ -1312,6 +1312,8 @@ class TestRunDetailUi:
             "deselectedSteps": 18,
             "mandatorySelected": 15,
             "mandatoryDeselected": 0,
+            "conditionalSelected": 0,
+            "conditionalDeselectedMissingValues": 0,
         }
         assert result_body["suite"] == {
             "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
@@ -1555,6 +1557,8 @@ class TestRunDetailUi:
             "deselectedSteps": 0,
             "mandatorySelected": 9,
             "mandatoryDeselected": 0,
+            "conditionalSelected": 0,
+            "conditionalDeselectedMissingValues": 0,
         }
         assert [step["name"] for step in result_body["steps"]] == [
             "openid-discovery",
@@ -2479,6 +2483,57 @@ class TestRunDetailUi:
             "skipped": 0,
         }
         assert response.context["developer_mode"] is False
+
+    def test_run_detail_uses_wrap_friendly_step_summary_layout_for_long_messages(self) -> None:
+        """Run detail should preserve readable step titles when summary messages are long."""
+        record = run_store.create_run(
+            planned_steps=(
+                RunPlanStep(
+                    step_id="psu-manual",
+                    name="PSU authorisation (manual)",
+                    kind="psu",
+                    group="default",
+                    phase="execution",
+                    mandatory=True,
+                    optional=False,
+                    order=0,
+                ),
+            )
+        )
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "failed",
+                "summary": {"total": 1, "failed": 1, "passed": 0, "warn": 0, "skipped": 0},
+                "steps": [
+                    {
+                        "name": "psu-manual",
+                        "status": "failed",
+                        "message": (
+                            "Placeholder resolution failed: Path segment 'Data' not found: "
+                            "${steps.OB-400-DOP-100300.response.body.Data.ConsentId}"
+                        ),
+                    }
+                ],
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "PSU authorisation (manual)" in content
+        assert "Placeholder resolution failed: Path segment" in content
+        assert 'class="muted result-step-summary-meta"' in content
+        assert 'class="muted result-step-summary-message"' in content
+        assert ".result-step-summary {" in content
+        assert "flex-wrap: wrap;" in content
+        assert ".result-step-title {" in content
+        assert "min-width: min(100%, 18rem);" in content
+        assert "overflow-wrap: break-word;" in content
+        assert ".result-step-summary-message {" in content
+        assert "flex: 1 1 100%;" in content
 
     def test_result_partial_omits_per_step_details_loop(self) -> None:
         """Result partial should keep only run-level outcome content."""

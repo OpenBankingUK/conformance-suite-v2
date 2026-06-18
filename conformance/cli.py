@@ -7,10 +7,12 @@ import json
 import logging
 import sys
 from collections.abc import Sequence
+from contextlib import AbstractContextManager, nullcontext
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.context import RuntimeConfig
+from conformance.cli_callback_server import CliCallbackServer, CliCallbackServerError, needs_cli_callback_listener
+from conformance.context import RuntimeConfig, build_runtime_test_values
 from conformance.execution_log import (
     BufferedExecutionLogger,
     PsuAuthorizationUrlConsoleLogger,
@@ -19,11 +21,11 @@ from conformance.execution_log import (
 )
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
-from conformance.manifest import ManifestError, load_manifest
+from conformance.manifest import ManifestError, PsuAuthorizationStep, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
+from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,10 @@ def run(argv: Sequence[str] | None = None) -> int:
                 return 2
 
         try:
-            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(args.deselect)
+            test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+            plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx).with_deselection(
+                args.deselect
+            )
         except ValueError as error:
             logger.error("Plan error: %s", error)
             return 2
@@ -114,35 +119,62 @@ def run(argv: Sequence[str] | None = None) -> int:
             client_certificate_path=config.tls.client_certificate_path,
             client_private_key_path=config.tls.client_private_key_path,
         )
-        try:
-            result = run_manifest(
-                manifest,
-                environment=config.environment,
-                client=http_client,
-                execution_logger=logger_sink,
-                plan=plan,
-                run_id=run_id,
+        callback_context: AbstractContextManager[object] = nullcontext()
+        oauth_redirect_uri = config.oauth.redirect_uri if config.oauth is not None else None
+        if needs_cli_callback_listener(
+            redirect_uri=oauth_redirect_uri,
+            has_manual_psu_step=_plan_has_manual_psu_step(manifest=manifest, plan=plan),
+        ):
+            if oauth_redirect_uri is None:
+                logger.error("oauth.redirectUri is required for CLI callback listener")
+                http_client.close()
+                return 2
+            callback_context = CliCallbackServer(
+                redirect_uri=oauth_redirect_uri,
                 auth_session_store=auth_session_store,
-                runtime_config=RuntimeConfig(
-                    discovery_url=config.discovery_url,
-                    environment=config.environment,
-                    oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
-                    oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
-                    oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
-                    oauth_authorization_endpoint=(
-                        config.oauth.authorization_endpoint if config.oauth is not None else None
-                    ),
-                    oauth_open_banking_intent_id=(
-                        config.oauth.open_banking_intent_id if config.oauth is not None else None
-                    ),
-                ),
-                fapi_signing_config=config.fapi_signing,
-                mtls_client_configured=(
-                    config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
-                ),
-                suite_metadata=suite_metadata,
-                approved_release_policy=config.approved_release_policy,
             )
+        try:
+            try:
+                with callback_context:
+                    result = run_manifest(
+                        manifest,
+                        environment=config.environment,
+                        client=http_client,
+                        execution_logger=logger_sink,
+                        plan=plan,
+                        run_id=run_id,
+                        auth_session_store=auth_session_store,
+                        runtime_config=RuntimeConfig(
+                            discovery_url=config.discovery_url,
+                            environment=config.environment,
+                            oauth_resource_base_url=(
+                                config.oauth.resource_base_url if config.oauth is not None else None
+                            ),
+                            oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
+                            oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
+                            oauth_authorization_endpoint=(
+                                config.oauth.authorization_endpoint if config.oauth is not None else None
+                            ),
+                            oauth_open_banking_intent_id=(
+                                config.oauth.open_banking_intent_id if config.oauth is not None else None
+                            ),
+                            test_values=build_runtime_test_values(manifest, config.test_values),
+                            test_value_profile_id=test_value_ctx.profile_id,
+                            test_value_profile_source=test_value_ctx.profile_source,
+                            test_value_override_keys=tuple(sorted(test_value_ctx.override_keys)),
+                        ),
+                        fapi_signing_config=config.fapi_signing,
+                        open_banking_config=config.open_banking,
+                        mtls_client_configured=(
+                            config.tls.client_certificate_path is not None
+                            and config.tls.client_private_key_path is not None
+                        ),
+                        suite_metadata=suite_metadata,
+                        approved_release_policy=config.approved_release_policy,
+                    )
+            except CliCallbackServerError as error:
+                logger.error("Callback listener error: %s", error)
+                return 2
         finally:
             http_client.close()
     try:
@@ -183,3 +215,24 @@ def run(argv: Sequence[str] | None = None) -> int:
         config.execution_log_path,
     )
     return 1
+
+
+def _plan_has_manual_psu_step(*, manifest: object, plan: TestPlan) -> bool:
+    """Return whether the selected plan includes a manual PSU step.
+
+    Args:
+        manifest: Parsed manifest whose steps are referenced by ``plan``.
+        plan: Effective execution plan.
+
+    Returns:
+        ``True`` when any selected plan entry refers to a manual
+        :class:`PsuAuthorizationStep`.
+    """
+    steps = getattr(manifest, "steps", ())
+    step_by_id = {step.id: step for step in steps}
+    selected_step_ids = {entry.step_id for entry in plan.entries if entry.selected}
+    return any(
+        isinstance(step, PsuAuthorizationStep) and step.mode == "manual"
+        for step_id, step in step_by_id.items()
+        if step_id in selected_step_ids
+    )

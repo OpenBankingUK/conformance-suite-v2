@@ -69,11 +69,19 @@ from conformance.manifest import (
     ManifestStep,
     ManifestTest,
     PsuAuthorizationStep,
+    TestValueProfileSpec,
     V1Step,
     validate_header_value,
 )
-from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
-from conformance.model_bank_config import FapiSigningConfig
+from conformance.masking import (
+    MASKED_VALUE,
+    SENSITIVE_JSON_KEYS,
+    mask_form_fields,
+    mask_headers,
+    mask_json_value,
+    mask_url_query,
+)
+from conformance.model_bank_config import FapiSigningConfig, OpenBankingConfig
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
@@ -103,6 +111,23 @@ for additional groups.
 _OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
 """Open Banking AIS consent-creation path requiring detached JWS support."""
 
+_OB_DETACHED_JWS_ALLOWED_WRITE_PATH_SUFFIXES = frozenset(
+    {
+        "/aisp/account-access-consents",
+        "/pisp/domestic-payment-consents",
+        "/pisp/domestic-payments",
+        "/pisp/domestic-scheduled-payment-consents",
+        "/pisp/domestic-scheduled-payments",
+        "/pisp/domestic-standing-order-consents",
+        "/pisp/domestic-standing-orders",
+        "/pisp/international-payment-consents",
+        "/pisp/international-payments",
+        "/pisp/international-scheduled-payment-consents",
+        "/pisp/international-scheduled-payments",
+    }
+)
+"""Open Banking write endpoint suffixes that may carry detached JWS signatures."""
+
 
 def _normalize_url_path_for_match(path: str) -> str:
     """Normalize a URL path for endpoint eligibility checks.
@@ -118,6 +143,32 @@ def _normalize_url_path_for_match(path: str) -> str:
     if not normalized_segments:
         return "/"
     return "/" + "/".join(normalized_segments)
+
+
+def _extract_ob_versioned_path_suffix(path: str) -> str | None:
+    """Extract the endpoint suffix from an Open Banking versioned URL path.
+
+    Args:
+        path: Normalized absolute URL path.
+
+    Returns:
+        The endpoint suffix beginning after ``/open-banking/<version>`` when
+        the input is a versioned Open Banking path, otherwise ``None``.
+    """
+    segments = [segment for segment in path.split("/") if segment]
+    if len(segments) < 3:
+        return None
+    if segments[0] != "open-banking":
+        return None
+    version_segments = segments[1].split(".")
+    if len(version_segments) not in {2, 3}:
+        return None
+    if not version_segments[0].startswith("v"):
+        return None
+    numeric_parts = [version_segments[0][1:], *version_segments[1:]]
+    if not all(part.isdigit() for part in numeric_parts):
+        return None
+    return "/" + "/".join(segments[2:])
 
 
 def _attach_evidence(
@@ -534,6 +585,109 @@ def _build_environment_capability_evidence(
     }
 
 
+def _collect_declared_test_value_keys(profile_spec: TestValueProfileSpec) -> list[str]:
+    """Collect every test-value key declared by manifest profile metadata.
+
+    Args:
+        profile_spec: Manifest ``testValueProfiles`` metadata for this run.
+
+    Returns:
+        Sorted list containing keys declared in profile literal values,
+        profile generated keys, and allow-listed override keys.
+    """
+    keys: set[str] = set(profile_spec.allowed_override_keys)
+    for profile in profile_spec.profiles:
+        keys.update(profile.values)
+        keys.update(profile.generated_keys)
+    return sorted(keys)
+
+
+def _build_test_value_profile_evidence(
+    *,
+    manifest: Manifest,
+    plan: TestPlan,
+    runtime_config: RuntimeConfig | None,
+) -> JsonObject | None:
+    """Build non-secret test-value profile evidence for results and logs.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        plan: Effective execution plan for the current run.
+        runtime_config: Optional runtime config carrying effective test values
+            and profile-selection metadata.
+
+    Returns:
+        Test-value profile evidence block, or ``None`` when the manifest does
+        not declare ``testValueProfiles`` metadata.
+    """
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None:
+        return None
+
+    profile_id: str = profile_spec.default_profile_id
+    profile_source: str = "default"
+    override_keys: list[str] = []
+    for entry in plan.entries:
+        if entry.test_value_profile_id is not None:
+            profile_id = entry.test_value_profile_id
+        if entry.test_value_profile_source is not None:
+            profile_source = entry.test_value_profile_source
+        if entry.test_value_override_keys:
+            override_keys = list(entry.test_value_override_keys)
+        if (
+            entry.test_value_profile_id is not None
+            or entry.test_value_profile_source is not None
+            or entry.test_value_override_keys
+        ):
+            break
+
+    if runtime_config is not None:
+        if runtime_config.test_value_profile_id is not None:
+            profile_id = runtime_config.test_value_profile_id
+        if runtime_config.test_value_profile_source is not None:
+            profile_source = runtime_config.test_value_profile_source
+        if runtime_config.test_value_override_keys:
+            override_keys = list(runtime_config.test_value_override_keys)
+
+    if profile_id != profile_spec.default_profile_id or override_keys:
+        profile_source = "overridden"
+
+    condition_outcomes: list[JsonObject] = []
+    required_keys_set: set[str] = set()
+    for entry in plan.entries:
+        required_keys_set.update(entry.required_test_value_keys)
+        if not entry.conditional:
+            continue
+        outcome: JsonObject = {
+            "stepId": entry.step_id,
+            "selected": entry.selected,
+            "requiredKeys": list(entry.required_test_value_keys),
+            "missingKeys": list(entry.missing_test_value_keys),
+            "allRequiredValuesPresent": not entry.missing_test_value_keys,
+        }
+        if entry.condition_id is not None:
+            outcome["conditionId"] = entry.condition_id
+        if entry.condition_label is not None:
+            outcome["conditionLabel"] = entry.condition_label
+        condition_outcomes.append(outcome)
+
+    effective_values: JsonObject = {}
+    available_values = runtime_config.test_values if runtime_config is not None else {}
+    for key in sorted(profile_spec.non_secret_keys):
+        if key in available_values:
+            effective_values[key] = MASKED_VALUE
+
+    return {
+        "profileId": profile_id,
+        "source": profile_source,
+        "overrideKeys": cast("JsonValue", override_keys),
+        "declaredKeys": cast("JsonValue", _collect_declared_test_value_keys(profile_spec)),
+        "requiredKeys": cast("JsonValue", sorted(required_keys_set)),
+        "conditionOutcomes": cast("JsonValue", condition_outcomes),
+        "effectiveValues": effective_values,
+    }
+
+
 def run_manifest(
     manifest: Manifest,
     *,
@@ -545,6 +699,7 @@ def run_manifest(
     auth_session_store: AuthSessionStore | None = None,
     runtime_config: RuntimeConfig | None = None,
     fapi_signing_config: FapiSigningConfig | None = None,
+    open_banking_config: OpenBankingConfig | None = None,
     mtls_client_configured: bool = False,
     suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
@@ -586,6 +741,10 @@ def run_manifest(
             used only at execution time for generated PSU request-object JWTs.
             Kept separate from ``runtime_config`` so signing keys and paths do
             not become available to manifest placeholders.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on outbound Open Banking
+            resource-server requests. Kept separate from ``runtime_config`` so
+            it does not become available to manifest placeholders.
         mtls_client_configured: Whether the shared HTTP client was configured
             with an mTLS client certificate and private key. Used to fail
             ``tls_client_auth`` token steps clearly before dispatch.
@@ -614,6 +773,11 @@ def run_manifest(
         runtime_config=runtime_config,
         selected_step_ids=selected_step_ids,
     )
+    test_value_profile_evidence = _build_test_value_profile_evidence(
+        manifest=manifest,
+        plan=effective_plan,
+        runtime_config=runtime_config,
+    )
     run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
     if suite_metadata is not None:
         run_started_payload["suite"] = suite_metadata.to_json_object()
@@ -622,6 +786,8 @@ def run_manifest(
         logger_sink.emit("auth-metadata-evaluated", payload=auth_metadata_evidence)
     if environment_capability_evidence is not None:
         logger_sink.emit("environment-capability-evaluated", payload=environment_capability_evidence)
+    if test_value_profile_evidence is not None:
+        logger_sink.emit("test-value-profile-evaluated", payload=test_value_profile_evidence)
     try:
         if manifest.schema_version == "v1":
             result = _run_manifest_v1(
@@ -634,11 +800,13 @@ def run_manifest(
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
                 fapi_signing_config=fapi_signing_config,
+                open_banking_config=open_banking_config,
                 mtls_client_configured=mtls_client_configured,
                 suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
                 auth_metadata_evidence=auth_metadata_evidence,
                 environment_capability_evidence=environment_capability_evidence,
+                test_value_profile_evidence=test_value_profile_evidence,
             )
         else:
             result = _run_manifest_v0(
@@ -653,6 +821,7 @@ def run_manifest(
                 approved_release_policy=approved_release_policy,
                 auth_metadata_evidence=auth_metadata_evidence,
                 environment_capability_evidence=environment_capability_evidence,
+                test_value_profile_evidence=test_value_profile_evidence,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -759,11 +928,13 @@ def _run_manifest_v1(
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
     fapi_signing_config: FapiSigningConfig | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
     suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
     auth_metadata_evidence: Mapping[str, JsonValue] | None,
     environment_capability_evidence: Mapping[str, JsonValue] | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -798,6 +969,9 @@ def _run_manifest_v1(
             ``${config.*}`` placeholders.
         fapi_signing_config: Optional validated signing configuration used to
             generate runtime FAPI request-object JWTs for PSU steps.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
         suite_metadata: Optional catalog metadata to embed in the result for
@@ -808,6 +982,8 @@ def _run_manifest_v1(
             emitted for selected steps in this run.
         environment_capability_evidence: Optional non-secret suite/environment
             capability decisions emitted for this run.
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence emitted for this run.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -827,7 +1003,14 @@ def _run_manifest_v1(
             execution_logger.emit(
                 "step-deselected",
                 step_id=entry.step_id,
-                payload={"mandatory": entry.mandatory},
+                payload={
+                    "mandatory": entry.mandatory,
+                    "conditional": entry.conditional,
+                    "testValueProfileSource": entry.test_value_profile_source,
+                    "requiredTestValueKeys": cast("JsonValue", list(entry.required_test_value_keys)),
+                    "missingTestValueKeys": cast("JsonValue", list(entry.missing_test_value_keys)),
+                    "testValueOverrideKeys": cast("JsonValue", list(entry.test_value_override_keys)),
+                },
             )
 
     setup_steps, context = _execute_v1_step_sequence(
@@ -839,6 +1022,7 @@ def _run_manifest_v1(
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
+        open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
     )
     steps.extend(setup_steps)
@@ -853,6 +1037,7 @@ def _run_manifest_v1(
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
+        open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
     )
     steps.extend(execution_steps)
@@ -867,6 +1052,7 @@ def _run_manifest_v1(
         certification_coverage=manifest.certification_coverage,
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
+        test_value_profile_evidence=test_value_profile_evidence,
     )
 
 
@@ -880,6 +1066,7 @@ def _execute_v1_step_sequence(
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
@@ -896,6 +1083,9 @@ def _execute_v1_step_sequence(
             PSU steps that generate request-object JWTs at runtime.
         fapi_signing_service: Optional lazy runtime signing-service cache
             shared across selected steps in the current manifest run.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
 
@@ -914,6 +1104,7 @@ def _execute_v1_step_sequence(
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
+            open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
         )
         steps.append(step_result)
@@ -931,6 +1122,7 @@ def _execute_v1_execution_groups_concurrently(
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
@@ -951,6 +1143,9 @@ def _execute_v1_execution_groups_concurrently(
             PSU steps that generate request-object JWTs at runtime.
         fapi_signing_service: Optional lazy runtime signing-service cache
             shared across selected steps in the current manifest run.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
 
@@ -975,6 +1170,7 @@ def _execute_v1_execution_groups_concurrently(
                     auth_session_store,
                     fapi_signing_config,
                     fapi_signing_service,
+                    open_banking_config,
                     mtls_client_configured,
                 )
             )
@@ -997,6 +1193,7 @@ def _execute_v1_group(
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
@@ -1012,6 +1209,9 @@ def _execute_v1_group(
             PSU steps that generate request-object JWTs at runtime.
         fapi_signing_service: Optional lazy runtime signing-service cache
             shared across selected steps in the current manifest run.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
 
@@ -1027,6 +1227,7 @@ def _execute_v1_group(
         auth_session_store=auth_session_store,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
+        open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
     )
     return group_steps
@@ -1042,6 +1243,7 @@ def _execute_v1_manifest_step(
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
@@ -1058,6 +1260,9 @@ def _execute_v1_manifest_step(
             PSU steps that generate request-object JWTs at runtime.
         fapi_signing_service: Optional lazy runtime signing-service cache
             shared across selected steps in the current manifest run.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
 
@@ -1085,6 +1290,7 @@ def _execute_v1_manifest_step(
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
+            open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
         )
     if manifest_step.mandatory:
@@ -1557,6 +1763,7 @@ def _resolve_psu_request_object(
         authorization_endpoint=authorization_endpoint,
         audience=audience,
         openbanking_intent_id=openbanking_intent_id,
+        omit_openbanking_intent_id_claim=(manifest_step.signing_negative_case == "omit-request-object-signature-claim"),
         client_id=client_id,
         redirect_uri=redirect_uri,
         response_type=manifest_step.response_type,
@@ -1574,6 +1781,7 @@ def _generate_psu_request_object(
     authorization_endpoint: str,
     audience: str,
     openbanking_intent_id: str | None,
+    omit_openbanking_intent_id_claim: bool,
     client_id: str,
     redirect_uri: str,
     response_type: str,
@@ -1593,6 +1801,9 @@ def _generate_psu_request_object(
         audience: Resolved request-object JWT ``aud`` claim.
         openbanking_intent_id: Optional Open Banking consent identifier
             resolved from the manifest directive.
+        omit_openbanking_intent_id_claim: Whether this step should intentionally
+            omit the Open Banking request-object claim for negative signing
+            coverage.
         client_id: Resolved OAuth client identifier.
         redirect_uri: Resolved registered redirect URI.
         response_type: Static OAuth response type from the PSU step.
@@ -1630,7 +1841,7 @@ def _generate_psu_request_object(
             scope=scope,
             state=state,
             nonce=nonce,
-            openbanking_intent_id=openbanking_intent_id,
+            openbanking_intent_id=None if omit_openbanking_intent_id_claim else openbanking_intent_id,
         )
     )
     return signed_request_object.token
@@ -1689,16 +1900,35 @@ def _execute_headless_psu_authorization(
             record_step(context, manifest_step.id, request_record, None),
         )
 
+    expected_response = manifest_step.expected_authorization_response
     response_evidence: dict[str, JsonValue] = {"statusCode": response.status_code}
     if not 300 <= response.status_code < 400:
+        if expected_response is not None and response.status_code == expected_response.expected:
+            return (
+                StepResult(
+                    name=manifest_step.id,
+                    status="passed",
+                    message=(
+                        f"{manifest_step.name} received expected authorisation endpoint rejection "
+                        f"(HTTP {response.status_code})"
+                    ),
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                record_step(context, manifest_step.id, request_record, None),
+            )
         return (
             _attach_evidence(
                 StepResult(
                     name=manifest_step.id,
                     status="failed",
                     message=(
-                        "PSU authorisation headless request did not return a redirect "
-                        f"(got HTTP {response.status_code})"
+                        "PSU authorisation headless request did not return a redirect"
+                        if expected_response is None
+                        else (
+                            "PSU authorisation headless request did not match expected "
+                            f"HTTP {expected_response.expected} rejection"
+                        )
                     ),
                     url=result_url,
                     status_code=response.status_code,
@@ -1727,6 +1957,23 @@ def _execute_headless_psu_authorization(
         )
 
     if not redirect_matches_registered_uri(location=location, redirect_uri=redirect_uri):
+        if _matches_expected_negative_redirect_rejection(
+            manifest_step=manifest_step,
+            status_code=response.status_code,
+        ):
+            return (
+                StepResult(
+                    name=manifest_step.id,
+                    status="passed",
+                    message=(
+                        f"{manifest_step.name} received expected redirect-style authorisation endpoint rejection "
+                        f"(HTTP {response.status_code})"
+                    ),
+                    url=result_url,
+                    status_code=response.status_code,
+                ),
+                record_step(context, manifest_step.id, request_record, None),
+            )
         return (
             _attach_evidence(
                 StepResult(
@@ -1834,6 +2081,26 @@ def _execute_headless_psu_authorization(
     )
 
 
+def _matches_expected_negative_redirect_rejection(*, manifest_step: PsuAuthorizationStep, status_code: int) -> bool:
+    """Return whether a redirect-style rejection should satisfy this headless PSU step.
+
+    Args:
+        manifest_step: Parsed PSU step being executed.
+        status_code: HTTP status returned by the authorisation endpoint.
+
+    Returns:
+        ``True`` when the step is the explicit request-object signing-negative
+        case with an expected authorisation response and the ASPSP returned an
+        HTTP redirect instead of the declared direct 4xx/5xx rejection.
+    """
+    expected_response = manifest_step.expected_authorization_response
+    return (
+        expected_response is not None
+        and manifest_step.signing_negative_case == "omit-request-object-signature-claim"
+        and 300 <= status_code < 400
+    )
+
+
 def _complete_psu_step_from_session(
     manifest_step: PsuAuthorizationStep,
     *,
@@ -1903,6 +2170,7 @@ def _execute_v1_step(
     auth_session_store: AuthSessionStore,
     fapi_signing_config: FapiSigningConfig | None = None,
     fapi_signing_service: _LazyFapiSigningService | None = None,
+    open_banking_config: OpenBankingConfig | None = None,
     mtls_client_configured: bool = False,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
@@ -1928,6 +2196,9 @@ def _execute_v1_step(
         fapi_signing_config: Optional validated signing configuration used by
             runtime token-endpoint authentication policies.
         fapi_signing_service: Optional lazy runtime signing-service cache.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
 
@@ -1946,6 +2217,7 @@ def _execute_v1_step(
         execution_logger=execution_logger,
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=effective_fapi_signing_service,
+        open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
     )
     execution_logger.emit(
@@ -1968,6 +2240,7 @@ def _execute_v1_step_inner(
     execution_logger: ExecutionLogger,
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
+    open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
@@ -1984,6 +2257,9 @@ def _execute_v1_step_inner(
         fapi_signing_config: Optional validated signing configuration used by
             runtime token-endpoint authentication policies.
         fapi_signing_service: Optional lazy runtime signing-service cache.
+        open_banking_config: Optional Open Banking institution metadata used
+            to inject ``x-fapi-financial-id`` on Open Banking resource-server
+            requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
 
@@ -2227,6 +2503,13 @@ def _execute_v1_step_inner(
             new_context,
         )
 
+    # Inject x-fapi-financial-id for Open Banking resource-server requests
+    # when the participant config supplies a financialId value.
+    # This header is masked by the existing masking layer.
+    if open_banking_config is not None and _is_open_banking_resource_request(resolved_url):
+        resolved_headers = dict(resolved_headers) if resolved_headers is not None else {}
+        resolved_headers["x-fapi-financial-id"] = open_banking_config.financial_id
+
     if resolved_headers is not None:
         request_evidence["headers"] = _mask_result_headers(resolved_headers)
 
@@ -2291,12 +2574,18 @@ def _execute_v1_step_inner(
         transport_response_evidence: dict[str, JsonValue] | None = None
         if error.status_code is not None:
             transport_response_evidence = {"statusCode": error.status_code}
+            if error.content_type is not None:
+                transport_response_evidence["contentType"] = error.content_type
+            if error.body_snippet is not None:
+                transport_response_evidence["bodySnippet"] = error.body_snippet
         execution_logger.emit(
             "application-error",
             step_id=manifest_step.id,
             payload={
                 "message": str(error),
                 **({"statusCode": error.status_code} if error.status_code is not None else {}),
+                **({"contentType": error.content_type} if error.content_type is not None else {}),
+                **({"bodySnippet": error.body_snippet} if error.body_snippet is not None else {}),
             },
         )
         return (
@@ -2354,6 +2643,7 @@ def _execute_v1_step_inner(
         assertions=manifest_step.assertions,
         warning=manifest_step.warning,
         request_headers=resolved_headers,
+        context=context,
     )
     # Emit one assertion-evaluated event per assertion, using the structured
     # results already attached to step_result.details to avoid re-evaluating.
@@ -2481,6 +2771,11 @@ def _maybe_apply_ob_detached_jws(
 
     Returns:
         Tuple of final outbound headers and serialized JSON body bytes.
+        When the step declares ``signingNegativeCase: omit-detached-jws-header``,
+        headers are returned unchanged and no detached JWS is produced. When the
+        step declares ``signingNegativeCase: omit-jwt-claim``, a compact JWS
+        without the Open Banking ``b64``/``crit`` claims is produced and returned
+        as a malformed ``x-jws-signature`` header value.
 
     Raises:
         ValueError: If the manifest opted into detached JWS but runtime
@@ -2492,12 +2787,44 @@ def _maybe_apply_ob_detached_jws(
     """
     if manifest_step.request.detached_jws is None:
         return resolved_headers, None
+    if manifest_step.signing_negative_case == "omit-detached-jws-header":
+        return resolved_headers, None
+    if manifest_step.signing_negative_case == "omit-jwt-claim":
+        # Produce a detached JWS with the b64 critical claim intentionally omitted.
+        # This represents the OB-400-DOP-100110 negative case where the JWT signature
+        # claim is present but malformed — the header is sent but without the required
+        # Open Banking b64/crit claims, causing a 400 error-code response.
+        if fapi_signing_config is None:
+            raise ValueError("omit-jwt-claim signing negative case requires fapiSigning configuration")
+        if fapi_signing_service is None:
+            raise ValueError("omit-jwt-claim signing negative case requires fapiSigning configuration")
+        if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
+            raise ValueError(
+                "omit-jwt-claim signing negative case is only supported for allowlisted Open Banking write endpoints"
+            )
+        if resolved_json_body is None:
+            raise ValueError("omit-jwt-claim signing negative case requires a JSON request body")
+        serialized_json_body = _serialize_json_request_body(resolved_json_body)
+        signing_service = fapi_signing_service.get()
+        if signing_service is None:
+            raise ValueError("omit-jwt-claim signing negative case requires fapiSigning configuration")
+        malformed_signature = signing_service.sign_detached_json_payload_omit_b64_claim(serialized_json_body)
+        validate_header_value(
+            malformed_signature,
+            location=f"step '{manifest_step.id}' generated header x-jws-signature (omit-jwt-claim)",
+        )
+        malformed_headers = dict(resolved_headers) if resolved_headers is not None else {}
+        malformed_headers["x-jws-signature"] = malformed_signature
+        return malformed_headers, serialized_json_body
     if fapi_signing_config is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
     if fapi_signing_service is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
     if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
-        raise ValueError("Detached request signing is only supported for account-access-consents requests")
+        raise ValueError(
+            "Detached request signing is only supported for account-access-consents, "
+            "domestic-payment-consents, and domestic-payments write requests"
+        )
     if resolved_json_body is None:
         raise ValueError("Detached request signing requires a JSON request body")
 
@@ -2524,12 +2851,33 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
         resolved_url: Fully resolved request URL.
 
     Returns:
-        ``True`` when the step targets the AIS account-access-consents
-        endpoint and is an eligible write method, otherwise ``False``.
+        ``True`` when the step targets an allowlisted Open Banking write
+        endpoint (AIS account-access-consents or supported PIS consent/payment
+        writes) and uses an eligible write method, otherwise ``False``.
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
-    return _normalize_url_path_for_match(urlsplit(resolved_url).path) == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    if normalized_path == _OB_ACCOUNT_ACCESS_CONSENTS_PATH:
+        return True
+    versioned_suffix = _extract_ob_versioned_path_suffix(normalized_path)
+    if versioned_suffix is None:
+        return False
+    return versioned_suffix in _OB_DETACHED_JWS_ALLOWED_WRITE_PATH_SUFFIXES
+
+
+def _is_open_banking_resource_request(resolved_url: str) -> bool:
+    """Return whether a URL targets an Open Banking resource endpoint.
+
+    Args:
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        ``True`` when the URL path uses the ``/open-banking/v*`` resource
+        API shape, otherwise ``False``.
+    """
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    return _extract_ob_versioned_path_suffix(normalized_path) is not None
 
 
 def _serialize_json_request_body(body: JsonValue) -> bytes:
@@ -2557,6 +2905,7 @@ def _run_manifest_v0(
     approved_release_policy: ApprovedReleasePolicy | None,
     auth_metadata_evidence: Mapping[str, JsonValue] | None,
     environment_capability_evidence: Mapping[str, JsonValue] | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -2586,6 +2935,8 @@ def _run_manifest_v0(
             emitted for selected steps in this run.
         environment_capability_evidence: Optional non-secret suite/environment
             capability decisions emitted for this run.
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence emitted for this run.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -2693,6 +3044,7 @@ def _run_manifest_v0(
         approved_release_policy=approved_release_policy,
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
+        test_value_profile_evidence=test_value_profile_evidence,
     )
 
 
@@ -2733,6 +3085,7 @@ def _build_assertion_step(
     assertions: tuple[ManifestAssertion, ...],
     warning: str | None = None,
     request_headers: Mapping[str, str] | None = None,
+    context: ExecutionContext | None = None,
 ) -> StepResult:
     """Build a step result by evaluating all assertions for a response.
 
@@ -2755,6 +3108,9 @@ def _build_assertion_step(
             Forwarded to the assertion evaluator to support the
             ``matches_request_header`` header rule. Defaults to ``None``;
             existing callers need not change.
+        context: Execution context before this step was recorded. Used to
+            expose previously fetched JWKS bodies to response-signature
+            assertions.
 
     Returns:
         A completed step result containing the overall pass/fail/warn status
@@ -2767,6 +3123,8 @@ def _build_assertion_step(
             headers=response.headers,
             body=response.body,
             request_headers=request_headers,
+            body_bytes=response.body_bytes,
+            response_signature_jwks=_response_signature_jwks_by_step(context),
         )
         for assertion in assertions
     )
@@ -2792,6 +3150,25 @@ def _build_assertion_step(
         status_code=response.status_code,
         details=details,
     )
+
+
+def _response_signature_jwks_by_step(context: ExecutionContext | None) -> Mapping[str, JsonValue] | None:
+    """Build a mapping of prior step ids to JSON response bodies for JWS verification.
+
+    Args:
+        context: Execution context available before the current step executes.
+
+    Returns:
+        Mapping of step ids to response-body JSON objects, or ``None`` when no
+        context is available.
+    """
+    if context is None:
+        return None
+    jwks_by_step: dict[str, JsonValue] = {}
+    for step_id, record in context.steps.items():
+        if record.response is not None:
+            jwks_by_step[step_id] = dict(record.response.body)
+    return jwks_by_step
 
 
 def _assertion_result_to_json(assertion_result: AssertionResult) -> JsonObject:

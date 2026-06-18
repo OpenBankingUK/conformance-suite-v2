@@ -7,11 +7,13 @@ from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import cast
+from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
 from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
+from conformance.masking import mask_form_fields
 
 # HTTP statuses that RFC 9110 defines as carrying no message body.
 # A compliant endpoint (and most reverse proxies) will return zero-length
@@ -22,6 +24,7 @@ from conformance.json_types import JsonObject, JsonValue
 # runs; a ``json_field`` assertion against an empty object naturally fails
 # with "field is missing".
 _NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
+_NON_JSON_SNIPPET_LIMIT: int = 200
 
 
 class JsonHttpClientError(RuntimeError):
@@ -33,18 +36,107 @@ class JsonHttpClientError(RuntimeError):
     obtained (e.g. connection failure). Preserving the status here lets the
     executor populate ``StepResult.status_code`` for DL-0011 client-error
     reporting even when the body could not be parsed.
+
+    For non-JSON responses, ``content_type`` and ``body_snippet`` may carry
+    additional safe diagnostics. ``body_snippet`` is populated only when the
+    body can be masked using existing masking helpers.
     """
 
-    def __init__(self, message: str, *, status_code: int | None = None) -> None:
-        """Initialise the error with a message and optional HTTP status code.
+    def __init__(
+        self,
+        message: str,
+        *,
+        status_code: int | None = None,
+        content_type: str | None = None,
+        body_snippet: str | None = None,
+    ) -> None:
+        """Initialise the error with transport and safe response diagnostics.
 
         Args:
             message: Human-readable failure description.
             status_code: HTTP status code from the response, if one was
                 received before the failure was detected.
+            content_type: Response ``Content-Type`` value when available.
+            body_snippet: Masked/truncated non-JSON body preview when it can be
+                safely derived.
         """
         super().__init__(message)
         self.status_code = status_code
+        self.content_type = content_type
+        self.body_snippet = body_snippet
+
+
+def _truncate_non_json_snippet(snippet: str) -> str:
+    """Truncate a non-JSON diagnostic snippet to a fixed, safe length.
+
+    Args:
+        snippet: Full candidate snippet.
+
+    Returns:
+        Original snippet when within the limit, otherwise a truncated snippet
+        with an explicit suffix.
+    """
+    if len(snippet) <= _NON_JSON_SNIPPET_LIMIT:
+        return snippet
+    return f"{snippet[:_NON_JSON_SNIPPET_LIMIT]}...(truncated)"
+
+
+def _safe_non_json_body_snippet(response: httpx.Response, *, content_type: str | None) -> str | None:
+    """Build a safe non-JSON body preview when masking support is available.
+
+    We only emit a body preview for form-urlencoded payloads because the
+    project has explicit field-level masking for those values. Free-form text
+    (HTML/plain text) is intentionally omitted to avoid leaking participant or
+    credential data in error evidence.
+
+    Args:
+        response: HTTP response whose body failed JSON parsing.
+        content_type: Parsed response ``Content-Type`` header value.
+
+    Returns:
+        A masked/truncated preview string, or ``None`` when no safe preview can
+        be generated.
+    """
+    if content_type is None:
+        return None
+    if "application/x-www-form-urlencoded" not in content_type.lower():
+        return None
+
+    form_pairs = parse_qsl(response.text, keep_blank_values=True)
+    if not form_pairs:
+        return None
+    masked_form_fields = mask_form_fields(dict(form_pairs))
+    masked_serialized = urlencode(masked_form_fields, safe="*")
+    if not masked_serialized:
+        return None
+    return _truncate_non_json_snippet(masked_serialized)
+
+
+def _build_non_json_response_error_message(
+    *,
+    url: str,
+    status_code: int,
+    content_type: str | None,
+    body_snippet: str | None,
+) -> str:
+    """Build a participant-facing non-JSON response diagnostic message.
+
+    Args:
+        url: Request URL used for the failed call.
+        status_code: HTTP status code returned by the endpoint.
+        content_type: Response ``Content-Type`` header value, if present.
+        body_snippet: Safe body preview when available.
+
+    Returns:
+        A concise diagnostic string that preserves the existing "not valid
+        JSON" signal and adds endpoint debugging context.
+    """
+    details: list[str] = [f"status {status_code}"]
+    if content_type is not None:
+        details.append(f"content-type {content_type}")
+    if body_snippet is not None:
+        details.append(f"masked body snippet: {body_snippet}")
+    return f"Response from {url} was not valid JSON ({', '.join(details)})"
 
 
 @dataclass(frozen=True, init=False)
@@ -57,12 +149,15 @@ class JsonHttpResponse:
         body (JsonObject): Parsed JSON object body.
         headers (FrozenHeaders): Immutable response headers with
             case-insensitive lookup.
+        body_bytes: Exact response body bytes used for detached-JWS response
+            signature validation.
     """
 
     url: str
     status_code: int
     body: JsonObject
     headers: FrozenHeaders
+    body_bytes: bytes
 
     def __init__(
         self,
@@ -71,6 +166,7 @@ class JsonHttpResponse:
         status_code: int,
         body: JsonObject,
         headers: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        body_bytes: bytes = b"",
     ) -> None:
         """Initialise a typed JSON response with frozen headers.
 
@@ -80,11 +176,13 @@ class JsonHttpResponse:
             body: Parsed JSON object body.
             headers: Source response headers copied into an immutable,
                 case-insensitive mapping.
+            body_bytes: Exact response body bytes.
         """
         object.__setattr__(self, "url", url)
         object.__setattr__(self, "status_code", status_code)
         object.__setattr__(self, "body", body)
         object.__setattr__(self, "headers", freeze_headers(headers))
+        object.__setattr__(self, "body_bytes", body_bytes)
 
 
 def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
@@ -225,14 +323,25 @@ def send_json(
             status_code=response.status_code,
             headers=response.headers,
             body={},
+            body_bytes=response.content,
         )
 
     try:
         response_body: object = response.json()
     except ValueError as error:
+        content_type_header = response.headers.get("content-type")
+        content_type = content_type_header.strip() if content_type_header else None
+        body_snippet = _safe_non_json_body_snippet(response, content_type=content_type)
         raise JsonHttpClientError(
-            f"Response from {url} was not valid JSON",
+            _build_non_json_response_error_message(
+                url=url,
+                status_code=response.status_code,
+                content_type=content_type,
+                body_snippet=body_snippet,
+            ),
             status_code=response.status_code,
+            content_type=content_type,
+            body_snippet=body_snippet,
         ) from error
 
     if not isinstance(response_body, dict):
@@ -247,6 +356,7 @@ def send_json(
         status_code=response.status_code,
         headers=response.headers,
         body=json_body_parsed,
+        body_bytes=response.content,
     )
 
 

@@ -99,3 +99,47 @@ Next slices should add typed primitives before widening parity claims:
 4. Generate or maintain a machine-readable inventory report that maps all 95 v4 AIS legacy scripts to implemented, waived, or blocked status.
 5. Repeat the migration for v3.1 AIS, PIS/payment, CBPII, VRP, and cVRP only after each family's setup and consent/payment-flow requirements are modelled.
 6. Promote this suite to `complete` only after every mandatory legacy script is represented and Standards stakeholders sign off any waivers.
+
+## v4 PIS Legacy Benchmark
+
+### Suite: `pis-fcs-legacy-benchmark`
+
+Suite file: `conformance/suites/ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json`  
+Registered key: `ob-read-write / v4.0 / fapi1-advanced / pis / pis-fcs-legacy-benchmark`
+
+Source manifest: `ob_4.0_payment_fca.json` (OpenBankingUK/conformance-suite, develop branch)  
+Inventory: `docs/requirements/suite-coverage/v4-pis-prior-fcs-inventory.json`
+
+### Mandatory Domestic Payment Steps (default-selected, 8 rows)
+
+| Legacy ID | URI | Method | Coverage | Known Gaps |
+|---|---|---|---|---|
+| OB-400-DOP-100100 | /domestic-payment-consents | POST | broad | — |
+| OB-400-DOP-100110 | /domestic-payment-consents | POST | broad | — |
+| OB-400-DOP-100300 | /domestic-payment-consents | POST | broad | — |
+| OB-316-DOP-100310 | /domestic-payment-consents | POST | broad | — |
+| OB-400-DOP-100400 | /domestic-payment-consents/{consentId} | GET | broad | — |
+| OB-400-DOP-100500 | /domestic-payment-consents/{consentId}/funds-confirmation | GET | broad | — |
+| OB-400-DOP-100600 | /domestic-payments | POST | broad | — |
+| OB-400-DOP-100700 | /domestic-payments/{paymentId} | GET | broad | — |
+
+### Conditional Payment Type Steps (default-selected when prerequisites are available, 21 rows)
+
+#### Domestic Scheduled Payment (7 rows)
+OB-400-DOP-100800 through OB-400-DOP-101101 — require `scheduledPaymentDateTime` test value.
+
+#### Domestic Standing Order (6 rows)
+OB-400-DOP-101200 through OB-400-DOP-101503 — require `frequency` and standing-order date test values.
+
+#### International Payment (4 rows)
+OB-400-DOP-101600 through OB-400-DOP-101900 — require `currencyOfTransfer` and international creditor/agent test values.
+
+#### International Scheduled Payment (4 rows)
+OB-400-DOP-102000 through OB-400-DOP-102300 — require `scheduledPaymentDateTime` and international payment test values.
+
+### Known Gaps
+
+- `OB-400-DOP-101503`: model-bank known issue remains reproducible when both `FinalPaymentDateTime` and `Frequency.CountPerPeriod` are present; model bank may return `201` where legacy expectation is `400`.
+- `certificationCoverage: partial` — this suite must not be used to claim PIS certification parity.
+
+Legacy `validateSignature: true` rows now map to v2 `response_signature` assertions. These verify the ASPSP response `x-jws-signature` over the exact response body using the JWKS fetched by `jwks-fetch`.

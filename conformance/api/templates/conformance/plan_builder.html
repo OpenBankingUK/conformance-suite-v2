@@ -807,6 +807,16 @@
                           <span class="badge">{{ row.group }}</span>
                           {% if row.mandatory %}<span class="badge required">Mandatory</span>{% endif %}
                           {% if row.optional %}<span class="badge optional">Optional</span>{% endif %}
+                          {% if row.conditional %}
+                            {% if row.missing_test_value_keys %}
+                              <span class="badge conditional-missing" title="Missing values: {{ row.missing_test_value_keys|join:', ' }}">Conditional – missing values</span>
+                            {% elif row.test_value_profile_source == "overridden" %}
+                              <span class="badge conditional-overridden" title="Profile: {{ row.test_value_profile_id }}{% if row.test_value_override_keys %} (overrides: {{ row.test_value_override_keys|join:', ' }}){% endif %}">Conditional – overridden</span>
+                            {% else %}
+                              <span class="badge conditional-default" title="Profile: {{ row.test_value_profile_id }}">Conditional – default profile</span>
+                            {% endif %}
+                            {% if row.condition_label %}<span class="badge condition-label">{{ row.condition_label }}</span>{% endif %}
+                          {% endif %}
                           {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
                         </span>
                       </div>

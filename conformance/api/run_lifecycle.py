@@ -16,7 +16,7 @@ from datetime import UTC, datetime
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunStore, run_store
-from conformance.context import RuntimeConfig
+from conformance.context import RuntimeConfig, build_runtime_test_values
 from conformance.execution_log import (
     BufferedExecutionLogger,
     EventType,
@@ -31,7 +31,7 @@ from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
 from conformance.model_bank_config import ModelBankConfig
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
+from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
@@ -164,7 +164,7 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan)
+    effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan, config=config)
     planned_steps = _selected_planned_steps_snapshot(manifest=manifest, plan=effective_plan)
     record = run_store.create_run(planned_steps=planned_steps)
     warn_if_developer_mode()
@@ -179,13 +179,20 @@ def start_run(
     return initial_status
 
 
-def _effective_plan_for_launch(*, manifest: Manifest | None, plan: TestPlan | None) -> TestPlan | None:
+def _effective_plan_for_launch(
+    *,
+    manifest: Manifest | None,
+    plan: TestPlan | None,
+    config: ModelBankConfig,
+) -> TestPlan | None:
     """Return the launch-time execution plan for a run.
 
     Args:
         manifest: Parsed manifest selected for the run, if any.
         plan: Caller-supplied plan, or ``None`` when the lifecycle should
             derive the default manifest plan.
+        config: Parsed participant configuration used to resolve test-value
+            profile context for conditional plan defaults.
 
     Returns:
         The supplied plan when present, the manifest default plan when
@@ -196,7 +203,8 @@ def _effective_plan_for_launch(*, manifest: Manifest | None, plan: TestPlan | No
         return None
     if plan is not None:
         return plan
-    return TestPlan.default_plan_from_manifest(manifest)
+    test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+    return TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx)
 
 
 def _selected_planned_steps_snapshot(*, manifest: Manifest | None, plan: TestPlan | None) -> tuple[RunPlanStep, ...]:
@@ -311,7 +319,13 @@ def _execute_run(
             result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
         else:
             if effective_plan is None:
-                effective_plan = TestPlan.default_plan_from_manifest(effective_manifest)
+                test_value_ctx = build_plan_test_value_context(effective_manifest, config.test_values)
+                effective_plan = TestPlan.default_plan_from_manifest(
+                    effective_manifest,
+                    test_value_context=test_value_ctx,
+                )
+            else:
+                test_value_ctx = build_plan_test_value_context(effective_manifest, config.test_values)
             try:
                 http_client = build_json_http_client(
                     timeout_seconds=config.timeout_seconds,
@@ -344,8 +358,13 @@ def _execute_run(
                         oauth_open_banking_intent_id=(
                             config.oauth.open_banking_intent_id if config.oauth is not None else None
                         ),
+                        test_values=build_runtime_test_values(effective_manifest, config.test_values),
+                        test_value_profile_id=test_value_ctx.profile_id,
+                        test_value_profile_source=test_value_ctx.profile_source,
+                        test_value_override_keys=tuple(sorted(test_value_ctx.override_keys)),
                     ),
                     fapi_signing_config=config.fapi_signing,
+                    open_banking_config=config.open_banking,
                     mtls_client_configured=(
                         config.tls.client_certificate_path is not None
                         and config.tls.client_private_key_path is not None

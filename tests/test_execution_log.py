@@ -162,6 +162,17 @@ def test_buffered_logger_masks_sensitive_headers_by_default() -> None:
 
 
 @pytest.mark.unit
+def test_buffered_logger_supports_test_value_profile_event_type() -> None:
+    """Test-value profile evidence events are accepted and persisted."""
+    logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+    logger.emit("test-value-profile-evaluated", payload={"profileId": "ozone-demo", "effectiveValues": {"k": "***"}})
+
+    event = logger.events()[0]
+    assert event.type == "test-value-profile-evaluated"
+    assert event.payload == {"profileId": "ozone-demo", "effectiveValues": {"k": "***"}}
+
+
+@pytest.mark.unit
 def test_buffered_logger_masks_token_exchange_form_and_response_payloads() -> None:
     """Token-exchange request/response events mask form credentials and tokens."""
     logger = BufferedExecutionLogger(run_id="r", developer_mode=False)

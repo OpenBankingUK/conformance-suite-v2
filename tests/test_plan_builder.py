@@ -85,6 +85,43 @@ AIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
     },
 }
 
+PIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testSuite": {
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "api": "pis",
+        "profile": "fapi1-advanced",
+        "suite": "pis-fcs-legacy-benchmark",
+    },
+    "oauth": {
+        "clientId": "test-client-id",
+        "redirectUri": "https://conformance.example.com/callback",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+    "fapiSigning": {
+        "certificatePathRoot": "./certs",
+        "signingCertificatePath": "dummy-signing.crt",
+        "signingPrivateKeyPath": "dummy-signing.key",  # pragma: allowlist secret
+        "kid": "test-signing-kid",
+        "clientAssertionIssuer": "test-client-id",
+        "clientAssertionSubject": "test-client-id",
+        "tokenEndpointAuthMethod": "private_key_jwt",
+    },
+    "openBanking": {
+        "financialId": "test-financial-id",
+    },
+    "testValues": {
+        "profile": "ozone-demo",
+        "overrides": {
+            "scheduledPaymentDateTime": "2026-07-17T10:00:00+00:00",
+            "frequency": "EvryDay",
+            "firstPaymentDateTime": "2026-07-17T10:00:00+00:00",
+            "finalPaymentDateTime": "2026-08-17T10:00:00+00:00",
+        },
+    },
+}
+
 
 def _http_step(
     step_id: str,
@@ -608,6 +645,47 @@ def test_blank_manifest_resolves_ais_fcs_legacy_benchmark_with_optional_steps_de
     assert rows_by_id["OB-400-TRA-105000"].default_selected is True
     assert rows_by_id["OB-400-TRA-105200"].optional is True
     assert rows_by_id["OB-400-TRA-105200"].default_selected is False
+    assert preview.launch_supported is True
+
+
+@pytest.mark.unit
+def test_blank_manifest_resolves_pis_fcs_legacy_benchmark_with_conditional_gating() -> None:
+    """PIS FCS preview selects/deselects conditional rows from resolved test values."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(PIS_FCS_LEGACY_BENCHMARK_CONFIG),
+            "manifest_json": "",
+            "selection_mode": "deselect",
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.suite_metadata is not None
+    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/pis/pis-fcs-legacy-benchmark"
+    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PIS FCS legacy benchmark"
+    rows_by_id = {row.id: row for row in preview.rows}
+    scheduled_row = rows_by_id["OB-400-DOP-100800"]
+    standing_order_row = rows_by_id["OB-400-DOP-101200"]
+    international_row = rows_by_id["OB-400-DOP-101600"]
+    assert scheduled_row.conditional is True
+    assert scheduled_row.selected_after_form is True
+    assert scheduled_row.missing_test_value_keys == ()
+    assert standing_order_row.conditional is True
+    assert standing_order_row.selected_after_form is True
+    assert standing_order_row.missing_test_value_keys == ()
+    assert international_row.conditional is True
+    assert international_row.selected_after_form is False
+    assert international_row.missing_test_value_keys == (
+        "currencyOfTransfer",
+        "internationalCreditorSchemeName",
+        "internationalCreditorIdentification",
+        "internationalCreditorName",
+    )
+    selected_step_ids = preview.selected_plan.selected_step_ids()
+    assert "OB-400-DOP-100800" in selected_step_ids
+    assert "OB-400-DOP-101200" in selected_step_ids
+    assert "OB-400-DOP-101600" not in selected_step_ids
     assert preview.launch_supported is True
 
 
@@ -1482,3 +1560,186 @@ def test_build_plan_preview_tree_nodes_empty_without_suite_metadata() -> None:
     assert preview.suite_metadata is None
     assert isinstance(preview.tree_nodes, tuple)
     assert all(isinstance(node, StepTreeNode) for node in preview.tree_nodes)
+
+
+# ---------------------------------------------------------------------------
+# Conditional plan row tests
+# ---------------------------------------------------------------------------
+
+
+def _manifest_with_profiles_and_conditional_step(
+    *,
+    effective_values: dict[str, str] | None = None,
+) -> dict[str, JsonValue]:
+    """Build a v1 manifest with a test-value profile and a conditional step.
+
+    Args:
+        effective_values: Values to put in the default profile.  Defaults to
+            ``{"paymentId": "pmnt-001"}``.
+
+    Returns:
+        A v1 manifest JSON object.
+    """
+    vals: dict[str, JsonValue] = dict(effective_values or {"paymentId": "pmnt-001"})
+    return {
+        "schemaVersion": "v1",
+        "name": "Conditional manifest",
+        "testValueProfiles": {
+            "defaultProfileId": "sandbox",
+            "profiles": [
+                {"id": "sandbox", "label": "Sandbox", "values": vals},
+            ],
+            "allowedOverrideKeys": ["paymentId"],
+            "nonSecretKeys": ["paymentId"],
+        },
+        "steps": cast(
+            list[JsonValue],
+            [
+                {
+                    "id": "unconditional",
+                    "name": "Always runs",
+                    "request": {"method": "GET", "url": "https://example.com/unconditional"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "mandatory": True,
+                },
+                {
+                    "id": "cond",
+                    "name": "Conditional step",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://example.com/${testValues.paymentId}",
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "selectionMetadata": {
+                        "conditionId": "payment-supported",
+                        "conditionLabel": "Payment feature supported",
+                        "conditional": True,
+                        "requiredTestValueKeys": ["paymentId"],
+                    },
+                },
+            ],
+        ),
+    }
+
+
+@pytest.mark.unit
+def test_conditional_row_selected_when_default_profile_has_required_values() -> None:
+    """Conditional step row is selected when the default profile resolves all required values."""
+    manifest = _manifest_with_profiles_and_conditional_step()
+    preview = _validated_preview(_bound_form(manifest))
+
+    cond_row = next(r for r in preview.rows if r.id == "cond")
+    assert cond_row.conditional is True
+    assert cond_row.default_selected is True
+    assert cond_row.selected_after_form is True
+    assert cond_row.condition_id == "payment-supported"
+    assert cond_row.condition_label == "Payment feature supported"
+    assert cond_row.required_test_value_keys == ("paymentId",)
+    assert cond_row.missing_test_value_keys == ()
+    assert cond_row.test_value_profile_id == "sandbox"
+    assert cond_row.test_value_profile_source == "default"
+    assert cond_row.test_value_override_keys == ()
+
+
+@pytest.mark.unit
+def test_conditional_row_shows_overridden_source_when_participant_overrides_key() -> None:
+    """Conditional row carries ``overridden`` profile source when participant supplies an override."""
+    config_with_override: dict[str, JsonValue] = {
+        **VALID_CONFIG,
+        "testValues": {"overrides": {"paymentId": "my-payment-001"}},
+    }
+    manifest = _manifest_with_profiles_and_conditional_step()
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(config_with_override),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "deselect",
+            "deselect_step_ids": [],
+        }
+    )
+    preview = _validated_preview(form)
+
+    cond_row = next(r for r in preview.rows if r.id == "cond")
+    assert cond_row.conditional is True
+    assert cond_row.default_selected is True
+    assert cond_row.test_value_profile_source == "overridden"
+    assert "paymentId" in cond_row.test_value_override_keys
+    assert cond_row.missing_test_value_keys == ()
+
+
+@pytest.mark.unit
+def test_conditional_row_deselected_when_manifest_has_no_config_profile() -> None:
+    """Conditional step is deselected by default when no test_value_context is provided via config."""
+    # Build the manifest but provide a config with no testValues section
+    manifest = _manifest_with_profiles_and_conditional_step()
+    # The config has no testValues, so build_plan_test_value_context uses the manifest default.
+    # The default profile has paymentId, so the step is auto-selected.
+    preview = _validated_preview(_bound_form(manifest))
+
+    cond_row = next(r for r in preview.rows if r.id == "cond")
+    # The default profile resolves paymentId → step should be selected
+    assert cond_row.default_selected is True
+    assert cond_row.missing_test_value_keys == ()
+
+
+@pytest.mark.unit
+def test_unconditional_rows_have_no_conditional_metadata() -> None:
+    """Rows for steps without selectionMetadata carry zero-valued conditional fields."""
+    manifest = _manifest_with_profiles_and_conditional_step()
+    preview = _validated_preview(_bound_form(manifest))
+
+    unconditional_row = next(r for r in preview.rows if r.id == "unconditional")
+    assert unconditional_row.conditional is False
+    assert unconditional_row.condition_id is None
+    assert unconditional_row.condition_label is None
+    assert unconditional_row.required_test_value_keys == ()
+    assert unconditional_row.missing_test_value_keys == ()
+
+
+@pytest.mark.unit
+def test_backward_compatible_manifest_rows_have_no_conditional_metadata() -> None:
+    """Rows for manifests without testValueProfiles have zero-valued conditional fields."""
+    manifest = _v1_manifest([_http_step("a"), _http_step("b", mandatory=True)])
+    preview = _validated_preview(_bound_form(manifest))
+
+    for row in preview.rows:
+        assert row.conditional is False
+        assert row.test_value_profile_id is None
+        assert row.test_value_profile_source is None
+        assert row.test_value_override_keys == ()
+
+
+@pytest.mark.unit
+def test_conditional_row_deselected_via_no_context_has_missing_keys_populated(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Populate conditional row missing keys when no effective profile values resolve.
+
+    Args:
+        monkeypatch: Fixture used to patch the plan-builder test-value context helper.
+    """
+    from pathlib import Path
+
+    from conformance.api.plan_builder import build_plan_preview
+    from conformance.manifest import parse_manifest
+    from conformance.model_bank_config import parse_model_bank_config
+
+    manifest_obj = _manifest_with_profiles_and_conditional_step()
+    manifest = parse_manifest(manifest_obj)
+    from conformance.test_plan import PlanTestValueContext
+
+    # Config without a testValues section: build_plan_test_value_context resolves the
+    # manifest default profile (sandbox), which has paymentId → step should be selected.
+    # To simulate missing values we patch the imported helper symbol in plan_builder.
+    def _empty_ctx(_manifest: object, _config_test_values: object) -> PlanTestValueContext:
+        """Return empty context to simulate no effective profile values."""
+        return PlanTestValueContext()
+
+    monkeypatch.setattr("conformance.api.plan_builder.build_plan_test_value_context", _empty_ctx)
+    config = parse_model_bank_config(VALID_CONFIG, base_dir=Path.cwd(), output_base_dir=Path.cwd())
+    preview = build_plan_preview(config=config, manifest=manifest)
+
+    cond_row = next(r for r in preview.rows if r.id == "cond")
+    assert cond_row.conditional is True
+    assert cond_row.default_selected is False
+    assert cond_row.missing_test_value_keys == ("paymentId",)

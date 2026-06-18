@@ -237,6 +237,48 @@ def _manifest_json_with_auth_metadata(*, certification_coverage: str = "complete
     }
 
 
+def _manifest_json_with_test_value_profiles(*, certification_coverage: str = "complete") -> JsonObject:
+    """Build a v1 manifest fixture that declares test-value profile metadata.
+
+    Args:
+        certification_coverage: Coverage declaration to embed at the root.
+
+    Returns:
+        Manifest JSON object with one mandatory and one conditional step.
+    """
+    return {
+        "schemaVersion": "v1",
+        "name": "validator-test-values",
+        "certificationCoverage": certification_coverage,
+        "testValueProfiles": {
+            "defaultProfileId": "default-profile",
+            "profiles": [
+                {
+                    "id": "default-profile",
+                    "label": "Default profile",
+                    "values": {
+                        "instructionIdentification": "instr-default",
+                        "creditorIdentification": "1234567890",
+                    },
+                }
+            ],
+            "allowedOverrideKeys": ["creditorIdentification"],
+            "nonSecretKeys": ["instructionIdentification"],
+        },
+        "steps": [
+            _manifest_step(step_id="mandatory-step", mandatory=True, optional=False),
+            {
+                **_manifest_step(step_id="conditional-step", mandatory=False, optional=False),
+                "selectionMetadata": {
+                    "conditional": True,
+                    "conditionId": "creditor-supported",
+                    "requiredTestValueKeys": ["creditorIdentification"],
+                },
+            },
+        ],
+    }
+
+
 def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObject:
     request: JsonObject = {"method": "GET", "url": f"https://example.com/{step_id}"}
     assertions: list[JsonValue] = [{"type": "http_status", "expected": 200}]
@@ -259,6 +301,7 @@ def _report(
     steps: tuple[tuple[str, CheckStatus], ...],
     auth_metadata: JsonObject | None = None,
     environment_capabilities: JsonObject | None = None,
+    test_value_profile: JsonObject | None = None,
     suite: JsonObject | None = None,
 ) -> SubmittedReport:
     """Build and parse a submitted-report fixture with optional evidence blocks.
@@ -268,6 +311,7 @@ def _report(
         steps: Report step-id/status tuples.
         auth_metadata: Optional ``authMetadata`` evidence block.
         environment_capabilities: Optional ``environmentCapabilities`` block.
+        test_value_profile: Optional ``testValueProfile`` evidence block.
         suite: Optional ``suite`` metadata block.
 
     Returns:
@@ -279,6 +323,7 @@ def _report(
             steps=steps,
             auth_metadata=auth_metadata,
             environment_capabilities=environment_capabilities,
+            test_value_profile=test_value_profile,
             suite=suite,
         )
     )
@@ -290,6 +335,7 @@ def _report_json(
     steps: tuple[tuple[str, CheckStatus], ...],
     auth_metadata: JsonObject | None = None,
     environment_capabilities: JsonObject | None = None,
+    test_value_profile: JsonObject | None = None,
     suite: JsonObject | None = None,
 ) -> JsonObject:
     """Build a report JSON fixture with optional auth/capability/suite evidence.
@@ -299,6 +345,7 @@ def _report_json(
         steps: Report step-id/status tuples.
         auth_metadata: Optional ``authMetadata`` evidence block.
         environment_capabilities: Optional ``environmentCapabilities`` block.
+        test_value_profile: Optional ``testValueProfile`` evidence block.
         suite: Optional ``suite`` metadata block.
 
     Returns:
@@ -316,9 +363,38 @@ def _report_json(
         report["authMetadata"] = auth_metadata
     if environment_capabilities is not None:
         report["environmentCapabilities"] = environment_capabilities
+    if test_value_profile is not None:
+        report["testValueProfile"] = test_value_profile
     if suite is not None:
         report["suite"] = suite
     return report
+
+
+def _test_value_profile_evidence_fixture(*, source: str = "default") -> JsonObject:
+    """Build a minimal valid ``testValueProfile`` evidence block.
+
+    Args:
+        source: Profile source label for the fixture.
+
+    Returns:
+        Test-value profile evidence JSON object.
+    """
+    return {
+        "profileId": "default-profile",
+        "source": source,
+        "overrideKeys": [],
+        "declaredKeys": ["creditorIdentification", "instructionIdentification"],
+        "requiredKeys": ["creditorIdentification"],
+        "conditionOutcomes": [
+            {
+                "stepId": "conditional-step",
+                "selected": True,
+                "requiredKeys": ["creditorIdentification"],
+                "missingKeys": [],
+            }
+        ],
+        "effectiveValues": {"instructionIdentification": "***"},
+    }
 
 
 def _write_json(path: Path, value: object) -> None:
@@ -425,6 +501,111 @@ def test_validate_report_complete_auth_manifest_requires_capability_evidence_wit
 
     assert result.valid is False
     assert "environment_capabilities_missing" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_value_profiles_requires_evidence() -> None:
+    """Complete manifests with test-value profiles require report profile evidence."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_missing" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_mismatched_test_value_profile_evidence() -> None:
+    """Mismatched test-value profile evidence is rejected for complete manifests."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile={
+            **_test_value_profile_evidence_fixture(),
+            "declaredKeys": ["wrong-key"],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_mismatch" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_accepts_matching_test_value_profile_evidence() -> None:
+    """Matching test-value profile evidence validates for complete manifests."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile=_test_value_profile_evidence_fixture(),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "test_value_profile_missing" not in result.reasons
+    assert "test_value_profile_mismatch" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_unmasked_test_value_effective_values() -> None:
+    """Submitted effective values must be masked in test-value profile evidence."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile={
+            **_test_value_profile_evidence_fixture(),
+            "effectiveValues": {"instructionIdentification": "instr-default"},
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_mismatch" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_partial_manifest_with_test_value_profiles_remains_coverage_blocked() -> None:
+    """Partial manifests remain blocked by coverage regardless of profile evidence."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles(certification_coverage="partial"))
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.reasons == ("manifest_coverage_partial",)
 
 
 @pytest.mark.unit

@@ -24,9 +24,9 @@
                         <summary class="result-step-summary">
                             <strong class="result-step-title">{{ step.name }}</strong>
                             <span class="status-badge {{ step.status|default:"unknown" }}">{{ step.status|default:"-" }}</span>
-                            <span class="muted">{{ step.phase|default:"-" }} / {{ step.group|default:"-" }}</span>
+                            <span class="muted result-step-summary-meta">{{ step.phase|default:"-" }} / {{ step.group|default:"-" }}</span>
                             {% if step.message %}
-                                <span class="muted">{{ step.message }}</span>
+                                <span class="muted result-step-summary-message">{{ step.message }}</span>
                             {% endif %}
                         </summary>
 

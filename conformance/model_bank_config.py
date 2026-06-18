@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import json
 import math
+import re
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal, cast
 
 from conformance.approved_releases import (
@@ -46,9 +49,11 @@ TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 SuiteName = Literal[
     "discovery-jwks",
     "psu-auth-starter",
+    "pis-domestic-payment-starter",
     "ais-certification-slice",
     "ais-certification-baseline",
     "ais-fcs-legacy-benchmark",
+    "pis-fcs-legacy-benchmark",
 ]
 """Supported versioned conformance suite identifiers."""
 
@@ -67,9 +72,11 @@ _SUPPORTED_SUITE_PROFILES = ("fapi1-advanced",)
 _SUPPORTED_SUITE_NAMES = (
     "discovery-jwks",
     "psu-auth-starter",
+    "pis-domestic-payment-starter",
     "ais-certification-slice",
     "ais-certification-baseline",
     "ais-fcs-legacy-benchmark",
+    "pis-fcs-legacy-benchmark",
 )
 """Suite names accepted by the normalized suite-selection contract."""
 
@@ -79,6 +86,7 @@ _LEGACY_SUITE_API_BY_SUITE = {
     "ais-certification-slice": "ais",
     "ais-certification-baseline": "ais",
     "ais-fcs-legacy-benchmark": "ais",
+    "pis-fcs-legacy-benchmark": "pis",
 }
 """API-family defaults for configs created before ``testSuite.api`` existed."""
 
@@ -91,6 +99,8 @@ _SUPPORTED_SUITE_SELECTIONS = {
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-fcs-legacy-benchmark"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "discovery-jwks"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-domestic-payment-starter"),
+    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-fcs-legacy-benchmark"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "discovery-jwks"),
     ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "psu-auth-starter"),
@@ -114,6 +124,9 @@ _PSU_AUTH_STARTER_PLACEHOLDER_INTENT_IDS = {
     "your-existing-account-access-consent-id",
 }
 """Example-only consent ids that must not be sent to ASPSPs in starter runs."""
+
+_TEST_VALUES_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+"""Pattern for valid test-value key names accepted in ``testValues.overrides``."""
 
 
 @dataclass(frozen=True)
@@ -205,6 +218,14 @@ class FapiSigningConfig:
             client assertions.
         token_endpoint_auth_method: Declared client-authentication method for
             the token endpoint.
+        signature_issuer: Optional Open Banking detached-JWS issuer identifier
+            placed in the ``http://openbanking.org.uk/iss`` JOSE protected
+            header when signing PIS/AIS write requests. Required together with
+            ``signature_trust_anchor``; omit both to use the minimal header.
+        signature_trust_anchor: Optional Open Banking trust-anchor domain
+            placed in the ``http://openbanking.org.uk/tan`` JOSE protected
+            header. Required together with ``signature_issuer``; omit both to
+            use the minimal header.
     """
 
     certificate_path_root: Path
@@ -214,6 +235,36 @@ class FapiSigningConfig:
     client_assertion_issuer: str
     client_assertion_subject: str
     token_endpoint_auth_method: TokenEndpointClientAuthMode
+    signature_issuer: str | None = None
+    signature_trust_anchor: str | None = None
+
+
+@dataclass(frozen=True)
+class TestValuesConfig:
+    """Participant-supplied test-value profile selection and overrides.
+
+    Controls which named profile the executor uses when resolving
+    ``${testValues.<key>}`` placeholders and which individual key values the
+    participant overrides relative to that profile's defaults.
+
+    Security boundary: only string key/value pairs are accepted. The key set
+    is validated against ``testValueProfiles.allowedOverrideKeys`` declared in
+    the manifest where possible, but config-level parsing cannot always perform
+    this cross-validation because the manifest is loaded separately. Callers
+    that have both the config and the manifest must perform the cross-validation
+    explicitly.
+
+    Attributes:
+        profile: Optional profile identifier to select. When ``None`` the
+            manifest's declared ``defaultProfileId`` is used. Must match one of
+            the profile ids declared in the manifest's ``testValueProfiles``.
+        overrides: Immutable mapping of key names to override string values.
+            Each key must match the test-value key pattern and must be listed in
+            the manifest's ``testValueProfiles.allowedOverrideKeys``.
+    """
+
+    profile: str | None
+    overrides: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -248,6 +299,12 @@ class ModelBankConfig:
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
             certificate root.
+        test_values: Optional participant test-value profile selection and key
+            overrides. When absent, the manifest's default profile is used with
+            no overrides.
+        open_banking: Optional Open Banking institution metadata, including the
+            ``x-fapi-financial-id`` header value injected for resource-server
+            write requests. When absent, no financial-id header is added.
     """
 
     environment: str
@@ -261,6 +318,8 @@ class ModelBankConfig:
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
+    test_values: TestValuesConfig | None = None
+    open_banking: OpenBankingConfig | None = None
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -328,6 +387,8 @@ def parse_model_bank_config(
             "testSuite",
             "approvedReleasePolicyPath",
             "oauth",
+            "testValues",
+            "openBanking",
         },
         location="config",
     )
@@ -354,6 +415,8 @@ def parse_model_bank_config(
     oauth = _parse_oauth_config(raw_config)
     _validate_psu_auth_starter_oauth(test_suite, oauth)
     fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
+    test_values = _parse_test_values_config(raw_config)
+    open_banking = _parse_open_banking_config(raw_config)
 
     return ModelBankConfig(
         environment=environment,
@@ -367,6 +430,8 @@ def parse_model_bank_config(
         approved_release_policy=approved_release_policy,
         oauth=oauth,
         fapi_signing=fapi_signing,
+        test_values=test_values,
+        open_banking=open_banking,
     )
 
 
@@ -452,8 +517,9 @@ def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelect
         raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
     if suite not in _SUPPORTED_SUITE_NAMES:
         raise ConfigError(
-            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
-            "ais-certification-slice, ais-certification-baseline, ais-fcs-legacy-benchmark"
+            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, pis-domestic-payment-starter, "
+            "ais-certification-slice, ais-certification-baseline, ais-fcs-legacy-benchmark, "
+            "pis-fcs-legacy-benchmark"
         )
     api = _parse_test_suite_api(raw_test_suite, suite=suite)
     if standard == "cvrp" and api != "cvrp":
@@ -559,6 +625,79 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
     )
 
 
+def _parse_test_values_config(raw_config: dict[str, JsonValue]) -> TestValuesConfig | None:
+    """Parse the optional ``testValues`` section of a participant config.
+
+    Accepts a ``profile`` string and an ``overrides`` object mapping key names
+    to string values. The key name character set is validated here; cross-
+    validation against manifest-declared ``allowedOverrideKeys`` is deferred to
+    callers that have both the config and the loaded manifest.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed ``TestValuesConfig``, or ``None`` when the config omits the
+        ``testValues`` section.
+
+    Raises:
+        ConfigError: If ``testValues`` is not a JSON object, contains unknown
+            keys, ``profile`` is not a non-empty string, ``overrides`` is not a
+            JSON object, or any override key or value fails validation.
+    """
+    raw_tv = raw_config.get("testValues")
+    if raw_tv is None:
+        return None
+    if not isinstance(raw_tv, dict):
+        raise ConfigError("testValues must be a JSON object")
+
+    _reject_unknown_keys(
+        raw_tv,
+        allowed_keys={"profile", "overrides"},
+        location="testValues",
+    )
+
+    profile: str | None = None
+    raw_profile = raw_tv.get("profile")
+    if raw_profile is not None:
+        if not isinstance(raw_profile, str) or not raw_profile.strip():
+            raise ConfigError("testValues.profile must be a non-empty string when present")
+        profile = raw_profile.strip()
+
+    overrides: dict[str, str] = {}
+    raw_overrides = raw_tv.get("overrides")
+    if raw_overrides is not None:
+        if not isinstance(raw_overrides, dict):
+            raise ConfigError("testValues.overrides must be a JSON object when present")
+        for key, value in raw_overrides.items():
+            if not key or _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+                raise ConfigError(f"testValues.overrides key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)")
+            if not isinstance(value, str):
+                raise ConfigError(f"testValues.overrides.{key} must be a string value")
+            overrides[key] = value
+
+    return TestValuesConfig(
+        profile=profile,
+        overrides=MappingProxyType(overrides),
+    )
+
+
+@dataclass(frozen=True)
+class OpenBankingConfig:
+    """Open Banking institution metadata for outbound resource-server requests.
+
+    Attributes:
+        financial_id: Financial institution identifier sent as the
+            ``x-fapi-financial-id`` request header on Open Banking
+            resource-server write requests. Sourced from the participant
+            config ``openBanking.financialId`` field and masked in
+            execution logs and result evidence by the masking layer.
+    """
+
+    financial_id: str
+
+
 def _validate_psu_auth_starter_oauth(test_suite: SuiteSelection | None, oauth: OAuthConfig | None) -> None:
     """Reject example-only consent ids for PSU auth starter suite runs.
 
@@ -622,6 +761,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
             "clientAssertionIssuer",
             "clientAssertionSubject",
             "tokenEndpointAuthMethod",
+            "signatureIssuer",
+            "signatureTrustAnchor",
         },
         location="fapiSigning",
     )
@@ -658,6 +799,11 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
         raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
 
+    signature_issuer = _optional_string_at(raw_fapi_signing, "signatureIssuer", location="fapiSigning")
+    signature_trust_anchor = _optional_string_at(raw_fapi_signing, "signatureTrustAnchor", location="fapiSigning")
+    if (signature_issuer is None) != (signature_trust_anchor is None):
+        raise ConfigError("fapiSigning.signatureIssuer and fapiSigning.signatureTrustAnchor must be supplied together")
+
     return FapiSigningConfig(
         certificate_path_root=certificate_root,
         signing_certificate_path=signing_certificate_path,
@@ -666,7 +812,46 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         client_assertion_issuer=client_assertion_issuer,
         client_assertion_subject=client_assertion_subject,
         token_endpoint_auth_method=cast(TokenEndpointClientAuthMode, token_endpoint_auth_method),
+        signature_issuer=signature_issuer,
+        signature_trust_anchor=signature_trust_anchor,
     )
+
+
+def _parse_open_banking_config(raw_config: dict[str, JsonValue]) -> OpenBankingConfig | None:
+    """Parse the optional ``openBanking`` section of a participant config.
+
+    Accepts the ``financialId`` string used to inject the
+    ``x-fapi-financial-id`` header on outbound Open Banking resource-server
+    write requests. This field is institution-level metadata and is not a
+    secret, but it is masked in execution logs and result evidence by the
+    masking layer's existing ``x-fapi-financial-id`` rule.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed ``OpenBankingConfig``, or ``None`` when the config omits the
+        ``openBanking`` section.
+
+    Raises:
+        ConfigError: If ``openBanking`` is not a JSON object, contains unknown
+            keys, or omits the required ``financialId`` field.
+    """
+    raw_ob = raw_config.get("openBanking")
+    if raw_ob is None:
+        return None
+    if not isinstance(raw_ob, dict):
+        raise ConfigError("openBanking must be a JSON object")
+
+    _reject_unknown_keys(
+        raw_ob,
+        allowed_keys={"financialId"},
+        location="openBanking",
+    )
+
+    financial_id = _required_string_at(raw_ob, "financialId", location="openBanking")
+    return OpenBankingConfig(financial_id=financial_id)
 
 
 def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:

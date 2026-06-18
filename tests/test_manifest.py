@@ -15,8 +15,11 @@ from conformance.manifest import (
     JsonBody,
     ManifestError,
     ManifestStep,
+    ObErrorCodeAssertion,
     PsuAuthorizationStep,
+    PsuExpectedAuthorizationResponse,
     ResponseSchemaAssertion,
+    ResponseSignatureAssertion,
     TokenEndpointAuthPolicy,
     load_manifest,
     parse_manifest,
@@ -338,6 +341,48 @@ def test_parse_v1_manifest_accepts_v4_0_1_response_schema_document() -> None:
 
 
 @pytest.mark.unit
+def test_parse_v1_manifest_accepts_v4_0_payment_initiation_response_schema_document() -> None:
+    """Parse response schema assertions targeting the bundled v4.0 PIS OpenAPI document."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-payment-initiation-openapi",
+            "schemaRef": "#/components/schemas/OBWriteDomesticConsentResponse5",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion.document == "ob-read-write-v4.0-payment-initiation-openapi"
+
+
+@pytest.mark.unit
+def test_parse_response_signature_assertion_accepts_jwks_step_reference() -> None:
+    """Parse response_signature assertions targeting a prior JWKS step."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_signature",
+            "jwksStepId": "jwks-fetch",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSignatureAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion == ResponseSignatureAssertion(
+        type="response_signature",
+        jwks_step_id="jwks-fetch",
+        header_name="x-jws-signature",
+    )
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize(
     ("raw_assertion", "message"),
     [
@@ -359,7 +404,9 @@ def test_parse_v1_manifest_accepts_v4_0_1_response_schema_document() -> None:
             },
             (
                 r"steps\[0\]\.assertions\[0\]\.document must be one of: "
-                r"ob-read-write-v4\.0-account-info-openapi, ob-read-write-v4\.0\.1-account-info-openapi"
+                r"ob-read-write-v4\.0-account-info-openapi, "
+                r"ob-read-write-v4\.0-payment-initiation-openapi, "
+                r"ob-read-write-v4\.0\.1-account-info-openapi"
             ),
         ),
         (
@@ -2312,6 +2359,7 @@ def test_parse_v1_psu_step_applies_defaults() -> None:
     assert psu_step.nonce is None
     assert psu_step.request_object is None
     assert psu_step.timeout_seconds == 120
+    assert psu_step.expected_authorization_response is None
     assert psu_step.mandatory is False
     assert psu_step.optional is False
     assert psu_step.group == "default"
@@ -2329,6 +2377,8 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     step["nonce"] = "n" * 64
     step["requestObject"] = "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     step["timeoutSeconds"] = 60
+    step["expectedAuthorizationResponse"] = {"type": "http_status", "expected": 400}
+    step["mode"] = "headless"
     step["mandatory"] = True
     step["group"] = "consent"
     step["phase"] = "setup"
@@ -2341,6 +2391,10 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     assert psu_step.nonce == "n" * 64
     assert psu_step.request_object == "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
     assert psu_step.timeout_seconds == 60
+    assert psu_step.expected_authorization_response == PsuExpectedAuthorizationResponse(
+        type="http_status",
+        expected=400,
+    )
     assert psu_step.mandatory is True
     assert psu_step.group == "consent"
     assert psu_step.phase == "setup"
@@ -2747,6 +2801,119 @@ def test_parse_v1_psu_step_rejects_secret_bearing_config_placeholder_in_generate
 
 
 @pytest.mark.unit
+def test_parse_v1_psu_step_accepts_request_object_signature_claim_negative_case() -> None:
+    """PSU steps accept the narrow request-object signature-claim negative mutation."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "fapi-signing",
+        "openbankingIntentId": "consent-123",
+    }
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["signingNegativeCase"] = "omit-request-object-signature-claim"
+
+    manifest = parse_manifest(raw)
+    psu_step = cast("PsuAuthorizationStep", manifest.steps[0])
+    assert psu_step.signing_negative_case == "omit-request-object-signature-claim"
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_request_object_signature_claim_negative_case_without_intent_id() -> None:
+    """PSU request-object claim mutation requires an explicit openbankingIntentId source."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {"source": "fapi-signing"}
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["signingNegativeCase"] = "omit-request-object-signature-claim"
+
+    with pytest.raises(
+        ManifestError,
+        match=(
+            r"steps\[0\]\.signingNegativeCase 'omit-request-object-signature-claim' "
+            r"requires requestObject\.openbankingIntentId"
+        ),
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_http_only_signing_negative_case() -> None:
+    """PSU steps reject detached-header mutations reserved for HTTP requests."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["requestObject"] = {
+        "source": "fapi-signing",
+        "openbankingIntentId": "consent-123",
+    }
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["signingNegativeCase"] = "omit-detached-jws-header"
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.signingNegativeCase 'omit-detached-jws-header' is only valid on http steps",
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_accepts_expected_authorization_response() -> None:
+    """Headless PSU steps may declare an expected direct HTTP rejection status."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    step["mode"] = "headless"
+    step["expectedAuthorizationResponse"] = {"type": "http_status", "expected": 400}
+
+    manifest = parse_manifest(raw)
+    psu_step = cast("PsuAuthorizationStep", manifest.steps[0])
+    assert psu_step.expected_authorization_response == PsuExpectedAuthorizationResponse(
+        type="http_status",
+        expected=400,
+    )
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_expected_authorization_response_on_manual_mode() -> None:
+    """Expected authorisation response metadata is disallowed on manual PSU steps."""
+    raw = valid_psu_manifest()
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["expectedAuthorizationResponse"] = {
+        "type": "http_status",
+        "expected": 400,
+    }
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.expectedAuthorizationResponse is only valid when mode is 'headless'",
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("bad_expected", [True, "400", None, 399, 600])
+def test_parse_v1_psu_step_rejects_invalid_expected_authorization_response_status(
+    bad_expected: JsonValue,
+) -> None:
+    """Expected authorisation status must be an integer 4xx/5xx code."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    step["mode"] = "headless"
+    step["expectedAuthorizationResponse"] = {"type": "http_status", "expected": bad_expected}
+
+    message = r"steps\[0\]\.expectedAuthorizationResponse\.expected must be a JSON integer"
+    if isinstance(bad_expected, int) and not isinstance(bad_expected, bool):
+        message = r"steps\[0\]\.expectedAuthorizationResponse\.expected must be between 400 and 599 inclusive"
+    with pytest.raises(ManifestError, match=message):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
+def test_parse_v1_psu_step_rejects_unknown_expected_authorization_response_type() -> None:
+    """Expected authorisation response supports only the ``http_status`` type."""
+    raw = valid_psu_manifest()
+    step = cast("list[dict[str, JsonValue]]", raw["steps"])[0]
+    step["mode"] = "headless"
+    step["expectedAuthorizationResponse"] = {"type": "oauth_error", "expected": 400}
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.expectedAuthorizationResponse\.type must be 'http_status'",
+    ):
+        parse_manifest(raw)
+
+
+@pytest.mark.unit
 @pytest.mark.parametrize("bad_value", [0, -1, 601, 1000])
 def test_parse_v1_psu_step_rejects_out_of_range_timeout(bad_value: int) -> None:
     """Timeout must be within the documented 1..600 second range."""
@@ -2999,6 +3166,235 @@ def test_parse_v1_http_step_accepts_detached_jws_policy() -> None:
 
     step = cast("ManifestStep", manifest.steps[0])
     assert step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_accepts_detached_jws_signing_negative_case() -> None:
+    """HTTP steps may opt into the narrow missing detached-JWS negative mutation."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-negative-case",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "signingNegativeCase": "omit-detached-jws-header",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.signing_negative_case == "omit-detached-jws-header"
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_accepts_omit_jwt_claim_signing_negative_case() -> None:
+    """HTTP steps accept omit-jwt-claim only when detached-JWS signing is configured."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-omit-jwt-claim-negative-case",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "signingNegativeCase": "omit-jwt-claim",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.signing_negative_case == "omit-jwt-claim"
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_omit_jwt_claim_without_detached_jws() -> None:
+    """omit-jwt-claim requires request.detachedJws on HTTP steps."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "omit-jwt-claim-missing-detached-jws",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "signingNegativeCase": "omit-jwt-claim",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.signingNegativeCase 'omit-jwt-claim' requires request\.detachedJws",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_omit_jwt_claim_on_psu_step() -> None:
+    """omit-jwt-claim is reserved for HTTP detached-JWS requests, not PSU steps."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "omit-jwt-claim-on-psu-step",
+        "steps": [
+            {
+                "kind": "psu-authorization",
+                "id": "psu",
+                "name": "PSU",
+                "mode": "manual",
+                "authorizationEndpoint": "https://auth.example.com/authorize",
+                "clientId": "client-id",
+                "redirectUri": "https://conformance.example.com/callback",
+                "signingNegativeCase": "omit-jwt-claim",
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=r"steps\[0\]\.signingNegativeCase 'omit-jwt-claim' is only valid on http steps",
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_unknown_signing_negative_case() -> None:
+    """HTTP signing-negative selectors are closed-shape and closed-value."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "unknown-signing-negative-case",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "signingNegativeCase": "drop-all-signing",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=(
+            r"steps\[0\]\.signingNegativeCase must be one of: "
+            r"omit-detached-jws-header, omit-request-object-signature-claim"
+        ),
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_rejects_psu_only_signing_negative_case() -> None:
+    """HTTP steps reject request-object claim mutations reserved for PSU steps."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "http-psu-negative-case-mismatch",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "signingNegativeCase": "omit-request-object-signature-claim",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    with pytest.raises(
+        ManifestError,
+        match=(
+            r"steps\[0\]\.signingNegativeCase 'omit-request-object-signature-claim' "
+            r"is only valid on psu-authorization steps"
+        ),
+    ):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_ob_error_code_assertion_accepts_valid_codes() -> None:
+    """ob_error_code assertions should parse into typed code tuples."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "ob_error_code",
+            "codes": ["UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"],
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ObErrorCodeAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion == ObErrorCodeAssertion(
+        type="ob_error_code",
+        codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+    )
+
+
+@pytest.mark.unit
+def test_parse_ob_error_code_assertion_rejects_empty_codes() -> None:
+    """ob_error_code assertions should reject an empty codes array."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [{"type": "ob_error_code", "codes": []}]
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.assertions\[0\]\.codes must be a non-empty array"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_ob_error_code_assertion_rejects_missing_codes() -> None:
+    """ob_error_code assertions should require the codes field."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [{"type": "ob_error_code"}]
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.assertions\[0\]\.codes is required"):
+        parse_manifest(raw_manifest)
+
+
+@pytest.mark.unit
+def test_parse_ob_error_code_assertion_rejects_non_string_code() -> None:
+    """ob_error_code assertions should reject non-string code values."""
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [{"type": "ob_error_code", "codes": [123]}]
+
+    with pytest.raises(ManifestError, match=r"steps\[0\]\.assertions\[0\]\.codes\[0\] must be a non-empty string"):
+        parse_manifest(raw_manifest)
 
 
 @pytest.mark.unit

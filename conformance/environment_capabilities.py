@@ -236,7 +236,13 @@ def _suite_capability_from_metadata(metadata: SuiteMetadata) -> SuiteEnvironment
                 ),
             ),
         )
-    if metadata.suite in {"ais-certification-slice", "ais-certification-baseline", "ais-fcs-legacy-benchmark"}:
+    if metadata.suite in {
+        "ais-certification-slice",
+        "ais-certification-baseline",
+        "ais-fcs-legacy-benchmark",
+        "pis-domestic-payment-starter",
+        "pis-fcs-legacy-benchmark",
+    }:
         return SuiteEnvironmentCapability(
             standard=metadata.standard,
             spec_version=metadata.spec_version,
@@ -293,6 +299,8 @@ _OZONE_PRESET = EnvironmentPreset(
             {
                 "discovery-jwks",
                 "psu-auth-starter",
+                "pis-domestic-payment-starter",
+                "pis-fcs-legacy-benchmark",
                 "ais-certification-slice",
                 "ais-certification-baseline",
                 "ais-fcs-legacy-benchmark",

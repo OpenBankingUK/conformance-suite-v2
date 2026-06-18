@@ -20,6 +20,7 @@ release artefact's only protection).
 Event taxonomy (``type`` field):
     run-started, run-completed,
     auth-metadata-evaluated, environment-capability-evaluated,
+    test-value-profile-evaluated,
     step-started, step-completed, step-deselected,
     request-sent, response-received,
     assertion-evaluated,
@@ -52,6 +53,7 @@ EventType = Literal[
     "run-completed",
     "auth-metadata-evaluated",
     "environment-capability-evaluated",
+    "test-value-profile-evaluated",
     "step-started",
     "step-completed",
     "step-deselected",

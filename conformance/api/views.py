@@ -38,7 +38,7 @@ from conformance.json_types import JsonObject
 from conformance.manifest import ManifestError, load_manifest_from_object
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
+from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
@@ -313,7 +313,10 @@ def create_run(request: HttpRequest) -> JsonResponse:
         # surface as 400 so the participant can correct the request rather
         # than discover the typo after the run starts.
         try:
-            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(raw_deselect or [])
+            test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+            plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx).with_deselection(
+                raw_deselect or []
+            )
         except ValueError as error:
             return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
 

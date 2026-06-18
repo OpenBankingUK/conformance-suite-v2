@@ -14,7 +14,8 @@ from conformance.approved_releases import ApprovedReleasePolicy as ApprovedRelea
 from conformance.approved_releases import ApprovedReleasePolicyError
 from conformance.auth_metadata import AuthBundleInventory, AuthStepRequirement
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import CertificationCoverage, Manifest, ManifestError, load_manifest
+from conformance.manifest import CertificationCoverage, Manifest, ManifestError, TestValueProfileSpec, load_manifest
+from conformance.masking import MASKED_VALUE
 from conformance.results import CheckStatus
 
 APPROVED_RELEASE_POLICY_SCHEMA_VERSION = approved_releases.APPROVED_RELEASE_POLICY_SCHEMA_VERSION
@@ -35,6 +36,8 @@ type CertificationValidationReason = Literal[
     "auth_metadata_mismatch",
     "environment_capabilities_missing",
     "environment_capabilities_blocked",
+    "test_value_profile_missing",
+    "test_value_profile_mismatch",
     "manifest_coverage_partial",
 ]
 """Machine-readable blocking reasons emitted by validation results."""
@@ -51,6 +54,8 @@ _REASON_LABELS: Mapping[CertificationValidationReason, str] = MappingProxyType(
             "Environment capability evidence is required for this complete-suite submission"
         ),
         "environment_capabilities_blocked": "Environment capability evidence reports blocked support",
+        "test_value_profile_missing": "Test-value profile evidence is required for complete coverage manifests",
+        "test_value_profile_mismatch": "Test-value profile evidence is inconsistent with the trusted manifest",
         "manifest_coverage_partial": "Manifest is not marked as complete certification coverage",
     }
 )
@@ -86,6 +91,7 @@ class SubmittedReport:
         auth_metadata: Optional parsed ``authMetadata`` evidence.
         environment_capability_supports: Optional support decisions extracted
             from ``environmentCapabilities.decisions[*].support``.
+        test_value_profile: Optional parsed ``testValueProfile`` evidence.
         suite_catalog_id: Optional suite catalog id from ``suite.catalogId``.
             Presence indicates a config-resolved bundled suite run.
     """
@@ -95,6 +101,7 @@ class SubmittedReport:
     steps: tuple[ReportStep, ...]
     auth_metadata: SubmittedAuthMetadataEvidence | None = None
     environment_capability_supports: tuple[str, ...] | None = None
+    test_value_profile: SubmittedTestValueProfileEvidence | None = None
     suite_catalog_id: str | None = None
 
 
@@ -124,6 +131,46 @@ class SubmittedAuthMetadataEvidence:
 
     bundles: tuple[SubmittedAuthBundleEvidence, ...]
     selected_step_requirements: tuple[AuthStepRequirement, ...]
+
+
+@dataclass(frozen=True)
+class SubmittedConditionOutcomeEvidence:
+    """Submitted per-step conditional test-value outcome evidence.
+
+    Attributes:
+        step_id: Manifest step identifier for this condition outcome.
+        selected: Whether the step was selected by plan evaluation.
+        required_keys: Required test-value keys declared for the condition.
+        missing_keys: Required keys missing from the effective profile.
+    """
+
+    step_id: str
+    selected: bool
+    required_keys: tuple[str, ...]
+    missing_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class SubmittedTestValueProfileEvidence:
+    """Submitted non-secret test-value profile evidence.
+
+    Attributes:
+        profile_id: Effective test-value profile id used for the run.
+        source: Whether profile selection came from defaults or overrides.
+        override_keys: Override key names applied by participant config.
+        declared_keys: Key names declared by trusted manifest metadata.
+        required_keys: Union of required test-value keys for selected plan rows.
+        condition_outcomes: Optional per-step conditional selection outcomes.
+        effective_values: Optional masked values surfaced for non-secret keys.
+    """
+
+    profile_id: str
+    source: str
+    override_keys: tuple[str, ...]
+    declared_keys: tuple[str, ...]
+    required_keys: tuple[str, ...]
+    condition_outcomes: tuple[SubmittedConditionOutcomeEvidence, ...]
+    effective_values: Mapping[str, str]
 
 
 @dataclass(frozen=True)
@@ -306,6 +353,7 @@ def parse_submitted_report(raw_report: object) -> SubmittedReport:
         steps=_parse_report_steps(raw_steps),
         auth_metadata=_parse_optional_auth_metadata(report, location="report"),
         environment_capability_supports=_parse_optional_environment_capabilities(report, location="report"),
+        test_value_profile=_parse_optional_test_value_profile(report, location="report"),
         suite_catalog_id=_parse_optional_suite_catalog_id(report, location="report"),
     )
 
@@ -382,12 +430,17 @@ def validate_report(
         manifest=manifest,
         report_steps=report_steps,
     )
+    test_value_profile_reasons = _validate_complete_manifest_test_value_profile_evidence(
+        report=report,
+        manifest=manifest,
+        report_step_ids=frozenset(report_steps.keys()),
+    )
     capability_evidence_reasons = _validate_environment_capability_evidence(report=report, manifest=manifest)
 
     reasons = _validation_reasons(
         mandatory_steps=mandatory_step_results,
         tool_version_approved=tool_version_approved,
-        auth_evidence_reasons=auth_evidence_reasons,
+        auth_evidence_reasons=(*auth_evidence_reasons, *test_value_profile_reasons),
         capability_evidence_reasons=capability_evidence_reasons,
         manifest_coverage_partial=(manifest_coverage != "complete"),
     )
@@ -625,6 +678,8 @@ def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
             "auth_metadata_mismatch",
             "environment_capabilities_missing",
             "environment_capabilities_blocked",
+            "test_value_profile_missing",
+            "test_value_profile_mismatch",
         }:
             lines.append(f"- {_REASON_LABELS[reason]}")
         else:
@@ -660,6 +715,36 @@ def _validate_complete_manifest_auth_evidence(
     )
     if not _auth_evidence_matches_expected(report=report.auth_metadata, expected=expected_inventory):
         return ("auth_metadata_mismatch",)
+    return ()
+
+
+def _validate_complete_manifest_test_value_profile_evidence(
+    *,
+    report: SubmittedReport,
+    manifest: Manifest,
+    report_step_ids: frozenset[str],
+) -> tuple[CertificationValidationReason, ...]:
+    """Validate submitted test-value profile evidence for complete manifests.
+
+    Args:
+        report: Parsed submitted report.
+        manifest: Trusted manifest used for the certified run.
+        report_step_ids: Step ids present in the submitted report.
+
+    Returns:
+        Tuple containing zero or more test-value profile blocking reasons.
+    """
+    profile_spec = manifest.test_value_profiles
+    if manifest.certification_coverage != "complete" or profile_spec is None:
+        return ()
+    if report.test_value_profile is None:
+        return ("test_value_profile_missing",)
+    if not _test_value_profile_evidence_matches_expected(
+        evidence=report.test_value_profile,
+        manifest=manifest,
+        report_step_ids=report_step_ids,
+    ):
+        return ("test_value_profile_mismatch",)
     return ()
 
 
@@ -704,6 +789,136 @@ def _requires_environment_capability_evidence(*, report: SubmittedReport, manife
     if manifest.auth_inventory is None:
         return False
     return bool(manifest.auth_inventory.bundles)
+
+
+def _test_value_profile_evidence_matches_expected(
+    *,
+    evidence: SubmittedTestValueProfileEvidence,
+    manifest: Manifest,
+    report_step_ids: frozenset[str],
+) -> bool:
+    """Return whether submitted test-value profile evidence matches manifest truth.
+
+    Args:
+        evidence: Submitted parsed test-value profile evidence.
+        manifest: Trusted manifest used for validation.
+        report_step_ids: Step ids present in the submitted report.
+
+    Returns:
+        True when evidence fields are internally consistent and match trusted
+        manifest metadata for declared keys, selected-step required keys, and
+        conditional outcomes.
+    """
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None:
+        return False
+    known_profile_ids = {profile.id for profile in profile_spec.profiles}
+    if evidence.profile_id not in known_profile_ids:
+        return False
+    if not set(evidence.override_keys).issubset(profile_spec.allowed_override_keys):
+        return False
+    expected_source = (
+        "default"
+        if evidence.profile_id == profile_spec.default_profile_id and not evidence.override_keys
+        else "overridden"
+    )
+    if evidence.source != expected_source:
+        return False
+    if set(evidence.declared_keys) != _expected_declared_test_value_keys(profile_spec):
+        return False
+    if set(evidence.required_keys) != _expected_required_test_value_keys(manifest, report_step_ids=report_step_ids):
+        return False
+    if not _condition_outcomes_match_manifest(
+        evidence.condition_outcomes,
+        manifest=manifest,
+        report_step_ids=report_step_ids,
+    ):
+        return False
+    non_secret_keys = profile_spec.non_secret_keys
+    if set(evidence.effective_values).difference(non_secret_keys):
+        return False
+    return all(value == MASKED_VALUE for value in evidence.effective_values.values())
+
+
+def _expected_declared_test_value_keys(profile_spec: TestValueProfileSpec) -> set[str]:
+    """Compute declared test-value keys from trusted profile metadata.
+
+    Args:
+        profile_spec: Trusted manifest profile metadata object.
+
+    Returns:
+        Set of declared keys including profile literals, generated keys, and
+        allow-listed override keys.
+    """
+    keys = set(profile_spec.allowed_override_keys)
+    for profile in profile_spec.profiles:
+        keys.update(profile.values)
+        keys.update(profile.generated_keys)
+    return keys
+
+
+def _expected_required_test_value_keys(manifest: Manifest, *, report_step_ids: frozenset[str]) -> set[str]:
+    """Compute expected required test-value keys for selected report steps.
+
+    Args:
+        manifest: Trusted manifest used for validation.
+        report_step_ids: Step ids present in the submitted report.
+
+    Returns:
+        Set of required keys from selected conditional steps.
+    """
+    required_keys: set[str] = set()
+    for step in manifest.steps:
+        if step.id not in report_step_ids or step.selection_metadata is None:
+            continue
+        required_keys.update(step.selection_metadata.required_test_value_keys)
+    return required_keys
+
+
+def _condition_outcomes_match_manifest(
+    outcomes: tuple[SubmittedConditionOutcomeEvidence, ...],
+    *,
+    manifest: Manifest,
+    report_step_ids: frozenset[str],
+) -> bool:
+    """Return whether submitted condition outcomes match manifest declarations.
+
+    Args:
+        outcomes: Submitted per-step condition outcomes.
+        manifest: Trusted manifest used for validation.
+        report_step_ids: Step ids present in the submitted report.
+
+    Returns:
+        True when every selected conditional report step has a matching outcome
+        and each outcome matches trusted required-key metadata.
+    """
+    conditional_steps = {
+        step.id: step.selection_metadata
+        for step in manifest.steps
+        if step.selection_metadata is not None and step.selection_metadata.conditional
+    }
+    outcome_by_step = {outcome.step_id: outcome for outcome in outcomes}
+    if not set(outcome_by_step).issubset(conditional_steps):
+        return False
+    for step_id, outcome in outcome_by_step.items():
+        metadata = conditional_steps[step_id]
+        assert metadata is not None  # noqa: S101 - filtered to non-None above
+        if set(outcome.required_keys) != set(metadata.required_test_value_keys):
+            return False
+        if outcome.selected and step_id not in report_step_ids:
+            return False
+        if outcome.selected and outcome.missing_keys:
+            return False
+    for step_id in conditional_steps:
+        if step_id not in report_step_ids:
+            continue
+        if step_id not in outcome_by_step:
+            return False
+        if not outcome_by_step[step_id].selected:
+            return False
+        if outcome_by_step[step_id].missing_keys:
+            return False
+    return True
 
 
 def _select_manifest_auth_inventory_for_report(
@@ -929,6 +1144,57 @@ def _required_report_step_status(parent: Mapping[str, object], key: str, *, loca
     return cast(CheckStatus, value)
 
 
+def _required_bool(parent: Mapping[str, object], key: str, *, location: str) -> bool:
+    """Extract a required boolean field.
+
+    Args:
+        parent: Parent JSON object.
+        key: Field name to extract.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed boolean value.
+
+    Raises:
+        CertificationValidationError: If the field is missing or not a boolean.
+    """
+    if key not in parent:
+        raise CertificationValidationError(f"{location}.{key} is required")
+    value = parent[key]
+    if not isinstance(value, bool):
+        raise CertificationValidationError(f"{location}.{key} must be a boolean")
+    return value
+
+
+def _parse_required_non_empty_string_array(raw_values: list[object], *, location: str) -> tuple[str, ...]:
+    """Parse an array of non-empty strings.
+
+    Args:
+        raw_values: Decoded JSON array value.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of stripped non-empty string values.
+
+    Raises:
+        CertificationValidationError: If any item is not a non-empty string or
+            duplicates another item.
+    """
+    values: list[str] = []
+    seen_values: set[str] = set()
+    for index, raw_value in enumerate(raw_values):
+        if not isinstance(raw_value, str):
+            raise CertificationValidationError(f"{location}[{index}] must be a string")
+        stripped = raw_value.strip()
+        if not stripped:
+            raise CertificationValidationError(f"{location}[{index}] must not be empty")
+        if stripped in seen_values:
+            raise CertificationValidationError(f"{location}[{index}] {stripped!r} is duplicated")
+        seen_values.add(stripped)
+        values.append(stripped)
+    return tuple(values)
+
+
 def _parse_optional_auth_metadata(
     report: Mapping[str, object],
     *,
@@ -1041,6 +1307,108 @@ def _parse_optional_environment_capabilities(
             )
         supports.append(support)
     return tuple(supports)
+
+
+def _parse_optional_test_value_profile(
+    report: Mapping[str, object],
+    *,
+    location: str,
+) -> SubmittedTestValueProfileEvidence | None:
+    """Parse optional submitted ``testValueProfile`` evidence.
+
+    Args:
+        report: Submitted report root object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed test-value profile evidence, or ``None`` when absent.
+
+    Raises:
+        CertificationValidationError: If the evidence block is malformed.
+    """
+    block = _optional_object(report, "testValueProfile", location=location)
+    if block is None:
+        return None
+    source = _required_non_empty_string(block, "source", location=f"{location}.testValueProfile")
+    if source not in {"default", "overridden"}:
+        raise CertificationValidationError(f"{location}.testValueProfile.source must be one of: default, overridden")
+    raw_override_keys = _required_array(block, "overrideKeys", location=f"{location}.testValueProfile")
+    raw_declared_keys = _required_array(block, "declaredKeys", location=f"{location}.testValueProfile")
+    raw_required_keys = _required_array(block, "requiredKeys", location=f"{location}.testValueProfile")
+    raw_condition_outcomes = _required_array(block, "conditionOutcomes", location=f"{location}.testValueProfile")
+    effective_values = _optional_object(block, "effectiveValues", location=f"{location}.testValueProfile") or {}
+
+    override_keys = _parse_required_non_empty_string_array(
+        raw_override_keys,
+        location=f"{location}.testValueProfile.overrideKeys",
+    )
+    declared_keys = _parse_required_non_empty_string_array(
+        raw_declared_keys,
+        location=f"{location}.testValueProfile.declaredKeys",
+    )
+    required_keys = _parse_required_non_empty_string_array(
+        raw_required_keys,
+        location=f"{location}.testValueProfile.requiredKeys",
+    )
+    condition_outcomes: list[SubmittedConditionOutcomeEvidence] = []
+    seen_condition_steps: set[str] = set()
+    for index, raw_condition in enumerate(raw_condition_outcomes):
+        condition = _as_object(raw_condition, location=f"{location}.testValueProfile.conditionOutcomes[{index}]")
+        step_id = _required_non_empty_string(
+            condition,
+            "stepId",
+            location=f"{location}.testValueProfile.conditionOutcomes[{index}]",
+        )
+        if step_id in seen_condition_steps:
+            raise CertificationValidationError(
+                f"{location}.testValueProfile.conditionOutcomes[{index}].stepId {step_id!r} is duplicated"
+            )
+        seen_condition_steps.add(step_id)
+        selected = _required_bool(
+            condition,
+            "selected",
+            location=f"{location}.testValueProfile.conditionOutcomes[{index}]",
+        )
+        raw_condition_required = _required_array(
+            condition,
+            "requiredKeys",
+            location=f"{location}.testValueProfile.conditionOutcomes[{index}]",
+        )
+        raw_missing = _required_array(
+            condition,
+            "missingKeys",
+            location=f"{location}.testValueProfile.conditionOutcomes[{index}]",
+        )
+        condition_outcomes.append(
+            SubmittedConditionOutcomeEvidence(
+                step_id=step_id,
+                selected=selected,
+                required_keys=_parse_required_non_empty_string_array(
+                    raw_condition_required,
+                    location=f"{location}.testValueProfile.conditionOutcomes[{index}].requiredKeys",
+                ),
+                missing_keys=_parse_required_non_empty_string_array(
+                    raw_missing,
+                    location=f"{location}.testValueProfile.conditionOutcomes[{index}].missingKeys",
+                ),
+            )
+        )
+
+    parsed_effective_values: dict[str, str] = {}
+    for key, value in effective_values.items():
+        if not isinstance(value, str):
+            raise CertificationValidationError(f"{location}.testValueProfile.effectiveValues.{key} must be a string")
+        parsed_effective_values[key] = value
+
+    return SubmittedTestValueProfileEvidence(
+        profile_id=_required_non_empty_string(block, "profileId", location=f"{location}.testValueProfile"),
+        source=source,
+        override_keys=override_keys,
+        declared_keys=declared_keys,
+        required_keys=required_keys,
+        condition_outcomes=tuple(condition_outcomes),
+        effective_values=MappingProxyType(parsed_effective_values),
+    )
 
 
 def _parse_optional_suite_catalog_id(report: Mapping[str, object], *, location: str) -> str | None:

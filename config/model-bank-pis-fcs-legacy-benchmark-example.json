@@ -1,0 +1,51 @@
+{
+  "environment": "ozone-model-bank",
+  "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+  "timeoutSeconds": 10,
+  "testSuite": {
+    "standard": "ob-read-write",
+    "specVersion": "v4.0",
+    "api": "pis",
+    "profile": "fapi1-advanced",
+    "suite": "pis-fcs-legacy-benchmark"
+  },
+  "oauth": {
+    "clientId": "your-client-id-here",
+    "redirectUri": "https://conformance.example.com/callback",
+    "resourceBaseUrl": "https://resource.example.com"
+  },
+  "fapiSigning": {
+    "certificatePathRoot": "./certs",
+    "signingCertificatePath": "dummy-signing.crt",
+    "signingPrivateKeyPath": "dummy-signing.key",
+    "kid": "your-signing-kid-here",
+    "clientAssertionIssuer": "your-client-id-here",
+    "clientAssertionSubject": "your-client-id-here",
+    "tokenEndpointAuthMethod": "private_key_jwt",
+    "signatureIssuer": "your-ob-org-id/your-software-statement-id",
+    "signatureTrustAnchor": "openbanking.org.uk"
+  },
+  "openBanking": {
+    "financialId": "your-aspsp-financial-id-here"
+  },
+  "testValues": {
+    "profile": "ozone-demo",
+    "overrides": {
+      "creditorName": "Example Merchant",
+      "remittanceInformation": "Example PIS FCS legacy benchmark run",
+      "scheduledPaymentDateTime": "2026-07-17T10:00:00+00:00",
+      "frequency": "EvryDay",
+      "firstPaymentDateTime": "2026-07-17T10:00:00+00:00",
+      "finalPaymentDateTime": "2026-08-17T10:00:00+00:00",
+      "currencyOfTransfer": "EUR",
+      "internationalCreditorSchemeName": "UK.OBIE.IBAN",
+      "internationalCreditorIdentification": "DE89370400440532013000",
+      "internationalCreditorName": "Example International Beneficiary"
+    }
+  },
+  "tls": {
+    "certificatePathRoot": "./certs"
+  },
+  "resultOutputPath": "./out/test-results.json",
+  "executionLogPath": "./out/execution-log.ndjson"
+}

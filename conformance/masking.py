@@ -6,11 +6,9 @@ reports with OBL without exposing live credentials. Unmasking is reserved
 for a future developer-mode toggle and must never be enabled in release
 builds.
 
-This module is intentionally domain-agnostic and operates on a fixed,
-case-insensitive set of well-known credential keys and HTTP headers that
-appear in FAPI/OAuth 2.0 message exchanges. Open Banking domain-specific
-masking (e.g. account numbers, sort codes) is a separate concern and is
-not implemented here.
+This module operates on a fixed, case-insensitive set of well-known
+credential keys, Open Banking account/payment evidence keys, and HTTP
+headers that appear in FAPI/OAuth 2.0 message exchanges.
 
 Masked values are replaced with the literal ``"***"`` — original length is
 not preserved to avoid leaking entropy about the underlying secret.
@@ -42,6 +40,12 @@ SENSITIVE_JSON_KEYS: Final[frozenset[str]] = frozenset(
         # Generic credential fields that may appear in form/JSON payloads
         "password",
         "private_key",
+        # Open Banking payment/account evidence fields
+        "creditoraccount",
+        "debtoraccount",
+        "endtoendidentification",
+        "instructionidentification",
+        "remittanceinformation",
     }
 )
 """JSON object keys whose values must be masked, compared case-insensitively."""

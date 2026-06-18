@@ -1,0 +1,984 @@
+{
+  "schemaVersion": 1,
+  "updated": "2026-06-17",
+  "source": {
+    "path": "conformance/standards/ob_read_write/v4_0/legacy-ob_4.0_payment_fca_mapping.json",
+    "sourceSpecVersion": "v4.0",
+    "targetSpecVersion": "v4.0",
+    "notes": "This inventory is a generated parity baseline for PIS prior-FCS coverage. Each row targets pis-fcs-legacy-benchmark suite implementation. Conditional rows require test-value/capability prerequisites."
+  },
+  "statusValues": [
+    "implemented",
+    "partially_implemented",
+    "requires_new_primitive",
+    "blocked",
+    "waived",
+    "legacy_issue",
+    "superseded",
+    "not_started"
+  ],
+  "summary": {
+    "totalScripts": 29,
+    "mandatoryScripts": 8,
+    "optionalScripts": 0,
+    "conditionalScripts": 21,
+    "implementedInV4Benchmark": 29,
+    "notImplementedInV4Benchmark": 0
+  },
+  "records": [
+    {
+      "legacyScriptId": "OB-400-DOP-100100",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic payment consent at /domestic-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-100100 targets  Domestic Payment at /domestic-payment-consents.  It is marked mandatory and uses instructed Amount Currency, instructed Amount Value, instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "post",
+      "uri": "/domestic-payment-consents",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100100"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100110",
+      "legacySourceVersion": "v4.0",
+      "description": "Negative case: /domestic-payment-consents POST with signature error mutation, expect 400 with one-of OB signature error code.",
+      "detail": "Legacy script  O B-400- D O P-100110 targets  Domestic Payment at /domestic-payment-consents.  It is marked mandatory and uses instructed Amount Currency, instructed Amount Value, instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On400.  One-of assertions:  O B3 G L O Assert Signature Invalid Claim Error Code V4,  O B3 G L O Assert Signature Missing Claim Error Code V4,  O B3 G L O Assert Signature Malformed Error Code V4.  Coverage is minimal.",
+      "resource": "DomesticPayment",
+      "method": "post",
+      "uri": "/domestic-payment-consents",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn400"
+      ],
+      "assertsOneOf": [
+        "OB3GLOAssertSignatureInvalidClaimErrorCodeV4",
+        "OB3GLOAssertSignatureMissingClaimErrorCodeV4",
+        "OB3GLOAssertSignatureMalformedErrorCodeV4"
+      ],
+      "schemaCheck": false,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100110"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": ""
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100300",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic payment consent at /domestic-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-100300 targets  Domestic Payment at /domestic-payment-consents.  It is marked mandatory and uses instructed Amount Currency, instructed Amount Value, post Data, this Scheme Name, this Identification, instruction Identification, end To End Identification, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "post",
+      "uri": "/domestic-payment-consents",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "postData",
+        "thisSchemeName",
+        "thisIdentification",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100300"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-316-DOP-100310",
+      "legacySourceVersion": "v4.0",
+      "description": "Negative case: missing x-jws-signature header on domestic payment consent POST, expect 400 with UK.OBIE.Signature.Missing error.",
+      "detail": "Legacy script  O B-316- D O P-100310 targets  Domestic Payment at /domestic-payment-consents.  It is marked mandatory and uses instructed Amount Currency, instructed Amount Value, instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On400,  O B3 D O P Assert Signature Missing O B Error Code V4.  Coverage is partial.",
+      "resource": "DomesticPayment",
+      "method": "post",
+      "uri": "/domestic-payment-consents",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn400",
+        "OB3DOPAssertSignatureMissingOBErrorCodeV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-316-DOP-100310"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100400",
+      "legacySourceVersion": "v4.0",
+      "description": "Read domestic payment consent and assert 200 and authorised status.",
+      "detail": "Legacy script  O B-400- D O P-100400 targets  Domestic Payment at /domestic-payment-consents/$consent Id.  It is marked mandatory and uses consent Id profile keys.  Assertions:  O B3 G L O F A P I Header,  O B3 G L O Assert On200,  O B3 D O P Assert Authorised V4.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "get",
+      "uri": "/domestic-payment-consents/$consentId",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOFAPIHeader",
+        "OB3GLOAssertOn200",
+        "OB3DOPAssertAuthorisedV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100400"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100500",
+      "legacySourceVersion": "v4.0",
+      "description": "Check funds confirmation for domestic payment consent and assert 200 with available-funds outcome.",
+      "detail": "Legacy script  O B-400- D O P-100500 targets  Domestic Payment at /domestic-payment-consents/$consent Id/funds-confirmation.  It is marked mandatory and uses payment Type, consent Id profile keys.  Assertions:  O B3 G L O Assert On200,  O B3 D O P Funds Available.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "get",
+      "uri": "/domestic-payment-consents/$consentId/funds-confirmation",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentType",
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200",
+        "OB3DOPFundsAvailable"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100500"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100600",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic payment at /domestic-payments and assert 201 response.",
+      "detail": "Legacy script  O B-400- D O P-100600 targets  Domestic Payment at /domestic-payments.  It is marked mandatory and uses consent Id, this Scheme Name, this Identification, instruction Identification, end To End Identification, instructed Amount Currency, instructed Amount Value, post Data profile keys.  Assertions:  O B3 G L O Assert On201.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "post",
+      "uri": "/domestic-payments",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId",
+        "thisSchemeName",
+        "thisIdentification",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "postData"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100600"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100700",
+      "legacySourceVersion": "v4.0",
+      "description": "Read domestic payment resource and assert 200 response semantics.",
+      "detail": "Legacy script  O B-400- D O P-100700 targets  Domestic Payment at /domestic-payments/$payment Id.  It is marked mandatory and uses payment Id profile keys.  Assertions:  O B3 G L O Assert On200.  Coverage is broad.",
+      "resource": "DomesticPayment",
+      "method": "get",
+      "uri": "/domestic-payments/$paymentId",
+      "uriImplementation": "mandatory",
+      "mandatory": true,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100700"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "blocks_complete_if_mandatory",
+      "notes": "Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100800",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic scheduled payment consent at /domestic-scheduled-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-100800 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, instruction Identification, post Data, end To End Identification, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is partial.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "instructionIdentification",
+        "postData",
+        "endToEndIdentification",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100800"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100810",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic scheduled payment consent at /domestic-scheduled-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-100810 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, instruction Identification, replacement Date Time, post Data, end To End Identification, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is partial.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "instructionIdentification",
+        "replacementDateTime",
+        "postData",
+        "endToEndIdentification",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100810"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100820",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic scheduled payment consent at /domestic-scheduled-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-100820 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, instruction Identification, replacement Date Time, post Data, end To End Identification, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is partial.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "instructionIdentification",
+        "replacementDateTime",
+        "postData",
+        "endToEndIdentification",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100820"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-100900",
+      "legacySourceVersion": "v4.0",
+      "description": "Read domestic scheduled payment consent and assert 200 and authorised status.",
+      "detail": "Legacy script  O B-400- D O P-100900 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents/$consent Id.  It is marked conditional and uses consent Id profile keys.  Assertions:  O B3 G L O Assert On200,  O B3 D O P Assert Authorised V4.  Coverage is broad.",
+      "resource": "DomesticScheduledPayment",
+      "method": "get",
+      "uri": "/domestic-scheduled-payment-consents/$consentId",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200",
+        "OB3DOPAssertAuthorisedV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-100900"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101000",
+      "legacySourceVersion": "v4.0",
+      "description": "Validate domestic scheduled payment flow at /domestic-scheduled-payment-consents using the mapped legacy assertions.",
+      "detail": "Legacy script  O B-400- D O P-101000 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On201.  Coverage is partial.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101000"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101100",
+      "legacySourceVersion": "v4.0",
+      "description": "Validate domestic scheduled payment flow at /domestic-scheduled-payment-consents/$OB-400-DOP-101000-DomesticScheduledPaymentConsentId using the mapped legacy assertions.",
+      "detail": "Legacy script  O B-400- D O P-101100 targets  Domestic Scheduled Payment at /domestic-scheduled-payment-consents/$ O B-400- D O P-101000- Domestic Scheduled Payment Consent Id.  It is marked conditional and uses payment I D profile keys.  Assertions:  O B3 G L O Assert On200.  Coverage is broad.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payment-consents/$OB-400-DOP-101000-DomesticScheduledPaymentConsentId",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentID"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101100"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. The consent read URI uses the legacy paymentID placeholder from the mapping file. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101101",
+      "legacySourceVersion": "v4.0",
+      "description": "Validate domestic scheduled payment flow at /domestic-scheduled-payments using the mapped legacy assertions.",
+      "detail": "Legacy script  O B-400- D O P-101101 targets  Domestic Scheduled Payment at /domestic-scheduled-payments.  It is marked conditional and uses payment I D, consent Id, instruction Identification, end To End Identification, instructed Amount Currency, instructed Amount Value, post Data profile keys.  Assertions:  O B3 G L O Assert On201.  Coverage is broad.",
+      "resource": "DomesticScheduledPayment",
+      "method": "post",
+      "uri": "/domestic-scheduled-payments",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentID",
+        "consentId",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "instructedAmountCurrency",
+        "instructedAmountValue",
+        "postData"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101101"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101200",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic standing order consent at /domestic-standing-order-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-101200 targets  Domestic Standing Order at /domestic-standing-order-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, frequency, frequency Count Per Period, frequency Point In Time, first Payment Date Time, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is broad.",
+      "resource": "DomesticStandingOrder",
+      "method": "post",
+      "uri": "/domestic-standing-order-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "frequency",
+        "frequencyCountPerPeriod",
+        "frequencyPointInTime",
+        "firstPaymentDateTime",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101200"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires standing order capability and recurring-payment test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101300",
+      "legacySourceVersion": "v4.0",
+      "description": "Read domestic standing order consent and assert 200 and authorised status.",
+      "detail": "Legacy script  O B-400- D O P-101300 targets  Domestic Standing Order at /domestic-standing-order-consents/$consent Id.  It is marked conditional and uses consent Id profile keys.  Assertions:  O B3 G L O Assert On200,  O B3 D O P Assert Authorised V4.  Coverage is broad.",
+      "resource": "DomesticStandingOrder",
+      "method": "get",
+      "uri": "/domestic-standing-order-consents/$consentId",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200",
+        "OB3DOPAssertAuthorisedV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101300"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires standing order capability and recurring-payment test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101400",
+      "legacySourceVersion": "v4.0",
+      "description": "Create domestic standing order at /domestic-standing-orders and expect a 400 validation response for the selected scenario.",
+      "detail": "Legacy script  O B-400- D O P-101400 targets  Domestic Standing Order at /domestic-standing-orders.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, first Payment Date Time, post Data, consent Id profile keys.  Assertions:  O B3 G L O Assert On400.  Coverage is broad.",
+      "resource": "DomesticStandingOrder",
+      "method": "post",
+      "uri": "/domestic-standing-orders",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "firstPaymentDateTime",
+        "postData",
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn400"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101400"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires standing order capability and recurring-payment test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101401",
+      "legacySourceVersion": "v4.0",
+      "description": "Validate domestic standing order flow at /domestic-standing-orders using the mapped legacy assertions.",
+      "detail": "Legacy script  O B-400- D O P-101401 targets  Domestic Standing Order at /domestic-standing-orders.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, frequency, frequency Count Per Period, frequency Point In Time, first Payment Date Time, post Data, consent Id profile keys.  Assertions:  O B3 G L O Assert On201.  Coverage is broad.",
+      "resource": "DomesticStandingOrder",
+      "method": "post",
+      "uri": "/domestic-standing-orders",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "frequency",
+        "frequencyCountPerPeriod",
+        "frequencyPointInTime",
+        "firstPaymentDateTime",
+        "postData",
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101401"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires standing order capability and recurring-payment test values. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101500",
+      "legacySourceVersion": "v4.0",
+      "description": "Read domestic scheduled payment resource and assert 200 response semantics.",
+      "detail": "Legacy script  O B-400- D O P-101500 targets  Domestic Scheduled Payment at /domestic-standing-orders/$payment I D.  It is marked conditional and uses payment I D profile keys.  Assertions:  O B3 G L O Assert On200.  Coverage is broad.",
+      "resource": "DomesticScheduledPayment",
+      "method": "get",
+      "uri": "/domestic-standing-orders/$paymentID",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentID"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101500"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires scheduled payment capability and scheduledPaymentDateTime test values. Legacy resource is labelled DomesticScheduledPayment even though the family is DomesticStandingOrder. Legacy resource is labelled DomesticScheduledPayment in the source mapping. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101503",
+      "legacySourceVersion": "v4.0",
+      "description": "Validate domestic standing-order consent rejection when both FinalPaymentDateTime and CountPerPeriod are present.",
+      "detail": "Legacy script  O B-400- D O P-101503 targets  Domestic Standing Order at /domestic-standing-order-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, frequency, frequency Count Per Period, first Payment Date Time, final Payment Date Time, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On400.  Coverage is broad.",
+      "resource": "DomesticStandingOrder",
+      "method": "post",
+      "uri": "/domestic-standing-order-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "frequency",
+        "frequencyCountPerPeriod",
+        "firstPaymentDateTime",
+        "finalPaymentDateTime",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn400"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101503"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Mapped row is now a signed schema-valid consent negative that includes both FinalPaymentDateTime and Frequency.CountPerPeriod to reproduce the known model-bank 201-vs-400 behaviour. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101600",
+      "legacySourceVersion": "v4.0",
+      "description": "Create international payment consent at /international-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-101600 targets  International Payment at /international-payment-consents.  It is marked conditional and uses instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is partial.",
+      "resource": "InternationalPayment",
+      "method": "post",
+      "uri": "/international-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101600"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international payment capability and international payment test values, including currencyOfTransfer support. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101700",
+      "legacySourceVersion": "v4.0",
+      "description": "Read international payment consent and assert 200 and authorised status.",
+      "detail": "Legacy script  O B-400- D O P-101700 targets  International Payment at /international-payment-consents/$consent Id.  It is marked conditional and uses consent Id profile keys.  Assertions:  O B3 G L O Assert On200,  O B3 D O P Assert Authorised V4.  Coverage is broad.",
+      "resource": "InternationalPayment",
+      "method": "get",
+      "uri": "/international-payment-consents/$consentId",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200",
+        "OB3DOPAssertAuthorisedV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101700"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international payment capability and international payment test values, including currencyOfTransfer support. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101800",
+      "legacySourceVersion": "v4.0",
+      "description": "Create international payment at /international-payments and assert 201 and returned payment identifier.",
+      "detail": "Legacy script  O B-400- D O P-101800 targets  International Payment at /international-payments.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, currency Of Transfer, instruction Identification, end To End Identification, post Data, consent Id profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 I P Assert International Payment Id.  Coverage is partial.",
+      "resource": "InternationalPayment",
+      "method": "post",
+      "uri": "/international-payments",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "currencyOfTransfer",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3IPAssertInternationalPaymentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101800"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international payment capability and international payment test values, including currencyOfTransfer support. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-101900",
+      "legacySourceVersion": "v4.0",
+      "description": "Read international payment resource and assert 200 response semantics.",
+      "detail": "Legacy script  O B-400- D O P-101900 targets  International Payment at /international-payments/$payment I D.  It is marked conditional and uses payment I D profile keys.  Assertions:  O B3 G L O Assert On200.  Coverage is broad.",
+      "resource": "InternationalPayment",
+      "method": "get",
+      "uri": "/international-payments/$paymentID",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentID"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-101900"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international payment capability and international payment test values, including currencyOfTransfer support. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-102000",
+      "legacySourceVersion": "v4.0",
+      "description": "Create international scheduled payment consent at /international-scheduled-payment-consents and assert 201, FAPI header, AwaitingAuthorisation status, and ConsentId.",
+      "detail": "Legacy script  O B-400- D O P-102000 targets  International Scheduled Payment at /international-scheduled-payment-consents.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, currency Of Transfer, instruction Identification, end To End Identification, post Data, request Consent profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 G L O F A P I Header,  O B3 D O P Assert Awaiting Authorisation V4,  O B3 G L O A Assert Consent Id.  Coverage is partial.",
+      "resource": "InternationalScheduledPayment",
+      "method": "post",
+      "uri": "/international-scheduled-payment-consents",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "currencyOfTransfer",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "requestConsent"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3GLOFAPIHeader",
+        "OB3DOPAssertAwaitingAuthorisationV4",
+        "OB3GLOAAssertConsentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": false,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-102000"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international scheduled payment capability and scheduledPaymentDateTime test values, including currencyOfTransfer support. No legacy validateSignature flag; signature parity is approximate."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-102100",
+      "legacySourceVersion": "v4.0",
+      "description": "Read international scheduled payment consent and assert 200 and authorised status.",
+      "detail": "Legacy script  O B-400- D O P-102100 targets  International Scheduled Payment at /international-scheduled-payment-consents/$consent Id.  It is marked conditional and uses consent Id profile keys.  Assertions:  O B3 G L O Assert On200,  O B3 D O P Assert Authorised V4.  Coverage is broad.",
+      "resource": "InternationalScheduledPayment",
+      "method": "get",
+      "uri": "/international-scheduled-payment-consents/$consentId",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200",
+        "OB3DOPAssertAuthorisedV4"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-102100"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international scheduled payment capability and scheduledPaymentDateTime test values, including currencyOfTransfer support. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-102200",
+      "legacySourceVersion": "v4.0",
+      "description": "Create international scheduled payment at /international-scheduled-payments and assert 201 and returned payment identifier.",
+      "detail": "Legacy script  O B-400- D O P-102200 targets  International Scheduled Payment at /international-scheduled-payments.  It is marked conditional and uses instructed Amount Value, instructed Amount Currency, currency Of Transfer, instruction Identification, end To End Identification, post Data, consent Id profile keys.  Assertions:  O B3 G L O Assert On201,  O B3 I P Assert International Scheduled Payment Id.  Coverage is broad.",
+      "resource": "InternationalScheduledPayment",
+      "method": "post",
+      "uri": "/international-scheduled-payments",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "instructedAmountValue",
+        "instructedAmountCurrency",
+        "currencyOfTransfer",
+        "instructionIdentification",
+        "endToEndIdentification",
+        "postData",
+        "consentId"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn201",
+        "OB3IPAssertInternationalScheduledPaymentId"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-102200"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international scheduled payment capability and scheduledPaymentDateTime test values, including currencyOfTransfer support. Response x-jws-signature validation mapped to response_signature assertion."
+    },
+    {
+      "legacyScriptId": "OB-400-DOP-102300",
+      "legacySourceVersion": "v4.0",
+      "description": "Read international scheduled payment resource and assert 200 response semantics.",
+      "detail": "Legacy script  O B-400- D O P-102300 targets  International Scheduled Payment at /international-scheduled-payments/$payment I D.  It is marked conditional and uses payment I D profile keys.  Assertions:  O B3 G L O Assert On200.  Coverage is broad.",
+      "resource": "InternationalScheduledPayment",
+      "method": "get",
+      "uri": "/international-scheduled-payments/$paymentID",
+      "uriImplementation": "conditional",
+      "mandatory": false,
+      "selectedByDefault": true,
+      "requiredProfileKeys": [
+        "paymentID"
+      ],
+      "asserts": [
+        "OB3GLOAssertOn200"
+      ],
+      "assertsOneOf": [],
+      "schemaCheck": true,
+      "validateSignature": true,
+      "v4BenchmarkStepIds": [
+        "OB-400-DOP-102300"
+      ],
+      "v4BenchmarkStatus": "implemented",
+      "v2Status": "implemented",
+      "certificationImpact": "opt_in_or_standards_decision",
+      "notes": "Requires international scheduled payment capability and scheduledPaymentDateTime test values, including currencyOfTransfer support. Response x-jws-signature validation mapped to response_signature assertion."
+    }
+  ]
+}

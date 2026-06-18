@@ -96,6 +96,8 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
         "deselectedSteps": 0,
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 
@@ -578,6 +580,8 @@ def test_plan_block_shape_stable() -> None:
         "deselectedSteps": 1,
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 
@@ -684,6 +688,56 @@ def test_auth_and_environment_evidence_blocks_are_serialized_when_supplied() -> 
         "suiteSelection": {"standard": "ob-read-write"},
         "environment": {"source": "custom", "label": "env"},
         "decisions": [{"support": "unknown", "warnings": ["undeclared"], "blockers": []}],
+    }
+
+
+@pytest.mark.unit
+def test_test_value_profile_evidence_is_serialized_when_supplied() -> None:
+    """Result JSON includes optional test-value profile evidence when present."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+        test_value_profile_evidence={
+            "profileId": "ozone-demo",
+            "source": "overridden",
+            "overrideKeys": ["creditorName"],
+            "declaredKeys": ["creditorName", "instructionIdentification"],
+            "requiredKeys": ["creditorName"],
+            "conditionOutcomes": [
+                {
+                    "stepId": "domestic-payment-consent",
+                    "selected": True,
+                    "requiredKeys": ["creditorName"],
+                    "missingKeys": [],
+                    "allRequiredValuesPresent": True,
+                }
+            ],
+            "effectiveValues": {"instructionIdentification": "***"},
+        },
+    ).to_json_object()
+
+    assert rendered["testValueProfile"] == {
+        "profileId": "ozone-demo",
+        "source": "overridden",
+        "overrideKeys": ["creditorName"],
+        "declaredKeys": ["creditorName", "instructionIdentification"],
+        "requiredKeys": ["creditorName"],
+        "conditionOutcomes": [
+            {
+                "stepId": "domestic-payment-consent",
+                "selected": True,
+                "requiredKeys": ["creditorName"],
+                "missingKeys": [],
+                "allRequiredValuesPresent": True,
+            }
+        ],
+        "effectiveValues": {"instructionIdentification": "***"},
     }
 
 

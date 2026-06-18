@@ -40,7 +40,13 @@ from conformance.model_bank_config import (
 )
 from conformance.openapi_plan_metadata import StepTreeNode, build_plan_tree
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
-from conformance.test_plan import TestPlan, TestPlanEntry
+from conformance.test_plan import (
+    PlanTestValueContext,
+    TestPlan,
+    TestPlanEntry,
+    TestValueProfileSource,
+    build_plan_test_value_context,
+)
 
 StepKind = Literal["http", "psu-authorization"]
 """Step kind labels displayed by the participant plan-builder UI."""
@@ -130,6 +136,17 @@ class PlanStepRow:
         certification_required: Whether certification eligibility depends on the step.
         deselection_impacts_certification: Whether deselecting this step affects certification eligibility.
         certification_blocked_by_deselection: Whether this submitted selection blocks certification eligibility.
+        conditional: Whether the step is a conditional row driven by test-value profile availability.
+        condition_id: Optional machine-readable condition identifier from the manifest.
+        condition_label: Optional human-readable condition label for badge display.
+        required_test_value_keys: Test-value key names that the condition requires.
+        missing_test_value_keys: Required keys absent from the effective test-value profile.
+            Non-empty means the default plan deselected this step due to missing values.
+        test_value_profile_id: The effective test-value profile id used at plan build time.
+            ``None`` when the manifest declares no ``testValueProfiles``.
+        test_value_profile_source: Whether the effective profile was the manifest default
+            or participant-overridden.  ``None`` when no profiles are declared.
+        test_value_override_keys: Test-value key names supplied by participant overrides.
     """
 
     id: str
@@ -144,6 +161,14 @@ class PlanStepRow:
     certification_required: bool
     deselection_impacts_certification: bool
     certification_blocked_by_deselection: bool
+    conditional: bool = False
+    condition_id: str | None = None
+    condition_label: str | None = None
+    required_test_value_keys: tuple[str, ...] = ()
+    missing_test_value_keys: tuple[str, ...] = ()
+    test_value_profile_id: str | None = None
+    test_value_profile_source: TestValueProfileSource | None = None
+    test_value_override_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -646,7 +671,14 @@ def build_plan_preview(
     """
     if manifest.schema_version != "v1":
         raise ValueError("Plan builder supports v1 manifests only")
-    default_plan = TestPlan.default_plan_from_manifest(manifest)
+    try:
+        test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+    except ValueError:
+        # Gracefully degrade when profile resolution fails (e.g. unknown profile
+        # id in a partial config): treat as no effective test values so
+        # conditional steps appear with missing-value status in the preview.
+        test_value_ctx = PlanTestValueContext()
+    default_plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx)
     if selection_mode == "select":
         selected_plan = _plan_from_selected_step_ids(default_plan, selected_step_ids or [])
     else:
@@ -904,9 +936,11 @@ def _guided_suite_label(suite: str) -> str:
     labels = {
         "discovery-jwks": "Discovery and JWKS smoke",
         "psu-auth-starter": "PSU authorization starter",
+        "pis-domestic-payment-starter": "PIS domestic payment starter",
         "ais-certification-slice": "AIS certification slice",
         "ais-certification-baseline": "AIS certification baseline",
         "ais-fcs-legacy-benchmark": "AIS FCS legacy benchmark",
+        "pis-fcs-legacy-benchmark": "PIS FCS legacy benchmark",
     }
     return labels.get(suite, suite)
 
@@ -922,16 +956,20 @@ def _guided_suite_option(metadata: SuiteMetadata) -> GuidedSuiteOption:
     """
     prompts_oauth = metadata.suite != "discovery-jwks"
     prompts_intent_id = metadata.suite == "psu-auth-starter"
-    prompts_resource_base_url = metadata.api == "ais" and metadata.suite in {
+    prompts_resource_base_url = metadata.suite in {
         "ais-certification-slice",
         "ais-certification-baseline",
         "ais-fcs-legacy-benchmark",
+        "pis-domestic-payment-starter",
+        "pis-fcs-legacy-benchmark",
     }
     prompts_signing = metadata.suite in {
         "psu-auth-starter",
         "ais-certification-slice",
         "ais-certification-baseline",
         "ais-fcs-legacy-benchmark",
+        "pis-domestic-payment-starter",
+        "pis-fcs-legacy-benchmark",
     }
     return GuidedSuiteOption(
         standard=metadata.standard,
@@ -1155,6 +1193,13 @@ def _plan_from_selected_step_ids(default_plan: TestPlan, selected_step_ids: list
 def _build_step_rows(*, manifest: Manifest, default_plan: TestPlan, selected_plan: TestPlan) -> tuple[PlanStepRow, ...]:
     """Build participant-facing row presenters for every manifest step.
 
+    Conditional-row status (condition id/label, required/missing keys, profile
+    id and source, override keys) is carried over from the plan entries produced
+    by :meth:`TestPlan.default_plan_from_manifest` with a
+    :class:`PlanTestValueContext`.  When the plan was built without a context
+    the conditional fields default to their zero values, preserving backward
+    compatibility for manifests without ``testValueProfiles``.
+
     Args:
         manifest: Validated v1 manifest whose steps are being rendered.
         default_plan: Plan before participant form input.
@@ -1183,6 +1228,17 @@ def _build_step_rows(*, manifest: Manifest, default_plan: TestPlan, selected_pla
                 certification_required=step.mandatory,
                 deselection_impacts_certification=step.mandatory,
                 certification_blocked_by_deselection=step.mandatory and not selected_entry.selected,
+                # Conditional-row fields — sourced from the default-plan entry so
+                # the profile/missing-key status reflects what the default plan
+                # computed, even when the participant subsequently selects/deselects.
+                conditional=default_entry.conditional,
+                condition_id=default_entry.condition_id,
+                condition_label=default_entry.condition_label,
+                required_test_value_keys=default_entry.required_test_value_keys,
+                missing_test_value_keys=default_entry.missing_test_value_keys,
+                test_value_profile_id=default_entry.test_value_profile_id,
+                test_value_profile_source=default_entry.test_value_profile_source,
+                test_value_override_keys=default_entry.test_value_override_keys,
             )
         )
     return tuple(rows)

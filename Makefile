@@ -1,8 +1,9 @@
-.PHONY: check lint test integration secrets audit dev dev-unmasked serve docker help
+.PHONY: check lint test integration secrets audit run-cli run-cli-dev run-pis-consent dev dev-unmasked serve docker help
 
 PYTEST_XDIST ?= -n auto --dist loadfile
 PYTEST_ARGS ?=
 COV_FAIL_UNDER ?= $(if $(strip $(PYTEST_ARGS)),0,80)
+CLI_ARGS ?=
 
 check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
 
@@ -24,6 +25,31 @@ test: ## Run unit + offline Django integration tests (excludes live-network Ozon
 
 integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
 	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration
+
+run-cli: ## Run CLI with CONFIG=path/to/config.json and optional CLI_ARGS='...'
+ifndef CONFIG
+	$(error CONFIG must be set, e.g. make run-cli CONFIG=config/model-bank-suite-example.json)
+endif
+	uv run python main.py "$(CONFIG)" $(CLI_ARGS)
+
+run-cli-dev: ## Run CLI locally with unmasked diagnostics; requires CONFIG=path/to/config.json
+ifndef CONFIG
+	$(error CONFIG must be set, e.g. make run-cli-dev CONFIG=local-config/pis.json)
+endif
+	CONFORMANCE_DEVELOPER_MODE=true uv run python main.py "$(CONFIG)" $(CLI_ARGS)
+
+run-pis-consent: ## Run PIS starter through consent creation only; requires CONFIG=path/to/config.json
+ifndef CONFIG
+	$(error CONFIG must be set, e.g. make run-pis-consent CONFIG=local-config/pis.json)
+endif
+	CONFORMANCE_DEVELOPER_MODE=true uv run python main.py "$(CONFIG)" \
+		--deselect psu-authorization \
+		--deselect token-exchange \
+		--deselect domestic-payment-consent-read-back \
+		--deselect funds-confirmation \
+		--deselect domestic-payment-submit \
+		--deselect domestic-payment-read-back \
+		$(CLI_ARGS)
 
 dev: ## Run local dev server (auto-reload, debug)
 	@mkdir -p local-config/certs

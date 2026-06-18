@@ -1,0 +1,607 @@
+{
+  "schemaVersion": "v1",
+  "name": "Open Banking Read/Write v4.0 FAPI 1 Advanced PIS domestic payment starter suite",
+  "certificationCoverage": "partial",
+  "testValueProfiles": {
+    "defaultProfileId": "ozone-demo",
+    "profiles": [
+      {
+        "id": "ozone-demo",
+        "label": "Ozone demo domestic payment defaults",
+        "values": {
+          "instructedAmountCurrency": "GBP",
+          "instructedAmountValue": "1.00",
+          "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
+          "creditorIdentification": "11223344556677",
+          "creditorName": "Ozone Demo Merchant",
+          "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
+          "thisIdentification": "22334455667788",
+          "remittanceInformation": "Ozone domestic payment starter"
+        },
+        "generatedKeys": {
+          "instructionIdentification": "per-run-compact-uuid",
+          "endToEndIdentification": "per-run-compact-uuid",
+          "consentIdempotencyKey": "per-run-uuid",
+          "negativeConsentIdempotencyKey": "per-run-uuid",
+          "submitIdempotencyKey": "per-run-uuid"
+        }
+      },
+      {
+        "id": "synthetic-fallback",
+        "label": "Synthetic domestic payment fallback",
+        "values": {
+          "instructedAmountCurrency": "GBP",
+          "instructedAmountValue": "1.00",
+          "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
+          "creditorIdentification": "99887766554433",
+          "creditorName": "Synthetic Merchant",
+          "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
+          "thisIdentification": "88776655443322",
+          "remittanceInformation": "Synthetic domestic payment fallback"
+        },
+        "generatedKeys": {
+          "instructionIdentification": "per-run-compact-uuid",
+          "endToEndIdentification": "per-run-compact-uuid",
+          "consentIdempotencyKey": "per-run-uuid",
+          "negativeConsentIdempotencyKey": "per-run-uuid",
+          "submitIdempotencyKey": "per-run-uuid"
+        }
+      }
+    ],
+    "allowedOverrideKeys": [
+      "instructedAmountCurrency",
+      "instructedAmountValue",
+      "creditorSchemeName",
+      "creditorIdentification",
+      "creditorName",
+      "thisSchemeName",
+      "thisIdentification",
+      "remittanceInformation"
+    ],
+    "nonSecretKeys": [
+      "instructionIdentification",
+      "endToEndIdentification",
+      "consentIdempotencyKey",
+      "negativeConsentIdempotencyKey",
+      "submitIdempotencyKey"
+    ]
+  },
+  "steps": [
+    {
+      "id": "openid-discovery",
+      "name": "OpenID discovery document",
+      "request": {
+        "method": "GET",
+        "url": "${config.discoveryUrl}"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "issuer",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "authorization_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "token_endpoint",
+          "rule": "https_url"
+        },
+        {
+          "type": "json_field",
+          "path": "jwks_uri",
+          "rule": "https_url"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "jwks-fetch",
+      "name": "JWKS endpoint",
+      "request": {
+        "method": "GET",
+        "url": "${steps.openid-discovery.response.body.jwks_uri}"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "json"
+        },
+        {
+          "type": "json_field",
+          "path": "keys",
+          "rule": "array"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "client-credentials-token",
+      "name": "Client credentials token for consent creation",
+      "request": {
+        "method": "POST",
+        "url": "${steps.openid-discovery.response.body.token_endpoint}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "client_credentials",
+            "client_id": "${config.oauth.clientId}",
+            "scope": "payments"
+          }
+        }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "access_token",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "token_type",
+          "rule": "one_of",
+          "values": [
+            "Bearer",
+            "bearer"
+          ]
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "domestic-payment-consent",
+      "name": "Domestic payment consent creation",
+      "request": {
+        "method": "POST",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payment-consents",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}",
+          "x-idempotency-key": "${testValues.consentIdempotencyKey}"
+        },
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
+        "body": {
+          "Data": {
+            "Initiation": {
+              "InstructionIdentification": "${testValues.instructionIdentification}",
+              "EndToEndIdentification": "${testValues.endToEndIdentification}",
+              "InstructedAmount": {
+                "Amount": "${testValues.instructedAmountValue}",
+                "Currency": "${testValues.instructedAmountCurrency}"
+              },
+              "CreditorAccount": {
+                "SchemeName": "${testValues.creditorSchemeName}",
+                "Identification": "${testValues.creditorIdentification}",
+                "Name": "${testValues.creditorName}"
+              },
+              "RemittanceInformation": {
+                "Unstructured": ["${testValues.remittanceInformation}"]
+              }
+            }
+          },
+          "Risk": {}
+        }
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 201
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "header",
+          "name": "x-fapi-interaction-id",
+          "rule": "present"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ConsentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Status",
+          "rule": "one_of",
+          "values": [
+            "AWAU"
+          ]
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization",
+      "name": "PSU authorisation (manual)",
+      "mode": "manual",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "scope": "openid payments",
+      "requestObject": {
+        "source": "fapi-signing",
+        "audience": "${steps.openid-discovery.response.body.issuer}",
+        "openbankingIntentId": "${steps.domestic-payment-consent.response.body.Data.ConsentId}"
+      },
+      "timeoutSeconds": 180,
+      "mandatory": true
+    },
+    {
+      "id": "token-exchange",
+      "name": "OAuth token exchange",
+      "request": {
+        "method": "POST",
+        "url": "${steps.openid-discovery.response.body.token_endpoint}",
+        "headers": {
+          "Accept": "application/json"
+        },
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "grant_type": "authorization_code",
+            "code": "${steps.psu-authorization.response.body.code}",
+            "redirect_uri": "${config.oauth.redirectUri}",
+            "client_id": "${config.oauth.clientId}"
+          }
+        }
+      },
+      "tokenEndpointAuthPolicy": {
+        "source": "fapi-signing"
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "access_token",
+          "rule": "string"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "domestic-payment-consent-read-back",
+      "name": "Domestic payment consent read-back",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payment-consents/${steps.domestic-payment-consent.response.body.Data.ConsentId}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.ConsentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Status",
+          "rule": "one_of",
+          "values": [
+            "AUTH"
+          ]
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "funds-confirmation",
+      "name": "Domestic payment funds confirmation",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payment-consents/${steps.domestic-payment-consent.response.body.Data.ConsentId}/funds-confirmation",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.FundsAvailableResult.FundsAvailable",
+          "rule": "equals",
+          "value": true
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "domestic-payment-submit",
+      "name": "Domestic payment submission",
+      "request": {
+        "method": "POST",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payments",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
+          "x-idempotency-key": "${testValues.submitIdempotencyKey}"
+        },
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
+        "body": {
+          "Data": {
+            "ConsentId": "${steps.domestic-payment-consent.response.body.Data.ConsentId}",
+            "Initiation": {
+              "InstructionIdentification": "${testValues.instructionIdentification}",
+              "EndToEndIdentification": "${testValues.endToEndIdentification}",
+              "InstructedAmount": {
+                "Amount": "${testValues.instructedAmountValue}",
+                "Currency": "${testValues.instructedAmountCurrency}"
+              },
+              "CreditorAccount": {
+                "SchemeName": "${testValues.creditorSchemeName}",
+                "Identification": "${testValues.creditorIdentification}",
+                "Name": "${testValues.creditorName}"
+              },
+              "RemittanceInformation": {
+                "Unstructured": ["${testValues.remittanceInformation}"]
+              }
+            }
+          },
+          "Risk": {}
+        }
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 201
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.DomesticPaymentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Status",
+          "rule": "one_of",
+          "values": [
+            "PDNG",
+            "ACSP",
+            "ACSC"
+          ]
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "domestic-payment-read-back",
+      "name": "Domestic payment read-back",
+      "request": {
+        "method": "GET",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payments/${steps.domestic-payment-submit.response.body.Data.DomesticPaymentId}",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}"
+        }
+      },
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 200
+        },
+        {
+          "type": "header",
+          "name": "content-type",
+          "rule": "contains",
+          "value": "application/json"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.DomesticPaymentId",
+          "rule": "string"
+        },
+        {
+          "type": "json_field",
+          "path": "Data.Status",
+          "rule": "string"
+        }
+      ],
+      "mandatory": true
+    },
+    {
+      "id": "domestic-payment-consent-missing-detached-jws-header",
+      "name": "Domestic payment consent missing detached JWS header",
+      "request": {
+        "method": "POST",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/pisp/domestic-payment-consents",
+        "headers": {
+          "Accept": "application/json",
+          "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}",
+          "x-idempotency-key": "${testValues.negativeConsentIdempotencyKey}"
+        },
+        "detachedJws": {
+          "source": "fapi-signing"
+        },
+        "body": {
+          "Data": {
+            "Initiation": {
+              "InstructionIdentification": "${testValues.instructionIdentification}",
+              "EndToEndIdentification": "${testValues.endToEndIdentification}",
+              "InstructedAmount": {
+                "Amount": "${testValues.instructedAmountValue}",
+                "Currency": "${testValues.instructedAmountCurrency}"
+              },
+              "CreditorAccount": {
+                "SchemeName": "${testValues.creditorSchemeName}",
+                "Identification": "${testValues.creditorIdentification}",
+                "Name": "${testValues.creditorName}"
+              }
+            }
+          },
+          "Risk": {}
+        }
+      },
+      "signingNegativeCase": "omit-detached-jws-header",
+      "assertions": [
+        {
+          "type": "http_status",
+          "expected": 400
+        }
+      ],
+      "optional": true
+    },
+    {
+      "kind": "psu-authorization",
+      "id": "psu-authorization-signing-negative",
+      "name": "PSU authorisation missing request-object signature claim",
+      "mode": "headless",
+      "authorizationEndpoint": "${steps.openid-discovery.response.body.authorization_endpoint}",
+      "clientId": "${config.oauth.clientId}",
+      "redirectUri": "${config.oauth.redirectUri}",
+      "responseType": "code id_token",
+      "scope": "openid payments",
+      "requestObject": {
+        "source": "fapi-signing",
+        "audience": "${steps.openid-discovery.response.body.issuer}",
+        "openbankingIntentId": "${steps.domestic-payment-consent.response.body.Data.ConsentId}"
+      },
+      "signingNegativeCase": "omit-request-object-signature-claim",
+      "expectedAuthorizationResponse": {
+        "type": "http_status",
+        "expected": 400
+      },
+      "timeoutSeconds": 180,
+      "optional": true
+    }
+  ],
+  "authMetadata": {
+    "bundles": [
+      {
+        "id": "domestic-payment-consent-token",
+        "tokenStepId": "client-credentials-token",
+        "requiredScopes": [
+          "payments"
+        ],
+        "requiredObPermissions": [],
+        "excludedObPermissions": [],
+        "consumingStepIds": [
+          "domestic-payment-consent"
+        ],
+        "capabilityRefs": []
+      },
+      {
+        "id": "domestic-payment-flow",
+        "tokenStepId": "token-exchange",
+        "consentStepId": "domestic-payment-consent",
+        "psuStepId": "psu-authorization",
+        "requiredScopes": [
+          "openid",
+          "payments"
+        ],
+        "requiredObPermissions": [],
+        "excludedObPermissions": [],
+        "consumingStepIds": [
+          "domestic-payment-consent-read-back",
+          "funds-confirmation",
+          "domestic-payment-submit",
+          "domestic-payment-read-back"
+        ],
+        "capabilityRefs": []
+      }
+    ],
+    "stepRequirements": [
+      {
+        "stepId": "domestic-payment-consent",
+        "bundleId": "domestic-payment-consent-token"
+      },
+      {
+        "stepId": "domestic-payment-consent-read-back",
+        "bundleId": "domestic-payment-flow"
+      },
+      {
+        "stepId": "funds-confirmation",
+        "bundleId": "domestic-payment-flow"
+      },
+      {
+        "stepId": "domestic-payment-submit",
+        "bundleId": "domestic-payment-flow"
+      },
+      {
+        "stepId": "domestic-payment-read-back",
+        "bundleId": "domestic-payment-flow"
+      }
+    ]
+  }
+}

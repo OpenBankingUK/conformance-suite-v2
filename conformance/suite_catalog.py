@@ -17,6 +17,7 @@ from conformance.model_bank_config import (
     SuiteSpecVersion,
     SuiteStandard,
 )
+from conformance.starter_safety import PIS_DOMESTIC_PAYMENT_STARTER_SAFETY, format_starter_safety_note
 
 
 class SuiteCatalogError(ValueError):
@@ -144,6 +145,14 @@ Explicitly states that the suite is non-certifying and that the bundled
 ``redirectUri`` config value must be registered with the ASPSP before use.
 """
 
+_PIS_DOMESTIC_PAYMENT_STARTER_DESCRIPTION = (
+    "Open Banking Read/Write v4.0 PIS domestic-payment starter suite covering discovery, JWKS, client-"
+    "credentials token, domestic-payment consent creation, manual PSU authorisation, token exchange, consent "
+    "read-back, funds confirmation, domestic payment submission, and payment read-back. "
+    f"{format_starter_safety_note(PIS_DOMESTIC_PAYMENT_STARTER_SAFETY)}"
+)
+"""Description for the partial v4.0 PIS domestic-payment starter suite."""
+
 _AIS_CERTIFICATION_SLICE_DESCRIPTION = (
     "Certification-grade Open Banking Read/Write v4.0 AIS slice covering discovery, JWKS, manual PSU "
     "authorisation, token exchange, account-access consent creation, and a protected accounts resource "
@@ -183,6 +192,14 @@ _AIS_FCS_LEGACY_BENCHMARK_DESCRIPTION = (
     "opt-in, and remains partial coverage until legacy assertion gaps and Standards sign-off are resolved."
 )
 """Description for the partial v4 AIS legacy FCS benchmark suite."""
+
+_PIS_FCS_LEGACY_BENCHMARK_DESCRIPTION = (
+    "Legacy FCS benchmark parity suite for Open Banking Read/Write v4.0 PIS, seeded from the previous "
+    "public FCS payments manifest. The bundled suite preserves legacy script IDs where current "
+    "v2 primitives can express the request and assertion intent, keeps conditional payment-type rows "
+    "opt-in, and remains partial coverage until legacy assertion gaps and Standards sign-off are resolved."
+)
+"""Description for the partial v4 PIS legacy FCS benchmark suite."""
 
 _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
     _CatalogEntry(
@@ -244,6 +261,18 @@ _CATALOG_ENTRIES: tuple[_CatalogEntry, ...] = (
         resource_name="ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
         label="Open Banking Read/Write v4.0 FAPI 1 Advanced PIS discovery/JWKS smoke suite",
         description=_SMOKE_SUITE_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-domestic-payment-starter"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced PIS domestic payment starter suite",
+        description=_PIS_DOMESTIC_PAYMENT_STARTER_DESCRIPTION,
+    ),
+    _CatalogEntry(
+        key=("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-fcs-legacy-benchmark"),
+        resource_name="ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+        label="Open Banking Read/Write v4.0 FAPI 1 Advanced PIS FCS legacy benchmark",
+        description=_PIS_FCS_LEGACY_BENCHMARK_DESCRIPTION,
     ),
     _CatalogEntry(
         key=("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),

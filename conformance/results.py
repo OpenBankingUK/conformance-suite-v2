@@ -116,6 +116,9 @@ class SmokeCheckResult:
         environment_capability_evidence: Optional non-secret environment
             capability decisions describing suite/auth/environment compatibility
             for this run.
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence describing resolved profile source, conditional outcomes,
+            and masked effective values.
     """
 
     environment: str
@@ -130,6 +133,7 @@ class SmokeCheckResult:
     certification_coverage: CertificationCoverage = "partial"
     auth_metadata_evidence: Mapping[str, JsonValue] | None = None
     environment_capability_evidence: Mapping[str, JsonValue] | None = None
+    test_value_profile_evidence: Mapping[str, JsonValue] | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -169,6 +173,8 @@ class SmokeCheckResult:
             body["authMetadata"] = deepcopy(dict(self.auth_metadata_evidence))
         if self.environment_capability_evidence is not None:
             body["environmentCapabilities"] = deepcopy(dict(self.environment_capability_evidence))
+        if self.test_value_profile_evidence is not None:
+            body["testValueProfile"] = deepcopy(dict(self.test_value_profile_evidence))
         return body
 
 
@@ -183,6 +189,7 @@ def build_smoke_check_result(
     certification_coverage: CertificationCoverage = "partial",
     auth_metadata_evidence: Mapping[str, JsonValue] | None = None,
     environment_capability_evidence: Mapping[str, JsonValue] | None = None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -213,6 +220,9 @@ def build_smoke_check_result(
         environment_capability_evidence: Optional non-secret environment
             capability decisions for the selected suite/auth/environment
             combination.
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence describing default/override selection outcomes and masked
+            effective values used by this run.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -241,6 +251,7 @@ def build_smoke_check_result(
         certification_coverage=certification_coverage,
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
+        test_value_profile_evidence=test_value_profile_evidence,
     )
 
 

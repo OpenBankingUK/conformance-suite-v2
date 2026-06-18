@@ -23,6 +23,10 @@ from tests.test_executor import _executor_signing_config
 REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
 EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v0-openid-jwks-example.json"
+EXAMPLE_PIS_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-pis-domestic-payment-starter-example.json"
+"""Committed example config for the bundled PIS domestic-payment starter suite."""
+EXAMPLE_PIS_FCS_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-pis-fcs-legacy-benchmark-example.json"
+"""Committed example config for the bundled PIS FCS legacy benchmark suite."""
 
 
 class _TtyStringIO(StringIO):
@@ -323,6 +327,8 @@ def test_cli_resolves_config_selected_suite_when_manifest_is_omitted(
         "deselectedSteps": 0,
         "mandatorySelected": 2,
         "mandatoryDeselected": 0,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 
@@ -578,6 +584,179 @@ def test_cli_resolves_ais_baseline_config_selected_suite_when_manifest_is_omitte
     assert exit_code == 0
     result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
     assert result["status"] == "passed"
+
+
+@pytest.mark.unit
+def test_cli_resolves_pis_domestic_payment_starter_config_selected_suite_when_manifest_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """CLI launches the bundled PIS domestic-payment starter from config without an explicit manifest.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace manifest execution.
+        tmp_path: Temporary directory used for config and output files.
+    """
+    stdout = _TtyStringIO()
+    stderr = _TtyStringIO()
+
+    def fake_run_manifest(*args: object, **kwargs: object) -> SmokeCheckResult:
+        """Capture the resolved starter manifest inputs and return a passing result.
+
+        Args:
+            *args: Positional arguments accepted by ``cli.run_manifest``.
+            **kwargs: Keyword arguments accepted by ``cli.run_manifest``.
+
+        Returns:
+            Passing smoke-check result for the CLI to serialise.
+        """
+        manifest = cast(Manifest, args[0])
+        assert [step.id for step in manifest.steps] == [
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "domestic-payment-consent",
+            "psu-authorization",
+            "token-exchange",
+            "domestic-payment-consent-read-back",
+            "funds-confirmation",
+            "domestic-payment-submit",
+            "domestic-payment-read-back",
+            "domestic-payment-consent-missing-detached-jws-header",
+            "psu-authorization-signing-negative",
+        ]
+        plan = cast(TestPlan, kwargs["plan"])
+        assert plan.selected_step_ids() == [
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "domestic-payment-consent",
+            "psu-authorization",
+            "token-exchange",
+            "domestic-payment-consent-read-back",
+            "funds-confirmation",
+            "domestic-payment-submit",
+            "domestic-payment-read-back",
+        ]
+        runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
+        fapi_signing_config = cast(FapiSigningConfig | None, kwargs["fapi_signing_config"])
+        suite_metadata = cast(SuiteMetadata, kwargs["suite_metadata"])
+        assert runtime_config.oauth_resource_base_url == "https://rs1.obie.uk.ozoneapi.io"
+        assert fapi_signing_config is not None
+        assert fapi_signing_config.key_id == "your-signing-kid-here"
+        assert suite_metadata is not None
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/pis/pis-domestic-payment-starter"
+        assert suite_metadata.manifest_resource == "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json"
+        now = datetime.now(UTC)
+        return SmokeCheckResult(
+            environment="ozone-model-bank",
+            status="passed",
+            started_at=now,
+            finished_at=now,
+            steps=(),
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "run_manifest", fake_run_manifest)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    exit_code = cli.run([str(EXAMPLE_PIS_CONFIG_PATH)])
+
+    assert exit_code == 0
+    result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
+    assert result["status"] == "passed"
+
+
+@pytest.mark.unit
+def test_cli_resolves_pis_fcs_legacy_benchmark_config_selected_suite_when_manifest_is_omitted(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """CLI launches the bundled PIS FCS legacy benchmark from config.
+
+    Args:
+        monkeypatch: Pytest fixture used to replace manifest execution.
+        tmp_path: Temporary directory used for output files.
+    """
+    stdout = _TtyStringIO()
+    stderr = _TtyStringIO()
+
+    def fake_run_manifest(*args: object, **kwargs: object) -> SmokeCheckResult:
+        """Capture resolved benchmark inputs and return a passing result.
+
+        Args:
+            *args: Positional arguments accepted by ``cli.run_manifest``.
+            **kwargs: Keyword arguments accepted by ``cli.run_manifest``.
+
+        Returns:
+            Passing smoke-check result for the CLI to serialise.
+        """
+        manifest = cast(Manifest, args[0])
+        plan = cast(TestPlan, kwargs["plan"])
+        runtime_config = cast(RuntimeConfig, kwargs["runtime_config"])
+        fapi_signing_config = cast(FapiSigningConfig | None, kwargs["fapi_signing_config"])
+        suite_metadata = cast(SuiteMetadata, kwargs["suite_metadata"])
+        selected_step_ids = plan.selected_step_ids()
+        plan_summary = plan.summary()
+        assert selected_step_ids[:3] == [
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+        ]
+        assert "OB-400-DOP-100100" in selected_step_ids
+        assert "OB-400-DOP-100110" in selected_step_ids
+        assert "OB-400-DOP-100300" in selected_step_ids
+        assert "OB-316-DOP-100310" in selected_step_ids
+        assert "psu-authorization" in selected_step_ids
+        assert "token-exchange" in selected_step_ids
+        assert "OB-400-DOP-100400" in selected_step_ids
+        assert "OB-400-DOP-100500" in selected_step_ids
+        assert "OB-400-DOP-100800" in selected_step_ids
+        assert "OB-400-DOP-101200" in selected_step_ids
+        assert "OB-400-DOP-101600" in selected_step_ids
+        assert "OB-400-DOP-102000" in selected_step_ids
+        assert runtime_config.oauth_resource_base_url == "https://resource.example.com"
+        assert fapi_signing_config is not None
+        assert fapi_signing_config.key_id == "your-signing-kid-here"
+        assert suite_metadata is not None
+        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/pis/pis-fcs-legacy-benchmark"
+        assert suite_metadata.manifest_resource == "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json"
+        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PIS FCS legacy benchmark"
+        assert plan_summary["conditionalSelected"] > 0
+        assert plan_summary["conditionalDeselectedMissingValues"] == 0
+        now = datetime.now(UTC)
+        return SmokeCheckResult(
+            environment="ozone-model-bank",
+            status="passed",
+            started_at=now,
+            finished_at=now,
+            steps=(),
+            plan_summary=plan_summary,
+            suite_metadata=suite_metadata,
+        )
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr(cli, "run_manifest", fake_run_manifest)
+    monkeypatch.setattr(sys, "stdout", stdout)
+    monkeypatch.setattr(sys, "stderr", stderr)
+
+    exit_code = cli.run([str(EXAMPLE_PIS_FCS_CONFIG_PATH)])
+
+    assert exit_code == 0
+    result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
+    assert result["status"] == "passed"
+    assert result["suite"] == {
+        "catalogId": "ob-read-write/v4.0/fapi1-advanced/pis/pis-fcs-legacy-benchmark",
+        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+        "standard": "ob-read-write",
+        "specVersion": "v4.0",
+        "profile": "fapi1-advanced",
+        "api": "pis",
+        "suite": "pis-fcs-legacy-benchmark",
+    }
+    assert result["plan"]["conditionalSelected"] > 0
+    assert result["plan"]["conditionalDeselectedMissingValues"] == 0
 
 
 @pytest.mark.unit
@@ -998,6 +1177,8 @@ def test_cli_deselect_repeated_excludes_each_step_from_result(monkeypatch: pytes
         "deselectedSteps": 1,
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 
@@ -1047,6 +1228,8 @@ def test_cli_deselect_applies_to_config_resolved_suite(monkeypatch: pytest.Monke
         "deselectedSteps": 1,
         "mandatorySelected": 1,
         "mandatoryDeselected": 1,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 

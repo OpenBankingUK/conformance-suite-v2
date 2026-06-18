@@ -101,6 +101,69 @@ class TestMaskJsonValue:
             "client_id": "client-123",
         }
 
+    def test_open_banking_payment_account_fields_are_masked(self) -> None:
+        """PIS payment/account body fields are masked in nested initiation payloads."""
+        body: JsonObject = {
+            "Data": {
+                "Initiation": {
+                    "CreditorAccount": {"Identification": "acct-1", "SchemeName": "UK.OBIE.SortCodeAccountNumber"},
+                    "DebtorAccount": {"Identification": "acct-2", "SchemeName": "UK.OBIE.SortCodeAccountNumber"},
+                    "InstructionIdentification": "instruction-ref",
+                    "EndToEndIdentification": "e2e-ref",
+                    "RemittanceInformation": {"Unstructured": "payment-reference"},
+                    "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                }
+            },
+            "Risk": {},
+        }
+
+        masked = mask_json_value(body)
+
+        assert masked == {
+            "Data": {
+                "Initiation": {
+                    "CreditorAccount": MASKED_VALUE,
+                    "DebtorAccount": MASKED_VALUE,
+                    "InstructionIdentification": MASKED_VALUE,
+                    "EndToEndIdentification": MASKED_VALUE,
+                    "RemittanceInformation": MASKED_VALUE,
+                    "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                }
+            },
+            "Risk": {},
+        }
+
+    def test_remittance_information_array_shape_is_masked(self) -> None:
+        """RemittanceInformation with an array Unstructured value is fully masked.
+
+        The OB PIS v4.0 schema requires ``Unstructured`` to be an array; this
+        test confirms that changing from a string to an array value does not
+        bypass masking of the ``RemittanceInformation`` key.
+        """
+        body: JsonObject = {
+            "Data": {
+                "Initiation": {
+                    "InstructionIdentification": "abc123",
+                    "RemittanceInformation": {"Unstructured": ["payment-reference"]},
+                    "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                }
+            },
+            "Risk": {},
+        }
+
+        masked = mask_json_value(body)
+
+        assert masked == {
+            "Data": {
+                "Initiation": {
+                    "InstructionIdentification": MASKED_VALUE,
+                    "RemittanceInformation": MASKED_VALUE,
+                    "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                }
+            },
+            "Risk": {},
+        }
+
 
 @pytest.mark.unit
 class TestMaskHeaders:

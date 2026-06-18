@@ -7,9 +7,13 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
+from typing import Literal
+from uuid import uuid4
 
 from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
+from conformance.manifest import Manifest
+from conformance.model_bank_config import TestValuesConfig
 
 
 class PlaceholderResolutionError(ValueError):
@@ -126,6 +130,19 @@ class RuntimeConfig:
             consent id for ``${config.oauth.openBankingIntentId}``
             placeholder resolution. Absent when the participant config omits
             the starter-only override.
+        test_values: Immutable mapping of resolved test-value key names to
+            their effective string values. Keys come from the manifest-declared
+            profile (plus any participant overrides applied at context build
+            time). Only manifest-declared keys are present; arbitrary config
+            traversal is not possible through this mapping. Empty when the
+            manifest declares no ``testValueProfiles``.
+        test_value_profile_id: Effective test-value profile id used to build
+            ``test_values``. ``None`` when the run has no test-value profiles.
+        test_value_profile_source: Whether the selected profile came from the
+            manifest default (``default``) or participant override inputs
+            (``overridden``). ``None`` when unavailable.
+        test_value_override_keys: Sorted tuple of participant override key names
+            applied while deriving ``test_values``.
     """
 
     discovery_url: str
@@ -135,6 +152,10 @@ class RuntimeConfig:
     oauth_redirect_uri: str | None = None
     oauth_authorization_endpoint: str | None = None
     oauth_open_banking_intent_id: str | None = None
+    test_values: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    test_value_profile_id: str | None = None
+    test_value_profile_source: Literal["default", "overridden"] | None = None
+    test_value_override_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -225,6 +246,60 @@ def record_token(context: ExecutionContext, token_id: str, access_token: str) ->
     return ExecutionContext(steps=context.steps, tokens=new_tokens, config=context.config)
 
 
+def build_runtime_test_values(manifest: Manifest, config_test_values: TestValuesConfig | None) -> Mapping[str, str]:
+    """Resolve effective runtime test values for one manifest execution.
+
+    Args:
+        manifest: Parsed manifest whose optional ``testValueProfiles`` metadata
+            declares the available profiles.
+        config_test_values: Participant config selection and overrides, or
+            ``None`` when the config omits the ``testValues`` section.
+
+    Returns:
+        Immutable mapping of effective test-value keys to string values.
+        Empty when the manifest declares no ``testValueProfiles`` and the
+        participant config does not request test values.
+
+    Raises:
+        ValueError: If the participant config requests test values but the
+            manifest declares no profiles, the selected profile id does not
+            exist, or an override key is not allow-listed by the manifest.
+    """
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None:
+        if config_test_values is None:
+            return MappingProxyType({})
+        raise ValueError("Participant config testValues requires manifest.testValueProfiles")
+
+    selected_profile_id = (
+        config_test_values.profile
+        if config_test_values is not None and config_test_values.profile is not None
+        else profile_spec.default_profile_id
+    )
+    selected_profile = next((profile for profile in profile_spec.profiles if profile.id == selected_profile_id), None)
+    if selected_profile is None:
+        raise ValueError(f"Unknown test-value profile: {selected_profile_id}")
+
+    effective_values: dict[str, str] = dict(selected_profile.values)
+    for key, kind in selected_profile.generated_keys.items():
+        if kind == "per-run-uuid":
+            effective_values[key] = str(uuid4())
+            continue
+        if kind == "per-run-compact-uuid":
+            effective_values[key] = uuid4().hex
+            continue
+        raise ValueError(f"Unsupported generated test-value kind: {kind}")
+
+    if config_test_values is not None:
+        disallowed_keys = sorted(set(config_test_values.overrides) - set(profile_spec.allowed_override_keys))
+        if disallowed_keys:
+            joined = ", ".join(disallowed_keys)
+            raise ValueError(f"Participant config testValues.overrides contains disallowed key(s): {joined}")
+        effective_values.update(config_test_values.overrides)
+
+    return MappingProxyType(effective_values)
+
+
 _TRUNCATION_CONTEXT_CHARS = 20
 """Maximum characters of trailing context to show after a malformed placeholder token."""
 
@@ -303,6 +378,7 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     ``tokens.<token-id>.access_token``
     ``config.(discoveryUrl|environment)``
     ``config.oauth.(clientId|redirectUri|authorizationEndpoint|resourceBaseUrl)``
+    ``testValues.<key>``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -360,6 +436,8 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
         return _resolve_config_path(segments, context, dot_path)
     if segments[0] == "tokens":
         return _resolve_token_path(segments, context, dot_path)
+    if segments[0] == "testValues":
+        return _resolve_test_values_path(segments, context, dot_path)
     if len(segments) < 4 or segments[0] != "steps":
         raise PlaceholderResolutionError(f"Invalid placeholder path: ${{{dot_path}}}")
 
@@ -388,6 +466,7 @@ _ALLOWED_CONFIG_PLACEHOLDERS = (
     "${config.oauth.clientId}",
     "${config.oauth.redirectUri}",
     "${config.oauth.authorizationEndpoint}",
+    "${config.oauth.openBankingIntentId}",
     "${config.oauth.resourceBaseUrl}",
 )
 """Exhaustive allow-list of ``${config.*}`` placeholder paths exposed to manifest steps."""
@@ -471,6 +550,45 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
     return context.config.oauth_redirect_uri
+
+
+def _resolve_test_values_path(segments: list[str], context: ExecutionContext, dot_path: str) -> str:
+    """Resolve a ${testValues.<key>} placeholder against the runtime test-value mapping.
+
+    Only keys present in the context's resolved test-value mapping are accessible.
+    Arbitrary participant config traversal is not possible through this namespace;
+    the mapping is pre-built from manifest-declared profile values and allowed
+    participant overrides.
+
+    Supported grammar:
+    ``testValues.<key>``
+
+    Args:
+        segments: Dot-path segments split from the placeholder expression.
+        context: Execution context carrying optional runtime config values.
+        dot_path: Full original dot-path for error messages.
+
+    Returns:
+        Resolved test-value string for the requested key.
+
+    Raises:
+        PlaceholderResolutionError: If the path shape is invalid, no runtime
+            config was supplied, the ``testValues`` mapping is empty, or the
+            requested key is not present in the resolved mapping.
+    """
+    if len(segments) != 2:
+        raise PlaceholderResolutionError(f"Unsupported testValues placeholder: ${{{dot_path}}}")
+    key = segments[1]
+    if context.config is None:
+        raise PlaceholderResolutionError(f"Runtime config is not available for placeholder: ${{{dot_path}}}")
+    if not context.config.test_values:
+        raise PlaceholderResolutionError(
+            f"No test values are available for placeholder: ${{{dot_path}}} "
+            "(manifest declares no testValueProfiles or none were resolved)"
+        )
+    if key not in context.config.test_values:
+        raise PlaceholderResolutionError(f"Test-value key '{key}' not found in resolved test values: ${{{dot_path}}}")
+    return context.config.test_values[key]
 
 
 def _resolve_token_path(segments: list[str], context: ExecutionContext, dot_path: str) -> str:

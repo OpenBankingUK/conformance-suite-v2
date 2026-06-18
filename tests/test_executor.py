@@ -19,12 +19,23 @@ from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
-from conformance.executor import _build_assertion_step, _execute_v1_psu_step, run_manifest
+from conformance.executor import (
+    _build_assertion_step,
+    _execute_v1_psu_step,
+    _requires_ob_detached_jws,
+    run_manifest,
+)
 from conformance.http import JsonHttpResponse
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import GeneratedRequestObject, ManifestStep, PsuAuthorizationStep, parse_manifest
+from conformance.manifest import (
+    GeneratedRequestObject,
+    ManifestStep,
+    PsuAuthorizationStep,
+    PsuExpectedAuthorizationResponse,
+    parse_manifest,
+)
 from conformance.masking import MASKED_VALUE
-from conformance.model_bank_config import FapiSigningConfig, SuiteName, TokenEndpointClientAuthMode
+from conformance.model_bank_config import FapiSigningConfig, OpenBankingConfig, SuiteName, TokenEndpointClientAuthMode
 from conformance.results import SmokeCheckResult
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
@@ -101,6 +112,38 @@ def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
         client_assertion_subject="client-subject",
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
     )
+
+
+def _aspsp_response_signature_fixture(payload: bytes) -> tuple[str, dict[str, JsonValue]]:
+    """Build a detached response signature and public JWKS for executor tests.
+
+    Args:
+        payload: Exact response bytes to sign.
+
+    Returns:
+        Tuple of detached compact JWS and JWKS response body.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    signing_key = jwk.import_key(private_key_pem, key_type="RSA")
+    public_jwk = cast(dict[str, JsonValue], signing_key.as_dict(is_private=False))
+    public_jwk["kid"] = "aspsp-response-key"
+    compact_jws = jws.serialize_compact(
+        {
+            "alg": "PS256",
+            "kid": "aspsp-response-key",
+            "typ": "JOSE",
+            "cty": "application/json",
+        },
+        payload,
+        signing_key,
+        algorithms=["PS256"],
+    )
+    return jws.detach_content(compact_jws), {"keys": [public_jwk]}
 
 
 def _invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
@@ -1763,8 +1806,8 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
     assert verified.headers() == {
         "alg": "PS256",
         "kid": "executor-signing-key",
-        "b64": False,
-        "crit": ["b64"],
+        "typ": "JOSE",
+        "cty": "application/json",
     }
     request_details = cast("dict[str, Any]", result.steps[0].details["request"])
     assert request_details["body"] == {
@@ -1884,6 +1927,436 @@ def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manif
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_detached_jws_negative_case_omits_signature_only_on_target_step(tmp_path: Path) -> None:
+    """Detached-JWS negative mutation omits only the targeted step header."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-negative-case",
+        "steps": [
+            {
+                "id": "consent-positive",
+                "name": "Positive consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "instr-1"}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                "id": "consent-negative",
+                "name": "Negative consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "instr-2"}}, "Risk": {}},
+                },
+                "signingNegativeCase": "omit-detached-jws-header",
+                "assertions": [{"type": "http_status", "expected": 400}],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound requests and simulate header-validation behavior."""
+        observed_requests.append(request)
+        if request.headers.get("x-jws-signature"):
+            return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+        return httpx.Response(400, json={"Code": "OBRI.Signature.Missing"})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert len(observed_requests) == 2
+    assert "x-jws-signature" in observed_requests[0].headers
+    assert "x-jws-signature" not in observed_requests[1].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_domestic_payment_consent_adds_detached_jws_header(tmp_path: Path) -> None:
+    """PIS domestic-payment-consent creation is allowlisted for detached JWS."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "domestic payment consent signing",
+        "steps": [
+            {
+                "id": "domestic-payment-consent",
+                "name": "Domestic payment consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "instr-1"}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound consent requests for detached-JWS checks."""
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert "x-jws-signature" in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_response_signature_assertion_uses_prior_jwks() -> None:
+    """Executor should validate response x-jws-signature against a prior JWKS step."""
+    response_payload = b'{"Data":{"ConsentId":"consent-123"},"Risk":{}}'
+    signature, jwks_body = _aspsp_response_signature_fixture(response_payload)
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "response signature validation",
+        "steps": [
+            {
+                "id": "jwks-fetch",
+                "name": "JWKS fetch",
+                "request": {"method": "GET", "url": "https://aspsp.example.com/jwks"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "id": "signed-consent",
+                "name": "Signed consent response",
+                "request": {"method": "GET", "url": "https://resource.example.com/consent"},
+                "assertions": [
+                    {"type": "http_status", "expected": 200},
+                    {"type": "response_signature", "jwksStepId": "jwks-fetch"},
+                ],
+            },
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Return JWKS then a signed JSON response.
+
+        Args:
+            request: Request emitted by the executor.
+
+        Returns:
+            Mocked JSON HTTP response.
+        """
+        if str(request.url) == "https://aspsp.example.com/jwks":
+            return httpx.Response(200, json=jwks_body)
+        return httpx.Response(
+            200,
+            content=response_payload,
+            headers={"content-type": "application/json", "x-jws-signature": signature},
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    assert result.status == "passed"
+    signed_step = result.steps[1]
+    assert signed_step.status == "passed"
+    assertion_details = cast(list[JsonValue], signed_step.details["assertions"])
+    assert assertion_details[1] == {
+        "status": "passed",
+        "message": "Response x-jws-signature signature verified using JWKS step 'jwks-fetch'",
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_domestic_payment_submission_adds_detached_jws_header(tmp_path: Path) -> None:
+    """PIS domestic-payment submission is allowlisted for detached JWS."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "domestic payment submission signing",
+        "steps": [
+            {
+                "id": "domestic-payment-submission",
+                "name": "Domestic payment submission",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payments",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {
+                        "Data": {
+                            "ConsentId": "consent-123",
+                            "Initiation": {"InstructionIdentification": "instr-2"},
+                        },
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound payment requests for detached-JWS checks."""
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"DomesticPaymentId": "payment-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert "x-jws-signature" in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_domestic_payment_consent_injects_financial_id_header(tmp_path: Path) -> None:
+    """x-fapi-financial-id must be injected on OB resource writes when openBanking config is supplied."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "domestic payment consent with financial id",
+        "steps": [
+            {
+                "id": "domestic-payment-consent",
+                "name": "Domestic payment consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "instr-1"}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound consent requests for financial-id checks."""
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+            open_banking_config=OpenBankingConfig(financial_id="0015800001041RHAAY"),
+        )
+
+    assert result.status == "passed"
+    assert observed_requests[0].headers.get("x-fapi-financial-id") == "0015800001041RHAAY"
+    assert "x-jws-signature" in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_get_request_injects_financial_id_header(tmp_path: Path) -> None:
+    """x-fapi-financial-id must be injected on OB resource reads when openBanking config is supplied."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "ais consent read",
+        "steps": [
+            {
+                "id": "read-consent",
+                "name": "Read account access consent",
+                "request": {
+                    "method": "GET",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents/consent-123",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound read requests."""
+        observed_requests.append(request)
+        return httpx.Response(200, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            open_banking_config=OpenBankingConfig(financial_id="0015800001041RHAAY"),
+        )
+
+    assert observed_requests[0].headers.get("x-fapi-financial-id") == "0015800001041RHAAY"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_domestic_payment_consent_no_financial_id_when_config_absent(tmp_path: Path) -> None:
+    """x-fapi-financial-id must NOT be injected when open_banking_config is absent."""
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "domestic payment consent without financial id",
+        "steps": [
+            {
+                "id": "domestic-payment-consent",
+                "name": "Domestic payment consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "instr-1"}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture outbound consent requests."""
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "consent-123"}, "Risk": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "passed"
+    assert "x-fapi-financial-id" not in observed_requests[0].headers
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_detached_jws_policy_rejects_non_allowlisted_pis_endpoint(tmp_path: Path) -> None:
+    """Detached-JWS opt-in still blocks PIS endpoints outside the explicit allowlist."""
+    request_seen = False
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "file-payment with detached-jws",
+        "steps": [
+            {
+                "id": "file-payment",
+                "name": "File payment create",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/file-payments",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"ConsentId": "consent-123"}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Fail if a blocked PIS endpoint ever reaches transport."""
+        nonlocal request_seen
+        request_seen = True
+        return httpx.Response(201, json={"Data": {}})
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            environment="test",
+            client=client,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert request_seen is False
+    assert result.steps[0].message == (
+        "Unable to apply request signing: "
+        "Detached request signing is only supported for account-access-consents, "
+        "domestic-payment-consents, and domestic-payments write requests"
+    )
+
+
+@pytest.mark.unit
+def test_requires_ob_detached_jws_enforces_method_specific_checks() -> None:
+    """Detached-JWS eligibility rejects non-write methods on allowlisted endpoints."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws method checks",
+        "steps": [
+            {
+                "id": "domestic-payment-submission",
+                "name": "Domestic payment submission",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payments",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"ConsentId": "consent-123"}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    manifest_step = cast("ManifestStep", manifest.steps[0])
+    delete_method_step = replace(manifest_step, request=replace(manifest_step.request, method="DELETE"))
+
+    assert _requires_ob_detached_jws(
+        manifest_step=manifest_step,
+        resolved_url="https://resource.example.com/open-banking/v4.0/pisp/domestic-payments",
+    )
+    assert not _requires_ob_detached_jws(
+        manifest_step=delete_method_step,
+        resolved_url="https://resource.example.com/open-banking/v4.0/pisp/domestic-payments",
+    )
+
+
+@pytest.mark.unit
+def test_requires_ob_detached_jws_preserves_ais_account_access_consent_behavior() -> None:
+    """AIS account-access-consents remains detached-JWS eligible."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "ais detached-jws behaviour",
+        "steps": [
+            {
+                "id": "account-access-consent",
+                "name": "Account access consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "body": {"Data": {"Permissions": ["ReadAccountsBasic"]}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+    manifest_step = cast("ManifestStep", manifest.steps[0])
+
+    assert _requires_ob_detached_jws(
+        manifest_step=manifest_step,
+        resolved_url="https://resource.example.com/open-banking/v4.0/aisp/account-access-consents",
+    )
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_detached_jws_policy_requires_signing_config() -> None:
     """Explicit detached-JWS opt-in fails before dispatch when signing config is absent."""
     request_seen = False
@@ -1980,7 +2453,8 @@ def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: P
     assert request_seen is False
     assert result.steps[0].message == (
         "Unable to apply request signing: "
-        "Detached request signing is only supported for account-access-consents requests"
+        "Detached request signing is only supported for account-access-consents, "
+        "domestic-payment-consents, and domestic-payments write requests"
     )
 
 
@@ -2347,6 +2821,102 @@ def test_run_manifest_v1_failed_step_includes_masked_request_and_response_eviden
     assert response["statusCode"] == 400
     assert response["body"] == {"error": "invalid_client", "access_token": "***"}
     assert response["headers"]["content-type"] == "application/json"
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_non_json_404_includes_status_and_content_type_evidence() -> None:
+    """Non-JSON 404 failures surface status/content-type plus masked request evidence."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "non-json-404-evidence",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Domestic payment consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/open-banking/v4.0.1/pisp/domestic-payment-consents",
+                    "headers": {
+                        "Authorization": "Bearer leaky-access-token",
+                        "x-jws-signature": "detached-jws-value",
+                    },
+                    "body": {"Data": {"ConsentId": "consent-123"}},
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Return a typical reverse-proxy 404 HTML response."""
+        return httpx.Response(
+            404,
+            headers={"content-type": "text/html; charset=utf-8"},
+            text="<html><body>Not Found</body></html>",
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "failed"
+    assert step.status_code == 404
+    assert "was not valid JSON" in (step.message or "")
+    assert "status 404" in (step.message or "")
+    assert "content-type text/html; charset=utf-8" in (step.message or "")
+
+    details = dict(step.details)
+    request = cast("dict[str, Any]", details["request"])
+    assert request["headers"]["Authorization"] == MASKED_VALUE
+    assert request["headers"]["x-jws-signature"] == MASKED_VALUE
+
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 404
+    assert response["contentType"] == "text/html; charset=utf-8"
+    assert "bodySnippet" not in response
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_non_json_form_error_includes_masked_body_snippet() -> None:
+    """Form-encoded non-JSON errors include a masked diagnostic body snippet."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "non-json-form-evidence",
+        "steps": [
+            {
+                "id": "token",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/token",
+                    "body": {"grant_type": "client_credentials"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        """Return a form payload carrying sensitive fields in a 400 response."""
+        return httpx.Response(
+            400,
+            headers={"content-type": "application/x-www-form-urlencoded"},
+            text="error=invalid_client&access_token=raw-token&client_assertion=raw-assertion",
+        )
+
+    manifest = parse_manifest(raw_manifest)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(manifest, environment="test", client=client)
+
+    step = result.steps[0]
+    assert step.status == "failed"
+    assert step.status_code == 400
+    details = dict(step.details)
+    response = cast("dict[str, Any]", details["response"])
+    assert response["statusCode"] == 400
+    assert response["contentType"] == "application/x-www-form-urlencoded"
+    assert response["bodySnippet"] == "error=invalid_client&access_token=***&client_assertion=***"
 
 
 @pytest.mark.unit
@@ -2953,6 +3523,105 @@ def test_run_manifest_does_not_serialize_invalid_auth_metadata_strings() -> None
     assert secret_like_value not in rendered
     assert secret_like_value not in log_payload
     assert "authMetadata" not in result.to_json_object()
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_test_value_profile_evidence_with_masked_effective_values() -> None:
+    """Result/log evidence includes profile source and masks effective values."""
+    from conformance.test_plan import TestPlan, build_plan_test_value_context
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "test-value-evidence",
+            "testValueProfiles": {
+                "defaultProfileId": "default-profile",
+                "profiles": [
+                    {
+                        "id": "default-profile",
+                        "label": "Default",
+                        "values": {
+                            "instructionIdentification": "instr-default",
+                            "creditorIdentification": "1234567890",
+                        },
+                    }
+                ],
+                "allowedOverrideKeys": ["creditorIdentification"],
+                "nonSecretKeys": ["instructionIdentification"],
+            },
+            "steps": [
+                {
+                    "id": "mandatory-step",
+                    "name": "Mandatory",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/mandatory"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "conditional-step",
+                    "name": "Conditional",
+                    "request": {"method": "GET", "url": "https://example.com/conditional"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                    "selectionMetadata": {
+                        "conditional": True,
+                        "conditionId": "creditor-supported",
+                        "requiredTestValueKeys": ["creditorIdentification"],
+                    },
+                },
+            ],
+        }
+    )
+    test_value_ctx = build_plan_test_value_context(manifest, None)
+    plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx).with_deselection(
+        ["conditional-step"]
+    )
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            execution_logger=execution_logger,
+            plan=plan,
+            runtime_config=RuntimeConfig(
+                discovery_url="https://example.com/.well-known/openid-configuration",
+                environment="env",
+                test_values={
+                    "instructionIdentification": "instr-default",
+                    "creditorIdentification": "1234567890",
+                },
+                test_value_profile_id=test_value_ctx.profile_id,
+                test_value_profile_source=test_value_ctx.profile_source,
+                test_value_override_keys=tuple(sorted(test_value_ctx.override_keys)),
+            ),
+        )
+
+    rendered = result.to_json_object()
+    profile_block = cast(JsonObject, rendered["testValueProfile"])
+    assert profile_block["profileId"] == "default-profile"
+    assert profile_block["source"] == "default"
+    assert profile_block["overrideKeys"] == []
+    assert profile_block["declaredKeys"] == ["creditorIdentification", "instructionIdentification"]
+    assert profile_block["requiredKeys"] == ["creditorIdentification"]
+    assert profile_block["effectiveValues"] == {"instructionIdentification": MASKED_VALUE}
+
+    outcomes = cast(list[JsonObject], profile_block["conditionOutcomes"])
+    assert outcomes == [
+        {
+            "stepId": "conditional-step",
+            "conditionId": "creditor-supported",
+            "selected": False,
+            "requiredKeys": ["creditorIdentification"],
+            "missingKeys": [],
+            "allRequiredValuesPresent": True,
+        }
+    ]
+
+    profile_events = [event for event in execution_logger.events() if event.type == "test-value-profile-evaluated"]
+    assert len(profile_events) == 1
+    assert profile_events[0].payload["effectiveValues"] == {"instructionIdentification": MASKED_VALUE}
+    assert "creditorIdentification" not in cast(dict[str, str], profile_events[0].payload["effectiveValues"])
     assert not any(event.type == "auth-metadata-evaluated" for event in execution_logger.events())
 
 
@@ -4194,6 +4863,196 @@ def test_ais_certification_baseline_accounts_resource_schema_failure_masks_evide
     assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
 
 
+@pytest.mark.integration
+def test_pis_domestic_payment_starter_client_credentials_uses_private_key_jwt_and_masks_assertion(
+    tmp_path: Path,
+) -> None:
+    """PIS starter token step injects private-key JWT fields and masks assertion evidence.
+
+    Args:
+        tmp_path: Pytest temporary directory used to hold generated signing PEM files.
+    """
+    from conformance.model_bank_config import SuiteSelection
+    from conformance.suite_catalog import resolve_suite
+
+    resolved = resolve_suite(
+        SuiteSelection(
+            standard="ob-read-write",
+            spec_version="v4.0",
+            profile="fapi1-advanced",
+            api="pis",
+            suite="pis-domestic-payment-starter",
+        )
+    )
+    plan = _plan_selecting_step_ids(
+        resolved.manifest,
+        selected_step_ids={"openid-discovery", "jwks-fetch", "client-credentials-token"},
+    )
+    execution_logger = BufferedExecutionLogger(run_id="pis-token-auth", developer_mode=False)
+    captured_client_credentials_form: dict[str, str] = {}
+    token_endpoint = "https://aspsp.example.com/token"  # noqa: S105 - OAuth token endpoint URL, not a secret.
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Return deterministic responses for the PIS starter token regression.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Mocked response for the request URL.
+
+        Raises:
+            AssertionError: If the executor calls an unexpected endpoint.
+        """
+        nonlocal captured_client_credentials_form
+        url = str(request.url)
+        if url == "https://aspsp.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={
+                    "issuer": "https://aspsp.example.com",
+                    "authorization_endpoint": "https://aspsp.example.com/authorize",
+                    "token_endpoint": token_endpoint,
+                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
+                    "response_types_supported": ["code id_token"],
+                },
+            )
+        if url == "https://aspsp.example.com/.well-known/jwks.json":
+            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
+        if url == token_endpoint:
+            form_fields = dict(parse_qsl(request.content.decode("ascii"), keep_blank_values=True))
+            if form_fields.get("grant_type") == "client_credentials":
+                captured_client_credentials_form = form_fields
+            return httpx.Response(400, json={"error": "invalid_client"})
+        raise AssertionError(f"Unexpected request URL: {url}")
+
+    runtime_config = RuntimeConfig(
+        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
+        environment="test",
+        oauth_resource_base_url="https://resource.example.com",
+        oauth_client_id="pis-client-id",
+        oauth_redirect_uri="https://participant.example.com/callback",
+        test_values={
+            "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
+            "creditorIdentification": "11223344556677",
+            "creditorName": "Merchant",
+            "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
+            "thisIdentification": "22334455667788",
+            "instructionIdentification": "instruction-ref",
+            "endToEndIdentification": "end-to-end-ref",
+            "instructedAmountCurrency": "GBP",
+            "instructedAmountValue": "1.00",
+            "remittanceInformation": "payment-reference",
+        },
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_manifest(
+            resolved.manifest,
+            environment="test",
+            client=client,
+            plan=plan,
+            runtime_config=runtime_config,
+            execution_logger=execution_logger,
+            fapi_signing_config=_executor_signing_config(tmp_path),
+        )
+
+    assert result.status == "failed"
+    assert captured_client_credentials_form["grant_type"] == "client_credentials"
+    assert captured_client_credentials_form["client_id"] == "pis-client-id"
+    assert captured_client_credentials_form["scope"] == "payments"
+    assert captured_client_credentials_form["client_assertion_type"] == (
+        "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    )
+    assert captured_client_credentials_form["client_assertion"]
+
+    token_step = next(step for step in result.steps if step.name == "client-credentials-token")
+    assert token_step.status == "failed"
+    request_details = cast("dict[str, Any]", token_step.details["request"])
+    request_form = cast("dict[str, str]", request_details["form"])
+    assert request_form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    assert request_form["client_assertion"] == "***"
+
+    request_event = next(
+        event
+        for event in execution_logger.events()
+        if event.type == "request-sent" and event.step_id == "client-credentials-token"
+    )
+    event_form = cast("dict[str, str]", request_event.payload["form"])
+    assert event_form["client_assertion_type"] == "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+    assert event_form["client_assertion"] == "***"
+
+
+@pytest.mark.unit
+def test_pis_domestic_payment_consent_request_masks_payment_evidence() -> None:
+    """PIS domestic-payment-consent request masks account/payment evidence in result and log."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "pis-consent-masking",
+        "steps": [
+            {
+                "id": "domestic-payment-consent",
+                "name": "Domestic payment consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "headers": {"Authorization": "Bearer secret"},
+                    "body": {
+                        "Data": {
+                            "Initiation": {
+                                "CreditorAccount": {
+                                    "Identification": "acct-1",
+                                    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                                },
+                                "DebtorAccount": {
+                                    "Identification": "acct-2",
+                                    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                                },
+                                "InstructionIdentification": "instruction-ref",
+                                "EndToEndIdentification": "end-to-end-ref",
+                                "RemittanceInformation": {"Unstructured": "payment-reference"},
+                                "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                            }
+                        },
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    execution_logger = BufferedExecutionLogger(run_id="pis-consent-masking", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(404, text="not found"))) as client:
+        result = run_manifest(manifest, environment="test", client=client, execution_logger=execution_logger)
+
+    consent_step = result.steps[0]
+    assert consent_step.status == "failed"
+    consent_request_details = cast("dict[str, Any]", consent_step.details["request"])
+    consent_body = cast("dict[str, Any]", consent_request_details["body"])
+    consent_initiation = cast("dict[str, Any]", cast("dict[str, Any]", consent_body["Data"])["Initiation"])
+    assert consent_initiation["CreditorAccount"] == MASKED_VALUE
+    assert consent_initiation["DebtorAccount"] == MASKED_VALUE
+    assert consent_initiation["InstructionIdentification"] == MASKED_VALUE
+    assert consent_initiation["EndToEndIdentification"] == MASKED_VALUE
+    assert consent_initiation["RemittanceInformation"] == MASKED_VALUE
+    assert cast("dict[str, str]", consent_initiation["InstructedAmount"])["Currency"] == "GBP"
+
+    consent_request_event = next(
+        event
+        for event in execution_logger.events()
+        if event.type == "request-sent" and event.step_id == "domestic-payment-consent"
+    )
+    event_body = cast("dict[str, Any]", consent_request_event.payload["body"])
+    event_initiation = cast("dict[str, Any]", cast("dict[str, Any]", event_body["Data"])["Initiation"])
+    assert event_initiation["CreditorAccount"] == MASKED_VALUE
+    assert event_initiation["DebtorAccount"] == MASKED_VALUE
+    assert event_initiation["InstructionIdentification"] == MASKED_VALUE
+    assert event_initiation["EndToEndIdentification"] == MASKED_VALUE
+    assert event_initiation["RemittanceInformation"] == MASKED_VALUE
+
+
 def _plan_selecting_step_ids(manifest: Any, *, selected_step_ids: set[str]) -> Any:
     """Return a plan with exactly ``selected_step_ids`` enabled.
 
@@ -4828,7 +5687,14 @@ def test_run_manifest_emits_step_deselected_before_step_started() -> None:
     deselected_events = [event for event in execution_logger.events() if event.type == "step-deselected"]
     assert len(deselected_events) == 1
     assert deselected_events[0].step_id == "optional-step"
-    assert deselected_events[0].payload == {"mandatory": False}
+    assert deselected_events[0].payload == {
+        "mandatory": False,
+        "conditional": False,
+        "testValueProfileSource": None,
+        "requiredTestValueKeys": [],
+        "missingTestValueKeys": [],
+        "testValueOverrideKeys": [],
+    }
 
 
 @pytest.mark.unit
@@ -4885,6 +5751,8 @@ def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
         "deselectedSteps": 0,
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
+        "conditionalSelected": 0,
+        "conditionalDeselectedMissingValues": 0,
     }
 
 
@@ -4948,6 +5816,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         auth_session_store: AuthSessionStore,
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
+        open_banking_config: Any = None,
         mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
@@ -4962,6 +5831,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
+            open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
         )
 
@@ -4998,6 +5868,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         auth_session_store: AuthSessionStore,
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
+        open_banking_config: Any = None,
         mtls_client_configured: bool = False,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
@@ -5012,6 +5883,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             auth_session_store=auth_session_store,
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
+            open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
         )
 
@@ -5521,6 +6393,58 @@ def test_psu_headless_step_resolves_openbanking_intent_id_into_generated_request
 
 
 @pytest.mark.unit
+def test_psu_headless_step_negative_case_omits_openbanking_intent_claim_from_request_object(tmp_path: Path) -> None:
+    """PSU negative mutation omits only the request-object Open Banking claim."""
+    state = "h" * 32
+    observed_urls: list[str] = []
+    signing_config = _executor_signing_config(tmp_path)
+    context = record_step(
+        ExecutionContext(),
+        "account-access-consent",
+        RequestRecord(method="POST", url="https://rs.example.com/account-access-consents"),
+        ResponseRecord(status_code=201, body={"Data": {"ConsentId": "consent-456"}}),
+    )
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound PSU authorisation URL for JWT inspection."""
+        observed_urls.append(str(request.url))
+        return httpx.Response(
+            302,
+            headers={"Location": f"https://conformance.example.com/callback?state={state}&code=headless-code"},
+        )
+
+    with httpx.Client(transport=httpx.MockTransport(handler), follow_redirects=True) as client:
+        result, _ = _execute_v1_psu_step(
+            _psu_headless_step(
+                state=state,
+                request_object=GeneratedRequestObject(
+                    source="fapi-signing",
+                    openbanking_intent_id="${steps.account-access-consent.response.body.Data.ConsentId}",
+                ),
+                signing_negative_case="omit-request-object-signature-claim",
+            ),
+            context=context,
+            client=client,
+            run_id="run-psu-signed-intent-negative",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-psu-signed-intent-negative", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+            fapi_signing_config=signing_config,
+        )
+
+    request_params = dict(parse_qsl(urlsplit(observed_urls[0]).query))
+    public_key = jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA")
+    decoded_request_object = jwt.decode(request_params["request"], public_key, algorithms=["PS256"])
+    claims = decoded_request_object.claims
+
+    assert result.status == "passed"
+    assert len(observed_urls) == 1
+    assert isinstance(claims, dict)
+    assert "claims" not in claims
+
+
+@pytest.mark.unit
 def test_psu_manual_step_placeholder_failure_records_masked_request_url() -> None:
     """PSU placeholder failures store the masked endpoint template in context."""
     result, context = _execute_v1_psu_step(
@@ -5913,6 +6837,119 @@ def test_psu_headless_step_fails_when_authorization_endpoint_returns_ok() -> Non
     assert result.status == "failed"
     assert result.status_code == 200
     assert "did not return a redirect" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_passes_expected_authorization_rejection_status() -> None:
+    """Headless mode can pass a declared direct authorisation-endpoint rejection."""
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(400, json={}))) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(
+                state="r" * 32,
+                expected_authorization_response=PsuExpectedAuthorizationResponse(type="http_status", expected=400),
+            ),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-expected-rejection",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(run_id="run-headless-expected-rejection", developer_mode=False),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "passed"
+    assert result.status_code == 400
+    assert "expected authorisation endpoint rejection" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_fails_on_mismatched_expected_authorization_rejection_status() -> None:
+    """Headless mode fails when direct rejection status differs from the declared expectation."""
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(401, json={}))) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(
+                state="r" * 32,
+                expected_authorization_response=PsuExpectedAuthorizationResponse(type="http_status", expected=400),
+            ),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-expected-rejection-mismatch",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(
+                run_id="run-headless-expected-rejection-mismatch",
+                developer_mode=False,
+            ),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert result.status_code == 401
+    assert "did not match expected HTTP 400 rejection" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_passes_expected_redirect_style_negative_rejection() -> None:
+    """Headless signing-negative PSU checks can accept redirect-style AS rejections."""
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(302, headers={"Location": "https://auth.example.com/error?error=invalid"})
+        )
+    ) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(
+                state="r" * 32,
+                signing_negative_case="omit-request-object-signature-claim",
+                expected_authorization_response=PsuExpectedAuthorizationResponse(type="http_status", expected=400),
+            ),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-expected-redirect-rejection",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(
+                run_id="run-headless-expected-redirect-rejection", developer_mode=False
+            ),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "passed"
+    assert result.status_code == 302
+    assert "redirect-style authorisation endpoint rejection" in result.message
+    assert context.steps["psu"].response is None
+
+
+@pytest.mark.unit
+def test_psu_headless_step_rejects_non_callback_redirect_without_negative_signing_case() -> None:
+    """Unexpected non-callback redirects still fail outside the signing-negative path."""
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(302, headers={"Location": "https://auth.example.com/error?error=invalid"})
+        )
+    ) as client:
+        result, context = _execute_v1_psu_step(
+            _psu_headless_step(
+                state="r" * 32,
+                expected_authorization_response=PsuExpectedAuthorizationResponse(type="http_status", expected=400),
+            ),
+            context=ExecutionContext(),
+            client=client,
+            run_id="run-headless-unexpected-redirect-rejection",
+            auth_session_store=AuthSessionStore(),
+            execution_logger=BufferedExecutionLogger(
+                run_id="run-headless-unexpected-redirect-rejection",
+                developer_mode=False,
+            ),
+            clock=_FakeClock().monotonic,
+            sleep=_FakeClock().sleep,
+        )
+
+    assert result.status == "failed"
+    assert result.status_code == 302
+    assert result.message == "PSU authorisation redirect target did not match the configured redirectUri"
     assert context.steps["psu"].response is None
 
 

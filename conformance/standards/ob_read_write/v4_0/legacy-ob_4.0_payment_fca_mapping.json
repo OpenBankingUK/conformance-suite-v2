@@ -1,0 +1,827 @@
+{
+  "schemaVersion": "v1",
+  "standard": "ob-read-write",
+  "specVersion": "v4.0",
+  "sourceManifest": {
+    "name": "ob_4.0_payment_fca.json",
+    "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/refs/heads/develop/manifests/ob_4.0_payment_fca.json",
+    "repository": "OpenBankingUK/conformance-suite",
+    "ref": "develop"
+  },
+  "summary": {
+    "mandatoryCount": 8,
+    "conditionalCount": 21,
+    "totalCount": 29
+  },
+  "globalGaps": [
+    "No bundled PIS OpenAPI snapshot yet; schema parity is approximate rather than standards-diffed.",
+    "Assertion coverage is legacy-parity only and may use generic status/header/body checks instead of exact named FCS assertions."
+  ],
+  "familyNotes": {
+    "DomesticPayment": "Mandatory legacy DomesticPayment parity rows.",
+    "DomesticScheduledPayment": "Conditional domestic scheduled-payment rows.",
+    "DomesticStandingOrder": "Conditional domestic standing-order rows.",
+    "InternationalPayment": "Conditional international-payment rows.",
+    "InternationalScheduledPayment": "Conditional international scheduled-payment rows."
+  },
+  "families": [
+    {
+      "family": "DomesticPayment",
+      "rows": [
+        {
+          "legacyId": "OB-400-DOP-100100",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payment-consents",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-100110",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.6/resources-and-data-models/pisp/domestic-payment-consents.html#post-domestic-payment-consents",
+          "legacyUri": "/domestic-payment-consents",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": false,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn400"
+            ],
+            "legacyAssertionsOneOf": [
+              "OB3GLOAssertSignatureInvalidClaimErrorCodeV4",
+              "OB3GLOAssertSignatureMissingClaimErrorCodeV4",
+              "OB3GLOAssertSignatureMalformedErrorCodeV4"
+            ],
+            "coverage": "minimal"
+          },
+          "knownGaps": [
+            "No legacy schemaCheck flag; exact PIS schema parity is still missing.",
+            "No legacy validateSignature flag; signature parity is approximate.",
+            "Legacy assertion is a one-of error set; exact mutation parity still needs executor support."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-100300",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payment-consents",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "postData",
+            "thisSchemeName",
+            "thisIdentification",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-316-DOP-100310",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payment-consents",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn400",
+              "OB3DOPAssertSignatureMissingOBErrorCodeV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-100400",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payment-consents/$consentId",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOFAPIHeader",
+              "OB3GLOAssertOn200",
+              "OB3DOPAssertAuthorisedV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-100500",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payment-consents/$consentId/funds-confirmation",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "paymentType",
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200",
+              "OB3DOPFundsAvailable"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-100600",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payments",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "consentId",
+            "thisSchemeName",
+            "thisIdentification",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "postData"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-100700",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-payments/$paymentId",
+          "legacyUriImplementation": "mandatory",
+          "legacyResource": "DomesticPayment",
+          "mandatory": true,
+          "requiredProfileKeys": [
+            "paymentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        }
+      ]
+    },
+    {
+      "family": "DomesticScheduledPayment",
+      "rows": [
+        {
+          "legacyId": "OB-400-DOP-100800",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "instructionIdentification",
+            "postData",
+            "endToEndIdentification",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-100810",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "instructionIdentification",
+            "replacementDateTime",
+            "postData",
+            "endToEndIdentification",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-100820",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "instructionIdentification",
+            "replacementDateTime",
+            "postData",
+            "endToEndIdentification",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-100900",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents/$consentId",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200",
+              "OB3DOPAssertAuthorisedV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101000",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-101100",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payment-consents/$OB-400-DOP-101000-DomesticScheduledPaymentConsentId",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "paymentID"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101101",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-scheduled-payments",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "paymentID",
+            "consentId",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "instructedAmountCurrency",
+            "instructedAmountValue",
+            "postData"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        }
+      ]
+    },
+    {
+      "family": "DomesticStandingOrder",
+      "rows": [
+        {
+          "legacyId": "OB-400-DOP-101200",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-order-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticStandingOrder",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "frequency",
+            "frequencyCountPerPeriod",
+            "frequencyPointInTime",
+            "firstPaymentDateTime",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101300",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-order-consents/$consentId",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticStandingOrder",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200",
+              "OB3DOPAssertAuthorisedV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101400",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-orders",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticStandingOrder",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "firstPaymentDateTime",
+            "postData",
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn400"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101401",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-orders",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticStandingOrder",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "frequency",
+            "frequencyCountPerPeriod",
+            "frequencyPointInTime",
+            "firstPaymentDateTime",
+            "postData",
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101500",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-orders/$paymentID",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "paymentID"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": [
+            "Legacy resource is labelled DomesticScheduledPayment even though the family is DomesticStandingOrder."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-101503",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/domestic-standing-order-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "DomesticStandingOrder",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "frequency",
+            "frequencyCountPerPeriod",
+            "frequencyPointInTime",
+            "firstPaymentDateTime",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn400"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        }
+      ]
+    },
+    {
+      "family": "InternationalPayment",
+      "rows": [
+        {
+          "legacyId": "OB-400-DOP-101600",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-101700",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-payment-consents/$consentId",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200",
+              "OB3DOPAssertAuthorisedV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-101800",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-payments",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "currencyOfTransfer",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3IPAssertInternationalPaymentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-101900",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-payments/$paymentID",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "paymentID"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        }
+      ]
+    },
+    {
+      "family": "InternationalScheduledPayment",
+      "rows": [
+        {
+          "legacyId": "OB-400-DOP-102000",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-scheduled-payment-consents",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "currencyOfTransfer",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "requestConsent"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": false,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3GLOFAPIHeader",
+              "OB3DOPAssertAwaitingAuthorisationV4",
+              "OB3GLOAAssertConsentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "partial"
+          },
+          "knownGaps": [
+            "No legacy validateSignature flag; signature parity is approximate."
+          ]
+        },
+        {
+          "legacyId": "OB-400-DOP-102100",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-scheduled-payment-consents/$consentId",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200",
+              "OB3DOPAssertAuthorisedV4"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-102200",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-scheduled-payments",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "instructedAmountValue",
+            "instructedAmountCurrency",
+            "currencyOfTransfer",
+            "instructionIdentification",
+            "endToEndIdentification",
+            "postData",
+            "consentId"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn201",
+              "OB3IPAssertInternationalScheduledPaymentId"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        },
+        {
+          "legacyId": "OB-400-DOP-102300",
+          "legacyRefUri": "https://openbankinguk.github.io/read-write-api-site3/v4.0/profiles/payment-initiation-api-profile.html",
+          "legacyUri": "/international-scheduled-payments/$paymentID",
+          "legacyUriImplementation": "conditional",
+          "legacyResource": "InternationalScheduledPayment",
+          "mandatory": false,
+          "requiredProfileKeys": [
+            "paymentID"
+          ],
+          "currentAssertionCoverage": {
+            "schemaCheck": true,
+            "validateSignature": true,
+            "legacyAssertions": [
+              "OB3GLOAssertOn200"
+            ],
+            "legacyAssertionsOneOf": [],
+            "coverage": "broad"
+          },
+          "knownGaps": []
+        }
+      ]
+    }
+  ]
+}

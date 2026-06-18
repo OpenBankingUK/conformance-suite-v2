@@ -151,6 +151,7 @@
         .result-step-summary {
             display: flex;
             align-items: center;
+            flex-wrap: wrap;
             gap: 10px;
             cursor: pointer;
             padding-top: 12px;
@@ -163,7 +164,18 @@
         }
 
         .result-step-title {
-            flex: 1;
+            flex: 1 1 18rem;
+            min-width: min(100%, 18rem);
+            overflow-wrap: break-word;
+            word-break: normal;
+        }
+
+        .result-step-summary-meta {
+            white-space: nowrap;
+        }
+
+        .result-step-summary-message {
+            flex: 1 1 100%;
             min-width: 0;
             overflow-wrap: anywhere;
         }

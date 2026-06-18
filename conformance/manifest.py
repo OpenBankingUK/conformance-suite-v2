@@ -61,7 +61,22 @@ TokenEndpointAuthSource = Literal["fapi-signing"]
 DetachedJwsSource = Literal["fapi-signing"]
 """Source selectors for detached JWS directives on HTTP requests."""
 
-AssertionType = Literal["http_status", "json_field", "header", "response_schema"]
+SigningNegativeCase = Literal["omit-detached-jws-header", "omit-request-object-signature-claim", "omit-jwt-claim"]
+"""Enumerated negative signing mutations accepted by v1 step directives.
+
+``omit-detached-jws-header`` omits the entire ``x-jws-signature`` header from
+write requests that would otherwise carry a detached JWS.
+``omit-request-object-signature-claim`` removes the OpenBanking intent ID
+claim from PSU authorisation request objects.
+``omit-jwt-claim`` produces a detached JWS with the JOSE protected header
+``b64`` critical claim intentionally omitted, so the JWT is structurally
+malformed relative to the Open Banking detached-JWS specification.
+"""
+
+PsuExpectedAuthorizationResponseType = Literal["http_status"]
+"""Expected-response discriminators supported on PSU authorisation steps."""
+
+AssertionType = Literal["http_status", "json_field", "header", "response_schema", "ob_error_code", "response_signature"]
 """Assertion discriminators supported by manifest assertions."""
 
 ResponseSchemaSource = Literal["bundled_openapi"]
@@ -93,6 +108,30 @@ FollowUpType = Literal["jwks"]
 
 FollowUpUrlSource = Literal["response.body.jwks_uri"]
 """Locations from which follow-up request URLs may be extracted."""
+
+GeneratedValueKind = Literal["per-run-uuid", "per-run-compact-uuid"]
+"""Accepted generated value kinds for test-value profile entries.
+
+``"per-run-uuid"`` instructs the runtime to generate a fresh UUID4 string
+(36 characters with hyphens) each time the suite is executed.
+
+``"per-run-compact-uuid"`` generates a UUID4 hex string without hyphens
+(32 characters), suitable for Open Banking fields with a 35-character maximum
+such as ``InstructionIdentification`` and ``EndToEndIdentification``.
+
+Both kinds are unique per run and safe to use as payment identifiers.
+"""
+
+_TEST_VALUES_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
+"""Pattern for valid test-value key names.
+
+Keys must begin with a letter and may contain only letters, digits, hyphens,
+and underscores. Leading-digit keys are reserved for step-placeholder IDs and
+would create ambiguity in the dot-path resolver.
+"""
+
+_TEST_VALUES_PLACEHOLDER_PATTERN = re.compile(r"\$\{testValues\.([A-Za-z][A-Za-z0-9_-]*)\}")
+"""Regex matching valid ``${testValues.<key>}`` placeholders in v1 manifests."""
 
 
 @dataclass(frozen=True)
@@ -210,6 +249,107 @@ class DetachedJwsPolicy:
 
 
 @dataclass(frozen=True)
+class PsuExpectedAuthorizationResponse:
+    """Expected non-redirect response accepted for a headless PSU step.
+
+    Attributes:
+        type: Expected-response discriminator. Currently only ``"http_status"``
+            is supported.
+        expected: HTTP status code that the ASPSP authorisation endpoint is
+            expected to return directly (without redirecting to ``redirectUri``).
+    """
+
+    type: PsuExpectedAuthorizationResponseType
+    expected: int
+
+
+@dataclass(frozen=True)
+class TestValueProfileEntry:
+    """Single named profile in the manifest test-value profile catalogue.
+
+    Each profile declares a complete set of test values that the suite can use
+    at runtime. A manifest may declare one or more profiles; the executor
+    selects the default profile unless the participant config overrides it.
+
+    Attributes:
+        id: Stable identifier for this profile (e.g. ``"ozone-sandbox"``).
+        label: Human-readable display label for plan preview and evidence.
+        values: Immutable mapping of declared key names to their literal string
+            values. Participants may override individual keys if the key is
+            listed in :attr:`TestValueProfileSpec.allowed_override_keys`.
+        generated_keys: Immutable mapping of key names to their generated-value
+            kind. Generated keys are not stored in :attr:`values`; the executor
+            produces their value at run time and caches it for the duration of
+            the run so all steps receive the same value.
+    """
+
+    id: str
+    label: str
+    values: Mapping[str, str]
+    generated_keys: Mapping[str, GeneratedValueKind]
+
+
+@dataclass(frozen=True)
+class TestValueProfileSpec:
+    """Manifest-level test-value profile metadata.
+
+    Declared at the manifest root under ``testValueProfiles``. Describes the
+    available named profiles, which keys participants may override, and which
+    keys are safe to include in masked evidence.
+
+    Attributes:
+        default_profile_id: Identifier of the profile used when the
+            participant config omits ``testValues.profile``.
+        profiles: Tuple of declared profile entries in the order they appear
+            in the manifest. Must be non-empty; must contain a profile whose
+            id matches :attr:`default_profile_id`.
+        allowed_override_keys: Frozen set of key names that the participant
+            config is permitted to override via ``testValues.overrides``.
+            Override keys that are absent from this set are rejected at
+            config validation time.
+        non_secret_keys: Frozen set of key names whose effective values may
+            be included in masked execution-log evidence without redaction.
+            Keys absent from this set are treated as sensitive and must pass
+            through the standard masking pipeline before persistence.
+    """
+
+    default_profile_id: str
+    profiles: tuple[TestValueProfileEntry, ...]
+    allowed_override_keys: frozenset[str]
+    non_secret_keys: frozenset[str]
+
+
+@dataclass(frozen=True)
+class StepSelectionMetadata:
+    """Step-level conditional selection metadata for plan preview and evidence.
+
+    Carried by v1 manifest steps that participate in the conditional-row
+    contract. Old manifests without ``selectionMetadata`` leave this field
+    as ``None`` on their steps; all existing selection semantics are
+    preserved unchanged.
+
+    Attributes:
+        condition_id: Optional stable machine-readable identifier for the
+            condition that governs whether this step is selected (e.g.
+            ``"domestic-scheduled-payments-supported"``). Used by
+            plan-preview and evidence tooling to explain selection outcomes.
+        condition_label: Optional human-readable label for the condition,
+            suitable for display in plan preview rows and result summaries.
+        conditional: Whether the step is a conditional row. When ``True``
+            the step is deselected in the default plan unless the required
+            test values are available from the resolved profile.
+        required_test_value_keys: Tuple of test-value key names that must
+            resolve to non-empty values for this step to be automatically
+            selected. Only meaningful when :attr:`conditional` is ``True``.
+    """
+
+    condition_id: str | None
+    condition_label: str | None
+    conditional: bool
+    required_test_value_keys: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class FollowUpRequest:
     """HTTP request shape for a manifest follow-up step.
 
@@ -308,7 +448,48 @@ class ResponseSchemaAssertion:
     body_path: str | None = None
 
 
-ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion
+@dataclass(frozen=True)
+class ObErrorCodeAssertion:
+    """Assertion that checks at least one OB error-code in the response matches an acceptable set.
+
+    Implements the legacy ``asserts_one_of`` OB error-code semantics: at least one
+    ``Errors[*].ErrorCode`` in the response body must match one of the ``codes`` values.
+    This is used for negative cases where multiple OB error codes are acceptable (for example,
+    ``UK.OBIE.Signature.Invalid``, ``UK.OBIE.Signature.Missing``, and
+    ``UK.OBIE.Signature.Malformed`` are all acceptable for a missing-JWT-claim negative test).
+
+    Attributes:
+        type: Assertion type discriminator.
+        codes: Acceptable OB error-code values. At least one ``Errors[*].ErrorCode`` must match.
+    """
+
+    type: Literal["ob_error_code"]
+    codes: tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class ResponseSignatureAssertion:
+    """Assertion requiring an ASPSP response body to verify against ``x-jws-signature``.
+
+    Attributes:
+        type: Assertion type discriminator.
+        jwks_step_id: Step id whose response body contains the ASPSP JWKS.
+        header_name: Response header containing the detached compact JWS.
+    """
+
+    type: Literal["response_signature"]
+    jwks_step_id: str
+    header_name: str = "x-jws-signature"
+
+
+ManifestAssertion = (
+    HttpStatusAssertion
+    | JsonFieldAssertion
+    | HeaderAssertion
+    | ResponseSchemaAssertion
+    | ObErrorCodeAssertion
+    | ResponseSignatureAssertion
+)
 """Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
@@ -385,12 +566,22 @@ class ManifestStep:
             executor should apply token-endpoint client authentication using
             runtime FAPI signing configuration rather than literal manifest
             form fields.
+        signing_negative_case: Optional narrow negative-signing selector used
+            by legacy payment error tests. Supported values are
+            ``"omit-detached-jws-header"`` (HTTP request executes without the
+            detached JWS header even when ``detachedJws`` is present) and
+            ``"omit-request-object-signature-claim"`` (PSU runtime request
+            object omits the Open Banking intent signature claim).
         required_token_id: Optional semantic auth requirement id required by
             this step when it consumes a protected-resource bearer token.
             This binds the step to ``${tokens.<id>.access_token}`` header
             placeholders without coupling consumers to token step ids.
         produces_token_id: Optional semantic auth requirement id minted by
             this step when its response carries an ``access_token``.
+        selection_metadata: Optional step-level conditional selection metadata
+            declared via ``selectionMetadata``. ``None`` for steps in old
+            manifests that predate this field and for unconditional steps
+            that omit the section.
     """
 
     id: str
@@ -403,8 +594,10 @@ class ManifestStep:
     group: str = "default"
     phase: StepPhase = "execution"
     token_endpoint_auth_policy: TokenEndpointAuthPolicy | None = None
+    signing_negative_case: SigningNegativeCase | None = None
     required_token_id: str | None = None
     produces_token_id: str | None = None
+    selection_metadata: StepSelectionMetadata | None = None
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -528,8 +721,17 @@ class PsuAuthorizationStep:
             opaque string JWT; newer manifests may instead declare a typed
             runtime-generated directive. String values permit placeholders so
             the JWT can be produced by an upstream signing step.
+        signing_negative_case: Optional narrow negative-signing selector used
+            by legacy payment error tests. PSU steps only support
+            ``"omit-request-object-signature-claim"``, which removes the
+            Open Banking intent signature claim from a runtime-generated
+            request object on this step only.
         timeout_seconds: Per-step deadline in seconds. Defaults to 120;
             must be between 1 and 600 inclusive.
+        expected_authorization_response: Optional expected direct HTTP response
+            for headless negative tests where the ASPSP rejects authorisation
+            before any redirect to ``redirectUri``. Currently supports only
+            an exact ``http_status`` match in the 4xx/5xx range.
         mandatory: Whether the step is required for certification
             eligibility. Same semantics as :class:`ManifestStep`.
         optional: Whether the step is opt-in for the default test plan.
@@ -540,6 +742,8 @@ class PsuAuthorizationStep:
         phase: Scheduling phase for this step. Defaults to
             ``"execution"``. Setup-phase PSU steps execute before grouped
             execution starts.
+        selection_metadata: Optional step-level conditional selection metadata.
+            Same semantics as :class:`ManifestStep`.
     """
 
     id: str
@@ -553,11 +757,14 @@ class PsuAuthorizationStep:
     state: str | None = None
     nonce: str | None = None
     request_object: RequestObjectValue | None = None
+    signing_negative_case: SigningNegativeCase | None = None
     timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
+    expected_authorization_response: PsuExpectedAuthorizationResponse | None = None
     mandatory: bool = False
     optional: bool = False
     group: str = "default"
     phase: StepPhase = "execution"
+    selection_metadata: StepSelectionMetadata | None = None
 
 
 type V1Step = ManifestStep | PsuAuthorizationStep
@@ -597,6 +804,12 @@ class Manifest:
             manifests and v1 manifests without ``authMetadata`` leave this
             as ``None``; all existing parsing and execution paths treat
             ``None`` as "no explicit auth metadata declared".
+        test_value_profiles: Optional manifest-level test-value profile
+            metadata declared via the ``testValueProfiles`` root key. When
+            present, ``${testValues.<key>}`` placeholders in steps are resolved
+            against the effective profile (default profile merged with any
+            participant overrides). V0 manifests and v1 manifests without
+            ``testValueProfiles`` leave this as ``None``.
     """
 
     schema_version: ManifestSchemaVersion
@@ -605,6 +818,7 @@ class Manifest:
     tests: tuple[ManifestTest, ...] = ()
     steps: tuple[V1Step, ...] = ()
     auth_inventory: AuthBundleInventory | None = None
+    test_value_profiles: TestValueProfileSpec | None = None
 
 
 def load_manifest(manifest_path: Path) -> Manifest:
@@ -761,7 +975,7 @@ Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (
 """
 
 _CONFIG_PLACEHOLDER_PATTERN = re.compile(
-    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|openBankingIntentId|resourceBaseUrl))\}"
+    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|authorizationEndpoint|openBankingIntentId|resourceBaseUrl))\}"
 )
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
@@ -827,18 +1041,31 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     """
     _reject_unknown_keys(
         raw_manifest,
-        allowed_keys={"schemaVersion", "name", "certificationCoverage", "steps", "authMetadata"},
+        allowed_keys={
+            "schemaVersion",
+            "name",
+            "certificationCoverage",
+            "steps",
+            "authMetadata",
+            "testValueProfiles",
+        },
         location="manifest",
     )
 
     name = _required_string(raw_manifest, "name", location="manifest")
     certification_coverage = _parse_certification_coverage(raw_manifest, location="manifest")
+    test_value_profiles, known_test_value_keys = _parse_v1_test_value_profiles(raw_manifest)
     raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
 
     seen_ids: set[str] = set()
     steps: list[V1Step] = []
     for index, raw_step in enumerate(raw_steps):
-        step = _parse_v1_step(raw_step, index=index, seen_ids=seen_ids)
+        step = _parse_v1_step(
+            raw_step,
+            index=index,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=known_test_value_keys,
+        )
         seen_ids.add(step.id)
         steps.append(step)
 
@@ -851,6 +1078,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
         certification_coverage=certification_coverage,
         steps=tuple(steps),
         auth_inventory=auth_inventory,
+        test_value_profiles=test_value_profiles,
     )
 
 
@@ -928,6 +1156,217 @@ def _parse_v1_auth_metadata(
     except AuthBundleError as error:
         raise ManifestError(f"{location}: {error}") from error
     return inventory
+
+
+def _parse_v1_test_value_profiles(
+    raw_manifest: dict[str, JsonValue],
+) -> tuple[TestValueProfileSpec | None, frozenset[str]]:
+    """Parse the optional ``testValueProfiles`` root key from a v1 manifest.
+
+    Args:
+        raw_manifest: Full v1 manifest JSON object.
+
+    Returns:
+        Two-tuple of ``(TestValueProfileSpec | None, frozenset[str])`` where the
+        second item is the union of every declared profile key plus every
+        ``allowedOverrideKeys`` entry.
+
+    Raises:
+        ManifestError: If the root object, profile entries, or declared key
+            lists are malformed.
+    """
+    if "testValueProfiles" not in raw_manifest:
+        return None, frozenset()
+
+    location = "manifest.testValueProfiles"
+    raw_profiles = raw_manifest["testValueProfiles"]
+    if not isinstance(raw_profiles, dict):
+        raise ManifestError(f"{location} must be a JSON object when present")
+    _reject_unknown_keys(
+        raw_profiles,
+        allowed_keys={"defaultProfileId", "profiles", "allowedOverrideKeys", "nonSecretKeys"},
+        location=location,
+    )
+
+    default_profile_id = _required_string(raw_profiles, "defaultProfileId", location=location)
+    raw_entries = _required_object_array(raw_profiles, "profiles", location=location)
+    profiles = tuple(
+        _parse_test_value_profile_entry(raw_entry, index=index, location=f"{location}.profiles")
+        for index, raw_entry in enumerate(raw_entries)
+    )
+
+    known_profile_ids: set[str] = set()
+    declared_keys: set[str] = set()
+    for index, profile in enumerate(profiles):
+        if profile.id in known_profile_ids:
+            raise ManifestError(f"{location}.profiles[{index}].id '{profile.id}' is a duplicate")
+        known_profile_ids.add(profile.id)
+        declared_keys.update(profile.values)
+        declared_keys.update(profile.generated_keys)
+
+    if default_profile_id not in known_profile_ids:
+        raise ManifestError(
+            f"{location}.defaultProfileId must match one of the declared profiles (got: {default_profile_id!r})"
+        )
+
+    allowed_override_keys = frozenset(
+        _parse_optional_string_array(raw_profiles, "allowedOverrideKeys", location=location)
+    )
+    for key in allowed_override_keys:
+        if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ManifestError(
+                f"{location}.allowedOverrideKeys contains invalid key {key!r} (must match [A-Za-z][A-Za-z0-9_-]*)"
+            )
+    non_secret_keys = frozenset(_parse_optional_string_array(raw_profiles, "nonSecretKeys", location=location))
+    for key in non_secret_keys:
+        if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ManifestError(
+                f"{location}.nonSecretKeys contains invalid key {key!r} (must match [A-Za-z][A-Za-z0-9_-]*)"
+            )
+
+    declared_keys.update(allowed_override_keys)
+    return (
+        TestValueProfileSpec(
+            default_profile_id=default_profile_id,
+            profiles=profiles,
+            allowed_override_keys=allowed_override_keys,
+            non_secret_keys=non_secret_keys,
+        ),
+        frozenset(declared_keys),
+    )
+
+
+def _parse_test_value_profile_entry(
+    raw_entry: dict[str, JsonValue],
+    *,
+    index: int,
+    location: str,
+) -> TestValueProfileEntry:
+    """Parse one profile entry from ``testValueProfiles.profiles``.
+
+    Args:
+        raw_entry: Raw JSON object describing one named profile.
+        index: Zero-based position in the profile array.
+        location: Dot-path location prefix for the profiles array.
+
+    Returns:
+        Parsed immutable profile entry.
+
+    Raises:
+        ManifestError: If required fields are missing, a key name is invalid,
+            a declared value is not a string, or a generated key duplicates a
+            literal value key in the same profile.
+    """
+    entry_location = f"{location}[{index}]"
+    _reject_unknown_keys(
+        raw_entry,
+        allowed_keys={"id", "label", "values", "generatedKeys"},
+        location=entry_location,
+    )
+    profile_id = _required_string(raw_entry, "id", location=entry_location)
+    label = _required_string(raw_entry, "label", location=entry_location)
+    raw_values = _required_object(raw_entry, "values", location=entry_location)
+
+    values: dict[str, str] = {}
+    for key, value in raw_values.items():
+        if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ManifestError(f"{entry_location}.values key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)")
+        if not isinstance(value, str):
+            raise ManifestError(f"{entry_location}.values.{key} must be a string value")
+        values[key] = value
+
+    generated_keys: dict[str, GeneratedValueKind] = {}
+    raw_generated_keys = raw_entry.get("generatedKeys")
+    if raw_generated_keys is not None:
+        if not isinstance(raw_generated_keys, dict):
+            raise ManifestError(f"{entry_location}.generatedKeys must be a JSON object when present")
+        for key, value in raw_generated_keys.items():
+            if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+                raise ManifestError(
+                    f"{entry_location}.generatedKeys key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)"
+                )
+            if key in values:
+                raise ManifestError(f"{entry_location}.generatedKeys.{key} duplicates {entry_location}.values.{key}")
+            if value not in ("per-run-uuid", "per-run-compact-uuid"):
+                raise ManifestError(
+                    f"{entry_location}.generatedKeys.{key} must be 'per-run-uuid' or 'per-run-compact-uuid'"
+                )
+            generated_keys[key] = cast(GeneratedValueKind, value)
+
+    return TestValueProfileEntry(
+        id=profile_id,
+        label=label,
+        values=MappingProxyType(values),
+        generated_keys=MappingProxyType(generated_keys),
+    )
+
+
+def _parse_step_selection_metadata(
+    raw_step: dict[str, JsonValue],
+    *,
+    location: str,
+    allowed_test_value_keys: frozenset[str],
+) -> StepSelectionMetadata | None:
+    """Parse optional per-step ``selectionMetadata`` from a v1 manifest step.
+
+    Args:
+        raw_step: Raw JSON object for one manifest step.
+        location: Dot-path location string for the parent step.
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
+
+    Returns:
+        Parsed step selection metadata, or ``None`` when the step omits the
+        ``selectionMetadata`` section.
+
+    Raises:
+        ManifestError: If the section is not a JSON object, contains unknown
+            keys, or references undeclared test-value keys.
+    """
+    if "selectionMetadata" not in raw_step:
+        return None
+
+    selection_location = f"{location}.selectionMetadata"
+    raw_metadata = raw_step["selectionMetadata"]
+    if not isinstance(raw_metadata, dict):
+        raise ManifestError(f"{selection_location} must be a JSON object when present")
+    _reject_unknown_keys(
+        raw_metadata,
+        allowed_keys={"conditionId", "conditionLabel", "conditional", "requiredTestValueKeys"},
+        location=selection_location,
+    )
+
+    condition_id = _parse_optional_id_field(raw_metadata, key="conditionId", location=selection_location)
+    condition_label = _parse_optional_id_field(raw_metadata, key="conditionLabel", location=selection_location)
+
+    raw_conditional = raw_metadata.get("conditional", False)
+    if not isinstance(raw_conditional, bool):
+        raise ManifestError(f"{selection_location}.conditional must be a boolean when present")
+
+    required_test_value_keys: list[str] = []
+    if "requiredTestValueKeys" in raw_metadata:
+        raw_keys = raw_metadata["requiredTestValueKeys"]
+        if not isinstance(raw_keys, list):
+            raise ManifestError(f"{selection_location}.requiredTestValueKeys must be an array when present")
+        for index, raw_key in enumerate(raw_keys):
+            if not isinstance(raw_key, str) or not raw_key.strip():
+                raise ManifestError(f"{selection_location}.requiredTestValueKeys[{index}] must be a non-empty string")
+            key = raw_key.strip()
+            if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+                raise ManifestError(
+                    f"{selection_location}.requiredTestValueKeys[{index}] must match [A-Za-z][A-Za-z0-9_-]*"
+                )
+            if key not in allowed_test_value_keys:
+                raise ManifestError(
+                    f"{selection_location}.requiredTestValueKeys[{index}] references undeclared test-value key {key!r}"
+                )
+            required_test_value_keys.append(key)
+
+    return StepSelectionMetadata(
+        condition_id=condition_id,
+        condition_label=condition_label,
+        conditional=raw_conditional,
+        required_test_value_keys=tuple(required_test_value_keys),
+    )
 
 
 def _parse_auth_bundle_declaration(
@@ -1143,7 +1582,13 @@ def _parse_optional_string_array(
     return result
 
 
-def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> V1Step:
+def _parse_v1_step(
+    raw_step: dict[str, JsonValue],
+    *,
+    index: int,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> V1Step:
     """Parse a single step entry from the v1 manifest steps array.
 
     Dispatches on the optional ``kind`` discriminator (default ``"http"``)
@@ -1153,6 +1598,7 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
         raw_step: Raw JSON object representing one manifest step.
         index: Zero-based position in the steps array, used for error locations.
         seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Validated manifest step — either a :class:`ManifestStep` (kind
@@ -1166,26 +1612,41 @@ def _parse_v1_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[
     """
     location = f"steps[{index}]"
     if not isinstance(raw_step, dict):
-        # _required_object_array already enforces dict shape, but the
-        # narrow re-check keeps mypy happy when reading raw_step.get below.
         raise ManifestError(f"{location} must be a JSON object")
     kind_raw = raw_step.get("kind", "http")
     if not isinstance(kind_raw, str):
         raise ManifestError(f"{location}.kind must be a string when present")
     if kind_raw == "http":
-        return _parse_v1_http_step(raw_step, index=index, seen_ids=seen_ids)
+        return _parse_v1_http_step(
+            raw_step,
+            index=index,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
     if kind_raw == "psu-authorization":
-        return _parse_v1_psu_authorization_step(raw_step, index=index, seen_ids=seen_ids)
+        return _parse_v1_psu_authorization_step(
+            raw_step,
+            index=index,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
     raise ManifestError(f"{location}.kind must be one of: http, psu-authorization (got: {kind_raw!r})")
 
 
-def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]) -> ManifestStep:
+def _parse_v1_http_step(
+    raw_step: dict[str, JsonValue],
+    *,
+    index: int,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> ManifestStep:
     """Parse a plain HTTP v1 manifest step (``"kind": "http"`` or default).
 
     Args:
         raw_step: Raw JSON object representing one manifest step.
         index: Zero-based position in the steps array, used for error locations.
         seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Validated :class:`ManifestStep` with request and assertions.
@@ -1209,8 +1670,10 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
             "group",
             "phase",
             "tokenEndpointAuthPolicy",
+            "signingNegativeCase",
             "requiredTokenId",
             "producesTokenId",
+            "selectionMetadata",
         },
         location=location,
     )
@@ -1225,6 +1688,7 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         _required_object(raw_step, "request", location=location),
         location=f"{location}.request",
         seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
     )
     assertions = _required_object_array(raw_step, "assertions", location=location)
     warning = _parse_optional_warning(raw_step, location=location)
@@ -1232,11 +1696,23 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
     optional = _parse_optional_optional(raw_step, location=location)
     group = _parse_optional_group(raw_step, location=location)
     phase = _parse_optional_phase(raw_step, location=location)
+    selection_metadata = _parse_step_selection_metadata(
+        raw_step,
+        location=location,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
     token_endpoint_auth_policy = _parse_optional_token_endpoint_auth_policy(
         raw_step,
         request=request,
         location=location,
         seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
+    signing_negative_case = _parse_optional_signing_negative_case(
+        raw_step,
+        location=location,
+        step_kind="http",
+        request=request,
     )
     required_token_id = _parse_optional_token_id(raw_step, key="requiredTokenId", location=location, seen_ids=seen_ids)
     produces_token_id = _parse_optional_token_id(raw_step, key="producesTokenId", location=location, seen_ids=seen_ids)
@@ -1269,9 +1745,67 @@ def _parse_v1_http_step(raw_step: dict[str, JsonValue], *, index: int, seen_ids:
         group=group,
         phase=phase,
         token_endpoint_auth_policy=token_endpoint_auth_policy,
+        signing_negative_case=signing_negative_case,
         required_token_id=required_token_id,
         produces_token_id=produces_token_id,
+        selection_metadata=selection_metadata,
     )
+
+
+def _parse_optional_signing_negative_case(
+    raw_step: dict[str, JsonValue],
+    *,
+    location: str,
+    step_kind: V1StepKind,
+    request: ManifestRequest | None = None,
+    request_object: RequestObjectValue | None = None,
+) -> SigningNegativeCase | None:
+    """Parse the optional signing-negative selector on a v1 step.
+
+    Args:
+        raw_step: Raw JSON object for the current step.
+        location: Dot-path location string used in error messages.
+        step_kind: Declared v1 step kind currently being parsed.
+        request: Parsed HTTP request for ``http`` steps, if available.
+        request_object: Parsed PSU request object for ``psu-authorization``
+            steps, if available.
+
+    Returns:
+        Parsed negative-case selector, or ``None`` when the field is absent.
+
+    Raises:
+        ManifestError: If the field is not a non-empty string, is not one of
+            the accepted selectors, or is incompatible with the current step
+            kind or signing inputs.
+    """
+    if "signingNegativeCase" not in raw_step:
+        return None
+    raw_value = raw_step["signingNegativeCase"]
+    if not isinstance(raw_value, str) or not raw_value.strip():
+        raise ManifestError(f"{location}.signingNegativeCase must be a non-empty string when present")
+    value = raw_value.strip()
+    allowed_values = ("omit-detached-jws-header", "omit-request-object-signature-claim", "omit-jwt-claim")
+    if value not in allowed_values:
+        raise ManifestError(f"{location}.signingNegativeCase must be one of: {', '.join(allowed_values)}")
+    if value == "omit-detached-jws-header":
+        if step_kind != "http":
+            raise ManifestError(f"{location}.signingNegativeCase '{value}' is only valid on http steps")
+        if request is None or request.detached_jws is None:
+            raise ManifestError(f"{location}.signingNegativeCase '{value}' requires request.detachedJws")
+        return "omit-detached-jws-header"
+
+    if value == "omit-jwt-claim":
+        if step_kind != "http":
+            raise ManifestError(f"{location}.signingNegativeCase '{value}' is only valid on http steps")
+        if request is None or request.detached_jws is None:
+            raise ManifestError(f"{location}.signingNegativeCase '{value}' requires request.detachedJws")
+        return "omit-jwt-claim"
+
+    if step_kind != "psu-authorization":
+        raise ManifestError(f"{location}.signingNegativeCase '{value}' is only valid on psu-authorization steps")
+    if not isinstance(request_object, GeneratedRequestObject) or request_object.openbanking_intent_id is None:
+        raise ManifestError(f"{location}.signingNegativeCase '{value}' requires requestObject.openbankingIntentId")
+    return "omit-request-object-signature-claim"
 
 
 def _parse_optional_token_id(
@@ -1352,11 +1886,14 @@ _PSU_AUTH_ALLOWED_KEYS: set[str] = {
     "state",
     "nonce",
     "requestObject",
+    "signingNegativeCase",
     "timeoutSeconds",
+    "expectedAuthorizationResponse",
     "mandatory",
     "optional",
     "group",
     "phase",
+    "selectionMetadata",
 }
 """Permitted top-level keys on a ``psu-authorization`` v1 step.
 
@@ -1369,7 +1906,11 @@ apply to PSU steps and the executor would have nothing to do with them.
 
 
 def _parse_v1_psu_authorization_step(
-    raw_step: dict[str, JsonValue], *, index: int, seen_ids: set[str]
+    raw_step: dict[str, JsonValue],
+    *,
+    index: int,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> PsuAuthorizationStep:
     """Parse a v1 manifest step of ``"kind": "psu-authorization"``.
 
@@ -1377,6 +1918,7 @@ def _parse_v1_psu_authorization_step(
         raw_step: Raw JSON object representing one PSU authorisation step.
         index: Zero-based position in the steps array, used for error locations.
         seen_ids: Set of step ids already parsed (for duplicate/forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Validated :class:`PsuAuthorizationStep` ready for the executor's
@@ -1398,12 +1940,18 @@ def _parse_v1_psu_authorization_step(
     step_name = _required_string(raw_step, "name", location=location)
 
     mode = _parse_psu_mode(raw_step, location=location)
+    selection_metadata = _parse_step_selection_metadata(
+        raw_step,
+        location=location,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
 
     authorization_endpoint = _required_string(raw_step, "authorizationEndpoint", location=location)
     _validate_placeholder_syntax(
         authorization_endpoint,
         location=f"{location}.authorizationEndpoint",
         seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
     )
     if not _PLACEHOLDER_FIND_PATTERN.search(authorization_endpoint):
         try:
@@ -1412,11 +1960,21 @@ def _parse_v1_psu_authorization_step(
             raise ManifestError(str(error)) from error
 
     client_id = _required_string(raw_step, "clientId", location=location)
-    _validate_placeholder_syntax(client_id, location=f"{location}.clientId", seen_ids=seen_ids)
+    _validate_placeholder_syntax(
+        client_id,
+        location=f"{location}.clientId",
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
 
     redirect_uri = _required_string(raw_step, "redirectUri", location=location)
     if _PLACEHOLDER_FIND_PATTERN.search(redirect_uri):
-        _validate_placeholder_syntax(redirect_uri, location=f"{location}.redirectUri", seen_ids=seen_ids)
+        _validate_placeholder_syntax(
+            redirect_uri,
+            location=f"{location}.redirectUri",
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
         if redirect_uri != "${config.oauth.redirectUri}":
             raise ManifestError(
                 f"{location}.redirectUri may only use the config placeholder "
@@ -1437,10 +1995,39 @@ def _parse_v1_psu_authorization_step(
     if _PLACEHOLDER_FIND_PATTERN.search(scope):
         raise ManifestError(f"{location}.scope must not contain placeholders")
 
-    state = _parse_psu_optional_token(raw_step, key="state", location=location, seen_ids=seen_ids)
-    nonce = _parse_psu_optional_token(raw_step, key="nonce", location=location, seen_ids=seen_ids)
-    request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)
+    state = _parse_psu_optional_token(
+        raw_step,
+        key="state",
+        location=location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
+    nonce = _parse_psu_optional_token(
+        raw_step,
+        key="nonce",
+        location=location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
+    request_object = _parse_psu_optional_request_object(
+        raw_step,
+        location=location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
+    signing_negative_case = _parse_optional_signing_negative_case(
+        raw_step,
+        location=location,
+        step_kind="psu-authorization",
+        request_object=request_object,
+    )
     timeout_seconds = _parse_psu_timeout_seconds(raw_step, location=location)
+    expected_authorization_response = _parse_psu_expected_authorization_response(
+        raw_step,
+        location=location,
+        mode=mode,
+        seen_ids=seen_ids,
+    )
 
     mandatory = _parse_optional_mandatory(raw_step, location=location)
     optional = _parse_optional_optional(raw_step, location=location)
@@ -1461,11 +2048,14 @@ def _parse_v1_psu_authorization_step(
         state=state,
         nonce=nonce,
         request_object=request_object,
+        signing_negative_case=signing_negative_case,
         timeout_seconds=timeout_seconds,
+        expected_authorization_response=expected_authorization_response,
         mandatory=mandatory,
         optional=optional,
         group=group,
         phase=phase,
+        selection_metadata=selection_metadata,
     )
 
 
@@ -1514,7 +2104,12 @@ def _parse_psu_optional_string(raw_step: dict[str, JsonValue], *, key: str, defa
 
 
 def _parse_psu_optional_token(
-    raw_step: dict[str, JsonValue], *, key: str, location: str, seen_ids: set[str]
+    raw_step: dict[str, JsonValue],
+    *,
+    key: str,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> str | None:
     """Parse an optional ``state`` or ``nonce`` field on a PSU authorisation step.
 
@@ -1530,6 +2125,7 @@ def _parse_psu_optional_token(
         key: Field name to parse.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         The stripped token string, or ``None`` if the key was absent.
@@ -1546,7 +2142,12 @@ def _parse_psu_optional_token(
     if not isinstance(value, str) or not value.strip():
         raise ManifestError(f"{location}.{key} must be a non-empty string when present")
     token_value = value.strip()
-    _validate_placeholder_syntax(token_value, location=f"{location}.{key}", seen_ids=seen_ids)
+    _validate_placeholder_syntax(
+        token_value,
+        location=f"{location}.{key}",
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
     if not _PLACEHOLDER_FIND_PATTERN.search(token_value) and len(token_value) < _PSU_AUTH_MIN_STATE_LENGTH:
         raise ManifestError(
             f"{location}.{key} must be at least {_PSU_AUTH_MIN_STATE_LENGTH} characters "
@@ -1556,20 +2157,25 @@ def _parse_psu_optional_token(
 
 
 def _parse_psu_optional_request_object(
-    raw_step: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+    raw_step: dict[str, JsonValue],
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> RequestObjectValue | None:
     """Parse the optional ``requestObject`` field on a PSU authorisation step.
 
     Two backward-compatible shapes are accepted:
 
     * a legacy opaque JWT string, optionally containing placeholders, and
-        * a typed ``{"source": "fapi-signing"}`` directive that tells the
-            executor to generate a PS256 JAR request object at runtime.
+    * a typed ``{"source": "fapi-signing"}`` directive that tells the
+      executor to generate a PS256 JAR request object at runtime.
 
     Args:
         raw_step: Raw JSON object for the PSU step.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         The stripped JWT string, a typed generated-request-object directive,
@@ -1587,17 +2193,31 @@ def _parse_psu_optional_request_object(
         if not value.strip():
             raise ManifestError(f"{location}.requestObject must be a non-empty string when present")
         request_object = value.strip()
-        _validate_placeholder_syntax(request_object, location=f"{location}.requestObject", seen_ids=seen_ids)
+        _validate_placeholder_syntax(
+            request_object,
+            location=f"{location}.requestObject",
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
         return request_object
     if not isinstance(value, dict):
         raise ManifestError(
             f"{location}.requestObject must be either a non-empty string or a JSON object directive when present"
         )
-    return _parse_generated_request_object(value, location=f"{location}.requestObject", seen_ids=seen_ids)
+    return _parse_generated_request_object(
+        value,
+        location=f"{location}.requestObject",
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
 
 
 def _parse_generated_request_object(
-    raw_request_object: dict[str, JsonValue], *, location: str, seen_ids: set[str]
+    raw_request_object: dict[str, JsonValue],
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> GeneratedRequestObject:
     """Parse a typed runtime-generated PSU ``requestObject`` directive.
 
@@ -1605,6 +2225,7 @@ def _parse_generated_request_object(
         raw_request_object: Raw JSON object representing the directive.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for placeholder validation).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Parsed generated-request-object directive.
@@ -1627,7 +2248,12 @@ def _parse_generated_request_object(
         raise ManifestError(f"{location}.audience must be a non-empty string when present")
     audience = raw_audience.strip() if isinstance(raw_audience, str) else None
     if audience is not None:
-        _validate_placeholder_syntax(audience, location=f"{location}.audience", seen_ids=seen_ids)
+        _validate_placeholder_syntax(
+            audience,
+            location=f"{location}.audience",
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
     raw_openbanking_intent_id = raw_request_object.get("openbankingIntentId")
     if raw_openbanking_intent_id is not None and (
         not isinstance(raw_openbanking_intent_id, str) or not raw_openbanking_intent_id.strip()
@@ -1639,6 +2265,7 @@ def _parse_generated_request_object(
             openbanking_intent_id,
             location=f"{location}.openbankingIntentId",
             seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
         )
     return GeneratedRequestObject(
         source="fapi-signing",
@@ -1648,7 +2275,12 @@ def _parse_generated_request_object(
 
 
 def _parse_optional_token_endpoint_auth_policy(
-    raw_step: dict[str, JsonValue], *, request: ManifestRequest, location: str, seen_ids: set[str]
+    raw_step: dict[str, JsonValue],
+    *,
+    request: ManifestRequest,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> TokenEndpointAuthPolicy | None:
     """Parse the optional token-endpoint auth directive on an HTTP step.
 
@@ -1657,6 +2289,7 @@ def _parse_optional_token_endpoint_auth_policy(
         request: Parsed request for the HTTP step.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for placeholder validation).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Parsed token-endpoint auth policy, or ``None`` if absent.
@@ -1666,6 +2299,7 @@ def _parse_optional_token_endpoint_auth_policy(
             unknown keys, malformed placeholders, an unsupported source, or
             is used outside a POST form request.
     """
+    del allowed_test_value_keys
     if "tokenEndpointAuthPolicy" not in raw_step:
         return None
     raw_policy = raw_step["tokenEndpointAuthPolicy"]
@@ -1732,7 +2366,59 @@ def _parse_psu_timeout_seconds(raw_step: dict[str, JsonValue], *, location: str)
     return value
 
 
-def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:
+def _parse_psu_expected_authorization_response(
+    raw_step: dict[str, JsonValue],
+    *,
+    location: str,
+    mode: PsuAuthorizationMode,
+    seen_ids: set[str],
+) -> PsuExpectedAuthorizationResponse | None:
+    """Parse optional expected direct authorisation rejection metadata.
+
+    Args:
+        raw_step: Raw JSON object for the PSU step.
+        location: Dot-path location string used in error messages.
+        mode: Parsed PSU execution mode for this step.
+        seen_ids: Set of step ids already parsed (for placeholder validation).
+
+    Returns:
+        Parsed expected-response directive, or ``None`` when absent.
+
+    Raises:
+        ManifestError: If the field is present on non-headless PSU steps,
+            is not a JSON object, contains unknown keys, uses unsupported
+            response type, or declares a non-integer/non-rejection status.
+    """
+    if "expectedAuthorizationResponse" not in raw_step:
+        return None
+    if mode != "headless":
+        raise ManifestError(f"{location}.expectedAuthorizationResponse is only valid when mode is 'headless'")
+
+    field_location = f"{location}.expectedAuthorizationResponse"
+    raw_expected_response = raw_step["expectedAuthorizationResponse"]
+    if not isinstance(raw_expected_response, dict):
+        raise ManifestError(f"{field_location} must be a JSON object when present")
+    _reject_unknown_keys(raw_expected_response, allowed_keys={"type", "expected"}, location=field_location)
+    response_type = _required_string(raw_expected_response, "type", location=field_location)
+    _validate_constant_manifest_string(response_type, location=f"{field_location}.type", seen_ids=seen_ids)
+    if response_type != "http_status":
+        raise ManifestError(f"{field_location}.type must be 'http_status'")
+
+    expected = raw_expected_response.get("expected")
+    if not isinstance(expected, int) or isinstance(expected, bool):
+        raise ManifestError(f"{field_location}.expected must be a JSON integer")
+    if expected < 400 or expected > 599:
+        raise ManifestError(f"{field_location}.expected must be between 400 and 599 inclusive (got: {expected})")
+    return PsuExpectedAuthorizationResponse(type="http_status", expected=expected)
+
+
+def _parse_v1_request(
+    raw_request: dict[str, JsonValue],
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> ManifestRequest:
     """Parse and validate a v1 manifest step request object.
 
     Unlike the v0 parser, this allows ``${...}`` placeholders in the URL field,
@@ -1744,6 +2430,7 @@ def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_
             and optionally ``headers``, ``body``, and ``detachedJws``.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         Validated request with method, URL, optional headers, optional body,
@@ -1762,21 +2449,32 @@ def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_
     method = _required_v1_method(raw_request, location=location)
     url = _required_string(raw_request, "url", location=location)
 
-    _validate_placeholder_syntax(url, location=f"{location}.url", seen_ids=seen_ids)
+    _validate_placeholder_syntax(
+        url,
+        location=f"{location}.url",
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
 
-    # Only validate HTTPS if there are no placeholders (deferred otherwise)
     if not _PLACEHOLDER_FIND_PATTERN.search(url):
         try:
             validate_https_url(url, label=f"{location}.url")
         except HttpsUrlValidationError as error:
             raise ManifestError(str(error)) from error
 
-    # Parse optional headers
-    headers = _parse_v1_headers(raw_request, location=location, seen_ids=seen_ids)
-
-    # Parse optional body
-    body = _parse_v1_body(raw_request, method=method, location=location, seen_ids=seen_ids)
-
+    headers = _parse_v1_headers(
+        raw_request,
+        location=location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
+    body = _parse_v1_body(
+        raw_request,
+        method=method,
+        location=location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
     detached_jws = _parse_optional_detached_jws(raw_request, method=method, location=location, seen_ids=seen_ids)
 
     return ManifestRequest(method=method, url=url, headers=headers, body=body, detached_jws=detached_jws)
@@ -1821,7 +2519,13 @@ def _parse_optional_detached_jws(
     return DetachedJwsPolicy(source="fapi-signing")
 
 
-def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:
+def _validate_placeholder_syntax(
+    value: str,
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str] = frozenset(),
+) -> None:
     """Validate that all ``${...}`` tokens in a string are syntactically correct.
 
     Checks that each placeholder matches the canonical grammar and that any
@@ -1831,6 +2535,7 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
         value: String potentially containing ``${...}`` placeholders.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Raises:
         ManifestError: If a placeholder is malformed or references a forward step.
@@ -1844,6 +2549,20 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
             continue
         if _TOKEN_PLACEHOLDER_PATTERN.fullmatch(token) is not None:
             continue
+        test_values_match = _TEST_VALUES_PLACEHOLDER_PATTERN.fullmatch(token)
+        if test_values_match is not None:
+            key = test_values_match.group(1)
+            if key not in allowed_test_value_keys:
+                if allowed_test_value_keys:
+                    raise ManifestError(
+                        f"{location} contains undeclared testValues key: {token} "
+                        f"(declared keys: {', '.join(sorted(allowed_test_value_keys))})"
+                    )
+                raise ManifestError(
+                    f"{location} contains unsupported placeholder: {token} "
+                    "(no testValueProfiles declared in this manifest)"
+                )
+            continue
         valid_match = _STEP_PLACEHOLDER_PATTERN.fullmatch(token)
         if valid_match is None:
             if token.startswith("${config."):
@@ -1851,13 +2570,18 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
                     f"{location} contains unsupported config placeholder: {token} "
                     "(allowed: ${config.discoveryUrl}, ${config.environment}, "
                     "${config.oauth.clientId}, ${config.oauth.redirectUri}, "
-                    "${config.oauth.openBankingIntentId}, "
+                    "${config.oauth.authorizationEndpoint}, ${config.oauth.openBankingIntentId}, "
                     "${config.oauth.resourceBaseUrl})"
                 )
             if token.startswith("${tokens."):
                 raise ManifestError(
                     f"{location} contains unsupported token placeholder: {token} "
                     "(allowed: ${tokens.<tokenId>.access_token})"
+                )
+            if token.startswith("${testValues."):
+                raise ManifestError(
+                    f"{location} contains unsupported testValues placeholder: {token} "
+                    "(no testValueProfiles declared in this manifest)"
                 )
             raise ManifestError(f"{location} contains malformed placeholder: {token}")
         referenced_id = valid_match.group(1)
@@ -1887,7 +2611,13 @@ def _required_v1_method(raw_config: dict[str, JsonValue], *, location: str) -> R
     return cast(RequestMethod, method)
 
 
-def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> dict[str, str] | None:
+def _parse_v1_headers(
+    raw_request: dict[str, JsonValue],
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> dict[str, str] | None:
     """Parse and validate optional headers from a v1 step request.
 
     Header names must be RFC 7230 tokens. Header values must be non-empty
@@ -1897,6 +2627,7 @@ def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_
         raw_request: Raw request JSON object potentially containing ``headers``.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         A dict mapping header names to string values, or ``None`` if no
@@ -1920,13 +2651,23 @@ def _parse_v1_headers(raw_request: dict[str, JsonValue], *, location: str, seen_
         if not isinstance(value, str):
             raise ManifestError(f"{header_location} must be a string value")
         validate_header_value(value, location=header_location)
-        _validate_placeholder_syntax(value, location=header_location, seen_ids=seen_ids)
+        _validate_placeholder_syntax(
+            value,
+            location=header_location,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
         headers[name] = value
     return headers
 
 
 def _parse_v1_body(
-    raw_request: dict[str, JsonValue], *, method: RequestMethod, location: str, seen_ids: set[str]
+    raw_request: dict[str, JsonValue],
+    *,
+    method: RequestMethod,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
 ) -> ManifestBody | None:
     """Parse and validate the optional body from a v1 step request.
 
@@ -1954,6 +2695,7 @@ def _parse_v1_body(
         method: The parsed HTTP method (used to reject body on GET).
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         A ``JsonBody`` or ``FormBody``, or ``None`` if no body key is present.
@@ -1972,29 +2714,37 @@ def _parse_v1_body(
         raise ManifestError(f"{location}.body must not be null (omit the key to send no body)")
 
     body_location = f"{location}.body"
-
-    # Tagged shape: only triggered when body is a dict carrying an
-    # ``encoding`` key. Bare JSON objects without ``encoding`` remain
-    # JsonBody for back-compat with DL-0013 manifests.
     if isinstance(body, dict) and "encoding" in body:
-        return _parse_tagged_body(body, location=body_location, seen_ids=seen_ids)
+        return _parse_tagged_body(
+            body,
+            location=body_location,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
 
-    # Bare body: implicit JSON (DL-0013 behaviour preserved).
-    _validate_placeholders_in_structure(body, location=body_location, seen_ids=seen_ids)
-    # Deep-copy so the parsed ``ManifestRequest`` owns its body. Without this,
-    # the frozen dataclass would alias mutable JSON structures from the raw
-    # manifest dict, and any post-parse mutation of the input could bypass
-    # parse-time placeholder validation and change what the executor sends.
+    _validate_placeholders_in_structure(
+        body,
+        location=body_location,
+        seen_ids=seen_ids,
+        allowed_test_value_keys=allowed_test_value_keys,
+    )
     return JsonBody(value=copy.deepcopy(body))
 
 
-def _parse_tagged_body(body: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestBody:
+def _parse_tagged_body(
+    body: dict[str, JsonValue],
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> ManifestBody:
     """Parse a ``{"encoding": ..., ...}`` tagged body dict into a typed body.
 
     Args:
         body: The raw body dict, known to contain an ``encoding`` key.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Returns:
         A typed ``JsonBody`` or ``FormBody``.
@@ -2012,7 +2762,12 @@ def _parse_tagged_body(body: dict[str, JsonValue], *, location: str, seen_ids: s
         value = body["value"]
         if value is None:
             raise ManifestError(f"{location}.value must not be null (omit the body key to send no body)")
-        _validate_placeholders_in_structure(value, location=f"{location}.value", seen_ids=seen_ids)
+        _validate_placeholders_in_structure(
+            value,
+            location=f"{location}.value",
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
         return JsonBody(value=copy.deepcopy(value))
     if encoding == "form":
         _reject_unknown_keys(body, allowed_keys={"encoding", "fields"}, location=location)
@@ -2030,16 +2785,24 @@ def _parse_tagged_body(body: dict[str, JsonValue], *, location: str, seen_ids: s
                 raise ManifestError(f"{location}.fields contains an empty field name")
             if not isinstance(field_value, str):
                 raise ManifestError(f"{field_location} must be a string value")
-            _validate_placeholder_syntax(field_value, location=field_location, seen_ids=seen_ids)
+            _validate_placeholder_syntax(
+                field_value,
+                location=field_location,
+                seen_ids=seen_ids,
+                allowed_test_value_keys=allowed_test_value_keys,
+            )
             validated_fields[field_name] = field_value
-        # Freeze the parsed fields against post-parse mutation. The dict is
-        # built locally so deep-copy is unnecessary; MappingProxyType keeps
-        # the public Mapping read-only.
         return FormBody(fields=MappingProxyType(validated_fields))
     raise ManifestError(f"{location}.encoding must be one of: json, form (got: {encoding!r})")
 
 
-def _validate_placeholders_in_structure(value: JsonValue, *, location: str, seen_ids: set[str]) -> None:
+def _validate_placeholders_in_structure(
+    value: JsonValue,
+    *,
+    location: str,
+    seen_ids: set[str],
+    allowed_test_value_keys: frozenset[str],
+) -> None:
     """Recursively validate placeholders in all string leaves of a JSON structure.
 
     Walks dicts and lists depth-first, checking each string leaf for valid
@@ -2049,19 +2812,35 @@ def _validate_placeholders_in_structure(value: JsonValue, *, location: str, seen
         value: JSON value (possibly nested) to validate.
         location: Dot-path location string used in error messages.
         seen_ids: Set of step ids already parsed (for forward-ref detection).
+        allowed_test_value_keys: Test-value keys declared by the manifest root.
 
     Raises:
         ManifestError: If any string leaf contains malformed or forward-referencing
             placeholders.
     """
     if isinstance(value, str):
-        _validate_placeholder_syntax(value, location=location, seen_ids=seen_ids)
+        _validate_placeholder_syntax(
+            value,
+            location=location,
+            seen_ids=seen_ids,
+            allowed_test_value_keys=allowed_test_value_keys,
+        )
     elif isinstance(value, dict):
         for key, child in value.items():
-            _validate_placeholders_in_structure(child, location=f"{location}.{key}", seen_ids=seen_ids)
+            _validate_placeholders_in_structure(
+                child,
+                location=f"{location}.{key}",
+                seen_ids=seen_ids,
+                allowed_test_value_keys=allowed_test_value_keys,
+            )
     elif isinstance(value, list):
         for index, child in enumerate(value):
-            _validate_placeholders_in_structure(child, location=f"{location}[{index}]", seen_ids=seen_ids)
+            _validate_placeholders_in_structure(
+                child,
+                location=f"{location}[{index}]",
+                seen_ids=seen_ids,
+                allowed_test_value_keys=allowed_test_value_keys,
+            )
 
 
 def _parse_test(raw_test: dict[str, JsonValue], *, index: int) -> ManifestTest:
@@ -2218,10 +2997,79 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         return _parse_header_assertion(raw_assertion, location=location)
     if assertion_type == "response_schema":
         return _parse_response_schema_assertion(raw_assertion, location=location)
+    if assertion_type == "ob_error_code":
+        return _parse_ob_error_code_assertion(raw_assertion, location=location)
+    if assertion_type == "response_signature":
+        return _parse_response_signature_assertion(raw_assertion, location=location)
     # Defensive: _required_assertion_type already constrains assertion_type to the
     # AssertionType literal, but an explicit raise removes the implicit None
     # fall-through and guards against future literal additions.
     raise ManifestError(f"{location}.type has unexpected value: {assertion_type!r}")
+
+
+def _parse_ob_error_code_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> ObErrorCodeAssertion:
+    """Parse an ``ob_error_code`` assertion from a raw manifest assertion object.
+
+    Args:
+        raw_assertion: Raw JSON object for the assertion.
+        location: Dot-path location string for error messages.
+
+    Returns:
+        Parsed ``ObErrorCodeAssertion`` with the acceptable error-code set.
+
+    Raises:
+        ManifestError: If ``codes`` is absent, not a non-empty array, or contains
+            non-string items.
+    """
+    _reject_unknown_keys(raw_assertion, allowed_keys={"type", "codes"}, location=location)
+    if "codes" not in raw_assertion:
+        raise ManifestError(f"{location}.codes is required for ob_error_code assertions")
+    raw_codes = raw_assertion["codes"]
+    if not isinstance(raw_codes, list) or not raw_codes:
+        raise ManifestError(f"{location}.codes must be a non-empty array for ob_error_code assertions")
+    codes = []
+    for i, code in enumerate(raw_codes):
+        if not isinstance(code, str) or not code.strip():
+            raise ManifestError(f"{location}.codes[{i}] must be a non-empty string")
+        codes.append(code.strip())
+    return ObErrorCodeAssertion(type="ob_error_code", codes=tuple(codes))
+
+
+def _parse_response_signature_assertion(
+    raw_assertion: dict[str, JsonValue],
+    *,
+    location: str,
+) -> ResponseSignatureAssertion:
+    """Parse a response-signature assertion from a raw manifest object.
+
+    Args:
+        raw_assertion: Raw JSON object for the assertion.
+        location: Dot-path location string for error messages.
+
+    Returns:
+        Parsed response-signature assertion.
+
+    Raises:
+        ManifestError: If required fields are absent, malformed, or unsafe.
+    """
+    _reject_unknown_keys(raw_assertion, allowed_keys={"type", "jwksStepId", "headerName"}, location=location)
+    jwks_step_id = _required_string(raw_assertion, "jwksStepId", location=location)
+    if _PLACEHOLDER_FIND_PATTERN.search(jwks_step_id):
+        raise ManifestError(f"{location}.jwksStepId must not contain placeholders")
+    header_name = (
+        _required_string(raw_assertion, "headerName", location=location)
+        if "headerName" in raw_assertion
+        else "x-jws-signature"
+    )
+    if _PLACEHOLDER_FIND_PATTERN.search(header_name):
+        raise ManifestError(f"{location}.headerName must not contain placeholders")
+    if not _HEADER_NAME_PATTERN.fullmatch(header_name):
+        raise ManifestError(f"{location}.headerName is not a valid HTTP header name")
+    return ResponseSignatureAssertion(
+        type="response_signature",
+        jwks_step_id=jwks_step_id,
+        header_name=header_name,
+    )
 
 
 def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> JsonFieldAssertion:
@@ -2350,6 +3198,7 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
     "ob-read-write-v4.0-account-info-openapi",
+    "ob-read-write-v4.0-payment-initiation-openapi",
     "ob-read-write-v4.0.1-account-info-openapi",
 }
 """Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
@@ -2499,7 +3348,14 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         return "header"
     if assertion_type == "response_schema":
         return "response_schema"
-    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema")
+    if assertion_type == "ob_error_code":
+        return "ob_error_code"
+    if assertion_type == "response_signature":
+        return "response_signature"
+    raise ManifestError(
+        f"{location}.type must be one of: http_status, json_field, header, "
+        "response_schema, ob_error_code, response_signature"
+    )
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:

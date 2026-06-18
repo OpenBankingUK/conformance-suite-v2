@@ -13,9 +13,12 @@ from conformance.manifest import (
     HttpStatusAssertion,
     JsonFieldAssertion,
     ManifestAssertion,
+    ObErrorCodeAssertion,
     ResponseSchemaAssertion,
+    ResponseSignatureAssertion,
 )
 from conformance.schema_validation import validate_json_instance_against_response_schema
+from conformance.signing_service import DetachedJwsVerificationError, verify_ps256_detached_jws
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
@@ -39,6 +42,8 @@ def evaluate_assertion(
     headers: Mapping[str, str] | None = None,
     body: JsonObject,
     request_headers: Mapping[str, str] | None = None,
+    body_bytes: bytes | None = None,
+    response_signature_jwks: Mapping[str, JsonValue] | None = None,
 ) -> AssertionResult:
     """Evaluate a manifest assertion against an HTTP response.
 
@@ -50,6 +55,10 @@ def evaluate_assertion(
         request_headers: Resolved outbound HTTP request headers for the step.
             Only used by the ``matches_request_header`` header rule. When
             ``None``, that rule produces a failing result.
+        body_bytes: Exact response body bytes used by ``response_signature``
+            assertions. When ``None``, that rule produces a failing result.
+        response_signature_jwks: JWKS response bodies keyed by step id for
+            ``response_signature`` assertions.
 
     Returns:
         Assertion outcome and a concise diagnostic message.
@@ -60,6 +69,15 @@ def evaluate_assertion(
         return _evaluate_response_schema(assertion, body=body)
     if isinstance(assertion, HeaderAssertion):
         return _evaluate_header(assertion, headers=headers, request_headers=request_headers)
+    if isinstance(assertion, ObErrorCodeAssertion):
+        return _evaluate_ob_error_code_assertion(assertion, response_body=body, location="Response body")
+    if isinstance(assertion, ResponseSignatureAssertion):
+        return _evaluate_response_signature(
+            assertion,
+            headers=headers,
+            body_bytes=body_bytes,
+            response_signature_jwks=response_signature_jwks,
+        )
     return _evaluate_json_field(assertion, body=body)
 
 
@@ -119,6 +137,102 @@ def _evaluate_http_status(assertion: HttpStatusAssertion, *, status_code: int) -
     return AssertionResult(
         passed=False,
         message=f"Expected HTTP status {assertion.expected}, got {status_code}",
+    )
+
+
+def _evaluate_ob_error_code_assertion(
+    assertion: ObErrorCodeAssertion,
+    *,
+    response_body: JsonValue,
+    location: str,
+) -> AssertionResult:
+    """Evaluate an OB error-code assertion against a parsed response body.
+
+    Checks that at least one ``Errors[*].ErrorCode`` in the response body
+    matches one of the acceptable codes in the assertion. Implements the legacy
+    ``asserts_one_of`` OB error-code semantics for negative test cases.
+
+    Args:
+        assertion: Parsed ``ObErrorCodeAssertion`` with acceptable error codes.
+        response_body: Parsed JSON response body to evaluate.
+        location: Dot-path location string used in result messages.
+
+    Returns:
+        Passing ``AssertionResult`` if at least one ``Errors[*].ErrorCode`` matches
+        an acceptable code; failing result with diagnostic message otherwise.
+    """
+    if not isinstance(response_body, dict):
+        return AssertionResult(
+            passed=False,
+            message=f"{location}: ob_error_code assertion requires a JSON object response body",
+        )
+    errors = response_body.get("Errors")
+    if not isinstance(errors, list) or not errors:
+        return AssertionResult(
+            passed=False,
+            message=(
+                f"{location}: ob_error_code assertion requires Errors array in response; "
+                f"expected one of {list(assertion.codes)}"
+            ),
+        )
+    found_codes = [
+        item.get("ErrorCode") for item in errors if isinstance(item, dict) and isinstance(item.get("ErrorCode"), str)
+    ]
+    for found in found_codes:
+        if found in assertion.codes:
+            return AssertionResult(passed=True, message=f"{location}: found acceptable OB error code {found!r}")
+    return AssertionResult(
+        passed=False,
+        message=(
+            f"{location}: ob_error_code assertion failed; expected one of {list(assertion.codes)}, got {found_codes}"
+        ),
+    )
+
+
+def _evaluate_response_signature(
+    assertion: ResponseSignatureAssertion,
+    *,
+    headers: Mapping[str, str] | None,
+    body_bytes: bytes | None,
+    response_signature_jwks: Mapping[str, JsonValue] | None,
+) -> AssertionResult:
+    """Evaluate an ASPSP response detached-JWS signature assertion.
+
+    Args:
+        assertion: Parsed response-signature assertion.
+        headers: HTTP response headers containing the detached JWS.
+        body_bytes: Exact response body bytes covered by the detached JWS.
+        response_signature_jwks: JWKS bodies keyed by step id.
+
+    Returns:
+        Assertion result indicating whether the response signature verified.
+    """
+    if headers is None:
+        return AssertionResult(passed=False, message="Response signature assertion requires response headers")
+    signature = headers.get(assertion.header_name)
+    if signature is None or not signature.strip():
+        return AssertionResult(
+            passed=False,
+            message=f"Response signature assertion requires {assertion.header_name} header",
+        )
+    if body_bytes is None:
+        return AssertionResult(passed=False, message="Response signature assertion requires raw response body bytes")
+    if response_signature_jwks is None or assertion.jwks_step_id not in response_signature_jwks:
+        return AssertionResult(
+            passed=False,
+            message=f"Response signature assertion requires JWKS from step {assertion.jwks_step_id!r}",
+        )
+    try:
+        verify_ps256_detached_jws(
+            signature=signature,
+            payload=body_bytes,
+            jwks=response_signature_jwks[assertion.jwks_step_id],
+        )
+    except DetachedJwsVerificationError as error:
+        return AssertionResult(passed=False, message=f"Response signature verification failed: {error}")
+    return AssertionResult(
+        passed=True,
+        message=f"Response {assertion.header_name} signature verified using JWKS step {assertion.jwks_step_id!r}",
     )
 
 

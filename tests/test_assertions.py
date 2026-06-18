@@ -1,18 +1,50 @@
 from typing import cast
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
+from joserfc import jwk, jws
 
 from conformance.assertions import evaluate_assertion
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     HeaderAssertion,
     HttpStatusAssertion,
     JsonFieldAssertion,
     ManifestAssertion,
     ManifestStep,
+    ObErrorCodeAssertion,
     ResponseSchemaAssertion,
     parse_manifest,
 )
+
+
+def _signed_response_fixture(payload: bytes) -> tuple[str, dict[str, JsonValue]]:
+    """Build a detached response signature and matching JWKS fixture.
+
+    Args:
+        payload: Exact payload bytes to sign.
+
+    Returns:
+        Tuple of detached compact JWS and public JWKS body.
+    """
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    private_key_pem = private_key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    )
+    signing_key = jwk.import_key(private_key_pem, key_type="RSA")
+    public_jwk = cast(dict[str, JsonValue], signing_key.as_dict(is_private=False))
+    public_jwk["kid"] = "aspsp-signing-key"
+    protected = {
+        "alg": "PS256",
+        "kid": "aspsp-signing-key",
+        "typ": "JOSE",
+        "cty": "application/json",
+    }
+    compact_jws = jws.serialize_compact(protected, payload, signing_key, algorithms=["PS256"])
+    return jws.detach_content(compact_jws), {"keys": [public_jwk]}
 
 
 def parsed_assertion(raw_assertion: dict[str, JsonValue]) -> ManifestAssertion:
@@ -59,6 +91,88 @@ def test_evaluate_http_status_fails_when_status_differs() -> None:
 
     assert result.passed is False
     assert result.message == "Expected HTTP status 200, got 201"
+
+
+@pytest.mark.unit
+def test_evaluate_ob_error_code_assertion_passes_when_code_matches() -> None:
+    """ob_error_code should pass when the response includes any acceptable ErrorCode."""
+    result = evaluate_assertion(
+        ObErrorCodeAssertion(
+            type="ob_error_code",
+            codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+        ),
+        status_code=400,
+        body={"Errors": [{"ErrorCode": "UK.OBIE.Signature.Invalid"}]},
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_ob_error_code_assertion_fails_when_no_match() -> None:
+    """ob_error_code should fail when none of the response ErrorCode values match."""
+    result = evaluate_assertion(
+        ObErrorCodeAssertion(
+            type="ob_error_code",
+            codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+        ),
+        status_code=400,
+        body={"Errors": [{"ErrorCode": "UK.OBIE.SomeOtherCode"}]},
+    )
+
+    assert result.passed is False
+    assert "expected one of" in result.message
+    assert "UK.OBIE.Signature.Invalid" in result.message
+
+
+@pytest.mark.unit
+def test_evaluate_ob_error_code_assertion_fails_when_errors_absent() -> None:
+    """ob_error_code should fail when the response body has no Errors array."""
+    result = evaluate_assertion(
+        ObErrorCodeAssertion(
+            type="ob_error_code",
+            codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+        ),
+        status_code=400,
+        body={"Code": "400"},
+    )
+
+    assert result.passed is False
+
+
+@pytest.mark.unit
+def test_evaluate_ob_error_code_assertion_fails_on_non_object_body() -> None:
+    """ob_error_code should fail when the response body is not a JSON object."""
+    result = evaluate_assertion(
+        ObErrorCodeAssertion(
+            type="ob_error_code",
+            codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+        ),
+        status_code=400,
+        body=cast(JsonObject, "not a dict"),
+    )
+
+    assert result.passed is False
+
+
+@pytest.mark.unit
+def test_evaluate_ob_error_code_assertion_passes_on_second_matching_error() -> None:
+    """ob_error_code should pass when a later Errors item contains a matching code."""
+    result = evaluate_assertion(
+        ObErrorCodeAssertion(
+            type="ob_error_code",
+            codes=("UK.OBIE.Signature.Invalid", "UK.OBIE.Signature.Missing"),
+        ),
+        status_code=400,
+        body={
+            "Errors": [
+                {"ErrorCode": "UK.OBIE.Other"},
+                {"ErrorCode": "UK.OBIE.Signature.Missing"},
+            ]
+        },
+    )
+
+    assert result.passed is True
 
 
 @pytest.mark.unit
@@ -523,6 +637,86 @@ def test_evaluate_response_schema_passes_for_valid_bundled_openapi_payload() -> 
     assert result.message == (
         "Response body matches schema #/components/schemas/OBReadAccount6 from ob-read-write-v4.0-account-info-openapi"
     )
+
+
+@pytest.mark.unit
+def test_evaluate_response_signature_passes_for_valid_detached_jws() -> None:
+    """response_signature assertions verify the response body against JWKS."""
+    payload = b'{"Data":{"ConsentId":"consent-123"},"Risk":{}}'
+    signature, jwks_body = _signed_response_fixture(payload)
+    assertion = parsed_assertion({"type": "response_signature", "jwksStepId": "jwks-fetch"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=201,
+        headers={"x-jws-signature": signature},
+        body={"Data": {"ConsentId": "consent-123"}, "Risk": {}},
+        body_bytes=payload,
+        response_signature_jwks={"jwks-fetch": jwks_body},
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_response_signature_fails_when_payload_is_tampered() -> None:
+    """response_signature assertions fail when raw response bytes differ."""
+    payload = b'{"Data":{"ConsentId":"consent-123"},"Risk":{}}'
+    signature, jwks_body = _signed_response_fixture(payload)
+    assertion = parsed_assertion({"type": "response_signature", "jwksStepId": "jwks-fetch"})
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=201,
+        headers={"x-jws-signature": signature},
+        body={"Data": {"ConsentId": "consent-456"}, "Risk": {}},
+        body_bytes=b'{"Data":{"ConsentId":"consent-456"},"Risk":{}}',
+        response_signature_jwks={"jwks-fetch": jwks_body},
+    )
+
+    assert result.passed is False
+    assert "response x-jws-signature verification failed" in result.message
+
+
+@pytest.mark.unit
+def test_evaluate_response_schema_passes_for_v4_pis_payment_initiation_payload() -> None:
+    """Bundled v4 PIS schema assertions should validate representative consent responses."""
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": "ob-read-write-v4.0-payment-initiation-openapi",
+            "schemaRef": "#/components/schemas/OBWriteDomesticConsentResponse5",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=201,
+        body={
+            "Data": {
+                "ConsentId": "consent-123",
+                "CreationDateTime": "2026-06-17T15:00:00+00:00",
+                "Status": "AWAU",
+                "StatusUpdateDateTime": "2026-06-17T15:00:00+00:00",
+                "Initiation": {
+                    "InstructionIdentification": "instr-123",
+                    "EndToEndIdentification": "e2e-123",
+                    "InstructedAmount": {"Amount": "10.00", "Currency": "GBP"},
+                    "CreditorAccount": {
+                        "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "Identification": "12345612345678",
+                        "Name": "Receiver",
+                    },
+                },
+            },
+            "Risk": {},
+            "Links": {"Self": "https://api.example.com/open-banking/v4.0/pisp/domestic-payment-consents/consent-123"},
+            "Meta": {},
+        },
+    )
+
+    assert result.passed is True
 
 
 @pytest.mark.unit

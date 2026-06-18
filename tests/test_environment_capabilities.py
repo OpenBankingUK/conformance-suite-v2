@@ -23,7 +23,7 @@ def test_suite_capabilities_cover_all_bundled_catalog_rows() -> None:
     capabilities = list_suite_environment_capabilities()
     catalog_keys = {metadata.to_suite_selection() for metadata in list_supported_suites()}
 
-    assert len(capabilities) == 23
+    assert len(capabilities) == 25
     assert {(item.standard, item.spec_version, item.api, item.suite) for item in capabilities} == {
         (selection.standard, selection.spec_version, selection.api, selection.suite) for selection in catalog_keys
     }

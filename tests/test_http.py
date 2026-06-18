@@ -372,7 +372,11 @@ class TestSendJsonNoContentResponses:
 
         def handler(_request: httpx.Request) -> httpx.Response:
             """Return a 404 with an HTML body (typical reverse-proxy error page)."""
-            return httpx.Response(404, text="<html>Not Found</html>")
+            return httpx.Response(
+                404,
+                headers={"content-type": "text/html; charset=utf-8"},
+                text="<html>Not Found</html>",
+            )
 
         with (
             httpx.Client(transport=httpx.MockTransport(handler)) as client,
@@ -381,6 +385,31 @@ class TestSendJsonNoContentResponses:
             send_json(client, "GET", "https://example.com/missing")
 
         assert excinfo.value.status_code == 404
+        assert excinfo.value.content_type == "text/html; charset=utf-8"
+        assert excinfo.value.body_snippet is None
+        assert "status 404" in str(excinfo.value)
+        assert "content-type text/html; charset=utf-8" in str(excinfo.value)
+
+    def test_form_encoded_non_json_body_masks_sensitive_preview(self) -> None:
+        """Form-encoded non-JSON errors expose a masked diagnostic body snippet."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Return a non-JSON form body carrying sensitive fields."""
+            return httpx.Response(
+                400,
+                headers={"content-type": "application/x-www-form-urlencoded"},
+                text="error=invalid_client&client_assertion=jwt-token&access_token=raw-token",
+            )
+
+        with (
+            httpx.Client(transport=httpx.MockTransport(handler)) as client,
+            pytest.raises(JsonHttpClientError, match="was not valid JSON") as excinfo,
+        ):
+            send_json(client, "POST", "https://example.com/token")
+
+        assert excinfo.value.status_code == 400
+        assert excinfo.value.content_type == "application/x-www-form-urlencoded"
+        assert excinfo.value.body_snippet == "error=invalid_client&client_assertion=***&access_token=***"
 
     def test_non_object_json_body_preserves_status_code_on_error(self) -> None:
         """A JSON array 4xx body must still expose the HTTP status on the raised error."""
