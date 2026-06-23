@@ -1,5 +1,5 @@
 schemaVersion: 1
-updated: "2026-06-12"
+updated: "2026-06-19"
 statusValues:
   - proposed
   - planned
@@ -32,8 +32,8 @@ epics:
     status: planned
     outcome: Let participants build config and select tests visually with minimal raw JSON editing.
   - id: EPIC-CUSTOM
-    title: Custom test values and certification profiles
-    status: proposed
+    title: Custom test values and certification gates
+    status: implemented
     outcome: Allow exploratory custom values without weakening certification integrity.
   - id: EPIC-AUTH
     title: Multi-auth and auth-method selection
@@ -193,32 +193,36 @@ requirements:
       - PYTEST_ARGS='tests/test_plan_builder.py tests/test_ui_views.py' make test
   - id: REQ-CUSTOM-001
     epic: EPIC-CUSTOM
-    title: Define certification and exploratory test-data profiles
-    status: proposed
-    blockedBy:
-      - OPEN-003
+    title: Define baseline, participant, and compiled test-data layers
+    status: implemented
     affectedSurfaces:
+      - conformance/run_plan.py
       - conformance/manifest.py
+      - conformance/test_plan.py
       - conformance/results.py
-      - conformance/execution_log.py
       - conformance/api/plan_builder.py
+      - conformance/certification_validator.py
     acceptanceCriteria:
-      - Certification profile enforces OBL defaults.
-      - Exploratory profile permits participant overrides.
-      - Unapproved overrides block certification eligibility or follow an approved override policy.
+      - Suite manifests define `testValues.baseline`, `generatedKeys`, and `allowedCustomKeys`.
+      - Participant inputs provide `testData.values` deltas.
+      - Compiled `RunConfiguration` normalises same-as-baseline values away and blocks launch when required keys are missing.
+      - Baseline deltas block certification eligibility unless an approved policy explicitly allows the value class.
     validation:
       - Focused manifest/results/API tests after design is accepted.
   - id: REQ-CUSTOM-002
     epic: EPIC-CUSTOM
     title: Audit custom test-value deviations
-    status: proposed
+    status: implemented
     affectedSurfaces:
+      - conformance/run_plan.py
       - conformance/results.py
       - conformance/execution_log.py
-      - conformance/masking.py
-      - conformance/api/templates
+      - conformance/api/plan_builder.py
+      - conformance/certification_validator.py
+      - conformance/manifest.py
+      - conformance/test_plan.py
     acceptanceCriteria:
-      - Result JSON and logs record affected step/requirement, default profile reference, override source, masked value evidence, and certification impact.
+      - Result JSON and logs record affected step/requirement, baseline-delta keys, participant source, masked value evidence, and certification impact.
       - Sensitive override values remain masked in all persisted and downloadable artefacts.
     validation:
       - Focused masking/result/log tests after schema is designed.

@@ -24,6 +24,9 @@
                         <summary class="result-step-summary">
                             <strong class="result-step-title">{{ step.name }}</strong>
                             <span class="status-badge {{ step.status|default:"unknown" }}">{{ step.status|default:"-" }}</span>
+                            {% if step.custom_test_value_impact_count %}
+                                <span class="status-badge warn">{{ step.custom_test_value_impact_count }} custom value reference(s)</span>
+                            {% endif %}
                             <span class="muted result-step-summary-meta">{{ step.phase|default:"-" }} / {{ step.group|default:"-" }}</span>
                             {% if step.message %}
                                 <span class="muted result-step-summary-message">{{ step.message }}</span>
@@ -59,6 +62,63 @@
                                 <p><strong>Response status:</strong> {{ step.response_status_code }}</p>
                             {% endif %}
                         </div>
+
+                        {% if step.custom_test_value_impact_values %}
+                            <div class="custom-values-warning">
+                                <p><strong>Custom values used by this step</strong></p>
+                                <table class="custom-values-table">
+                                    <thead>
+                                        <tr>
+                                            <th>Key</th>
+                                            <th>Used value</th>
+                                            <th>Baseline value</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {% for entry in step.custom_test_value_impact_values %}
+                                            <tr>
+                                                <td><code>{{ entry.key }}</code></td>
+                                                <td>
+                                                    <code>{{ entry.used_value_display.preview|default:entry.used_value|default:"-" }}</code>
+                                                    {% if entry.used_value_display.full_value %}<span class="muted"><br>Full {{ entry.used_value_display.full_value }}</span>{% endif %}
+                                                </td>
+                                                <td>
+                                                    {% if entry.baseline_value or entry.baseline_value_display %}
+                                                        <code>{{ entry.baseline_value_display.preview|default:entry.baseline_value|default:"-" }}</code>
+                                                        {% if entry.baseline_value_display.full_value %}<span class="muted"><br>Full {{ entry.baseline_value_display.full_value }}</span>{% endif %}
+                                                    {% else %}
+                                                        -
+                                                    {% endif %}
+                                                </td>
+                                            </tr>
+                                        {% endfor %}
+                                    </tbody>
+                                </table>
+                                {% for entry in step.custom_test_value_impact_values %}
+                                    {% if entry.surface_groups %}
+                                        <details>
+                                            <summary><code>{{ entry.key }}</code> request paths</summary>
+                                            {% for surface in entry.surface_groups %}
+                                                <details{% if surface.request_area == "request-json-body" %} open{% endif %}>
+                                                    <summary><strong>{{ surface.label }}</strong></summary>
+                                                    <ul>
+                                                        {% for row in surface.rows %}
+                                                            <li style="margin-left: {{ row.depth|default:0 }}em;">
+                                                                {% if row.row_type == "group" %}
+                                                                    <strong>{{ row.label }}</strong>
+                                                                {% else %}
+                                                                    <code>{{ row.label }}</code>
+                                                                {% endif %}
+                                                            </li>
+                                                        {% endfor %}
+                                                    </ul>
+                                                </details>
+                                            {% endfor %}
+                                        </details>
+                                    {% endif %}
+                                {% endfor %}
+                            </div>
+                        {% endif %}
 
                         {% if step.awaiting_authorisation %}
                             <p class="muted"><strong>Awaiting authorisation:</strong> Waiting for PSU callback to continue this step.</p>

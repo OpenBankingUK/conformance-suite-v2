@@ -570,6 +570,39 @@ class TestPlanBuilderUi:
         # JavaScript uses node-local targeting for robustness
         assert "closest('[data-plan-tree-node]')" in content
 
+    def test_preview_post_test_value_test_cases_are_the_only_nested_collapsible_boxes(self) -> None:
+        """Test Values renders static surfaces inside closed test case boxes."""
+        step = _http_step("payment-consent", mandatory=True)
+        step["request"] = {
+            "method": "POST",
+            "url": "https://example.com/payments",
+            "body": {
+                "encoding": "json",
+                "value": {"Data": {"Initiation": {"Amount": "${testValues.amount}"}}},
+            },
+        }
+        manifest = _v1_manifest([step])
+        manifest["testValues"] = {
+            "baseline": {"amount": "1.00"},
+            "allowedCustomKeys": ["amount"],
+        }
+
+        response = Client().post(
+            "/plan/preview/",
+            data=_plan_form_data(manifest, selected_step_ids=["payment-consent"]),
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert '<h3 id="test-values-heading">Test Values</h3>' in content
+        assert "tv-section-collapsible" not in content
+        assert '<details class="tv-step">' in content
+        assert not re.search(r'<details class="tv-step"\s+open', content)
+        assert '<details class="tv-surface"' not in content
+        assert '<div class="tv-surface">' in content
+        assert '<div class="tv-surface-heading">Body</div>' in content
+        assert "Amount" in content
+
     @pytest.mark.parametrize(
         ("selected_step_ids", "expected_checked_ids", "expected_mandatory_off_count", "expected_eligible_message"),
         [
@@ -754,7 +787,49 @@ class TestPlanBuilderUi:
         assert mock_start_run.call_count == 1
         plan = mock_start_run.call_args.kwargs["plan"]
         assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert mock_start_run.call_args.kwargs["launch_test_data_values"] == {}
         assert plan.selected_step_ids() == ["mandatory"]
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_launch_post_passes_preview_test_data_values_to_lifecycle(self, mock_start_run: Mock) -> None:
+        """Launch forwards preview-normalised ``testData.values`` to ``start_run``."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        manifest = _v1_manifest(
+            [
+                {
+                    "id": "step-1",
+                    "name": "Step 1",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments",
+                        "body": {
+                            "encoding": "json",
+                            "value": {"creditor": "${testValues.creditorName}"},
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ]
+        )
+        manifest["testValues"] = cast(
+            "JsonValue",
+            {
+                "baseline": {"creditorName": "Baseline Creditor"},
+                "allowedCustomKeys": ["creditorName"],
+            },
+        )
+        form_data = _plan_form_data(manifest, selected_step_ids=["step-1"])
+        form_data["custom_tv_creditorName"] = "Custom Creditor"
+        form_data["exploratory_ack"] = "on"
+
+        response = Client().post("/plan/launch/", data=form_data)
+
+        assert response.status_code == 302
+        assert response["Location"] == "/runs/run-123/"
+        assert mock_start_run.call_count == 1
+        assert mock_start_run.call_args.kwargs["launch_test_data_values"] == {
+            "creditorName": "Custom Creditor",
+        }
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_config_resolved_suite(self, mock_start_run: Mock) -> None:
@@ -1695,6 +1770,8 @@ class TestRunDetailUi:
         assert f"/runs/{record.run_id}/steps/" in content
         assert 'data-step-id="discovery"' in content
         assert "sessionStorage.setItem(STEP_STATE_STORAGE_KEY" in content
+        assert 'const terminalStatuses = new Set(["completed", "failed"]);' in content
+        assert "sessionStorage.removeItem(STEP_STATE_STORAGE_KEY)" in content
         assert 'window.addEventListener("pagehide", captureStepStates)' in content
 
     def test_run_detail_includes_local_datetime_rendering_hooks(self) -> None:
@@ -1706,10 +1783,11 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         _assert_time_elements_use_local_datetime_contract(content)
-        assert "function createLocalDateTimeFormatter()" in content
+        assert "function localTimeZoneShortName(date)" in content
+        assert "function formatLocalDatetime(date)" in content
+        assert "pad2(date.getDate())" in content
+        assert "dd/mm" not in content.lower()
         assert 'timeZoneName: "short"' in content
-        assert "date.toLocaleString()" in content
-        assert "date.toISOString()" in content
         assert 'node.setAttribute("data-local-datetime-rendered", "true");' in content
         assert "function runStartupTask(task)" in content
         assert "runStartupTask(() => renderLocalDatetimes(document));" in content
@@ -1727,7 +1805,7 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "Created" in content
-        assert "2026-06-11 10:00:37 BST" in content
+        assert "11/06/2026 10:00:37 BST" in content
         _assert_time_elements_use_local_datetime_contract(content)
 
     def test_run_detail_does_not_refresh_terminal_runs(self) -> None:
@@ -1969,7 +2047,7 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "Started" in content
-        assert "2026-06-11 10:00:37 BST" in content
+        assert "11/06/2026 10:00:37 BST" in content
         _assert_time_elements_use_local_datetime_contract(content)
 
     def test_steps_partial_returns_404_for_unknown_run(self) -> None:
@@ -2292,7 +2370,191 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "ineligible: 1 mandatory step(s) failed" in content
 
-    def test_steps_partial_renders_completed_result_details_and_context(self) -> None:
+    def test_result_partial_renders_custom_test_value_impact_panel(self) -> None:
+        """Result partial renders persisted custom-test-value impact evidence."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0},
+                "customTestValueImpact": {
+                    "profileId": "ozone-demo",
+                    "source": "overridden",
+                    "overrideKeys": ["remittanceInformation"],
+                    "overriddenValues": {
+                        "remittanceInformation": {
+                            "defaultValue": "***",
+                            "defaultValueDisplay": {
+                                "preview": "base…info (len=20)",
+                                "sha256": "sha256:base",
+                            },
+                            "customValue": "***",
+                            "customValueDisplay": {
+                                "preview": "cust…info (len=18)",
+                                "sha256": "sha256:used",
+                            },
+                            "effectiveValue": "***",
+                            "effectiveValueDisplay": {
+                                "preview": "cust…info (len=18)",
+                                "sha256": "sha256:used",
+                            },
+                        }
+                    },
+                    "summary": {
+                        "overrideKeyCount": 1,
+                        "executedReferenceCount": 1,
+                        "referencedButNotRunCount": 1,
+                        "executedStepCount": 1,
+                        "referencedButNotRunStepCount": 1,
+                    },
+                    "executedReferences": [
+                        {
+                            "stepId": "mandatory-positive",
+                            "key": "remittanceInformation",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.Data.RemittanceInformation.Unstructured[0]",
+                            "status": "passed",
+                        }
+                    ],
+                    "referencedButNotRun": [
+                        {
+                            "stepId": "optional-negative",
+                            "key": "remittanceInformation",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.note",
+                            "notRunReason": "deselected",
+                        }
+                    ],
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Test Data Customisation" in content
+        assert "Custom values used in this run" in content
+        assert "Hash sha256:" not in content
+        assert 'class="custom-values-warning"' in content
+        assert "Referenced but not run" in content
+        assert "optional-negative" in content
+        assert "request.body.note" in content
+        # Legacy labels must not appear
+        assert "Override keys" not in content
+        assert "Profile" not in content
+
+    def test_result_partial_renders_baseline_delta_impact_panel(self) -> None:
+        """Result partial renders Test Data Customisation with new baseline-delta impact shape."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0},
+                "customTestValueImpact": {
+                    "source": "custom",
+                    "baselineDeltaKeys": ["remittanceInformation"],
+                    "valueDetails": [
+                        {
+                            "key": "remittanceInformation",
+                            "usedValue": "***",
+                            "usedValueDisplay": {
+                                "preview": "cust…info (len=18)",
+                                "sha256": "sha256:used",
+                            },
+                            "baselineValue": "***",
+                            "baselineValueDisplay": {
+                                "preview": "base…info (len=20)",
+                                "sha256": "sha256:base",
+                            },
+                            "executedReferences": [
+                                {
+                                    "stepId": "consent-1",
+                                    "requestArea": "request-json-body",
+                                    "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+                                }
+                            ],
+                        }
+                    ],
+                    "summary": {
+                        "baselineDeltaKeyCount": 1,
+                        "executedReferenceCount": 2,
+                        "referencedButNotRunCount": 0,
+                        "executedStepCount": 2,
+                        "referencedButNotRunStepCount": 0,
+                    },
+                    "executedReferences": [
+                        {
+                            "stepId": "consent-1",
+                            "key": "remittanceInformation",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+                            "status": "passed",
+                        },
+                        {
+                            "stepId": "consent-1",
+                            "key": "remittanceInformation",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+                            "status": "passed",
+                        },
+                    ],
+                    "referencedButNotRun": [],
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Test Data Customisation" in content
+        assert "Custom value keys" in content
+        assert "Exploratory run" in content
+        assert "Custom values used in this run" in content
+        assert "Hash sha256:" not in content
+        assert "request paths" in content
+        assert "CreditorAccount" in content
+        # Legacy labels must not appear
+        assert "Override keys" not in content
+        assert "Profile" not in content
+
+    def test_result_partial_baseline_run_shows_baseline_values_label(self) -> None:
+        """Result partial shows 'Baseline values' run type when source is 'baseline' or 'default'."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0},
+                "customTestValueImpact": {
+                    "profileId": "ozone-demo",
+                    "source": "default",
+                    "overrideKeys": ["remittanceInformation"],
+                    "summary": {
+                        "overrideKeyCount": 1,
+                        "executedReferenceCount": 1,
+                        "referencedButNotRunCount": 0,
+                        "executedStepCount": 1,
+                        "referencedButNotRunStepCount": 0,
+                    },
+                    "referencedButNotRun": [],
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Test Data Customisation" in content
+        assert "Baseline values" in content
+
         """Completed steps partial renders final per-step details and unified context."""
         record = run_store.create_run(
             planned_steps=(
@@ -2345,6 +2607,79 @@ class TestRunDetailUi:
             result={
                 "status": "failed",
                 "summary": {"total": 2, "passed": 1, "failed": 1, "warn": 0, "skipped": 0},
+                "customTestValueImpact": {
+                    "profileId": "ozone-demo",
+                    "source": "overridden",
+                    "overrideKeys": ["creditorName", "remittanceInformation"],
+                    "valueDetails": [
+                        {
+                            "key": "creditorName",
+                            "usedValue": "Alice",
+                            "usedValueDisplay": {
+                                "preview": "Alic…lice (len=5)",
+                                "sha256": "sha256:alice",
+                            },
+                            "baselineValue": "Bob",
+                            "baselineValueDisplay": {
+                                "preview": "Bob (len=3)",
+                                "sha256": "sha256:bob",
+                            },
+                            "executedReferences": [
+                                {
+                                    "stepId": "discovery",
+                                    "requestArea": "request-json-body",
+                                    "fieldPath": "request.body.Data.Creditor.Name",
+                                }
+                            ],
+                        },
+                        {
+                            "key": "remittanceInformation",
+                            "usedValue": "***",
+                            "usedValueDisplay": {
+                                "preview": "cust…info (len=18)",
+                                "sha256": "sha256:used",
+                            },
+                            "baselineValue": "***",
+                            "baselineValueDisplay": {
+                                "preview": "base…info (len=20)",
+                                "sha256": "sha256:base",
+                            },
+                            "executedReferences": [
+                                {
+                                    "stepId": "token-request",
+                                    "requestArea": "request-json-body",
+                                    "fieldPath": "request.body.remittanceInformation",
+                                }
+                            ],
+                        },
+                    ],
+                    "summary": {
+                        "overrideKeyCount": 2,
+                        "executedReferenceCount": 2,
+                        "referencedButNotRunCount": 0,
+                        "executedStepCount": 2,
+                        "referencedButNotRunStepCount": 0,
+                    },
+                    "executedReferences": [
+                        {
+                            "stepId": "discovery",
+                            "stepName": "Discovery",
+                            "status": "passed",
+                            "key": "creditorName",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.Data.Creditor.Name",
+                        },
+                        {
+                            "stepId": "token-request",
+                            "stepName": "Token request",
+                            "status": "failed",
+                            "key": "remittanceInformation",
+                            "requestArea": "request-json-body",
+                            "fieldPath": "request.body.remittanceInformation",
+                        },
+                    ],
+                    "referencedButNotRun": [],
+                },
                 "steps": [
                     {
                         "name": "discovery",
@@ -2414,6 +2749,12 @@ class TestRunDetailUi:
         assert "Request evidence" in content
         assert "Response evidence" in content
         assert "Raw details" in content
+        assert "1 custom value reference(s)" in content
+        assert "Custom values used by this step" in content
+        assert "Hash sha256:" not in content
+        assert 'class="custom-values-warning"' in content
+        assert "Body" in content
+        assert "remittanceInformation" in content
         assert "&lt;script&gt;alert(1)&lt;/script&gt;" in content
         assert "<script>alert(1)</script>" not in content
         assert 'data-copy-target="step-1-result-request-json"' in content
@@ -2454,10 +2795,26 @@ class TestRunDetailUi:
             == cast("str", passed_step["response_json"]).splitlines()[:9]
         )
         assert passed_step["remaining_details_json_preview"] is None
+        assert passed_step["custom_test_value_impact_count"] == 1
+        passed_value_entries = cast("list[dict[str, object]]", passed_step["custom_test_value_impact_values"])
+        assert len(passed_value_entries) == 1
+        assert passed_value_entries[0]["key"] == "creditorName"
 
         failed_step = context_steps[1]
         assert failed_step["name"] == "Token request"
         assert failed_step["status"] == "failed"
+        assert failed_step["custom_test_value_impact_count"] == 1
+        assert cast("list[dict[str, str]]", failed_step["custom_test_value_impact_references"]) == [
+            {
+                "key": "remittanceInformation",
+                "request_area": "request-json-body",
+                "field_path": "request.body.remittanceInformation",
+                "status": "failed",
+            }
+        ]
+        value_entries = cast("list[dict[str, object]]", failed_step["custom_test_value_impact_values"])
+        assert len(value_entries) == 1
+        assert value_entries[0]["key"] == "remittanceInformation"
         issues = cast("list[dict[str, str]]", failed_step["issues"])
         assert issues == [
             {"status": "failed", "message": "Expected 200 got 400"},

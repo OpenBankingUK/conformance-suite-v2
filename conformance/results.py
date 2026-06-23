@@ -44,6 +44,10 @@ class StepResult:
             Used by the aggregate ``certificationEligibility`` block; not
             serialised on the individual step entry to keep the per-step
             shape stable.
+        consumed_test_value_keys: Ordered test-value key names referenced by
+            this step via ``${testValues.<key>}`` placeholders.
+        customised_test_value_keys: Ordered subset of
+            ``consumed_test_value_keys`` overridden by participant inputs.
     """
 
     name: str
@@ -53,6 +57,8 @@ class StepResult:
     status_code: int | None = None
     details: Mapping[str, JsonValue] = field(default_factory=dict)
     mandatory: bool = False
+    consumed_test_value_keys: tuple[str, ...] = ()
+    customised_test_value_keys: tuple[str, ...] = ()
 
     def __post_init__(self) -> None:
         """Freeze nested details so result objects stay immutable after creation."""
@@ -73,8 +79,13 @@ class StepResult:
             result["url"] = self.url
         if self.status_code is not None:
             result["statusCode"] = self.status_code
-        if self.details:
-            result["details"] = deepcopy(dict(self.details))
+        details: JsonObject = deepcopy(dict(self.details))
+        if self.consumed_test_value_keys:
+            details["consumedTestValueKeys"] = list(self.consumed_test_value_keys)
+        if self.customised_test_value_keys:
+            details["customisedTestValueKeys"] = list(self.customised_test_value_keys)
+        if details:
+            result["details"] = details
         return result
 
 
@@ -119,6 +130,12 @@ class SmokeCheckResult:
         test_value_profile_evidence: Optional non-secret test-value profile
             evidence describing resolved profile source, conditional outcomes,
             and masked effective values.
+        custom_test_values_active: Whether this run used a non-default profile
+            and/or participant custom-value overrides. ``True`` marks the run as
+            exploratory and blocks certification eligibility.
+        custom_test_value_impact: Optional persisted impact-evidence block that
+            maps participant override keys to executed and non-executed manifest
+            field references.
     """
 
     environment: str
@@ -134,6 +151,8 @@ class SmokeCheckResult:
     auth_metadata_evidence: Mapping[str, JsonValue] | None = None
     environment_capability_evidence: Mapping[str, JsonValue] | None = None
     test_value_profile_evidence: Mapping[str, JsonValue] | None = None
+    custom_test_values_active: bool = False
+    custom_test_value_impact: Mapping[str, JsonValue] | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -158,6 +177,8 @@ class SmokeCheckResult:
             },
             "certificationEligibility": _build_eligibility(
                 self.steps,
+                custom_test_values_active=self.custom_test_values_active,
+                test_value_profile_evidence=self.test_value_profile_evidence,
                 deselected_mandatory_step_ids=self.deselected_mandatory_step_ids,
                 approved_release_policy=self.approved_release_policy,
                 tool_version=tool_version,
@@ -175,6 +196,8 @@ class SmokeCheckResult:
             body["environmentCapabilities"] = deepcopy(dict(self.environment_capability_evidence))
         if self.test_value_profile_evidence is not None:
             body["testValueProfile"] = deepcopy(dict(self.test_value_profile_evidence))
+        if self.custom_test_value_impact is not None:
+            body["customTestValueImpact"] = deepcopy(dict(self.custom_test_value_impact))
         return body
 
 
@@ -190,6 +213,8 @@ def build_smoke_check_result(
     auth_metadata_evidence: Mapping[str, JsonValue] | None = None,
     environment_capability_evidence: Mapping[str, JsonValue] | None = None,
     test_value_profile_evidence: Mapping[str, JsonValue] | None = None,
+    custom_test_values_active: bool = False,
+    custom_test_value_impact: Mapping[str, JsonValue] | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -223,6 +248,11 @@ def build_smoke_check_result(
         test_value_profile_evidence: Optional non-secret test-value profile
             evidence describing default/override selection outcomes and masked
             effective values used by this run.
+        custom_test_values_active: Whether this run used a non-default profile
+            and/or participant custom-value overrides.
+        custom_test_value_impact: Optional persisted impact-evidence block that
+            maps participant override keys to executed and non-executed manifest
+            field references.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -252,12 +282,16 @@ def build_smoke_check_result(
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
         test_value_profile_evidence=test_value_profile_evidence,
+        custom_test_values_active=custom_test_values_active,
+        custom_test_value_impact=custom_test_value_impact,
     )
 
 
 def _build_eligibility(
     steps: tuple[StepResult, ...],
     *,
+    custom_test_values_active: bool = False,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None = None,
     deselected_mandatory_step_ids: tuple[str, ...] = (),
     approved_release_policy: ApprovedReleasePolicy | None = None,
     tool_version: str,
@@ -271,7 +305,16 @@ def _build_eligibility(
     declared ``mandatory`` in the manifest — *not* hardcoded — so OBL
     Standards can adjust mandatory coverage by editing configuration.
 
-    Eligibility rules:
+    Two independent gates contribute to ``eligible``:
+
+    * **Value-purity gate** (``valuePurityPassed``): blocks when the run used
+      custom test values that differ from the suite baseline, making it an
+      Exploratory Run ineligible for certification.
+    * **Coverage gate** (``coveragePassed``): blocks when the manifest does not
+      declare complete certification coverage, mandatory steps are missing or
+      failed/skipped, or no mandatory steps are declared at all.
+
+    Additional eligibility rules:
         * A run is eligible only when at least one mandatory step ran *and*
           every mandatory step finished as ``passed`` or ``warn``.
         * An approved-release policy must be supplied, and the report must have
@@ -303,6 +346,14 @@ def _build_eligibility(
 
     Args:
         steps: Ordered step results from the smoke-check run.
+        custom_test_values_active: Whether this run used a non-default profile
+            and/or participant custom-value overrides. ``True`` marks the run as
+            exploratory and blocks certification eligibility. Used as the
+            fallback when ``test_value_profile_evidence`` is not supplied.
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence block as serialised in the result JSON. When supplied,
+            ``valuePurityPassed`` is derived from ``source`` and
+            ``baselineDeltaKeys`` rather than from ``custom_test_values_active``.
         deselected_mandatory_step_ids: Ids of manifest steps that were
             declared mandatory but deselected from the plan. Sourced from
             :meth:`TestPlan.deselected_mandatory_step_ids`. Empty when
@@ -316,8 +367,9 @@ def _build_eligibility(
             stable reason string so the blocker is machine-readable.
 
     Returns:
-        JSON object containing the boolean ``eligible`` flag, per-status
-        mandatory counts, ``mandatoryDeselected`` count and
+        JSON object containing the boolean ``eligible`` flag,
+        ``valuePurityPassed`` and ``coveragePassed`` gate booleans,
+        per-status mandatory counts, ``mandatoryDeselected`` count and
         ``mandatoryDeselectedStepIds`` list, a ``certificationCoverage`` block,
         an ``approvedRelease`` block, and blocking ``reason``/``reasons`` values
         when not eligible.
@@ -329,6 +381,18 @@ def _build_eligibility(
     mandatory_skipped = sum(1 for step in mandatory_steps if step.status == "skipped")
     mandatory_deselected = len(deselected_mandatory_step_ids)
     mandatory_total = len(mandatory_steps) + mandatory_deselected
+
+    value_purity_passed = _compute_value_purity_passed(
+        test_value_profile_evidence,
+        custom_test_values_active=custom_test_values_active,
+    )
+    coverage_passed = _compute_coverage_passed(
+        certification_coverage=certification_coverage,
+        mandatory_total=mandatory_total,
+        mandatory_failed=mandatory_failed,
+        mandatory_skipped=mandatory_skipped,
+        mandatory_deselected=mandatory_deselected,
+    )
 
     counts: JsonObject = {
         "mandatoryTotal": mandatory_total,
@@ -349,12 +413,17 @@ def _build_eligibility(
 
     reasons: list[JsonValue] = []
     # Precedence order for the primary ``reason`` field (the first entry):
-    # 1. Deselected-mandatory — step never ran so cannot demonstrate coverage.
-    # 2. Failed / skipped mandatory steps.
-    # 3. No mandatory steps declared.
-    # 4. Partial manifest coverage — manifest-level certification boundary.
-    # 5. Unapproved tool version (policy-level check).
-    # 6. Missing approved-release policy (advisory self-assessment).
+    # 1. Custom test values active — exploratory runs are never certifiable.
+    # 2. Deselected-mandatory — step never ran so cannot demonstrate coverage.
+    # 3. Failed / skipped mandatory steps.
+    # 4. No mandatory steps declared.
+    # 5. Partial manifest coverage — manifest-level certification boundary.
+    # 6. Unapproved tool version (policy-level check).
+    # 7. Missing approved-release policy (advisory self-assessment).
+    if not value_purity_passed:
+        reasons.append(
+            "Custom test values were used — this run is an Exploratory Run and is not eligible for certification"
+        )
     if mandatory_deselected:
         reasons.append("Mandatory steps were deselected from the plan")
     if mandatory_failed:
@@ -372,6 +441,8 @@ def _build_eligibility(
 
     block: JsonObject = {
         "eligible": not reasons,
+        "valuePurityPassed": value_purity_passed,
+        "coveragePassed": coverage_passed,
         **counts,
         "certificationCoverage": coverage_block,
         "approvedRelease": approved_release,
@@ -380,6 +451,80 @@ def _build_eligibility(
         block["reason"] = reasons[0]
         block["reasons"] = reasons
     return block
+
+
+def _compute_value_purity_passed(
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
+    *,
+    custom_test_values_active: bool,
+) -> bool:
+    """Determine whether the value-purity certification gate passes.
+
+    The gate passes when all effective test values match the suite baseline
+    (i.e. the run is not an Exploratory Run).  When serialised evidence is
+    available it is consulted directly; otherwise ``custom_test_values_active``
+    is used as the fallback signal.
+
+    Evidence-based logic (new ``testValues`` baseline-delta shape):
+        * ``source`` must be ``"baseline"`` or ``"default"``
+        * ``baselineDeltaKeys`` must be absent or empty
+
+    Args:
+        test_value_profile_evidence: Optional non-secret test-value profile
+            evidence block as serialised in the result JSON.  When ``None``
+            the fallback flag is used instead.
+        custom_test_values_active: Fallback flag used when
+            ``test_value_profile_evidence`` is ``None``.  ``True`` means the
+            run used custom values and the gate fails.
+
+    Returns:
+        ``True`` when the run's effective test values are pure baseline and
+        therefore eligible for certification from a value-purity perspective.
+    """
+    if test_value_profile_evidence is not None:
+        source = test_value_profile_evidence.get("source")
+        pure_source = source in ("baseline", "default")
+        baseline_delta_keys = test_value_profile_evidence.get("baselineDeltaKeys")
+        no_delta_keys = not baseline_delta_keys
+        return bool(pure_source and no_delta_keys)
+    return not custom_test_values_active
+
+
+def _compute_coverage_passed(
+    *,
+    certification_coverage: CertificationCoverage,
+    mandatory_total: int,
+    mandatory_failed: int,
+    mandatory_skipped: int,
+    mandatory_deselected: int,
+) -> bool:
+    """Determine whether the coverage certification gate passes.
+
+    The gate passes when the manifest declares complete certification
+    coverage and all mandatory steps were present, selected, and passed
+    (or warned — warn is non-blocking per the PRD).
+
+    Args:
+        certification_coverage: Manifest-level certification coverage
+            declaration.  Must be ``"complete"`` for the gate to pass.
+        mandatory_total: Total mandatory step count including deselected steps.
+        mandatory_failed: Number of mandatory steps that failed.
+        mandatory_skipped: Number of mandatory steps that were skipped.
+        mandatory_deselected: Number of mandatory steps deselected from the
+            plan.
+
+    Returns:
+        ``True`` when the coverage gate passes: the manifest is complete,
+        at least one mandatory step ran, and no mandatory steps failed,
+        were skipped, or were deselected.
+    """
+    return (
+        certification_coverage == "complete"
+        and mandatory_total > 0
+        and mandatory_failed == 0
+        and mandatory_skipped == 0
+        and mandatory_deselected == 0
+    )
 
 
 def _build_approved_release_eligibility(

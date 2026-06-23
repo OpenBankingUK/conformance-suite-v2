@@ -7,10 +7,10 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
-from typing import Literal, cast
+from typing import ClassVar, Literal, cast
 
 from conformance.auth_metadata import (
     AuthBundleDeclaration,
@@ -132,6 +132,255 @@ would create ambiguity in the dot-path resolver.
 
 _TEST_VALUES_PLACEHOLDER_PATTERN = re.compile(r"\$\{testValues\.([A-Za-z][A-Za-z0-9_-]*)\}")
 """Regex matching valid ``${testValues.<key>}`` placeholders in v1 manifests."""
+
+
+@dataclass(frozen=True)
+class TestValueReference:
+    """Field-level manifest reference to one ``${testValues.<key>}`` placeholder.
+
+    Attributes:
+        key: Referenced test-value key name.
+        request_area: High-level request area where the placeholder appears
+            (for example ``"request-url"``, ``"request-header"``,
+            ``"request-json-body"``, ``"request-form-body"``,
+            ``"psu-step-field"``, or ``"psu-request-object"``).
+        field_path: Dot-path-like field path within the manifest step that
+            contains the placeholder (for example
+            ``"request.body.Data.Initiation.CreditorAccount.Name"``).
+    """
+
+    key: str
+    __test__: ClassVar[bool] = False
+    request_area: str
+    field_path: str
+
+
+def _sorted_test_value_references(references: set[TestValueReference]) -> tuple[TestValueReference, ...]:
+    """Sort test-value references deterministically for stable evidence output.
+
+    Args:
+        references: Unordered set of parsed test-value references.
+
+    Returns:
+        Tuple sorted by field path, request area, then key.
+    """
+    return tuple(
+        sorted(
+            references,
+            key=lambda reference: (
+                reference.field_path,
+                reference.request_area,
+                reference.key,
+            ),
+        )
+    )
+
+
+def _extract_test_value_references(*, text: str, request_area: str, field_path: str) -> tuple[TestValueReference, ...]:
+    """Extract field-level test-value references from one placeholder-capable string.
+
+    Args:
+        text: Candidate string that may contain ``${testValues.<key>}``
+            placeholders.
+        request_area: High-level request area label for emitted references.
+        field_path: Dot-path-like field location for emitted references.
+
+    Returns:
+        Tuple of distinct references for keys present in ``text``.
+    """
+    return _sorted_test_value_references(
+        {
+            TestValueReference(key=key, request_area=request_area, field_path=field_path)
+            for key in _TEST_VALUES_PLACEHOLDER_PATTERN.findall(text)
+        }
+    )
+
+
+def _extract_test_value_keys(text: str) -> frozenset[str]:
+    """Extract consumed ``testValues`` placeholder keys from a string.
+
+    Args:
+        text: Candidate string that may contain ``${testValues.<key>}``
+            placeholders.
+
+    Returns:
+        Frozen set of matched key names. Empty when no test-value placeholders
+        are present.
+    """
+    return frozenset(_TEST_VALUES_PLACEHOLDER_PATTERN.findall(text))
+
+
+def _collect_keys_from_json_value(value: JsonValue) -> frozenset[str]:
+    """Recursively collect consumed test-value keys from a JSON value.
+
+    Args:
+        value: JSON value to scan. String leaves are searched for
+            ``${testValues.<key>}`` placeholders.
+
+    Returns:
+        Frozen set of all discovered key names.
+    """
+    references = _collect_references_from_json_value(
+        value,
+        request_area="request-json-body",
+        field_path="request.body",
+    )
+    return frozenset(reference.key for reference in references)
+
+
+def _collect_references_from_json_value(
+    value: JsonValue,
+    *,
+    request_area: str,
+    field_path: str,
+) -> tuple[TestValueReference, ...]:
+    """Recursively collect field-level test-value references from a JSON value.
+
+    Args:
+        value: JSON value to scan. String leaves are searched for
+            ``${testValues.<key>}`` placeholders.
+        request_area: High-level request area label for emitted references.
+        field_path: Dot-path-like location of ``value`` within its enclosing
+            request body.
+
+    Returns:
+        Tuple of unique field-level references discovered under ``value``.
+    """
+    if isinstance(value, str):
+        return _extract_test_value_references(text=value, request_area=request_area, field_path=field_path)
+    if isinstance(value, list):
+        refs: set[TestValueReference] = set()
+        for index, item in enumerate(value):
+            refs.update(
+                _collect_references_from_json_value(
+                    item,
+                    request_area=request_area,
+                    field_path=f"{field_path}[{index}]",
+                )
+            )
+        return _sorted_test_value_references(refs)
+    if isinstance(value, dict):
+        refs = set()
+        for key, item in value.items():
+            refs.update(
+                _collect_references_from_json_value(
+                    item,
+                    request_area=request_area,
+                    field_path=f"{field_path}.{key}",
+                )
+            )
+        return _sorted_test_value_references(refs)
+    return ()
+
+
+def _collect_keys_from_generated_request_object(request_object: GeneratedRequestObject | None) -> frozenset[str]:
+    """Collect consumed test-value keys from a generated PSU request-object directive.
+
+    Args:
+        request_object: Generated request-object directive to scan, or ``None``.
+
+    Returns:
+        Frozen set of consumed key names from ``audience`` and
+        ``openbanking_intent_id`` fields.
+    """
+    references = _collect_references_from_generated_request_object(request_object)
+    return frozenset(reference.key for reference in references)
+
+
+def _collect_references_from_generated_request_object(
+    request_object: GeneratedRequestObject | None,
+) -> tuple[TestValueReference, ...]:
+    """Collect field-level references from a generated PSU request-object directive.
+
+    Args:
+        request_object: Generated request-object directive to scan, or ``None``.
+
+    Returns:
+        Tuple of field-level references from ``audience`` and
+        ``openbanking_intent_id`` fields.
+    """
+    if request_object is None:
+        return ()
+    references: set[TestValueReference] = set()
+    if request_object.audience is not None:
+        references.update(
+            _extract_test_value_references(
+                text=request_object.audience,
+                request_area="psu-request-object",
+                field_path="requestObject.audience",
+            )
+        )
+    if request_object.openbanking_intent_id is not None:
+        references.update(
+            _extract_test_value_references(
+                text=request_object.openbanking_intent_id,
+                request_area="psu-request-object",
+                field_path="requestObject.openbankingIntentId",
+            )
+        )
+    return _sorted_test_value_references(references)
+
+
+def _collect_keys_from_manifest_request(request: ManifestRequest) -> frozenset[str]:
+    """Collect consumed test-value keys from a parsed manifest HTTP request.
+
+    Args:
+        request: Parsed manifest request whose placeholder-capable fields should
+            be scanned.
+
+    Returns:
+        Frozen set of consumed key names from URL, headers, body, and generated
+        request-object directives embedded in request bodies.
+    """
+    references = _collect_references_from_manifest_request(request)
+    return frozenset(reference.key for reference in references)
+
+
+def _collect_references_from_manifest_request(request: ManifestRequest) -> tuple[TestValueReference, ...]:
+    """Collect field-level test-value references from a parsed HTTP request.
+
+    Args:
+        request: Parsed manifest request whose placeholder-capable fields should
+            be scanned.
+
+    Returns:
+        Tuple of unique references from URL, headers, JSON body leaves, and
+        form-urlencoded field values.
+    """
+    references: set[TestValueReference] = set(
+        _extract_test_value_references(
+            text=request.url,
+            request_area="request-url",
+            field_path="request.url",
+        )
+    )
+    if request.headers is not None:
+        for name, value in request.headers.items():
+            references.update(
+                _extract_test_value_references(
+                    text=value,
+                    request_area="request-header",
+                    field_path=f"request.headers.{name}",
+                )
+            )
+    if isinstance(request.body, JsonBody):
+        references.update(
+            _collect_references_from_json_value(
+                request.body.value,
+                request_area="request-json-body",
+                field_path="request.body",
+            )
+        )
+    elif isinstance(request.body, FormBody):
+        for field_name, field_value in request.body.fields.items():
+            references.update(
+                _extract_test_value_references(
+                    text=field_value,
+                    request_area="request-form-body",
+                    field_path=f"request.body.fields.{field_name}",
+                )
+            )
+    return _sorted_test_value_references(references)
 
 
 @dataclass(frozen=True)
@@ -317,6 +566,24 @@ class TestValueProfileSpec:
     profiles: tuple[TestValueProfileEntry, ...]
     allowed_override_keys: frozenset[str]
     non_secret_keys: frozenset[str]
+
+
+@dataclass(frozen=True)
+class ManifestTestValues:
+    """Parsed test-value declarations from a suite manifest.
+
+    Extracted from the manifest's top-level ``testValues`` block.
+
+    Attributes:
+        baseline: Mapping of key names to generic certifiable default values.
+        generated_keys: Mapping of key names to generation strategy identifiers
+            (e.g. ``"per-run-uuid"``, ``"per-run-compact-uuid"``).
+        allowed_custom_keys: Set of key names that participants may override.
+    """
+
+    baseline: Mapping[str, str]
+    generated_keys: Mapping[str, str]
+    allowed_custom_keys: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -582,6 +849,11 @@ class ManifestStep:
             declared via ``selectionMetadata``. ``None`` for steps in old
             manifests that predate this field and for unconditional steps
             that omit the section.
+        consumed_test_value_keys: Frozen set of key names referenced by
+            ``${testValues.<key>}`` placeholders in this step's
+            placeholder-capable request fields.
+        test_value_references: Field-level references for each
+            ``${testValues.<key>}`` placeholder consumed by this step.
     """
 
     id: str
@@ -598,6 +870,8 @@ class ManifestStep:
     required_token_id: str | None = None
     produces_token_id: str | None = None
     selection_metadata: StepSelectionMetadata | None = None
+    consumed_test_value_keys: frozenset[str] = field(default_factory=frozenset)
+    test_value_references: tuple[TestValueReference, ...] = ()
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -744,6 +1018,11 @@ class PsuAuthorizationStep:
             execution starts.
         selection_metadata: Optional step-level conditional selection metadata.
             Same semantics as :class:`ManifestStep`.
+        consumed_test_value_keys: Frozen set of key names referenced by
+            ``${testValues.<key>}`` placeholders in this step's
+            placeholder-capable fields.
+        test_value_references: Field-level references for each
+            ``${testValues.<key>}`` placeholder consumed by this step.
     """
 
     id: str
@@ -765,6 +1044,8 @@ class PsuAuthorizationStep:
     group: str = "default"
     phase: StepPhase = "execution"
     selection_metadata: StepSelectionMetadata | None = None
+    consumed_test_value_keys: frozenset[str] = field(default_factory=frozenset)
+    test_value_references: tuple[TestValueReference, ...] = ()
 
 
 type V1Step = ManifestStep | PsuAuthorizationStep
@@ -810,6 +1091,10 @@ class Manifest:
             against the effective profile (default profile merged with any
             participant overrides). V0 manifests and v1 manifests without
             ``testValueProfiles`` leave this as ``None``.
+        test_values: Optional manifest-level baseline/generation metadata
+            declared via the ``testValues`` root key. When present, it
+            provides suite-baseline values, runtime-generated keys, and the
+            allow-list for participant-supplied custom test data.
     """
 
     schema_version: ManifestSchemaVersion
@@ -819,6 +1104,7 @@ class Manifest:
     steps: tuple[V1Step, ...] = ()
     auth_inventory: AuthBundleInventory | None = None
     test_value_profiles: TestValueProfileSpec | None = None
+    test_values: ManifestTestValues | None = None
 
 
 def load_manifest(manifest_path: Path) -> Manifest:
@@ -1048,6 +1334,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
             "steps",
             "authMetadata",
             "testValueProfiles",
+            "testValues",
         },
         location="manifest",
     )
@@ -1055,7 +1342,9 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
     name = _required_string(raw_manifest, "name", location="manifest")
     certification_coverage = _parse_certification_coverage(raw_manifest, location="manifest")
     test_value_profiles, known_test_value_keys = _parse_v1_test_value_profiles(raw_manifest)
+    test_values, known_manifest_test_value_keys = _parse_v1_test_values(raw_manifest)
     raw_steps = _required_object_array(raw_manifest, "steps", location="manifest")
+    allowed_test_value_keys = frozenset(known_test_value_keys | known_manifest_test_value_keys)
 
     seen_ids: set[str] = set()
     steps: list[V1Step] = []
@@ -1064,7 +1353,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
             raw_step,
             index=index,
             seen_ids=seen_ids,
-            allowed_test_value_keys=known_test_value_keys,
+            allowed_test_value_keys=allowed_test_value_keys,
         )
         seen_ids.add(step.id)
         steps.append(step)
@@ -1079,6 +1368,7 @@ def _parse_v1_manifest(raw_manifest: dict[str, JsonValue]) -> Manifest:
         steps=tuple(steps),
         auth_inventory=auth_inventory,
         test_value_profiles=test_value_profiles,
+        test_values=test_values,
     )
 
 
@@ -1233,6 +1523,78 @@ def _parse_v1_test_value_profiles(
             non_secret_keys=non_secret_keys,
         ),
         frozenset(declared_keys),
+    )
+
+
+def _parse_v1_test_values(
+    raw_manifest: dict[str, JsonValue],
+) -> tuple[ManifestTestValues | None, frozenset[str]]:
+    """Parse the optional ``testValues`` root key from a v1 manifest.
+
+    Args:
+        raw_manifest: Full v1 manifest JSON object.
+
+    Returns:
+        Two-tuple of ``(ManifestTestValues | None, frozenset[str])`` where the
+        second item is the union of all baseline keys, generated key names, and
+        allowed custom key names.
+
+    Raises:
+        ManifestError: If the root object or declared key lists are malformed.
+    """
+    if "testValues" not in raw_manifest:
+        return None, frozenset()
+
+    location = "manifest.testValues"
+    raw_test_values = raw_manifest["testValues"]
+    if not isinstance(raw_test_values, dict):
+        raise ManifestError(f"{location} must be a JSON object when present")
+    _reject_unknown_keys(
+        raw_test_values,
+        allowed_keys={"baseline", "generatedKeys", "allowedCustomKeys"},
+        location=location,
+    )
+
+    raw_baseline = _required_object(raw_test_values, "baseline", location=location)
+    baseline: dict[str, str] = {}
+    for key, value in raw_baseline.items():
+        if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ManifestError(f"{location}.baseline key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)")
+        if not isinstance(value, str):
+            raise ManifestError(f"{location}.baseline.{key} must be a string value")
+        baseline[key] = value
+
+    generated_keys: dict[str, str] = {}
+    raw_generated_keys = raw_test_values.get("generatedKeys")
+    if raw_generated_keys is not None:
+        if not isinstance(raw_generated_keys, dict):
+            raise ManifestError(f"{location}.generatedKeys must be a JSON object when present")
+        for key, value in raw_generated_keys.items():
+            if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+                raise ManifestError(
+                    f"{location}.generatedKeys key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)"
+                )
+            if value not in ("per-run-uuid", "per-run-compact-uuid"):
+                raise ManifestError(f"{location}.generatedKeys.{key} must be 'per-run-uuid' or 'per-run-compact-uuid'")
+            generated_keys[key] = value
+
+    allowed_custom_keys = frozenset(
+        _parse_optional_string_array(raw_test_values, "allowedCustomKeys", location=location)
+    )
+    for key in allowed_custom_keys:
+        if _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ManifestError(
+                f"{location}.allowedCustomKeys contains invalid key {key!r} (must match [A-Za-z][A-Za-z0-9_-]*)"
+            )
+
+    known_keys = frozenset(set(baseline) | set(generated_keys) | set(allowed_custom_keys))
+    return (
+        ManifestTestValues(
+            baseline=MappingProxyType(baseline),
+            generated_keys=MappingProxyType(generated_keys),
+            allowed_custom_keys=allowed_custom_keys,
+        ),
+        known_keys,
     )
 
 
@@ -1730,6 +2092,8 @@ def _parse_v1_http_step(
         )
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
+    test_value_references = _collect_references_from_manifest_request(request)
+    consumed_test_value_keys = frozenset(reference.key for reference in test_value_references)
 
     return ManifestStep(
         id=step_id,
@@ -1749,6 +2113,8 @@ def _parse_v1_http_step(
         required_token_id=required_token_id,
         produces_token_id=produces_token_id,
         selection_metadata=selection_metadata,
+        consumed_test_value_keys=consumed_test_value_keys,
+        test_value_references=test_value_references,
     )
 
 
@@ -1871,6 +2237,90 @@ def _required_token_id_from_authorization_header(*, request: ManifestRequest) ->
     if token_match is None:
         return None
     return token_match.group(1)
+
+
+def _collect_references_from_psu_authorization_fields(
+    *,
+    authorization_endpoint: str,
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    state: str | None,
+    nonce: str | None,
+    request_object: RequestObjectValue | None,
+) -> tuple[TestValueReference, ...]:
+    """Collect field-level test-value references from PSU step input fields.
+
+    Args:
+        authorization_endpoint: Parsed ``authorizationEndpoint`` field value.
+        client_id: Parsed ``clientId`` field value.
+        redirect_uri: Parsed ``redirectUri`` field value.
+        scope: Parsed ``scope`` field value.
+        state: Parsed ``state`` field value, or ``None``.
+        nonce: Parsed ``nonce`` field value, or ``None``.
+        request_object: Parsed ``requestObject`` field value, which may be a
+            literal string or a generated request-object directive.
+
+    Returns:
+        Tuple of unique field-level test-value references across supported PSU
+        placeholder-capable fields.
+    """
+    references: set[TestValueReference] = set()
+    references.update(
+        _extract_test_value_references(
+            text=authorization_endpoint,
+            request_area="psu-step-field",
+            field_path="authorizationEndpoint",
+        )
+    )
+    references.update(
+        _extract_test_value_references(
+            text=client_id,
+            request_area="psu-step-field",
+            field_path="clientId",
+        )
+    )
+    references.update(
+        _extract_test_value_references(
+            text=redirect_uri,
+            request_area="psu-step-field",
+            field_path="redirectUri",
+        )
+    )
+    references.update(
+        _extract_test_value_references(
+            text=scope,
+            request_area="psu-step-field",
+            field_path="scope",
+        )
+    )
+    if state is not None:
+        references.update(
+            _extract_test_value_references(
+                text=state,
+                request_area="psu-step-field",
+                field_path="state",
+            )
+        )
+    if nonce is not None:
+        references.update(
+            _extract_test_value_references(
+                text=nonce,
+                request_area="psu-step-field",
+                field_path="nonce",
+            )
+        )
+    if isinstance(request_object, str):
+        references.update(
+            _extract_test_value_references(
+                text=request_object,
+                request_area="psu-step-field",
+                field_path="requestObject",
+            )
+        )
+    elif isinstance(request_object, GeneratedRequestObject):
+        references.update(_collect_references_from_generated_request_object(request_object))
+    return _sorted_test_value_references(references)
 
 
 _PSU_AUTH_ALLOWED_KEYS: set[str] = {
@@ -2035,6 +2485,16 @@ def _parse_v1_psu_authorization_step(
     phase = _parse_optional_phase(raw_step, location=location)
     if mandatory and optional:
         raise ManifestError(f"{location}: 'mandatory' and 'optional' must not both be true")
+    test_value_references = _collect_references_from_psu_authorization_fields(
+        authorization_endpoint=authorization_endpoint,
+        client_id=client_id,
+        redirect_uri=redirect_uri,
+        scope=scope,
+        state=state,
+        nonce=nonce,
+        request_object=request_object,
+    )
+    consumed_test_value_keys = frozenset(reference.key for reference in test_value_references)
 
     return PsuAuthorizationStep(
         id=step_id,
@@ -2056,6 +2516,8 @@ def _parse_v1_psu_authorization_step(
         group=group,
         phase=phase,
         selection_metadata=selection_metadata,
+        consumed_test_value_keys=consumed_test_value_keys,
+        test_value_references=test_value_references,
     )
 
 

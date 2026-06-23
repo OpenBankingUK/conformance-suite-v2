@@ -130,6 +130,33 @@
             padding: 10px 12px;
         }
 
+        .custom-values-warning {
+            border: 1px solid #fedf89;
+            background: #fffaeb;
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin: 12px 0;
+        }
+
+        .custom-values-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 8px 0 10px;
+            font-size: 0.92rem;
+        }
+
+        .custom-values-table th,
+        .custom-values-table td {
+            border: 1px solid var(--border);
+            padding: 6px 8px;
+            text-align: left;
+            vertical-align: top;
+        }
+
+        .custom-values-table th {
+            background: #fff7d6;
+        }
+
         .steps-header {
             margin-top: 16px;
             font-weight: 600;
@@ -443,47 +470,49 @@
     {% include "conformance/partials/run_log.html" %}
 </main>
 <script>
-    function createLocalDateTimeFormatter() {
-        try {
-            return new Intl.DateTimeFormat(undefined, {
-                dateStyle: "medium",
-                timeStyle: "medium",
-                timeZoneName: "short",
-            });
-        } catch {
-            try {
-                return new Intl.DateTimeFormat(undefined, {
-                    timeZoneName: "short",
-                });
-            } catch {
-                return null;
-            }
-        }
+    function pad2(value) {
+        return String(value).padStart(2, "0");
     }
 
-    function formatLocalDatetime(date, formatter) {
-        if (formatter) {
-            try {
-                return formatter.format(date);
-            } catch {
-                // Fall through to browser-local formatting below.
+    function localTimeZoneShortName(date) {
+        try {
+            const parts = new Intl.DateTimeFormat(undefined, { timeZoneName: "short" }).formatToParts(date);
+            const zonePart = parts.find((part) => part.type === "timeZoneName");
+            if (zonePart && zonePart.value) {
+                return zonePart.value;
             }
+        } catch {
+            return "UTC";
         }
         try {
-            return date.toLocaleString();
+            const fallback = new Date(date).toString().match(/\(([^)]+)\)$/);
+            if (fallback && fallback[1]) {
+                return fallback[1];
+            }
         } catch {
-            return date.toISOString();
+            return "UTC";
         }
+        return "UTC";
+    }
+
+    function formatLocalDatetime(date) {
+        const day = pad2(date.getDate());
+        const month = pad2(date.getMonth() + 1);
+        const year = String(date.getFullYear());
+        const hours = pad2(date.getHours());
+        const minutes = pad2(date.getMinutes());
+        const seconds = pad2(date.getSeconds());
+        const timeZone = localTimeZoneShortName(date);
+        return `${day}/${month}/${year} ${hours}:${minutes}:${seconds} ${timeZone}`;
     }
 
     function renderLocalDatetimes(root) {
-        const formatter = createLocalDateTimeFormatter();
         root.querySelectorAll("time[data-local-datetime]").forEach((node) => {
             const value = node.getAttribute("datetime");
             if (!value) return;
             const date = new Date(value);
             if (Number.isNaN(date.getTime())) return;
-            node.textContent = formatLocalDatetime(date, formatter);
+            node.textContent = formatLocalDatetime(date);
             node.setAttribute("data-local-datetime-rendered", "true");
             if (!node.hasAttribute("data-utc-datetime")) {
                 node.setAttribute("data-utc-datetime", value);
@@ -778,8 +807,25 @@
         const STEP_STATE_STORAGE_KEY = "conformance.runSteps.{{ run.run_id }}";
         const STEP_SELECTOR = "details.result-step[data-step-id]";
         const stepStates = new Map();
+        const terminalStatuses = new Set(["completed", "failed"]);
+
+        function isTerminalRun() {
+            const runStatusNode = document.getElementById("run-status");
+            if (!runStatusNode) {
+                return false;
+            }
+            return terminalStatuses.has(runStatusNode.getAttribute("data-run-status"));
+        }
 
         function loadStepStates() {
+            if (isTerminalRun()) {
+                try {
+                    sessionStorage.removeItem(STEP_STATE_STORAGE_KEY);
+                } catch {
+                    return;
+                }
+                return;
+            }
             try {
                 const stored = sessionStorage.getItem(STEP_STATE_STORAGE_KEY);
                 if (!stored) { return; }
@@ -810,6 +856,9 @@
         }
 
         function restoreStepStates() {
+            if (isTerminalRun()) {
+                return;
+            }
             document.querySelectorAll(STEP_SELECTOR).forEach(function (det) {
                 const saved = stepStates.get(det.dataset.stepId);
                 if (saved !== undefined) {

@@ -68,6 +68,7 @@ from conformance.manifest import (
     ManifestRequest,
     ManifestStep,
     ManifestTest,
+    ManifestTestValues,
     PsuAuthorizationStep,
     TestValueProfileSpec,
     V1Step,
@@ -127,6 +128,23 @@ _OB_DETACHED_JWS_ALLOWED_WRITE_PATH_SUFFIXES = frozenset(
     }
 )
 """Open Banking write endpoint suffixes that may carry detached JWS signatures."""
+
+_TEST_VALUE_HIGH_SENSITIVITY_KEYS = frozenset(
+    {
+        "access_token",
+        "refresh_token",
+        "id_token",
+        "client_secret",
+        "code",
+        "client_assertion",
+        "assertion",
+        "request",
+        "request_object",
+        "password",
+        "private_key",
+    }
+)
+"""Custom-value keys that must never reveal full literal content in diagnostics."""
 
 
 def _normalize_url_path_for_match(path: str) -> str:
@@ -602,6 +620,52 @@ def _collect_declared_test_value_keys(profile_spec: TestValueProfileSpec) -> lis
     return sorted(keys)
 
 
+def _build_test_value_profile_evidence_baseline_delta(
+    *,
+    manifest_test_values: ManifestTestValues,
+    runtime_config: RuntimeConfig | None,
+) -> JsonObject:
+    """Build baseline-delta test-value profile evidence for new-shape manifests.
+
+    Emits the baseline-delta evidence shape used when the manifest declares a
+    ``testValues`` block (new baseline-delta path).  The ``source`` field is
+    ``"custom"`` when any effective values differ from the suite baseline, or
+    ``"baseline"`` when all values match.  The ``customValues`` block carries
+    masked custom and masked baseline values for every delta key so result
+    consumers can audit which values were changed without exposing raw secrets.
+
+    Args:
+        manifest_test_values: Parsed ``testValues`` block from the suite
+            manifest, providing baseline values for delta comparison.
+        runtime_config: Optional runtime config carrying
+            :attr:`~conformance.context.RuntimeConfig.baseline_delta_keys` and
+            resolved effective test values.
+
+    Returns:
+        Baseline-delta evidence object with ``source``, ``baselineDeltaKeys``,
+        and ``customValues`` fields.
+    """
+    delta_keys: frozenset[str] = runtime_config.baseline_delta_keys if runtime_config is not None else frozenset()
+    source = "custom" if delta_keys else "baseline"
+    custom_values: JsonObject = {}
+    if runtime_config is not None:
+        for key in sorted(delta_keys):
+            custom_val = runtime_config.test_values.get(key)
+            baseline_val = manifest_test_values.baseline.get(key)
+            custom_values[key] = cast(
+                "JsonValue",
+                {
+                    "custom": _mask_test_value_by_key(key=key, value=custom_val),
+                    "baseline": _mask_test_value_by_key(key=key, value=baseline_val),
+                },
+            )
+    return {
+        "source": source,
+        "baselineDeltaKeys": cast("JsonValue", sorted(delta_keys)),
+        "customValues": custom_values,
+    }
+
+
 def _build_test_value_profile_evidence(
     *,
     manifest: Manifest,
@@ -610,6 +674,10 @@ def _build_test_value_profile_evidence(
 ) -> JsonObject | None:
     """Build non-secret test-value profile evidence for results and logs.
 
+    Dispatches to the baseline-delta evidence shape when the manifest declares
+    a ``testValues`` block (new path), or to the legacy profile-based shape
+    when the manifest declares ``testValueProfiles`` (old path).
+
     Args:
         manifest: Parsed manifest for the current run.
         plan: Effective execution plan for the current run.
@@ -617,9 +685,16 @@ def _build_test_value_profile_evidence(
             and profile-selection metadata.
 
     Returns:
-        Test-value profile evidence block, or ``None`` when the manifest does
-        not declare ``testValueProfiles`` metadata.
+        Test-value profile evidence block, or ``None`` when the manifest
+        declares neither a ``testValues`` nor a ``testValueProfiles`` block.
     """
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is not None:
+        return _build_test_value_profile_evidence_baseline_delta(
+            manifest_test_values=manifest_test_values,
+            runtime_config=runtime_config,
+        )
+
     profile_spec = manifest.test_value_profiles
     if profile_spec is None:
         return None
@@ -688,6 +763,470 @@ def _build_test_value_profile_evidence(
     }
 
 
+def _mask_test_value_by_key(*, key: str, value: str | None) -> str | None:
+    """Mask one test-value using the same key-aware masking rules as result evidence.
+
+    Args:
+        key: Test-value key name used to drive sensitive-key masking policy.
+        value: Candidate literal value for ``key``, or ``None``.
+
+    Returns:
+        Masked or unmasked value depending on key sensitivity, or ``None`` when
+        ``value`` is absent.
+    """
+    if value is None:
+        return None
+    masked = mask_json_value({key: value})
+    if not isinstance(masked, dict):
+        return MASKED_VALUE
+    rendered_value = masked.get(key)
+    return rendered_value if isinstance(rendered_value, str) else MASKED_VALUE
+
+
+def _is_high_sensitivity_test_value_key(key: str) -> bool:
+    """Return whether a test-value key is treated as high-sensitivity.
+
+    Args:
+        key: Test-value key name from manifest metadata or participant input.
+
+    Returns:
+        ``True`` when the key is in the high-sensitivity allowlist that never
+        exposes full literal values in diagnostics.
+    """
+    return key.strip().lower() in _TEST_VALUE_HIGH_SENSITIVITY_KEYS
+
+
+def _preview_test_value(value: str) -> str:
+    """Build a compact preview string for diagnostics.
+
+    Args:
+        value: Literal test value used at runtime.
+
+    Returns:
+        A short preview retaining the start and end of the value and total
+        length metadata.
+    """
+    if not value:
+        return "<empty>"
+    if len(value) <= 8:
+        return f"{value} (len={len(value)})"
+    return f"{value[:4]}…{value[-4:]} (len={len(value)})"
+
+
+def _test_value_display(*, key: str, value: str | None) -> JsonObject | None:
+    """Build structured display details for one custom test value.
+
+    Args:
+        key: Custom test-value key.
+        value: Literal resolved value for ``key``, or ``None``.
+
+    Returns:
+        Display object containing preview/masking metadata and optional full
+        value in developer mode, or ``None`` when ``value`` is absent.
+    """
+    if value is None:
+        return None
+    masked_value = _mask_test_value_by_key(key=key, value=value)
+    display: JsonObject = {
+        "preview": _preview_test_value(value),
+        "masked": masked_value == MASKED_VALUE,
+    }
+    if is_developer_mode_enabled() and not _is_high_sensitivity_test_value_key(key):
+        display["fullValue"] = value
+    return display
+
+
+def _test_value_profile_source(
+    *,
+    runtime_config: RuntimeConfig | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
+) -> Literal["default", "overridden"]:
+    """Resolve the effective test-value profile source for impact evidence.
+
+    Returns ``"overridden"`` when the runtime config indicates custom (delta)
+    values, or when the profile evidence carries ``"overridden"`` or ``"custom"``
+    as the source value.  New-shape ``"custom"`` is mapped to ``"overridden"``
+    so that legacy impact-evidence consumers receive a consistent value.
+
+    Args:
+        runtime_config: Runtime config carrying effective profile metadata.
+        test_value_profile_evidence: Optional profile evidence block emitted for
+            this run.
+
+    Returns:
+        Resolved profile source literal (``"default"`` or ``"overridden"``).
+    """
+    if runtime_config is not None and runtime_config.test_value_profile_source is not None:
+        return runtime_config.test_value_profile_source
+    if runtime_config is not None and runtime_config.baseline_delta_keys:
+        return "overridden"
+    if test_value_profile_evidence is not None:
+        source = test_value_profile_evidence.get("source")
+        if source in ("overridden", "custom"):
+            return "overridden"
+    return "default"
+
+
+def _selected_test_value_profile_id(
+    *,
+    profile_spec: TestValueProfileSpec,
+    runtime_config: RuntimeConfig | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
+) -> str:
+    """Resolve the effective test-value profile id for impact evidence.
+
+    Args:
+        profile_spec: Manifest test-value profile specification.
+        runtime_config: Runtime config carrying effective profile metadata.
+        test_value_profile_evidence: Optional profile evidence block emitted for
+            this run.
+
+    Returns:
+        Effective profile id used by this run.
+    """
+    if runtime_config is not None and runtime_config.test_value_profile_id is not None:
+        return runtime_config.test_value_profile_id
+    if test_value_profile_evidence is not None:
+        profile_id = test_value_profile_evidence.get("profileId")
+        if isinstance(profile_id, str) and profile_id:
+            return profile_id
+    return profile_spec.default_profile_id
+
+
+def _override_keys_for_impact(
+    *,
+    runtime_config: RuntimeConfig | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
+) -> tuple[str, ...]:
+    """Resolve participant override keys used for custom-value impact evidence.
+
+    Args:
+        runtime_config: Runtime config carrying explicit participant override keys.
+        test_value_profile_evidence: Optional profile evidence emitted for this run.
+
+    Returns:
+        Sorted tuple of participant override key names.
+    """
+    if runtime_config is not None and runtime_config.test_value_override_keys:
+        return tuple(sorted(runtime_config.test_value_override_keys))
+    if test_value_profile_evidence is None:
+        return ()
+    override_keys = test_value_profile_evidence.get("overrideKeys")
+    if not isinstance(override_keys, list):
+        return ()
+    parsed = [key for key in override_keys if isinstance(key, str)]
+    return tuple(sorted(parsed))
+
+
+def _not_run_reason_for_step_entry(*, step_id: str, plan: TestPlan) -> str:
+    """Describe why a manifest step reference did not produce an executed result.
+
+    Args:
+        step_id: Manifest step id whose references are being explained.
+        plan: Effective run plan used for selection decisions.
+
+    Returns:
+        Machine-readable reason label.
+    """
+    entry = next((candidate for candidate in plan.entries if candidate.step_id == step_id), None)
+    if entry is None:
+        return "not-in-plan"
+    if entry.selected:
+        return "selected-not-executed"
+    if entry.conditional and entry.missing_test_value_keys:
+        return "conditional-missing-test-values"
+    return "deselected"
+
+
+def _collect_impact_references(
+    *,
+    manifest: Manifest,
+    plan: TestPlan,
+    steps: list[StepResult],
+    key_set: set[str],
+) -> tuple[list[JsonObject], list[JsonObject], set[str], set[str]]:
+    """Collect executed and not-run impact references for a set of test-value keys.
+
+    Iterates manifest steps and partitions their test-value references into
+    executed (step produced a result) and not-run (step absent from results)
+    buckets.  Only references whose key is in ``key_set`` are included.
+
+    Args:
+        manifest: Parsed manifest providing step definitions and their
+            field-level test-value references.
+        plan: Effective execution plan used to explain why non-executed
+            steps were not run.
+        steps: Executed step results for the completed run.
+        key_set: Set of test-value key names whose references should be
+            included in the output.
+
+    Returns:
+        A four-tuple of ``(executed_references, referenced_but_not_run,
+        executed_step_ids, non_run_step_ids)``.
+    """
+    result_by_step_id = {step.name: step for step in steps}
+    executed_references: list[JsonObject] = []
+    referenced_but_not_run: list[JsonObject] = []
+    executed_step_ids: set[str] = set()
+    non_run_step_ids: set[str] = set()
+    for manifest_step in manifest.steps:
+        matching_references = tuple(
+            reference for reference in manifest_step.test_value_references if reference.key in key_set
+        )
+        if not matching_references:
+            continue
+        step_result = result_by_step_id.get(manifest_step.id)
+        if step_result is not None:
+            executed_step_ids.add(manifest_step.id)
+            for reference in matching_references:
+                executed_references.append(
+                    {
+                        "stepId": manifest_step.id,
+                        "stepName": manifest_step.name,
+                        "status": step_result.status,
+                        "mandatory": manifest_step.mandatory,
+                        "optional": manifest_step.optional,
+                        "key": reference.key,
+                        "requestArea": reference.request_area,
+                        "fieldPath": reference.field_path,
+                    }
+                )
+            continue
+        non_run_step_ids.add(manifest_step.id)
+        not_run_reason = _not_run_reason_for_step_entry(step_id=manifest_step.id, plan=plan)
+        for reference in matching_references:
+            referenced_but_not_run.append(
+                {
+                    "stepId": manifest_step.id,
+                    "stepName": manifest_step.name,
+                    "notRunReason": not_run_reason,
+                    "mandatory": manifest_step.mandatory,
+                    "optional": manifest_step.optional,
+                    "key": reference.key,
+                    "requestArea": reference.request_area,
+                    "fieldPath": reference.field_path,
+                }
+            )
+    executed_references.sort(key=lambda ref: cast(tuple[str, str, str], (ref["stepId"], ref["fieldPath"], ref["key"])))
+    referenced_but_not_run.sort(
+        key=lambda ref: cast(tuple[str, str, str], (ref["stepId"], ref["fieldPath"], ref["key"]))
+    )
+    return executed_references, referenced_but_not_run, executed_step_ids, non_run_step_ids
+
+
+def _build_custom_test_value_impact_evidence_baseline_delta(
+    *,
+    manifest: Manifest,
+    plan: TestPlan,
+    runtime_config: RuntimeConfig | None,
+    steps: list[StepResult],
+) -> JsonObject | None:
+    """Build baseline-delta custom-test-value impact evidence for new-shape manifests.
+
+    Used when the manifest declares a ``testValues`` block.  Returns ``None``
+    when ``runtime_config`` carries no delta keys (all effective values match
+    the suite baseline), suppressing the impact panel entirely for pure-baseline
+    runs.  When delta keys are present the impact block uses
+    ``baselineDeltaKeys`` and ``baselineDeltaKeyCount`` instead of the
+    legacy ``overrideKeys``/``overrideKeyCount`` naming.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        plan: Effective execution plan for the current run.
+        runtime_config: Optional runtime config carrying
+            :attr:`~conformance.context.RuntimeConfig.baseline_delta_keys`.
+        steps: Executed step results included in the final report.
+
+    Returns:
+        Impact-evidence block with baseline-delta semantics, or ``None`` when
+        no keys differ from the suite baseline.
+    """
+    delta_keys: frozenset[str] = runtime_config.baseline_delta_keys if runtime_config is not None else frozenset()
+    if not delta_keys:
+        return None
+    sorted_delta_keys = tuple(sorted(delta_keys))
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is None:
+        return None
+    executed_references, referenced_but_not_run, executed_step_ids, non_run_step_ids = _collect_impact_references(
+        manifest=manifest,
+        plan=plan,
+        steps=steps,
+        key_set=set(delta_keys),
+    )
+    value_details = _build_baseline_delta_value_details(
+        manifest_test_values=manifest_test_values,
+        runtime_config=runtime_config,
+        executed_references=executed_references,
+    )
+    return {
+        "source": "custom",
+        "baselineDeltaKeys": cast("JsonValue", list(sorted_delta_keys)),
+        "valueDetails": cast("JsonValue", value_details),
+        "summary": {
+            "baselineDeltaKeyCount": len(sorted_delta_keys),
+            "executedReferenceCount": len(executed_references),
+            "referencedButNotRunCount": len(referenced_but_not_run),
+            "executedStepCount": len(executed_step_ids),
+            "referencedButNotRunStepCount": len(non_run_step_ids),
+        },
+        "executedReferences": cast("JsonValue", executed_references),
+        "referencedButNotRun": cast("JsonValue", referenced_but_not_run),
+    }
+
+
+def _build_baseline_delta_value_details(
+    *,
+    manifest_test_values: ManifestTestValues,
+    runtime_config: RuntimeConfig | None,
+    executed_references: list[JsonObject],
+) -> list[JsonObject]:
+    """Build masked per-key baseline/custom value details for impact evidence.
+
+    Args:
+        manifest_test_values: Parsed manifest ``testValues`` metadata that
+            provides baseline values for baseline-delta keys.
+        runtime_config: Optional runtime configuration holding the effective
+            resolved values and baseline-delta key set.
+        executed_references: Executed impact references returned by
+            :func:`_collect_impact_references`.
+
+    Returns:
+        Sorted list of per-key detail objects used by results/report rendering.
+        Each object includes the key, masked used value, optional masked
+        baseline value, and the executed request references for that key.
+    """
+    if runtime_config is None:
+        return []
+    delta_keys = runtime_config.baseline_delta_keys
+    if not delta_keys:
+        return []
+
+    references_by_key: dict[str, list[JsonObject]] = {}
+    for reference in executed_references:
+        key = reference.get("key")
+        if not isinstance(key, str):
+            continue
+        reference_entry: JsonObject = {}
+        for field_name in ("stepId", "stepName", "requestArea", "fieldPath", "status"):
+            raw_value = reference.get(field_name)
+            if isinstance(raw_value, str):
+                reference_entry[field_name] = raw_value
+        references_by_key.setdefault(key, []).append(reference_entry)
+
+    details: list[JsonObject] = []
+    for key in sorted(delta_keys):
+        used_literal = runtime_config.test_values.get(key)
+        detail: JsonObject = {
+            "key": key,
+            "usedValue": _mask_test_value_by_key(key=key, value=used_literal),
+            "usedValueDisplay": cast("JsonValue", _test_value_display(key=key, value=used_literal)),
+            "executedReferences": cast("JsonValue", references_by_key.get(key, [])),
+        }
+        if key in manifest_test_values.baseline:
+            baseline_literal = manifest_test_values.baseline.get(key)
+            detail["baselineValue"] = _mask_test_value_by_key(key=key, value=baseline_literal)
+            detail["baselineValueDisplay"] = cast("JsonValue", _test_value_display(key=key, value=baseline_literal))
+        details.append(detail)
+    return details
+
+
+def _build_custom_test_value_impact_evidence(
+    *,
+    manifest: Manifest,
+    plan: TestPlan,
+    runtime_config: RuntimeConfig | None,
+    test_value_profile_evidence: Mapping[str, JsonValue] | None,
+    steps: list[StepResult],
+) -> JsonObject | None:
+    """Build persisted custom-test-value impact evidence for v1 result JSON.
+
+    Dispatches to the baseline-delta evidence shape when the manifest declares
+    a ``testValues`` block (new path), where only keys that differ from the
+    suite baseline are considered impactful.  For legacy ``testValueProfiles``
+    manifests the previous override-key logic is preserved.
+
+    Args:
+        manifest: Parsed manifest for the current run.
+        plan: Effective execution plan for the current run.
+        runtime_config: Optional runtime config carrying effective test values.
+        test_value_profile_evidence: Optional non-secret profile evidence emitted
+            for this run.
+        steps: Executed step results included in the final report.
+
+    Returns:
+        Impact-evidence block, or ``None`` when the run has no manifest
+        ``testValueProfiles`` or ``testValues`` metadata, no participant
+        override/delta keys, or all values match the suite baseline.
+    """
+    # New-shape manifests use the baseline-delta model.
+    if manifest.test_values is not None:
+        return _build_custom_test_value_impact_evidence_baseline_delta(
+            manifest=manifest,
+            plan=plan,
+            runtime_config=runtime_config,
+            steps=steps,
+        )
+
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None:
+        return None
+    override_keys = _override_keys_for_impact(
+        runtime_config=runtime_config,
+        test_value_profile_evidence=test_value_profile_evidence,
+    )
+    if not override_keys:
+        return None
+    override_key_set = set(override_keys)
+
+    profile_id = _selected_test_value_profile_id(
+        profile_spec=profile_spec,
+        runtime_config=runtime_config,
+        test_value_profile_evidence=test_value_profile_evidence,
+    )
+    profile_source = _test_value_profile_source(
+        runtime_config=runtime_config,
+        test_value_profile_evidence=test_value_profile_evidence,
+    )
+
+    selected_profile = next((profile for profile in profile_spec.profiles if profile.id == profile_id), None)
+    effective_values = runtime_config.test_values if runtime_config is not None else {}
+    overridden_values: JsonObject = {}
+    for key in override_keys:
+        default_value = selected_profile.values.get(key) if selected_profile is not None else None
+        custom_value = effective_values.get(key)
+        overridden_values[key] = {
+            "defaultValue": _mask_test_value_by_key(key=key, value=default_value),
+            "customValue": _mask_test_value_by_key(key=key, value=custom_value),
+            "effectiveValue": _mask_test_value_by_key(key=key, value=custom_value),
+            "defaultValueDisplay": cast("JsonValue", _test_value_display(key=key, value=default_value)),
+            "customValueDisplay": cast("JsonValue", _test_value_display(key=key, value=custom_value)),
+            "effectiveValueDisplay": cast("JsonValue", _test_value_display(key=key, value=custom_value)),
+        }
+
+    executed_references, referenced_but_not_run, executed_step_ids, non_run_step_ids = _collect_impact_references(
+        manifest=manifest,
+        plan=plan,
+        steps=steps,
+        key_set=override_key_set,
+    )
+    return {
+        "profileId": profile_id,
+        "source": profile_source,
+        "overrideKeys": cast("JsonValue", list(override_keys)),
+        "overriddenValues": overridden_values,
+        "summary": {
+            "overrideKeyCount": len(override_keys),
+            "executedReferenceCount": len(executed_references),
+            "referencedButNotRunCount": len(referenced_but_not_run),
+            "executedStepCount": len(executed_step_ids),
+            "referencedButNotRunStepCount": len(non_run_step_ids),
+        },
+        "executedReferences": cast("JsonValue", executed_references),
+        "referencedButNotRun": cast("JsonValue", referenced_but_not_run),
+    }
+
+
 def run_manifest(
     manifest: Manifest,
     *,
@@ -703,6 +1242,7 @@ def run_manifest(
     mtls_client_configured: bool = False,
     suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
+    custom_test_values_active: bool = False,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
 
@@ -752,6 +1292,8 @@ def run_manifest(
             suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
             generated report's participant-side certification self-assessment.
+        custom_test_values_active: Whether the run used a non-default test-value
+            profile and/or participant custom-value overrides.
 
     Returns:
         Smoke-check result containing ordered manifest test steps.
@@ -807,6 +1349,7 @@ def run_manifest(
                 auth_metadata_evidence=auth_metadata_evidence,
                 environment_capability_evidence=environment_capability_evidence,
                 test_value_profile_evidence=test_value_profile_evidence,
+                custom_test_values_active=custom_test_values_active,
             )
         else:
             result = _run_manifest_v0(
@@ -822,6 +1365,7 @@ def run_manifest(
                 auth_metadata_evidence=auth_metadata_evidence,
                 environment_capability_evidence=environment_capability_evidence,
                 test_value_profile_evidence=test_value_profile_evidence,
+                custom_test_values_active=custom_test_values_active,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -935,6 +1479,7 @@ def _run_manifest_v1(
     auth_metadata_evidence: Mapping[str, JsonValue] | None,
     environment_capability_evidence: Mapping[str, JsonValue] | None,
     test_value_profile_evidence: Mapping[str, JsonValue] | None,
+    custom_test_values_active: bool,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -984,6 +1529,8 @@ def _run_manifest_v1(
             capability decisions emitted for this run.
         test_value_profile_evidence: Optional non-secret test-value profile
             evidence emitted for this run.
+        custom_test_values_active: Whether the run used a non-default test-value
+            profile and/or participant custom-value overrides.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -993,20 +1540,31 @@ def _run_manifest_v1(
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
     fapi_signing_service = _LazyFapiSigningService(fapi_signing_config)
+    customised_test_value_keys = (
+        frozenset(runtime_config.test_value_override_keys) if runtime_config is not None else frozenset()
+    )
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
     # execution) so a log consumer can read the plan-vs-manifest delta
     # without scanning the entire run.
+    # For manifests using the new baseline-delta testValues path, derive
+    # the source using "baseline"/"custom" terminology from RuntimeConfig;
+    # fall back to the entry's profile-based source for legacy manifests.
+    _has_test_values = manifest.test_values is not None
     for entry in plan.entries:
         if not entry.selected:
+            if _has_test_values and runtime_config is not None:
+                deselected_source: str | None = "custom" if runtime_config.baseline_delta_keys else "baseline"
+            else:
+                deselected_source = entry.test_value_profile_source
             execution_logger.emit(
                 "step-deselected",
                 step_id=entry.step_id,
                 payload={
                     "mandatory": entry.mandatory,
                     "conditional": entry.conditional,
-                    "testValueProfileSource": entry.test_value_profile_source,
+                    "testValueProfileSource": deselected_source,
                     "requiredTestValueKeys": cast("JsonValue", list(entry.required_test_value_keys)),
                     "missingTestValueKeys": cast("JsonValue", list(entry.missing_test_value_keys)),
                     "testValueOverrideKeys": cast("JsonValue", list(entry.test_value_override_keys)),
@@ -1024,6 +1582,7 @@ def _run_manifest_v1(
         fapi_signing_service=fapi_signing_service,
         open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
+        customised_test_value_keys=customised_test_value_keys,
     )
     steps.extend(setup_steps)
 
@@ -1039,8 +1598,17 @@ def _run_manifest_v1(
         fapi_signing_service=fapi_signing_service,
         open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
+        customised_test_value_keys=customised_test_value_keys,
     )
     steps.extend(execution_steps)
+
+    custom_test_value_impact = _build_custom_test_value_impact_evidence(
+        manifest=manifest,
+        plan=plan,
+        runtime_config=runtime_config,
+        test_value_profile_evidence=test_value_profile_evidence,
+        steps=steps,
+    )
 
     return build_smoke_check_result(
         environment,
@@ -1053,6 +1621,8 @@ def _run_manifest_v1(
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
         test_value_profile_evidence=test_value_profile_evidence,
+        custom_test_values_active=custom_test_values_active,
+        custom_test_value_impact=custom_test_value_impact,
     )
 
 
@@ -1068,6 +1638,7 @@ def _execute_v1_step_sequence(
     fapi_signing_service: _LazyFapiSigningService | None,
     open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
+    customised_test_value_keys: frozenset[str],
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -1088,6 +1659,8 @@ def _execute_v1_step_sequence(
             requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        customised_test_value_keys: Participant override key names used to
+            identify which consumed keys were customised for each step.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -1106,6 +1679,7 @@ def _execute_v1_step_sequence(
             fapi_signing_service=fapi_signing_service,
             open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
+            customised_test_value_keys=customised_test_value_keys,
         )
         steps.append(step_result)
     return steps, context
@@ -1124,6 +1698,7 @@ def _execute_v1_execution_groups_concurrently(
     fapi_signing_service: _LazyFapiSigningService | None,
     open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
+    customised_test_value_keys: frozenset[str],
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -1148,6 +1723,8 @@ def _execute_v1_execution_groups_concurrently(
             requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        customised_test_value_keys: Participant override key names used to
+            identify which consumed keys were customised for each step.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -1172,6 +1749,7 @@ def _execute_v1_execution_groups_concurrently(
                     fapi_signing_service,
                     open_banking_config,
                     mtls_client_configured,
+                    customised_test_value_keys,
                 )
             )
 
@@ -1195,6 +1773,7 @@ def _execute_v1_group(
     fapi_signing_service: _LazyFapiSigningService | None,
     open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
+    customised_test_value_keys: frozenset[str],
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -1214,6 +1793,8 @@ def _execute_v1_group(
             requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        customised_test_value_keys: Participant override key names used to
+            identify which consumed keys were customised for each step.
 
     Returns:
         Step results for this group in group-local order.
@@ -1229,6 +1810,7 @@ def _execute_v1_group(
         fapi_signing_service=fapi_signing_service,
         open_banking_config=open_banking_config,
         mtls_client_configured=mtls_client_configured,
+        customised_test_value_keys=customised_test_value_keys,
     )
     return group_steps
 
@@ -1245,6 +1827,7 @@ def _execute_v1_manifest_step(
     fapi_signing_service: _LazyFapiSigningService | None,
     open_banking_config: OpenBankingConfig | None,
     mtls_client_configured: bool,
+    customised_test_value_keys: frozenset[str],
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -1265,6 +1848,8 @@ def _execute_v1_manifest_step(
             requests.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        customised_test_value_keys: Participant override key names used to
+            identify which consumed keys were customised for this step.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1293,8 +1878,16 @@ def _execute_v1_manifest_step(
             open_banking_config=open_banking_config,
             mtls_client_configured=mtls_client_configured,
         )
-    if manifest_step.mandatory:
-        step_result = replace(step_result, mandatory=True)
+    consumed_test_value_keys = tuple(sorted(manifest_step.consumed_test_value_keys))
+    customised_keys_for_step = tuple(
+        sorted(key for key in manifest_step.consumed_test_value_keys if key in customised_test_value_keys)
+    )
+    step_result = replace(
+        step_result,
+        mandatory=manifest_step.mandatory,
+        consumed_test_value_keys=consumed_test_value_keys,
+        customised_test_value_keys=customised_keys_for_step,
+    )
     return step_result, new_context
 
 
@@ -2906,6 +3499,7 @@ def _run_manifest_v0(
     auth_metadata_evidence: Mapping[str, JsonValue] | None,
     environment_capability_evidence: Mapping[str, JsonValue] | None,
     test_value_profile_evidence: Mapping[str, JsonValue] | None,
+    custom_test_values_active: bool,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
 
@@ -2937,6 +3531,8 @@ def _run_manifest_v0(
             capability decisions emitted for this run.
         test_value_profile_evidence: Optional non-secret test-value profile
             evidence emitted for this run.
+        custom_test_values_active: Whether the run used a non-default test-value
+            profile and/or participant custom-value overrides.
 
     Returns:
         Smoke-check result with step entries matching v0 naming conventions.
@@ -3045,6 +3641,7 @@ def _run_manifest_v0(
         auth_metadata_evidence=auth_metadata_evidence,
         environment_capability_evidence=environment_capability_evidence,
         test_value_profile_evidence=test_value_profile_evidence,
+        custom_test_values_active=custom_test_values_active,
     )
 
 

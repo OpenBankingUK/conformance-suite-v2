@@ -467,9 +467,23 @@ def _evaluate_json_one_of(path: str, value: JsonValue, candidates: tuple[JsonVal
             passed=True,
             message=f"JSON field {path} equals one of: {_format_json_value_list(candidates)}",
         )
+    is_awaiting_authorisation_expected = any(_json_values_equal(candidate, "AWAU") for candidate in candidates)
+    if path == "Data.Status" and value == "AUTH" and is_awaiting_authorisation_expected:
+        return AssertionResult(
+            passed=False,
+            message=(
+                "JSON field Data.Status must equal one of: "
+                f"{_format_json_value_list(candidates)}; actual value: AUTH. "
+                "AUTH indicates the consent appears authorised earlier than expected "
+                "for this pre-PSU-authorisation step."
+            ),
+        )
     return AssertionResult(
         passed=False,
-        message=f"JSON field {path} must equal one of: {_format_json_value_list(candidates)}",
+        message=(
+            f"JSON field {path} must equal one of: {_format_json_value_list(candidates)}; "
+            f"actual value: {_format_json_value(value)}"
+        ),
     )
 
 

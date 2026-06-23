@@ -9,11 +9,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Plan Builder Run Plan test-data snapshot**: `testData.values` in exported Run Plan JSON is now a full executable snapshot rather than a delta-only document. The snapshot includes manifest baseline values for all allow-listed keys referenced by selected steps, overlaid with any participant-supplied values from config or the Plan Builder form. Certification value purity is determined by comparing the snapshot against the manifest baseline via `RunConfiguration.baseline_delta_keys`; a Run Plan that stores baseline-equal values is not marked as exploratory. Older delta-only Run Plans imported into the Plan Builder are automatically back-filled from the manifest baseline. The `_is_exploratory_run` helper now uses `baseline_delta_keys` for new-schema manifests instead of checking whether `testData.values` is non-empty.
+
+
+
+- **Breaking Custom Test Values redesign**: suite manifests now own `testValues.baseline`, `generatedKeys`, and `allowedCustomKeys`; participant configs and run plans now use `testData.values`; the compiled `RunConfiguration` is the execution artifact; certification now uses separate coverage and value-purity gates; launch is blocked when required keys are missing from both baseline and participant data; and result evidence now records baseline-delta impact (`testValueProfile.baselineDeltaKeys`, `customTestValueImpact.baselineDeltaKeyCount`) with UI labels that only appear when genuine deltas exist.
+
 ### Fixed
 
 - `funds-confirmation` step in the PIS domestic-payment starter suite now correctly uses the PSU-authorised `token-exchange` access token instead of the client-credentials token. Ozone and compliant ASPSPs require a PSU-scoped payment token to access the `/domestic-payment-consents/{id}/funds-confirmation` endpoint; the prior client-credentials token produced a `401` on every run.
 
 - PIS domestic-payment starter consent and submission bodies now pass Ozone/OB schema validation. `InstructionIdentification` and `EndToEndIdentification` are generated using a new `per-run-compact-uuid` profile kind (UUID4 hex, 32 characters) which satisfies the OB PIS 35-character field limit. `RemittanceInformation.Unstructured` is now rendered as a JSON array as required by the Open Banking Read/Write v4.0 API specification.
+
+- Plan Builder Custom Test Value reset controls are now hidden while a field matches its selected profile default, appear live when the participant edits a value, and restore the default in-place without submitting the page or collapsing the current tree view.
 
 - The PIS domestic-payment starter `psu-authorization-signing-negative` step now runs in headless mode with an explicit expected authorisation-endpoint rejection (`HTTP 400`). Ozone's direct invalid-request error page no longer causes a manual PSU timeout when this intentionally invalid request-object check runs, and Ozone-style non-callback redirect rejections now also satisfy that explicit negative expectation without weakening normal redirect safety checks.
 
@@ -27,6 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Run Plan model** (`conformance/run_plan.py`): schema-versioned participant-owned artifact for suite coordinates, manifest hash, step selection, and test-value choices. `parse_run_plan`, `serialise_run_plan`, `compute_manifest_hash`, and `run_plan_to_test_values_config` adapter.
+- **Custom Test Value UI**: Plan Builder now shows a "Run Plan" panel with profile selector, per-key override fields, diff-from-default badges, reset-to-default, and advisory shape warnings.
+- **Exploratory Run gate**: runs using a non-default test-value profile or any Custom Test Values are labelled as Exploratory Runs; launch requires acknowledgement; `certificationEligibility.eligible` is `false`.
+- **Run Plan import/export**: participants can export Run Plan JSON for reuse and import it to pre-populate step selection and test values. Hash drift detection blocks launch on manifest mismatch; stale step IDs and custom keys surface as warnings.
+- **Per-step test-value evidence**: `StepResult` now records `consumedTestValueKeys` and `customisedTestValueKeys` in the result JSON `details` block.
+- **Certification validator blocking reason**: `test_value_profile_overridden` added to `CertificationValidationReason`; OBL-side validation now blocks certification when evidence shows `source: overridden`.
+- **Consumed test-value key tracking**: `ManifestStep`, `PsuAuthorizationStep`, and `TestPlanEntry` now carry `consumed_test_value_keys` derived from `${testValues.<key>}` placeholder scanning.
 - New partial bundled `ob-read-write / v4.0 / fapi1-advanced / pis-fcs-legacy-benchmark` suite starts the previous FCS PIS manifest parity track separately from the existing PIS domestic-payment starter. The suite preserves the 8 mandatory domestic-payment legacy script IDs (`OB-400-DOP-100100` through `OB-400-DOP-100700`) as default-selected steps, adds 21 conditional scheduled/standing/international payment rows as opt-in entries, records the frozen legacy PIS manifest inventory and mapping gaps in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md` and `docs/requirements/suite-coverage/v4-pis-prior-fcs-inventory.json`, and remains `certificationCoverage: partial` while unsupported legacy assertion semantics (signing mutation, `asserts_one_of` error-code groups, and PIS OpenAPI schema parity) and Standards sign-off are outstanding.
 - Visual tree-style selection UI metadata for the v4.0.1 AIS baseline now derives its tree from suite metadata, OpenAPI structure, manifest step analysis, and auth bundle permissions via `conformance/openapi_plan_metadata.py`, with non-resource steps grouped into generated sections instead of participant-supplied tree hints. This implements REQ-UX-001 without changing certification eligibility rules.
 - First-class manifest `authMetadata` and environment capability metadata now flow through plan preview, suite-resolved result evidence, execution-log evidence, and certification validation. The browser plan preview surfaces capability blockers/warnings, participant-visible results can carry `authMetadata` and `environmentCapabilities`, and all bundled suites remain explicitly `certificationCoverage: partial`.
@@ -41,6 +58,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Local runtime entry points now standardise on port `8443`, matching the callback port used by legacy previous-FCS Ozone model-bank registrations such as `https://0.0.0.0:8443/conformancesuite/callback`. This covers `make dev`, `make serve`, Docker port publishing, the container command, container healthcheck, and CI smoke-test health probing.
 - Local debug and Makefile-launched Uvicorn/Docker runs now include `0.0.0.0` in `ALLOWED_HOSTS`, so browser requests and ASPSP redirects using the legacy registered host `0.0.0.0:8443` are accepted instead of raising Django `DisallowedHost`.
 - Browser guided-flow inputs now include a model-bank example selector that fills known environment and discovery values while preserving editable custom endpoint fields.
+- Result JSON now persists a first-class `customTestValueImpact` block for participant override keys, including field-level manifest reference paths split into `executedReferences` and `referencedButNotRun`, and the run detail UI now surfaces this evidence in a top-level impact panel plus per-step impact badges/details.
 
 - Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
 

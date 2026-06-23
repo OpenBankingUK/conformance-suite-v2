@@ -47,11 +47,14 @@ Outcome: participants can configure and select tests visually without editing ra
 
 Outcome: exploratory custom testing is useful without weakening certification integrity.
 
-- Define certification and exploratory profiles.
-- Add a test-data/default-profile contract.
-- Record custom-value deviations in preview, result JSON, execution logs, and downloads.
-- Mask sensitive custom values consistently.
-- Ensure unapproved custom values block certification eligibility or follow the final approved override policy.
+Status: shipped. Custom test values now flow as suite `testValues.baseline`, participant `testData.values`, and compiled `RunConfiguration` deltas, with separate coverage and value-purity certification gates and baseline-delta impact evidence.
+
+- Define suite baseline and participant test-data contracts. [Done]
+- Add the compiled RunConfiguration contract. [Done]
+- Record custom-value deviations in preview, result JSON, execution logs, and downloads. [Done]
+- Persist and surface field-level custom-value impact references (`executedReferences` vs `referencedButNotRun`) in result JSON and run-detail UI. [Done]
+- Mask sensitive custom values consistently. [Done]
+- Ensure unapproved custom values block certification eligibility or follow the final approved override policy. [Done]
 
 ## Horizon 5: Release readiness
 
@@ -70,4 +73,3 @@ Outcome: repeat the v4.0.1 AIS method across other APIs.
 - Extend parity-ledger approach to PIS, CBPII, VRP, cVRP, and DCR.
 - Add generic engine primitives only when needed by multiple standards or when clearly reusable.
 - Keep starter suites partial until each family has coverage, validator, docs, and Standards sign-off.
-

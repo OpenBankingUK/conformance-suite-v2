@@ -326,6 +326,174 @@
             background: #fffcf5;
         }
 
+        .run-plan-preview {
+            margin: 12px 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #fbfcfe;
+            padding: 10px 12px;
+        }
+
+        .run-plan-preview h3 {
+            margin: 0;
+            font-size: 1rem;
+        }
+
+        .run-plan-preview p {
+            margin: 10px 0;
+            color: var(--muted);
+            font-size: 0.9rem;
+        }
+
+        .run-plan-json {
+            margin: 0;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            background: #ffffff;
+            font: 0.85rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            white-space: pre-wrap;
+            word-break: break-word;
+        }
+
+        .run-plan-actions {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .exploratory-ack-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 8px;
+            margin: 10px 0 12px;
+        }
+
+        .exploratory-ack-row input[type="checkbox"] {
+            width: 16px;
+            height: 16px;
+            min-height: 16px;
+            margin-top: 2px;
+            flex-shrink: 0;
+        }
+
+        .exploratory-ack-row label {
+            margin-bottom: 0;
+            font-weight: 500;
+        }
+
+        .run-plan-import {
+            min-height: 100px;
+        }
+
+        .test-values-grid {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .test-value-row {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            background: #ffffff;
+        }
+
+        .test-value-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 10px;
+            margin-top: 8px;
+            flex-wrap: wrap;
+        }
+
+        .test-value-reset {
+            min-height: 30px;
+            padding: 4px 10px;
+            font-size: 0.85rem;
+        }
+
+        .tv-step-list {
+            margin-top: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .tv-step {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            background: #ffffff;
+        }
+
+        .tv-step-summary {
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            font-weight: 600;
+            list-style: none;
+            user-select: none;
+        }
+
+        .tv-step-summary::-webkit-details-marker { display: none; }
+
+        .tv-step-id {
+            font-weight: 400;
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        .tv-surface {
+            border-top: 1px solid var(--border);
+        }
+
+        .tv-surface-heading {
+            padding: 6px 12px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        .tv-rows {
+            padding: 6px 12px 10px;
+        }
+
+        .tv-row {
+            padding-left: calc(var(--tv-depth, 0) * 16px);
+        }
+
+        .tv-group {
+            padding-top: 4px;
+            padding-bottom: 2px;
+        }
+
+        .tv-path-segment {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        .tv-leaf {
+            display: grid;
+            gap: 4px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+        }
+
+        .tv-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+        }
+
+        .tv-also-above {
+            font-size: 0.8rem;
+            font-style: italic;
+        }
+
         .plan-tree {
             display: flex;
             flex-direction: column;
@@ -764,6 +932,140 @@
                     <div class="message warning" data-plan-certification-message>Certification selection ineligible</div>
                 {% endif %}
 
+                <section class="run-plan-preview" aria-labelledby="run-plan-heading">
+                    <h3 id="run-plan-heading">Run Plan</h3>
+                    <p>Run Plan (export this to reuse your test configuration)</p>
+                    {% if preview.legacy_test_values_warning %}
+                        <div class="message warning">Your configuration includes testValues — these will be migrated to a Run Plan on launch.</div>
+                    {% endif %}
+                    {% if preview.plan_drift_blocks_launch %}
+                        <div class="message error">Imported Run Plan drift blocks launch until you re-export from the current manifest.</div>
+                    {% endif %}
+                    {% for drift_warning in preview.plan_drift_warnings %}
+                        <div class="message warning">{{ drift_warning }}</div>
+                    {% endfor %}
+                    {% if preview.is_exploratory_run %}
+                        <div class="message warning">⚠️ Exploratory Run — results will not be eligible for certification submission.</div>
+                        <div class="exploratory-ack-row">
+                            <input type="checkbox" name="exploratory_ack" id="exploratory_ack" {% if form.exploratory_ack.value %}checked{% endif %}>
+                            <label for="exploratory_ack">I understand this is an Exploratory Run and results will not be eligible for certification.</label>
+                        </div>
+                    {% endif %}
+                    <label for="run-plan-import">Import Run Plan JSON</label>
+                    <textarea
+                        id="run-plan-import"
+                        name="run_plan_import"
+                        rows="4"
+                        class="run-plan-import"
+                        placeholder="Paste a Run Plan JSON here to import..."
+                        spellcheck="false"
+                    >{{ form.run_plan_import.value|default_if_none:"" }}</textarea>
+                    <div class="run-plan-actions">
+                        <button type="button" class="secondary" data-run-plan-copy>Copy to clipboard</button>
+                        <span class="muted" data-run-plan-copy-status></span>
+                    </div>
+                    <pre class="run-plan-json" data-run-plan-json>{{ preview.run_plan_json }}</pre>
+                </section>
+
+                {% if preview.test_value_step_groups %}
+                    <section class="run-plan-preview" aria-labelledby="test-values-heading">
+                        <h3 id="test-values-heading">Test Values</h3>
+                        <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
+                        <div class="tv-step-list">
+                            {% for group in preview.test_value_step_groups %}
+                                <details class="tv-step">
+                                    <summary class="tv-step-summary">
+                                        <span class="tv-step-name">{{ group.step_name }}</span>
+                                        <span class="step-id tv-step-id">{{ group.step_id }}</span>
+                                    </summary>
+                                    {% for surface in group.surfaces %}
+                                        <div class="tv-surface">
+                                            <div class="tv-surface-heading">{{ surface.surface_label }}</div>
+                                            <div class="tv-rows">
+                                                {% for row in surface.rows %}
+                                                    {% if row.row_type == "group" %}
+                                                        <div class="tv-row tv-group" style="--tv-depth: {{ row.depth }}">
+                                                            <span class="tv-path-segment">{{ row.label }}</span>
+                                                        </div>
+                                                    {% else %}
+                                                        <div class="tv-row tv-leaf" style="--tv-depth: {{ row.depth }}">
+                                                            {% if row.is_generated %}
+                                                                <label class="tv-label">{{ row.label }}</label>
+                                                                <div class="muted">generated per run</div>
+                                                            {% elif row.is_canonical %}
+                                                                <label class="tv-label" for="custom-tv-{{ row.key }}">{{ row.label }}</label>
+                                                                <input
+                                                                    id="custom-tv-{{ row.key }}"
+                                                                    name="custom_tv_{{ row.key }}"
+                                                                    type="text"
+                                                                    value="{{ row.current_value }}"
+                                                                    placeholder="{{ row.default_value }}"
+                                                                    data-custom-test-value-input="{{ row.key }}"
+                                                                    data-default-value="{{ row.default_value }}"
+                                                                >
+                                                                <div class="test-value-meta">
+                                                                    <div>
+                                                                        <span class="badge optional" data-custom-test-value-badge="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>(custom)</span>
+                                                                        <span class="muted" data-custom-test-value-default="{{ row.key }}" {% if row.is_overridden %}hidden{% endif %}>Default: {{ row.default_value }}</span>
+                                                                    </div>
+                                                                    <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>Reset to default</button>
+                                                                </div>
+                                                                {% if row.shape_warning %}
+                                                                    <div class="message warning">{{ row.shape_warning }}</div>
+                                                                {% endif %}
+                                                            {% else %}
+                                                                <label class="tv-label">{{ row.label }}</label>
+                                                                <div class="muted tv-also-above">Edited above ({{ row.key }})</div>
+                                                            {% endif %}
+                                                        </div>
+                                                    {% endif %}
+                                                {% endfor %}
+                                            </div>
+                                        </div>
+                                    {% endfor %}
+                                </details>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% elif preview.test_value_fields %}
+                    <section class="run-plan-preview" aria-labelledby="test-values-heading">
+                        <h3 id="test-values-heading">Test Values</h3>
+                        <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
+                        {% if preview.manifest.test_value_profiles %}
+                            {% with selected_profile_id=preview.run_plan.test_values.profile|default_if_none:preview.manifest.test_value_profiles.default_profile_id %}
+                                <label for="test-value-profile-selector">Profile</label>
+                                <select id="test-value-profile-selector" name="test_value_profile">
+                                    {% for profile in preview.manifest.test_value_profiles.profiles %}
+                                        <option value="{{ profile.id }}" {% if profile.id == selected_profile_id %}selected{% endif %}>{{ profile.label }} ({{ profile.id }})</option>
+                                    {% endfor %}
+                                </select>
+                            {% endwith %}
+                        {% endif %}
+                        <div class="test-values-grid">
+                            {% for field in preview.test_value_fields %}
+                                <div class="test-value-row">
+                                    <label for="custom-tv-{{ field.key }}">{{ field.key }}</label>
+                                    {% if field.is_generated %}
+                                        <div class="muted">generated per run</div>
+                                    {% else %}
+                                        <input id="custom-tv-{{ field.key }}" name="custom_tv_{{ field.key }}" type="text" value="{{ field.current_value }}" placeholder="{{ field.default_value }}" data-custom-test-value-input="{{ field.key }}" data-default-value="{{ field.default_value }}">
+                                        <div class="test-value-meta">
+                                            <div>
+                                                <span class="badge optional" data-custom-test-value-badge="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>(custom)</span>
+                                                <span class="muted" data-custom-test-value-default="{{ field.key }}" {% if field.is_overridden %}hidden{% endif %}>Default: {{ field.default_value }}</span>
+                                            </div>
+                                            <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>Reset to default</button>
+                                        </div>
+                                    {% endif %}
+                                    {% if field.shape_warning %}
+                                        <div class="message warning">{{ field.shape_warning }}</div>
+                                    {% endif %}
+                                </div>
+                            {% endfor %}
+                        </div>
+                    </section>
+                {% endif %}
+
                 {% for blocker in preview.launch_blockers %}
                     <div class="message warning">{{ blocker }}</div>
                 {% endfor %}
@@ -843,9 +1145,57 @@
         const bulkButtons = document.querySelectorAll('[data-plan-bulk-action]');
         const stepCheckboxes = document.querySelectorAll('[data-plan-step-checkbox]');
         const parentCheckboxes = document.querySelectorAll('[data-plan-parent-checkbox]');
+        const testValueResetButtons = document.querySelectorAll('[data-reset-test-value]');
         const selectedCountValue = document.querySelector('[data-plan-count-selected]');
         const mandatoryOffCountValue = document.querySelector('[data-plan-count-mandatory-off]');
         const certificationMessage = document.querySelector('[data-plan-certification-message]');
+        const runPlanCopyButton = document.querySelector('[data-run-plan-copy]');
+        const runPlanJson = document.querySelector('[data-run-plan-json]');
+        const runPlanCopyStatus = document.querySelector('[data-run-plan-copy-status]');
+        const syncTestValueResetState = (input) => {
+            const key = input.dataset.customTestValueInput;
+            if (!key) {
+                return;
+            }
+            const escapedKey = CSS.escape(key);
+            const resetButton = document.querySelector(`[data-reset-test-value="${escapedKey}"]`);
+            const customBadge = document.querySelector(`[data-custom-test-value-badge="${escapedKey}"]`);
+            const defaultLabel = document.querySelector(`[data-custom-test-value-default="${escapedKey}"]`);
+            const isCustom = input.value !== (input.dataset.defaultValue || '');
+            if (resetButton instanceof HTMLButtonElement) {
+                resetButton.hidden = !isCustom;
+            }
+            if (customBadge instanceof HTMLElement) {
+                customBadge.hidden = !isCustom;
+            }
+            if (defaultLabel instanceof HTMLElement) {
+                defaultLabel.hidden = isCustom;
+            }
+        };
+        const testValueInputs = document.querySelectorAll('[data-custom-test-value-input]');
+        for (const input of testValueInputs) {
+            if (!(input instanceof HTMLInputElement)) {
+                continue;
+            }
+            input.addEventListener('input', () => {
+                syncTestValueResetState(input);
+            });
+            syncTestValueResetState(input);
+        }
+        for (const resetButton of testValueResetButtons) {
+            resetButton.addEventListener('click', () => {
+                const key = resetButton.dataset.resetTestValue;
+                if (!key) {
+                    return;
+                }
+                const input = document.querySelector(`[data-custom-test-value-input="${CSS.escape(key)}"]`);
+                if (!(input instanceof HTMLInputElement)) {
+                    return;
+                }
+                input.value = input.dataset.defaultValue || '';
+                syncTestValueResetState(input);
+            });
+        }
         if (!specSelect || !apiSelect || !suiteSelect || !suiteDescription) {
             return;
         }
@@ -1153,6 +1503,26 @@
                     setStepSelectionState(leaf, isChecked);
                 }
                 refreshPlanSelectionPreview();
+            });
+        }
+        if (runPlanCopyButton && runPlanJson) {
+            runPlanCopyButton.addEventListener('click', async () => {
+                if (!navigator.clipboard || !navigator.clipboard.writeText) {
+                    if (runPlanCopyStatus) {
+                        runPlanCopyStatus.textContent = 'Clipboard API unavailable in this browser.';
+                    }
+                    return;
+                }
+                try {
+                    await navigator.clipboard.writeText(runPlanJson.textContent || '');
+                    if (runPlanCopyStatus) {
+                        runPlanCopyStatus.textContent = 'Copied';
+                    }
+                } catch {
+                    if (runPlanCopyStatus) {
+                        runPlanCopyStatus.textContent = 'Copy failed';
+                    }
+                }
             });
         }
         syncGuidedFlow();

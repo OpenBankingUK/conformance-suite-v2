@@ -12,7 +12,11 @@ from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.cli_callback_server import CliCallbackServer, CliCallbackServerError, needs_cli_callback_listener
-from conformance.context import RuntimeConfig, build_runtime_test_values
+from conformance.context import (
+    RuntimeConfig,
+    build_runtime_test_values,
+    validate_test_value_config_contract,
+)
 from conformance.execution_log import (
     BufferedExecutionLogger,
     PsuAuthorizationUrlConsoleLogger,
@@ -23,6 +27,7 @@ from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, PsuAuthorizationStep, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
+from conformance.run_configuration import compile_run_configuration
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan, build_plan_test_value_context
@@ -105,13 +110,34 @@ def run(argv: Sequence[str] | None = None) -> int:
                 return 2
 
         try:
-            test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+            validate_test_value_config_contract(
+                manifest=manifest,
+                config_test_values=config.test_values,
+                config_test_data=config.test_data,
+            )
+            preflight_run_config = compile_run_configuration(
+                manifest=manifest,
+                selected_step_ids=None,
+                test_data_values=dict(config.test_data.values) if config.test_data is not None else {},
+            )
+            test_value_ctx = build_plan_test_value_context(
+                manifest,
+                config.test_values,
+                config.test_data,
+                run_configuration=preflight_run_config,
+            )
             plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx).with_deselection(
                 args.deselect
             )
         except ValueError as error:
             logger.error("Plan error: %s", error)
             return 2
+
+        run_config = compile_run_configuration(
+            manifest=manifest,
+            selected_step_ids=set(plan.selected_step_ids()),
+            test_data_values=dict(config.test_data.values) if config.test_data is not None else {},
+        )
 
         http_client = build_json_http_client(
             timeout_seconds=config.timeout_seconds,
@@ -158,10 +184,18 @@ def run(argv: Sequence[str] | None = None) -> int:
                             oauth_open_banking_intent_id=(
                                 config.oauth.open_banking_intent_id if config.oauth is not None else None
                             ),
-                            test_values=build_runtime_test_values(manifest, config.test_values),
+                            test_values=build_runtime_test_values(
+                                manifest,
+                                config.test_values,
+                                config.test_data,
+                                run_configuration=run_config,
+                            ),
                             test_value_profile_id=test_value_ctx.profile_id,
                             test_value_profile_source=test_value_ctx.profile_source,
                             test_value_override_keys=tuple(sorted(test_value_ctx.override_keys)),
+                            baseline_delta_keys=(
+                                run_config.baseline_delta_keys if run_config is not None else frozenset()
+                            ),
                         ),
                         fapi_signing_config=config.fapi_signing,
                         open_banking_config=config.open_banking,
@@ -171,6 +205,21 @@ def run(argv: Sequence[str] | None = None) -> int:
                         ),
                         suite_metadata=suite_metadata,
                         approved_release_policy=config.approved_release_policy,
+                        custom_test_values_active=(
+                            (run_config is not None and run_config.has_custom_values)
+                            or (
+                                run_config is None
+                                and (
+                                    (
+                                        config.test_values is not None
+                                        and (
+                                            config.test_values.profile is not None or bool(config.test_values.overrides)
+                                        )
+                                    )
+                                    or (config.test_data is not None and bool(config.test_data.values))
+                                )
+                            )
+                        ),
                     )
             except CliCallbackServerError as error:
                 logger.error("Callback listener error: %s", error)

@@ -614,9 +614,8 @@ PIS_FCS_LEGACY_BENCHMARK_CONFIG = {
     "openBanking": {
         "financialId": "test-financial-id",
     },
-    "testValues": {
-        "profile": "ozone-demo",
-        "overrides": {
+    "testData": {
+        "values": {
             "scheduledPaymentDateTime": "2026-07-17T10:00:00+00:00",
             "frequency": "EvryDay",
             "firstPaymentDateTime": "2026-07-17T10:00:00+00:00",
@@ -878,7 +877,7 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
-        assert mock_execute.call_args.args[2:] == (None, None, None)
+        assert mock_execute.call_args.args[2:] == (None, None, None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
     @patch("conformance.api.run_lifecycle._execute_run")
@@ -1287,6 +1286,42 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "Plan validation failed" in response.json()["error"]
 
+    def test_rejects_legacy_test_values_for_new_schema_manifest(self) -> None:
+        """API run creation rejects legacy ``testValues`` for baseline-schema suites."""
+        client = Client()
+        manifest = {
+            "schemaVersion": "v1",
+            "name": "new-schema-suite",
+            "testValues": {
+                "baseline": {"paymentId": "baseline-payment-id"},
+                "allowedCustomKeys": ["paymentId"],
+            },
+            "steps": [
+                {
+                    "id": "step-1",
+                    "name": "Step 1",
+                    "request": {"method": "GET", "url": "https://example.com/${testValues.paymentId}"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+        body = {
+            "config": {
+                "environment": "test-env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testValues": {
+                    "profile": "ozone-demo",
+                    "overrides": {"paymentId": "custom-payment-id"},
+                },
+            },
+            "manifest": manifest,
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "legacy testValues.profile/testValues.overrides" in response.json()["error"]
+
     def test_rejects_deselect_without_manifest(self) -> None:
         """``deselectStepIds`` requires an inline or config-resolved manifest."""
         client = Client()
@@ -1663,7 +1698,7 @@ class TestPsuAuthorizationApiRun:
                     ),
                     None,
                 ),
-                timeout_seconds=2.0,
+                timeout_seconds=8.0,
             )
             callback_response = client.get(
                 "/callback/",

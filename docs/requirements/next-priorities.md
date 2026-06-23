@@ -64,12 +64,14 @@ Outputs:
 
 Why fifth: custom values affect certification eligibility and result schema, so they should be added after coverage and auth metadata are stable.
 
+Status: complete. Custom test values now ship with suite baselines, participant `testData.values`, compiled `RunConfiguration` deltas, custom-value UI, exploratory-run gating, import/export drift checks, and validator enforcement.
+
 Outputs:
 
-- certification vs exploratory profile contract
-- override audit shape
-- UI diffing and reset-to-default
-- validator rejection of unapproved custom values
+- baseline vs participant-data contract [done]
+- baseline-delta audit shape [done]
+- UI diffing and reset-to-default [done]
+- validator rejection of unapproved custom values [done]
 
 ## Priority 6: Complete-suite promotion and release readiness
 
@@ -88,3 +90,5 @@ Outputs:
 - PIS/CBPII/VRP/cVRP/DCR certifiable coverage should wait until the AIS method is proven, except for reusable primitives that also unblock AIS.
 - Phase 2 portal implementation should remain architecture constraints unless business priority changes.
 - Mobile QR code auth should remain a separate feature track until manual/headless/mTLS paths are clearer.
+
+Rank 0 custom test values are done; Rank 1 should now focus on multi-auth bundle UI and plan-builder polish.

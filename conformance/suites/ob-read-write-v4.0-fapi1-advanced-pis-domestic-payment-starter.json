@@ -2,70 +2,6 @@
   "schemaVersion": "v1",
   "name": "Open Banking Read/Write v4.0 FAPI 1 Advanced PIS domestic payment starter suite",
   "certificationCoverage": "partial",
-  "testValueProfiles": {
-    "defaultProfileId": "ozone-demo",
-    "profiles": [
-      {
-        "id": "ozone-demo",
-        "label": "Ozone demo domestic payment defaults",
-        "values": {
-          "instructedAmountCurrency": "GBP",
-          "instructedAmountValue": "1.00",
-          "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
-          "creditorIdentification": "11223344556677",
-          "creditorName": "Ozone Demo Merchant",
-          "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
-          "thisIdentification": "22334455667788",
-          "remittanceInformation": "Ozone domestic payment starter"
-        },
-        "generatedKeys": {
-          "instructionIdentification": "per-run-compact-uuid",
-          "endToEndIdentification": "per-run-compact-uuid",
-          "consentIdempotencyKey": "per-run-uuid",
-          "negativeConsentIdempotencyKey": "per-run-uuid",
-          "submitIdempotencyKey": "per-run-uuid"
-        }
-      },
-      {
-        "id": "synthetic-fallback",
-        "label": "Synthetic domestic payment fallback",
-        "values": {
-          "instructedAmountCurrency": "GBP",
-          "instructedAmountValue": "1.00",
-          "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
-          "creditorIdentification": "99887766554433",
-          "creditorName": "Synthetic Merchant",
-          "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
-          "thisIdentification": "88776655443322",
-          "remittanceInformation": "Synthetic domestic payment fallback"
-        },
-        "generatedKeys": {
-          "instructionIdentification": "per-run-compact-uuid",
-          "endToEndIdentification": "per-run-compact-uuid",
-          "consentIdempotencyKey": "per-run-uuid",
-          "negativeConsentIdempotencyKey": "per-run-uuid",
-          "submitIdempotencyKey": "per-run-uuid"
-        }
-      }
-    ],
-    "allowedOverrideKeys": [
-      "instructedAmountCurrency",
-      "instructedAmountValue",
-      "creditorSchemeName",
-      "creditorIdentification",
-      "creditorName",
-      "thisSchemeName",
-      "thisIdentification",
-      "remittanceInformation"
-    ],
-    "nonSecretKeys": [
-      "instructionIdentification",
-      "endToEndIdentification",
-      "consentIdempotencyKey",
-      "negativeConsentIdempotencyKey",
-      "submitIdempotencyKey"
-    ]
-  },
   "steps": [
     {
       "id": "openid-discovery",
@@ -212,7 +148,9 @@
                 "Name": "${testValues.creditorName}"
               },
               "RemittanceInformation": {
-                "Unstructured": ["${testValues.remittanceInformation}"]
+                "Unstructured": [
+                  "${testValues.remittanceInformation}"
+                ]
               }
             }
           },
@@ -409,7 +347,9 @@
                 "Name": "${testValues.creditorName}"
               },
               "RemittanceInformation": {
-                "Unstructured": ["${testValues.remittanceInformation}"]
+                "Unstructured": [
+                  "${testValues.remittanceInformation}"
+                ]
               }
             }
           },
@@ -602,6 +542,35 @@
         "stepId": "domestic-payment-read-back",
         "bundleId": "domestic-payment-flow"
       }
+    ]
+  },
+  "testValues": {
+    "baseline": {
+      "instructedAmountCurrency": "GBP",
+      "instructedAmountValue": "1.00",
+      "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
+      "creditorIdentification": "11223344556677",
+      "creditorName": "Test Merchant",
+      "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
+      "thisIdentification": "22334455667788",
+      "remittanceInformation": "Test domestic payment"
+    },
+    "generatedKeys": {
+      "instructionIdentification": "per-run-compact-uuid",
+      "endToEndIdentification": "per-run-compact-uuid",
+      "consentIdempotencyKey": "per-run-uuid",
+      "negativeConsentIdempotencyKey": "per-run-uuid",
+      "submitIdempotencyKey": "per-run-uuid"
+    },
+    "allowedCustomKeys": [
+      "instructedAmountCurrency",
+      "instructedAmountValue",
+      "creditorSchemeName",
+      "creditorIdentification",
+      "creditorName",
+      "thisSchemeName",
+      "thisIdentification",
+      "remittanceInformation"
     ]
   }
 }

@@ -741,6 +741,86 @@ def test_test_value_profile_evidence_is_serialized_when_supplied() -> None:
     }
 
 
+@pytest.mark.unit
+def test_custom_test_value_impact_is_serialized_when_supplied() -> None:
+    """Result JSON includes optional custom-test-value impact evidence."""
+    from datetime import UTC, datetime
+
+    from conformance.results import build_smoke_check_result
+
+    started = datetime.now(UTC)
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="x", status="passed", message="ok")],
+        started_at=started,
+        custom_test_value_impact={
+            "profileId": "ozone-demo",
+            "source": "overridden",
+            "overrideKeys": ["creditorName"],
+            "summary": {
+                "overrideKeyCount": 1,
+                "executedReferenceCount": 2,
+                "referencedButNotRunCount": 1,
+                "executedStepCount": 1,
+                "referencedButNotRunStepCount": 1,
+            },
+            "executedReferences": [
+                {
+                    "stepId": "domestic-payment-consent",
+                    "stepName": "Domestic payment consent",
+                    "status": "passed",
+                    "key": "creditorName",
+                    "requestArea": "request-json-body",
+                    "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+                }
+            ],
+            "referencedButNotRun": [
+                {
+                    "stepId": "domestic-payment-consent-negative",
+                    "stepName": "Domestic payment consent negative",
+                    "notRunReason": "deselected",
+                    "key": "creditorName",
+                    "requestArea": "request-json-body",
+                    "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+                }
+            ],
+        },
+    ).to_json_object()
+
+    assert rendered["customTestValueImpact"] == {
+        "profileId": "ozone-demo",
+        "source": "overridden",
+        "overrideKeys": ["creditorName"],
+        "summary": {
+            "overrideKeyCount": 1,
+            "executedReferenceCount": 2,
+            "referencedButNotRunCount": 1,
+            "executedStepCount": 1,
+            "referencedButNotRunStepCount": 1,
+        },
+        "executedReferences": [
+            {
+                "stepId": "domestic-payment-consent",
+                "stepName": "Domestic payment consent",
+                "status": "passed",
+                "key": "creditorName",
+                "requestArea": "request-json-body",
+                "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+            }
+        ],
+        "referencedButNotRun": [
+            {
+                "stepId": "domestic-payment-consent-negative",
+                "stepName": "Domestic payment consent negative",
+                "notRunReason": "deselected",
+                "key": "creditorName",
+                "requestArea": "request-json-body",
+                "fieldPath": "request.body.Data.Initiation.CreditorAccount.Name",
+            }
+        ],
+    }
+
+
 # ─── Packet B: certification coverage gating ─────────────────────────────────
 
 

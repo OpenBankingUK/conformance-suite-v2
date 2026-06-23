@@ -268,6 +268,24 @@ class TestValuesConfig:
 
 
 @dataclass(frozen=True)
+class TestDataConfig:
+    """Participant-supplied test data values for selected suite execution.
+
+    Provides environment/persona/payment values used to make a run executable
+    against a target ASPSP. These override the suite's generic baseline values
+    where present and allowed.
+
+    Keys must match entries in the suite manifest's ``testValues.allowedCustomKeys``.
+    Same-as-baseline values are normalised away and treated as absent.
+
+    Attributes:
+        values: Immutable mapping of test-data key names to string values.
+    """
+
+    values: Mapping[str, str]
+
+
+@dataclass(frozen=True)
 class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
@@ -302,6 +320,9 @@ class ModelBankConfig:
         test_values: Optional participant test-value profile selection and key
             overrides. When absent, the manifest's default profile is used with
             no overrides.
+        test_data: Optional participant test-data values keyed by the suite
+            manifest's ``testValues.allowedCustomKeys`` contract. When absent,
+            execution falls back to the suite manifest baseline values.
         open_banking: Optional Open Banking institution metadata, including the
             ``x-fapi-financial-id`` header value injected for resource-server
             write requests. When absent, no financial-id header is added.
@@ -319,6 +340,7 @@ class ModelBankConfig:
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
     test_values: TestValuesConfig | None = None
+    test_data: TestDataConfig | None = None
     open_banking: OpenBankingConfig | None = None
 
 
@@ -388,6 +410,7 @@ def parse_model_bank_config(
             "approvedReleasePolicyPath",
             "oauth",
             "testValues",
+            "testData",
             "openBanking",
         },
         location="config",
@@ -416,6 +439,7 @@ def parse_model_bank_config(
     _validate_psu_auth_starter_oauth(test_suite, oauth)
     fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
     test_values = _parse_test_values_config(raw_config)
+    test_data = _parse_test_data_config(raw_config)
     open_banking = _parse_open_banking_config(raw_config)
 
     return ModelBankConfig(
@@ -431,6 +455,7 @@ def parse_model_bank_config(
         oauth=oauth,
         fapi_signing=fapi_signing,
         test_values=test_values,
+        test_data=test_data,
         open_banking=open_banking,
     )
 
@@ -681,6 +706,47 @@ def _parse_test_values_config(raw_config: dict[str, JsonValue]) -> TestValuesCon
         profile=profile,
         overrides=MappingProxyType(overrides),
     )
+
+
+def _parse_test_data_config(raw_config: dict[str, JsonValue]) -> TestDataConfig | None:
+    """Parse the optional ``testData`` section of a participant config.
+
+    Accepts a ``values`` object mapping key names to string values.
+    The key name character set is validated here.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed ``TestDataConfig``, or ``None`` when the config omits the
+        ``testData`` section.
+
+    Raises:
+        ConfigError: If ``testData`` is not a JSON object, contains unknown
+            keys, ``values`` is not a JSON object, or any value key or value
+            fails validation.
+    """
+    raw_test_data = raw_config.get("testData")
+    if raw_test_data is None:
+        return None
+    if not isinstance(raw_test_data, dict):
+        raise ConfigError("testData must be a JSON object")
+
+    _reject_unknown_keys(raw_test_data, allowed_keys={"values"}, location="testData")
+
+    raw_values = raw_test_data.get("values")
+    if not isinstance(raw_values, dict):
+        raise ConfigError("testData.values must be a JSON object")
+    values: dict[str, str] = {}
+    for key, value in raw_values.items():
+        if not key or _TEST_VALUES_KEY_PATTERN.fullmatch(key) is None:
+            raise ConfigError(f"testData.values key {key!r} is invalid (must match [A-Za-z][A-Za-z0-9_-]*)")
+        if not isinstance(value, str):
+            raise ConfigError(f"testData.values.{key} must be a string value")
+        values[key] = value
+
+    return TestDataConfig(values=MappingProxyType(values))
 
 
 @dataclass(frozen=True)

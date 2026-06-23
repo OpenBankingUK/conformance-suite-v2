@@ -19,6 +19,7 @@ The repository currently includes:
 - JSON participant config with TLS, OAuth, FAPI signing, approved-release policy, suite selection, and output path validation.
 - v0/v1 manifest parsing, HTTP steps, PSU authorisation steps, generic assertions, response-schema assertions, form bodies, setup/execution groups, FAPI signing directives, detached JWS, token-endpoint auth policy, mandatory/optional metadata, and `certificationCoverage`.
 - First-class test plans with default mandatory/non-optional selection, optional opt-in rows, and certification-impacting mandatory deselection.
+- Schema-versioned participant-owned Run Plans with manifest-hash drift detection, import/export, custom test values, and exploratory-run gating.
 - Group-aware execution, masked request/response evidence, structured NDJSON execution logs, and deterministic result ordering.
 - Result JSON with metadata, tool version, suite metadata, plan summary, certification eligibility, approved-release self-assessment, and partial/complete coverage state.
 - OBL-side certification validator CLI that recomputes mandatory coverage and approved-release checks from independent inputs.
@@ -95,11 +96,12 @@ Phase 2 portal work is not the active implementation target for this PRD, but Ph
 
 ### 7.4 Custom test values
 
-- Participants should be able to run exploratory tests with custom values.
-- Certification runs must use OBL-defined defaults unless a future policy explicitly permits an approved override.
-- Custom values must be visible as differences before launch and recorded after execution.
-- Result JSON and execution logs must record affected requirement/step, default profile reference, override source, certification impact, and masked value evidence where sensitive.
-- Unapproved custom values should make certification eligibility false.
+- [Implemented] Suite manifests own `testValues.baseline`, `generatedKeys`, and `allowedCustomKeys`; participant inputs provide `testData.values`; the compiled `RunConfiguration` is the execution artifact.
+- [Implemented] `RunConfigurationCompiler` normalises same-as-baseline values away, preserves only effective baseline deltas, and reports `missing_required_keys` when neither the suite baseline nor participant data supplies a required key.
+- [Implemented] Certification uses two independent gates: coverage (mandatory steps present/passed) and value purity (`baselineDeltaKeys` must be empty for certifiable runs).
+- [Implemented] Run-plan and result evidence expose baseline-delta impact only for genuine deltas; the UI shows the “Test Data Customisation” panel and “N custom value reference(s)” badges only when deltas exist.
+- [Implemented] Result JSON and execution logs record affected requirement/step, baseline-delta keys, custom value impact, and masked value evidence where sensitive.
+- [Implemented] The Run Plan remains participant-owned, while participant configuration continues to hold environment and credential inputs; launch is blocked when required keys are missing from both baseline and participant data.
 
 ### 7.5 Multi-auth
 
@@ -133,4 +135,3 @@ Phase 2 portal work is not the active implementation target for this PRD, but Ph
 ## 9. Open decisions
 
 Open decisions are tracked in `decisions.md`. The most urgent are environment capability metadata, custom-value certification policy, headless PSU feasibility, Standards sign-off representation, DCR timing, accessibility policy, and Phase 1 Docker runtime hardening details.
-

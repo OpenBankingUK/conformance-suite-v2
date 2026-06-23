@@ -35,10 +35,13 @@ from __future__ import annotations
 from collections.abc import Iterable, Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import ClassVar, Literal
+from typing import TYPE_CHECKING, ClassVar, Literal
 
 from conformance.manifest import Manifest, V1Step
-from conformance.model_bank_config import TestValuesConfig
+from conformance.model_bank_config import TestDataConfig, TestValuesConfig
+
+if TYPE_CHECKING:
+    from conformance.run_configuration import RunConfiguration
 
 TestValueProfileSource = Literal["default", "overridden"]
 """Source descriptor for the test-value profile resolved at plan build time.
@@ -62,27 +65,42 @@ class PlanTestValueContext:
     Attributes:
         effective_values: Immutable mapping of resolved key names to their
             effective string values for this run.  Empty when the manifest
-            declares no ``testValueProfiles``.
+            declares no ``testValueProfiles`` and no ``testValues``.
         profile_id: The effective profile identifier that was selected (either
             the manifest's ``defaultProfileId`` or the participant-chosen
             override).  ``None`` when the manifest has no ``testValueProfiles``.
         profile_source: Whether the effective profile is the manifest default
             or participant-overridden.  ``None`` when the manifest has no
-            ``testValueProfiles``.
+            ``testValueProfiles``.  For manifests with a ``testValues`` block
+            this is derived from :attr:`baseline_delta_keys` when a
+            :class:`~conformance.run_configuration.RunConfiguration` is provided
+            to :func:`build_plan_test_value_context`.
         override_keys: Frozenset of key names supplied by the participant via
-            ``testValues.overrides`` in the config.  Empty when no overrides
-            were applied.
+            ``testValues.overrides`` in the config (legacy profiles) or the
+            set of test-data value keys supplied by the participant (new
+            baseline-delta path).  Empty when no overrides were applied.
+        baseline_delta_keys: Frozenset of key names whose effective value
+            differs from the suite manifest baseline.  Populated from
+            :attr:`~conformance.run_configuration.RunConfiguration.baseline_delta_keys`
+            when a compiled :class:`~conformance.run_configuration.RunConfiguration`
+            is passed to :func:`build_plan_test_value_context`.  For callers
+            that do not provide a ``RunConfiguration`` this is a best-effort
+            approximation (the set of participant-supplied test-data keys) and
+            may include same-as-baseline values before normalisation.
     """
 
     effective_values: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     profile_id: str | None = None
     profile_source: TestValueProfileSource | None = None
     override_keys: frozenset[str] = field(default_factory=frozenset)
+    baseline_delta_keys: frozenset[str] = field(default_factory=frozenset)
 
 
 def build_plan_test_value_context(
     manifest: Manifest,
     config_test_values: TestValuesConfig | None,
+    config_test_data: TestDataConfig | None = None,
+    run_configuration: RunConfiguration | None = None,
 ) -> PlanTestValueContext:
     """Derive the test-value context used for conditional plan auto-selection.
 
@@ -91,6 +109,16 @@ def build_plan_test_value_context(
     (unknown profile, disallowed override key) is re-raised so callers can
     surface it before building the plan.
 
+    When ``run_configuration`` is provided and the manifest declares a
+    ``testValues`` block, the context is derived directly from the compiled
+    :class:`~conformance.run_configuration.RunConfiguration`: effective values
+    are taken from
+    :attr:`~conformance.run_configuration.RunConfiguration.effective_test_values`
+    and ``baseline_delta_keys`` from
+    :attr:`~conformance.run_configuration.RunConfiguration.baseline_delta_keys`.
+    The ``profile_source`` is set to ``"overridden"`` when any baseline delta
+    keys exist, or ``"default"`` otherwise (backward compat mapping).
+
     When the manifest declares no ``testValueProfiles`` and the config has no
     ``testValues`` section, returns an empty context with ``profile_id=None``
     and empty ``effective_values`` so old manifests continue to work without
@@ -98,9 +126,17 @@ def build_plan_test_value_context(
 
     Args:
         manifest: Parsed manifest whose ``testValueProfiles`` metadata
-            describes available profiles and allowed override keys.
+            describes available profiles and allowed override keys, and/or
+            whose ``testValues`` block declares baseline/generation metadata.
         config_test_values: Participant config test-value selection, or
             ``None`` when the config omits the ``testValues`` section.
+        config_test_data: Participant config custom test-data mapping, or
+            ``None`` when the config omits the ``testData`` section.
+        run_configuration: Optional compiled run configuration from
+            :func:`~conformance.run_configuration.compile_run_configuration`.
+            When provided and the manifest has a ``testValues`` block, its
+            effective values and baseline delta keys are used directly
+            instead of re-resolving from config.
 
     Returns:
         A :class:`PlanTestValueContext` suitable for passing to
@@ -116,14 +152,41 @@ def build_plan_test_value_context(
     from conformance.context import build_runtime_test_values  # noqa: PLC0415 — deferred
 
     profile_spec = manifest.test_value_profiles
-    if profile_spec is None and config_test_values is None:
+    manifest_test_values = manifest.test_values
+
+    # Fast-path: RunConfiguration already compiled — use it directly for
+    # manifests with a testValues block (new baseline-delta path).
+    if run_configuration is not None and manifest_test_values is not None:
+        delta_keys = run_configuration.baseline_delta_keys
+        profile_source: TestValueProfileSource = "overridden" if delta_keys else "default"
+        return PlanTestValueContext(
+            effective_values=run_configuration.effective_test_values,
+            profile_source=profile_source,
+            override_keys=delta_keys,
+            baseline_delta_keys=delta_keys,
+        )
+
+    if (
+        profile_spec is None
+        and manifest_test_values is None
+        and config_test_values is None
+        and config_test_data is None
+    ):
         return PlanTestValueContext()
 
-    effective_values = build_runtime_test_values(manifest, config_test_values)
+    effective_values = build_runtime_test_values(manifest, config_test_values, config_test_data)
     if profile_spec is None:
-        # build_runtime_test_values raises if config_test_values is set but
-        # profile_spec is None — we would not reach here.
-        return PlanTestValueContext(effective_values=effective_values)
+        # Manifest has testValues but no testValueProfiles.  The best-effort
+        # baseline_delta_keys is the full set of participant-supplied test-data
+        # keys (before same-as-baseline normalisation, which requires a compiled
+        # RunConfiguration).  Conditional step selection only needs to know
+        # whether each required key has *some* value, which this set provides.
+        custom_data_keys = frozenset(config_test_data.values) if config_test_data is not None else frozenset()
+        return PlanTestValueContext(
+            effective_values=effective_values,
+            override_keys=custom_data_keys,
+            baseline_delta_keys=custom_data_keys,
+        )
 
     # Determine which profile id was selected.
     if config_test_values is not None and config_test_values.profile is not None:
@@ -137,12 +200,12 @@ def build_plan_test_value_context(
         frozenset(config_test_values.overrides) if config_test_values is not None else frozenset()
     )
     is_default_profile = profile_id == profile_spec.default_profile_id
-    profile_source: TestValueProfileSource = "default" if (is_default_profile and not override_keys) else "overridden"
+    derived_source: TestValueProfileSource = "default" if (is_default_profile and not override_keys) else "overridden"
 
     return PlanTestValueContext(
         effective_values=effective_values,
         profile_id=profile_id,
-        profile_source=profile_source,
+        profile_source=derived_source,
         override_keys=override_keys,
     )
 
@@ -195,6 +258,8 @@ class TestPlanEntry:
         test_value_override_keys: Tuple of key names from the participant's
             ``testValues.overrides`` that were applied to the effective values.
             Empty when no overrides were applied or the manifest has no profiles.
+        consumed_test_value_keys: Frozen set of test-value key names consumed
+            by this step via ``${testValues.<key>}`` placeholders.
     """
 
     # Class starts with "Test" but is production code, not a pytest collection target.
@@ -212,6 +277,7 @@ class TestPlanEntry:
     test_value_profile_id: str | None = None
     test_value_profile_source: TestValueProfileSource | None = None
     test_value_override_keys: tuple[str, ...] = ()
+    consumed_test_value_keys: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -332,6 +398,7 @@ class TestPlan:
                 test_value_profile_id=entry.test_value_profile_id,
                 test_value_profile_source=entry.test_value_profile_source,
                 test_value_override_keys=entry.test_value_override_keys,
+                consumed_test_value_keys=entry.consumed_test_value_keys,
             )
             for entry in self.entries
         )
@@ -461,6 +528,7 @@ def _build_entry_from_step(step: V1Step, ctx: PlanTestValueContext) -> TestPlanE
             test_value_profile_id=ctx.profile_id,
             test_value_profile_source=ctx.profile_source,
             test_value_override_keys=tuple(sorted(ctx.override_keys)),
+            consumed_test_value_keys=step.consumed_test_value_keys,
         )
 
     # Conditional step: auto-select only when all required keys are present.
@@ -485,4 +553,5 @@ def _build_entry_from_step(step: V1Step, ctx: PlanTestValueContext) -> TestPlanE
         test_value_profile_id=ctx.profile_id,
         test_value_profile_source=ctx.profile_source,
         test_value_override_keys=tuple(sorted(ctx.override_keys)),
+        consumed_test_value_keys=step.consumed_test_value_keys,
     )

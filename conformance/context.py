@@ -7,13 +7,16 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from types import MappingProxyType
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 from uuid import uuid4
 
 from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest
-from conformance.model_bank_config import TestValuesConfig
+from conformance.model_bank_config import TestDataConfig, TestValuesConfig
+
+if TYPE_CHECKING:
+    from conformance.run_configuration import RunConfiguration
 
 
 class PlaceholderResolutionError(ValueError):
@@ -140,9 +143,18 @@ class RuntimeConfig:
             ``test_values``. ``None`` when the run has no test-value profiles.
         test_value_profile_source: Whether the selected profile came from the
             manifest default (``default``) or participant override inputs
-            (``overridden``). ``None`` when unavailable.
+            (``overridden``). ``None`` when unavailable. Preserved for backward
+            compat with manifests that use ``testValueProfiles`` (legacy path).
         test_value_override_keys: Sorted tuple of participant override key names
             applied while deriving ``test_values``.
+        baseline_delta_keys: Frozenset of test-value key names whose effective
+            value differs from the suite manifest baseline. Populated from
+            :attr:`~conformance.run_configuration.RunConfiguration.baseline_delta_keys`
+            when a :class:`~conformance.run_configuration.RunConfiguration` was
+            compiled for the run.  Empty when the manifest has no ``testValues``
+            block or when all participant values match the baseline.  Drives
+            the baseline-delta evidence shape emitted in result JSON and the
+            certification value-purity gate.
     """
 
     discovery_url: str
@@ -156,6 +168,7 @@ class RuntimeConfig:
     test_value_profile_id: str | None = None
     test_value_profile_source: Literal["default", "overridden"] | None = None
     test_value_override_keys: tuple[str, ...] = ()
+    baseline_delta_keys: frozenset[str] = field(default_factory=frozenset)
 
 
 @dataclass(frozen=True)
@@ -246,30 +259,130 @@ def record_token(context: ExecutionContext, token_id: str, access_token: str) ->
     return ExecutionContext(steps=context.steps, tokens=new_tokens, config=context.config)
 
 
-def build_runtime_test_values(manifest: Manifest, config_test_values: TestValuesConfig | None) -> Mapping[str, str]:
+def _generate_runtime_test_value(kind: str) -> str:
+    """Generate one runtime test value for a supported generation strategy.
+
+    Args:
+        kind: Manifest-declared generation strategy identifier.
+
+    Returns:
+        Generated string value for the requested strategy.
+
+    Raises:
+        ValueError: If ``kind`` is not a supported strategy identifier.
+    """
+    if kind == "per-run-uuid":
+        return str(uuid4())
+    if kind == "per-run-compact-uuid":
+        return uuid4().hex
+    raise ValueError(f"Unsupported generated test-value kind: {kind}")
+
+
+def validate_test_value_config_contract(
+    manifest: Manifest,
+    config_test_values: TestValuesConfig | None,
+    config_test_data: TestDataConfig | None,
+) -> None:
+    """Validate manifest/config schema compatibility for test-value inputs.
+
+    Args:
+        manifest: Parsed manifest selected for the run or plan operation.
+        config_test_values: Participant legacy ``testValues`` config section, or
+            ``None`` when absent.
+        config_test_data: Participant ``testData`` config section, or ``None``
+            when absent.
+
+    Raises:
+        ValueError: If the participant config uses legacy ``testValues`` against
+            a manifest that declares ``testValues.baseline`` (new schema), or
+            uses ``testData`` against a manifest that only supports legacy
+            ``testValueProfiles``.
+    """
+    if manifest.test_values is not None and config_test_values is not None:
+        raise ValueError(
+            "Participant config uses legacy testValues.profile/testValues.overrides, "
+            "but this suite uses testValues.baseline + testData.values. "
+            "Remove testValues and move custom keys to testData.values."
+        )
+    if manifest.test_value_profiles is not None and manifest.test_values is None and config_test_data is not None:
+        raise ValueError(
+            "Participant config testData.values requires a manifest testValues block. "
+            "This suite uses legacy testValueProfiles, so use testValues.profile/testValues.overrides."
+        )
+
+
+def build_runtime_test_values(
+    manifest: Manifest,
+    config_test_values: TestValuesConfig | None,
+    config_test_data: TestDataConfig | None = None,
+    run_configuration: RunConfiguration | None = None,
+) -> Mapping[str, str]:
     """Resolve effective runtime test values for one manifest execution.
+
+    When a compiled :class:`~conformance.run_configuration.RunConfiguration`
+    is provided it is used directly — its
+    :attr:`~conformance.run_configuration.RunConfiguration.effective_test_values`
+    already incorporates baseline normalisation and generated-key expansion, so
+    no further resolution is needed.
+
+    When ``run_configuration`` is ``None`` the function falls back to the
+    legacy resolution paths: manifest ``testValues`` baseline + participant
+    ``testData``, or manifest ``testValueProfiles`` + participant ``testValues``
+    overrides.
 
     Args:
         manifest: Parsed manifest whose optional ``testValueProfiles`` metadata
-            declares the available profiles.
+            declares the available profiles and/or whose ``testValues`` block
+            declares baseline and generated values.
         config_test_values: Participant config selection and overrides, or
             ``None`` when the config omits the ``testValues`` section.
+        config_test_data: Participant config custom test-data values, or
+            ``None`` when the config omits the ``testData`` section.
+        run_configuration: Optional compiled run configuration produced by
+            :func:`~conformance.run_configuration.compile_run_configuration`.
+            When provided, its ``effective_test_values`` are returned directly
+            without further resolution.
 
     Returns:
         Immutable mapping of effective test-value keys to string values.
-        Empty when the manifest declares no ``testValueProfiles`` and the
-        participant config does not request test values.
+        Empty when the manifest declares neither ``testValueProfiles`` nor
+        ``testValues`` and the participant config does not request test values.
 
     Raises:
         ValueError: If the participant config requests test values but the
-            manifest declares no profiles, the selected profile id does not
-            exist, or an override key is not allow-listed by the manifest.
+            manifest declares no compatible metadata, the selected profile id
+            does not exist, or an override/custom key is not allow-listed by
+            the manifest.
     """
+    validate_test_value_config_contract(
+        manifest=manifest,
+        config_test_values=config_test_values,
+        config_test_data=config_test_data,
+    )
+    if run_configuration is not None:
+        return MappingProxyType(dict(run_configuration.effective_test_values))
     profile_spec = manifest.test_value_profiles
+    manifest_test_values = manifest.test_values
+    if profile_spec is None and manifest_test_values is not None:
+        if config_test_values is not None:
+            raise ValueError("Participant config testValues requires manifest.testValueProfiles")
+        manifest_effective_values = dict(manifest_test_values.baseline)
+        for key, kind in manifest_test_values.generated_keys.items():
+            manifest_effective_values[key] = _generate_runtime_test_value(kind)
+        if config_test_data is not None:
+            disallowed_keys = sorted(set(config_test_data.values) - set(manifest_test_values.allowed_custom_keys))
+            if disallowed_keys:
+                joined = ", ".join(disallowed_keys)
+                raise ValueError(f"Participant config testData.values contains disallowed key(s): {joined}")
+            manifest_effective_values.update(config_test_data.values)
+        return MappingProxyType(manifest_effective_values)
+
     if profile_spec is None:
-        if config_test_values is None:
+        if config_test_values is None and config_test_data is None:
             return MappingProxyType({})
-        raise ValueError("Participant config testValues requires manifest.testValueProfiles")
+        if config_test_values is not None:
+            raise ValueError("Participant config testValues requires manifest.testValueProfiles")
+        raise ValueError("Participant config testData requires manifest.testValues")
 
     selected_profile_id = (
         config_test_values.profile
@@ -280,15 +393,9 @@ def build_runtime_test_values(manifest: Manifest, config_test_values: TestValues
     if selected_profile is None:
         raise ValueError(f"Unknown test-value profile: {selected_profile_id}")
 
-    effective_values: dict[str, str] = dict(selected_profile.values)
+    effective_values = dict(selected_profile.values)
     for key, kind in selected_profile.generated_keys.items():
-        if kind == "per-run-uuid":
-            effective_values[key] = str(uuid4())
-            continue
-        if kind == "per-run-compact-uuid":
-            effective_values[key] = uuid4().hex
-            continue
-        raise ValueError(f"Unsupported generated test-value kind: {kind}")
+        effective_values[key] = _generate_runtime_test_value(kind)
 
     if config_test_values is not None:
         disallowed_keys = sorted(set(config_test_values.overrides) - set(profile_spec.allowed_override_keys))
@@ -296,6 +403,8 @@ def build_runtime_test_values(manifest: Manifest, config_test_values: TestValues
             joined = ", ".join(disallowed_keys)
             raise ValueError(f"Participant config testValues.overrides contains disallowed key(s): {joined}")
         effective_values.update(config_test_values.overrides)
+    if config_test_data is not None:
+        raise ValueError("Participant config testData requires manifest.testValues")
 
     return MappingProxyType(effective_values)
 

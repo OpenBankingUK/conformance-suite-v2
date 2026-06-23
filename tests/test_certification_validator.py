@@ -7,6 +7,7 @@ from conformance.certification_validator import (
     APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
     ApprovedReleasePolicy,
     CertificationValidationError,
+    CertificationValidationReason,
     SubmittedReport,
     parse_approved_release_policy,
     parse_submitted_report,
@@ -546,6 +547,50 @@ def test_validate_report_complete_manifest_rejects_mismatched_test_value_profile
 
 
 @pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_overridden_test_value_profile_source() -> None:
+    """An overridden test-value source is always blocked for certification runs."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile=_test_value_profile_evidence_fixture(source="overridden"),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_overridden" in result.reasons
+    assert "test_value_profile_mismatch" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_rejects_overridden_source_with_override_keys() -> None:
+    """Override key usage remains blocked when evidence source is overridden."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile={
+            **_test_value_profile_evidence_fixture(source="overridden"),
+            "overrideKeys": ["creditorIdentification"],
+        },
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_overridden" in result.reasons
+
+
+@pytest.mark.unit
 def test_validate_report_complete_manifest_accepts_matching_test_value_profile_evidence() -> None:
     """Matching test-value profile evidence validates for complete manifests."""
     manifest = parse_manifest(_manifest_json_with_test_value_profiles())
@@ -563,6 +608,7 @@ def test_validate_report_complete_manifest_accepts_matching_test_value_profile_e
 
     assert result.valid is True
     assert "test_value_profile_missing" not in result.reasons
+    assert "test_value_profile_overridden" not in result.reasons
     assert "test_value_profile_mismatch" not in result.reasons
 
 
@@ -587,6 +633,37 @@ def test_validate_report_complete_manifest_rejects_unmasked_test_value_effective
 
     assert result.valid is False
     assert "test_value_profile_mismatch" in result.reasons
+
+
+@pytest.mark.unit
+def test_certification_validation_reason_accepts_overridden_test_value_reason() -> None:
+    """The validation reason union includes the overridden test-value blocker."""
+    reason: CertificationValidationReason = "test_value_profile_overridden"
+
+    assert reason == "test_value_profile_overridden"
+
+
+@pytest.mark.unit
+def test_render_confluence_summary_includes_overridden_test_value_reason_label() -> None:
+    """Confluence summary shows the overridden-test-values blocking label."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile=_test_value_profile_evidence_fixture(source="overridden"),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    summary = render_confluence_summary(result)
+
+    assert (
+        "Custom test values were used (effective values differ from suite baseline) — "
+        "run is an Exploratory Run and not eligible for certification"
+    ) in summary
 
 
 @pytest.mark.unit
@@ -950,3 +1027,220 @@ def test_validate_report_smoke_suite_manifests_cannot_certify() -> None:
             f"Smoke suite manifest {manifest_file.name} must not validate as certification-ready"
         )
         assert "manifest_coverage_partial" in result.reasons
+
+
+# ─── Baseline-delta semantics (testValues block) ─────────────────────────────
+
+
+def _manifest_json_with_test_values(*, certification_coverage: str = "complete") -> JsonObject:
+    """Build a v1 manifest fixture that declares a ``testValues`` block.
+
+    Args:
+        certification_coverage: Coverage declaration to embed at the root.
+
+    Returns:
+        Manifest JSON object with one mandatory step and one optional step.
+    """
+    return {
+        "schemaVersion": "v1",
+        "name": "validator-test-values-new",
+        "certificationCoverage": certification_coverage,
+        "testValues": {
+            "baseline": {
+                "creditorAccountId": "BASELINE-ACCT-001",
+                "remittanceInformation": "baseline-remittance",
+            },
+            "allowedCustomKeys": ["creditorAccountId", "remittanceInformation"],
+        },
+        "steps": [
+            _manifest_step(step_id="mandatory-step", mandatory=True, optional=False),
+        ],
+    }
+
+
+def _baseline_evidence(*, source: str = "baseline", delta_keys: list[str] | None = None) -> JsonObject:
+    """Build a minimal valid new-shape ``testValueProfile`` evidence block.
+
+    Args:
+        source: Source label — ``"baseline"`` or ``"custom"``.
+        delta_keys: Optional list of baseline delta key names.
+
+    Returns:
+        Baseline-delta test-value profile evidence JSON object.
+    """
+    block: JsonObject = {"source": source}
+    if delta_keys is not None:
+        block["baselineDeltaKeys"] = delta_keys  # type: ignore[assignment]
+    return block
+
+
+@pytest.mark.unit
+def test_parse_submitted_report_accepts_baseline_source_shape() -> None:
+    """Parser accepts ``source: baseline`` new-shape test-value profile evidence."""
+    raw = {
+        "metadata": {"reportVersion": "1.0"},
+        "tool": {"version": "1.0.0"},
+        "steps": [{"name": "mandatory-step", "status": "passed"}],
+        "testValueProfile": {"source": "baseline"},
+    }
+
+    report = parse_submitted_report(raw)
+
+    assert report.test_value_profile is not None
+    assert report.test_value_profile.source == "baseline"
+    assert report.test_value_profile.baseline_delta_keys == ()
+
+
+@pytest.mark.unit
+def test_parse_submitted_report_accepts_custom_source_shape() -> None:
+    """Parser accepts ``source: custom`` with ``baselineDeltaKeys`` array."""
+    raw = {
+        "metadata": {"reportVersion": "1.0"},
+        "tool": {"version": "1.0.0"},
+        "steps": [{"name": "mandatory-step", "status": "passed"}],
+        "testValueProfile": {"source": "custom", "baselineDeltaKeys": ["creditorAccountId"]},
+    }
+
+    report = parse_submitted_report(raw)
+
+    assert report.test_value_profile is not None
+    assert report.test_value_profile.source == "custom"
+    assert report.test_value_profile.baseline_delta_keys == ("creditorAccountId",)
+
+
+@pytest.mark.unit
+def test_parse_submitted_report_rejects_unknown_source_value() -> None:
+    """Parser rejects unknown ``source`` values with a validation error."""
+    raw = {
+        "metadata": {"reportVersion": "1.0"},
+        "tool": {"version": "1.0.0"},
+        "steps": [{"name": "s", "status": "passed"}],
+        "testValueProfile": {"source": "invalid"},
+    }
+
+    from conformance.certification_validator import CertificationValidationError
+
+    with pytest.raises(CertificationValidationError, match="source must be one of"):
+        parse_submitted_report(raw)
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_values_requires_evidence() -> None:
+    """Complete manifests with ``testValues`` block require test-value evidence."""
+    manifest = parse_manifest(_manifest_json_with_test_values())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"),),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_missing" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_values_blocks_on_custom_source() -> None:
+    """``source: custom`` blocks certification for test-values manifests."""
+    manifest = parse_manifest(_manifest_json_with_test_values())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"),),
+        test_value_profile=_baseline_evidence(source="custom", delta_keys=["creditorAccountId"]),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_overridden" in result.reasons
+    assert "test_value_profile_mismatch" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_values_blocks_on_non_empty_delta_keys() -> None:
+    """Non-empty ``baselineDeltaKeys`` blocks certification even with ``source: custom``."""
+    manifest = parse_manifest(_manifest_json_with_test_values())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"),),
+        test_value_profile=_baseline_evidence(source="custom", delta_keys=["remittanceInformation"]),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_overridden" in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_values_accepts_baseline_source() -> None:
+    """``source: baseline`` with empty ``baselineDeltaKeys`` passes value-purity gate."""
+    manifest = parse_manifest(_manifest_json_with_test_values())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"),),
+        test_value_profile=_baseline_evidence(source="baseline", delta_keys=[]),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "test_value_profile_missing" not in result.reasons
+    assert "test_value_profile_overridden" not in result.reasons
+    assert "test_value_profile_mismatch" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_complete_manifest_with_test_values_accepts_baseline_source_no_delta_field() -> None:
+    """``source: baseline`` without a ``baselineDeltaKeys`` field also passes."""
+    manifest = parse_manifest(_manifest_json_with_test_values())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"),),
+        test_value_profile=_baseline_evidence(source="baseline"),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "test_value_profile_overridden" not in result.reasons
+
+
+@pytest.mark.unit
+def test_validate_report_legacy_overridden_still_blocks_under_new_gate() -> None:
+    """Legacy ``source: overridden`` still blocks certification under the updated gate."""
+    manifest = parse_manifest(_manifest_json_with_test_value_profiles())
+    report = _report(
+        tool_version="1.2.3",
+        steps=(("mandatory-step", "passed"), ("conditional-step", "passed")),
+        test_value_profile=_test_value_profile_evidence_fixture(source="overridden"),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "test_value_profile_overridden" in result.reasons

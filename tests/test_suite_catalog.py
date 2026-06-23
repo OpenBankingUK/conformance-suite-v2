@@ -473,11 +473,19 @@ def test_resolve_pis_domestic_payment_starter_returns_bundled_manifest() -> None
     assert [step.mandatory for step in manifest.steps] == [True] * 10 + [False, False]
     assert [step.optional for step in manifest.steps] == [False] * 10 + [True, True]
 
-    test_value_profiles = manifest.test_value_profiles
-    assert test_value_profiles is not None
-    assert test_value_profiles.default_profile_id == "ozone-demo"
-    assert [profile.id for profile in test_value_profiles.profiles] == ["ozone-demo", "synthetic-fallback"]
-    assert test_value_profiles.profiles[0].generated_keys == {
+    test_values = manifest.test_values
+    assert test_values is not None
+    assert dict(test_values.baseline) == {
+        "instructedAmountCurrency": "GBP",
+        "instructedAmountValue": "1.00",
+        "creditorSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "creditorIdentification": "11223344556677",
+        "creditorName": "Test Merchant",
+        "thisSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "thisIdentification": "22334455667788",
+        "remittanceInformation": "Test domestic payment",
+    }
+    assert dict(test_values.generated_keys) == {
         "instructionIdentification": "per-run-compact-uuid",
         "endToEndIdentification": "per-run-compact-uuid",
         "consentIdempotencyKey": "per-run-uuid",
@@ -1040,11 +1048,10 @@ def test_resolve_v4_pis_fcs_legacy_benchmark_returns_bundled_manifest() -> None:
 def test_v4_pis_fcs_legacy_benchmark_uses_distinct_generated_identifiers_per_payment_flow() -> None:
     """Independent payment-consent flows should use distinct generated test-value identifiers."""
     manifest = resolve_suite(_selection("v4.0", suite_name="pis-fcs-legacy-benchmark", api="pis")).manifest
-    test_value_profiles = manifest.test_value_profiles
+    test_values = manifest.test_values
 
-    assert test_value_profiles is not None
-    ozone_profile = next(profile for profile in test_value_profiles.profiles if profile.id == "ozone-demo")
-    generated_keys = ozone_profile.generated_keys
+    assert test_values is not None
+    generated_keys = test_values.generated_keys
 
     assert generated_keys["domesticConsentInstructionIdentification"] == "per-run-compact-uuid"
     assert generated_keys["domesticDebtorInstructionIdentification"] == "per-run-compact-uuid"

@@ -3625,6 +3625,126 @@ def test_run_manifest_emits_test_value_profile_evidence_with_masked_effective_va
     assert not any(event.type == "auth-metadata-evaluated" for event in execution_logger.events())
 
 
+@pytest.mark.unit
+def test_run_manifest_persists_custom_test_value_impact_for_executed_and_not_run_references() -> None:
+    """Custom-value impact evidence separates executed and non-executed references."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "custom-value-impact",
+            "testValueProfiles": {
+                "defaultProfileId": "default-profile",
+                "profiles": [
+                    {
+                        "id": "default-profile",
+                        "label": "Default",
+                        "values": {"remittanceInformation": "invoice-001"},
+                    }
+                ],
+                "allowedOverrideKeys": ["remittanceInformation"],
+            },
+            "steps": [
+                {
+                    "id": "executed-step",
+                    "name": "Executed",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "deselected-step",
+                    "name": "Deselected",
+                    "optional": True,
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments/replay",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["deselected-step"])
+    runtime_config = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="env",
+        test_values={"remittanceInformation": "nice"},
+        test_value_profile_id="default-profile",
+        test_value_profile_source="overridden",
+        test_value_override_keys=("remittanceInformation",),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=runtime_config,
+            custom_test_values_active=True,
+        )
+
+    impact = cast(JsonObject, result.to_json_object()["customTestValueImpact"])
+    assert impact["profileId"] == "default-profile"
+    assert impact["source"] == "overridden"
+    assert impact["overrideKeys"] == ["remittanceInformation"]
+    assert impact["summary"] == {
+        "overrideKeyCount": 1,
+        "executedReferenceCount": 1,
+        "referencedButNotRunCount": 1,
+        "executedStepCount": 1,
+        "referencedButNotRunStepCount": 1,
+    }
+
+    overridden_values = cast(JsonObject, impact["overriddenValues"])
+    remittance_override = cast(JsonObject, overridden_values["remittanceInformation"])
+    assert remittance_override["defaultValue"] == MASKED_VALUE
+    assert remittance_override["customValue"] == MASKED_VALUE
+    assert remittance_override["effectiveValue"] == MASKED_VALUE
+    default_display = cast(JsonObject, remittance_override["defaultValueDisplay"])
+    custom_display = cast(JsonObject, remittance_override["customValueDisplay"])
+    effective_display = cast(JsonObject, remittance_override["effectiveValueDisplay"])
+    assert default_display["preview"] == "invo…-001 (len=11)"
+    assert custom_display["preview"] == "nice (len=4)"
+    assert effective_display["preview"] == "nice (len=4)"
+    assert "sha256" not in default_display
+    assert "sha256" not in custom_display
+    assert "sha256" not in effective_display
+
+    executed = cast(list[JsonObject], impact["executedReferences"])
+    assert executed == [
+        {
+            "stepId": "executed-step",
+            "stepName": "Executed",
+            "status": "passed",
+            "mandatory": False,
+            "optional": False,
+            "key": "remittanceInformation",
+            "requestArea": "request-json-body",
+            "fieldPath": "request.body.note",
+        }
+    ]
+    referenced_but_not_run = cast(list[JsonObject], impact["referencedButNotRun"])
+    assert referenced_but_not_run == [
+        {
+            "stepId": "deselected-step",
+            "stepName": "Deselected",
+            "notRunReason": "deselected",
+            "mandatory": False,
+            "optional": True,
+            "key": "remittanceInformation",
+            "requestArea": "request-json-body",
+            "fieldPath": "request.body.note",
+        }
+    ]
+
+
 @pytest.mark.integration
 def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """End-to-end mocked execution of the bundled ``psu-auth-starter`` catalog suite.
@@ -7053,3 +7173,394 @@ def test_run_manifest_v1_matches_request_header_assertion_uses_resolved_headers(
 
     assert result.status == "passed"
     assert result.steps[0].status == "passed"
+
+
+# ─── Baseline-delta testValueProfile evidence shape ───────────────────────────
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_baseline_delta_evidence_for_test_values_manifest() -> None:
+    """Result JSON contains baseline-delta testValueProfile evidence for testValues manifests."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-baseline-delta",
+            "testValues": {
+                "baseline": {
+                    "creditorAccountId": "BASELINE-ACCT-001",
+                    "remittanceInformation": "baseline-remittance",
+                },
+                "allowedCustomKeys": ["creditorAccountId", "remittanceInformation"],
+            },
+            "steps": [
+                {
+                    "id": "mandatory-step",
+                    "name": "Mandatory",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/step"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=RuntimeConfig(
+                discovery_url="https://example.com/.well-known/openid-configuration",
+                environment="env",
+                test_values={
+                    "creditorAccountId": "BASELINE-ACCT-001",
+                    "remittanceInformation": "custom-remittance",
+                },
+                baseline_delta_keys=frozenset({"remittanceInformation"}),
+            ),
+        )
+
+    rendered = result.to_json_object()
+    profile_block = cast(JsonObject, rendered["testValueProfile"])
+    assert profile_block["source"] == "custom"
+    assert profile_block["baselineDeltaKeys"] == ["remittanceInformation"]
+    custom_values = cast(JsonObject, profile_block["customValues"])
+    assert "remittanceInformation" in custom_values
+    entry = cast(JsonObject, custom_values["remittanceInformation"])
+    # remittanceInformation is a sensitive key — both custom and baseline are masked
+    assert entry["custom"] == MASKED_VALUE
+    assert entry["baseline"] == MASKED_VALUE
+
+
+@pytest.mark.unit
+def test_run_manifest_emits_baseline_source_when_no_delta_keys() -> None:
+    """testValueProfile evidence has source=``baseline`` when no delta keys exist."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-all-baseline",
+            "testValues": {
+                "baseline": {"keyA": "val-a"},
+                "allowedCustomKeys": ["keyA"],
+            },
+            "steps": [
+                {
+                    "id": "s",
+                    "name": "S",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/s"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=RuntimeConfig(
+                discovery_url="https://example.com/.well-known/openid-configuration",
+                environment="env",
+                test_values={"keyA": "val-a"},
+                baseline_delta_keys=frozenset(),
+            ),
+        )
+
+    rendered = result.to_json_object()
+    profile_block = cast(JsonObject, rendered["testValueProfile"])
+    assert profile_block["source"] == "baseline"
+    assert profile_block["baselineDeltaKeys"] == []
+    assert cast(JsonObject, profile_block["customValues"]) == {}
+
+
+@pytest.mark.unit
+def test_run_manifest_step_deselected_emits_baseline_delta_source_for_test_values_manifest() -> None:
+    """step-deselected log event uses ``baseline``/``custom`` for testValues manifests."""
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-deselected",
+            "testValues": {
+                "baseline": {"keyA": "val-a"},
+                "allowedCustomKeys": ["keyA"],
+            },
+            "steps": [
+                {
+                    "id": "mandatory-step",
+                    "name": "Mandatory",
+                    "mandatory": True,
+                    "request": {"method": "GET", "url": "https://example.com/m"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "optional-step",
+                    "name": "Optional",
+                    "optional": True,
+                    "request": {"method": "GET", "url": "https://example.com/o"},
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+    )
+    from conformance.test_plan import TestPlan
+
+    plan = TestPlan.default_plan_from_manifest(manifest)
+    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))) as client:
+        run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            execution_logger=execution_logger,
+            runtime_config=RuntimeConfig(
+                discovery_url="https://example.com/.well-known/openid-configuration",
+                environment="env",
+                test_values={"keyA": "custom-a"},
+                baseline_delta_keys=frozenset({"keyA"}),
+            ),
+        )
+
+    deselected = [e for e in execution_logger.events() if e.type == "step-deselected"]
+    assert len(deselected) == 1
+    assert deselected[0].step_id == "optional-step"
+    assert deselected[0].payload["testValueProfileSource"] == "custom"
+
+
+# ─── Baseline-delta customTestValueImpact evidence shape ──────────────────────
+
+
+@pytest.mark.unit
+def test_run_manifest_persists_baseline_delta_impact_evidence_for_test_values_manifest() -> None:
+    """customTestValueImpact uses baselineDeltaKeys/baselineDeltaKeyCount for testValues manifests."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-impact-baseline-delta",
+            "testValues": {
+                "baseline": {
+                    "remittanceInformation": "baseline-ref",
+                    "creditorAccountId": "baseline-acct",
+                },
+                "allowedCustomKeys": ["remittanceInformation", "creditorAccountId"],
+            },
+            "steps": [
+                {
+                    "id": "executed-step",
+                    "name": "Executed",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+                {
+                    "id": "deselected-step",
+                    "name": "Deselected",
+                    "optional": True,
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments/replay",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["deselected-step"])
+    runtime_config = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="env",
+        test_values={"remittanceInformation": "custom-ref", "creditorAccountId": "baseline-acct"},
+        baseline_delta_keys=frozenset({"remittanceInformation"}),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=runtime_config,
+        )
+
+    impact = cast(JsonObject, result.to_json_object()["customTestValueImpact"])
+    assert impact["source"] == "custom"
+    assert impact["baselineDeltaKeys"] == ["remittanceInformation"]
+    value_details = cast(list[JsonObject], impact["valueDetails"])
+    assert len(value_details) == 1
+    detail = value_details[0]
+    assert detail["key"] == "remittanceInformation"
+    assert detail["usedValue"] == MASKED_VALUE
+    assert detail["baselineValue"] == MASKED_VALUE
+    used_display = cast(JsonObject, detail["usedValueDisplay"])
+    baseline_display = cast(JsonObject, detail["baselineValueDisplay"])
+    assert used_display["preview"] == "cust…-ref (len=10)"
+    assert baseline_display["preview"] == "base…-ref (len=12)"
+    assert "sha256" not in used_display
+    assert "sha256" not in baseline_display
+    assert "fullValue" not in used_display
+    assert "fullValue" not in baseline_display
+    assert detail["executedReferences"] == [
+        {
+            "stepId": "executed-step",
+            "stepName": "Executed",
+            "requestArea": "request-json-body",
+            "fieldPath": "request.body.note",
+            "status": "passed",
+        }
+    ]
+    assert "overrideKeys" not in impact
+    assert "profileId" not in impact
+    assert impact["summary"] == {
+        "baselineDeltaKeyCount": 1,
+        "executedReferenceCount": 1,
+        "referencedButNotRunCount": 1,
+        "executedStepCount": 1,
+        "referencedButNotRunStepCount": 1,
+    }
+    executed = cast(list[JsonObject], impact["executedReferences"])
+    assert executed == [
+        {
+            "stepId": "executed-step",
+            "stepName": "Executed",
+            "status": "passed",
+            "mandatory": False,
+            "optional": False,
+            "key": "remittanceInformation",
+            "requestArea": "request-json-body",
+            "fieldPath": "request.body.note",
+        }
+    ]
+    not_run = cast(list[JsonObject], impact["referencedButNotRun"])
+    assert not_run == [
+        {
+            "stepId": "deselected-step",
+            "stepName": "Deselected",
+            "notRunReason": "deselected",
+            "mandatory": False,
+            "optional": True,
+            "key": "remittanceInformation",
+            "requestArea": "request-json-body",
+            "fieldPath": "request.body.note",
+        }
+    ]
+
+
+@pytest.mark.unit
+def test_run_manifest_baseline_delta_impact_includes_full_value_display_in_developer_mode(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Developer mode includes full custom-value literals in display objects."""
+    from conformance.test_plan import TestPlan
+
+    monkeypatch.setenv("CONFORMANCE_DEVELOPER_MODE", "true")
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-impact-developer-display",
+            "testValues": {
+                "baseline": {"remittanceInformation": "baseline-ref"},
+                "allowedCustomKeys": ["remittanceInformation"],
+            },
+            "steps": [
+                {
+                    "id": "executed-step",
+                    "name": "Executed",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/payments",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest)
+    runtime_config = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="env",
+        test_values={"remittanceInformation": "custom-ref"},
+        baseline_delta_keys=frozenset({"remittanceInformation"}),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=runtime_config,
+        )
+
+    impact = cast(JsonObject, result.to_json_object()["customTestValueImpact"])
+    value_details = cast(list[JsonObject], impact["valueDetails"])
+    detail = value_details[0]
+    used_display = cast(JsonObject, detail["usedValueDisplay"])
+    baseline_display = cast(JsonObject, detail["baselineValueDisplay"])
+    assert used_display["fullValue"] == "custom-ref"
+    assert baseline_display["fullValue"] == "baseline-ref"
+
+
+@pytest.mark.unit
+def test_run_manifest_baseline_delta_impact_is_none_when_no_delta_keys() -> None:
+    """customTestValueImpact is None for testValues manifests when all values match baseline."""
+    from conformance.test_plan import TestPlan
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-all-baseline-impact",
+            "testValues": {
+                "baseline": {"remittanceInformation": "ref-001"},
+                "allowedCustomKeys": ["remittanceInformation"],
+            },
+            "steps": [
+                {
+                    "id": "step-a",
+                    "name": "Step A",
+                    "request": {
+                        "method": "POST",
+                        "url": "https://example.com/pay",
+                        "body": {"note": "${testValues.remittanceInformation}"},
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    plan = TestPlan.default_plan_from_manifest(manifest)
+    runtime_config = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="env",
+        test_values={"remittanceInformation": "ref-001"},
+        baseline_delta_keys=frozenset(),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(lambda _: httpx.Response(200, json={}))) as client:
+        result = run_manifest(
+            manifest,
+            environment="env",
+            client=client,
+            plan=plan,
+            runtime_config=runtime_config,
+        )
+
+    rendered = result.to_json_object()
+    assert rendered.get("customTestValueImpact") is None

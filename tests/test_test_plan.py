@@ -574,3 +574,99 @@ def test_build_plan_test_value_context_overridden_source_when_non_default_profil
 
     assert ctx.profile_id == "uat"
     assert ctx.profile_source == "overridden"
+
+
+# ─── baseline_delta_keys and run_configuration parameter ─────────────────────
+
+
+@pytest.mark.unit
+def test_plan_test_value_context_has_baseline_delta_keys_field() -> None:
+    """PlanTestValueContext exposes a baseline_delta_keys frozenset field."""
+    from conformance.test_plan import PlanTestValueContext
+
+    ctx = PlanTestValueContext()
+    assert ctx.baseline_delta_keys == frozenset()
+
+
+@pytest.mark.unit
+def test_build_plan_test_value_context_with_run_configuration_uses_delta_keys() -> None:
+    """When a RunConfiguration is provided, baseline_delta_keys is populated correctly."""
+    from conformance.run_configuration import compile_run_configuration
+    from conformance.test_plan import build_plan_test_value_context
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-run-config",
+            "testValues": {
+                "baseline": {
+                    "creditorAccountId": "BASELINE-ACCT",
+                    "remittanceInfo": "baseline-remittance",
+                },
+                "allowedCustomKeys": ["creditorAccountId"],
+            },
+            "steps": [
+                {
+                    "id": "s",
+                    "name": "S",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://example.com/${testValues.creditorAccountId}/${testValues.remittanceInfo}",
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    run_config = compile_run_configuration(
+        manifest=manifest,
+        test_data_values={"creditorAccountId": "CUSTOM-ACCT"},
+    )
+    assert run_config is not None
+
+    ctx = build_plan_test_value_context(manifest, config_test_values=None, run_configuration=run_config)
+
+    assert ctx.baseline_delta_keys == frozenset({"creditorAccountId"})
+    assert ctx.profile_source == "overridden"
+    assert ctx.override_keys == frozenset({"creditorAccountId"})
+    assert ctx.effective_values.get("creditorAccountId") == "CUSTOM-ACCT"
+    assert ctx.effective_values.get("remittanceInfo") == "baseline-remittance"
+
+
+@pytest.mark.unit
+def test_build_plan_test_value_context_with_run_configuration_no_deltas_is_baseline() -> None:
+    """When RunConfiguration has no delta keys, profile_source is ``default``."""
+    from conformance.run_configuration import compile_run_configuration
+    from conformance.test_plan import build_plan_test_value_context
+
+    manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "tv-no-deltas",
+            "testValues": {
+                "baseline": {"keyA": "val-a"},
+                "allowedCustomKeys": ["keyA"],
+            },
+            "steps": [
+                {
+                    "id": "s",
+                    "name": "S",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://example.com/${testValues.keyA}",
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                }
+            ],
+        }
+    )
+    run_config = compile_run_configuration(
+        manifest=manifest,
+        test_data_values={},
+    )
+    assert run_config is not None
+
+    ctx = build_plan_test_value_context(manifest, config_test_values=None, run_configuration=run_config)
+
+    assert ctx.baseline_delta_keys == frozenset()
+    assert ctx.profile_source == "default"

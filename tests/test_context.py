@@ -13,7 +13,7 @@ from conformance.context import (
     record_token,
     resolve_placeholders,
 )
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 
 
 def _discovery_context() -> ExecutionContext:
@@ -786,3 +786,101 @@ class TestResolveInStructure:
         assert resolve_in_structure(42, ctx) == 42
         assert resolve_in_structure(True, ctx) is True
         assert resolve_in_structure(None, ctx) is None
+
+
+# ─── build_runtime_test_values with RunConfiguration ─────────────────────────
+
+
+@pytest.mark.unit
+def test_build_runtime_test_values_uses_run_configuration_effective_values() -> None:
+    """When a RunConfiguration is provided, effective_test_values are returned directly."""
+    from conformance.context import build_runtime_test_values
+    from conformance.manifest import parse_manifest
+    from conformance.run_configuration import compile_run_configuration
+
+    manifest_json: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "tv-test",
+        "testValues": {
+            "baseline": {"keyA": "baseline-a", "keyB": "baseline-b"},
+            "allowedCustomKeys": ["keyA"],
+        },
+        "steps": [
+            {
+                "id": "step-1",
+                "name": "Step 1",
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/${testValues.keyA}/${testValues.keyB}",
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(manifest_json)
+    run_config = compile_run_configuration(
+        manifest=manifest,
+        test_data_values={"keyA": "custom-a"},
+    )
+    assert run_config is not None
+
+    result = build_runtime_test_values(
+        manifest,
+        None,
+        None,
+        run_configuration=run_config,
+    )
+
+    assert dict(result) == {"keyA": "custom-a", "keyB": "baseline-b"}
+
+
+@pytest.mark.unit
+def test_build_runtime_test_values_none_run_config_falls_back_to_legacy() -> None:
+    """When run_configuration is None, the existing resolution path is used."""
+    from conformance.context import build_runtime_test_values
+    from conformance.manifest import parse_manifest
+
+    manifest_json: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "tv-legacy",
+        "testValues": {
+            "baseline": {"keyA": "baseline-a"},
+            "allowedCustomKeys": [],
+        },
+        "steps": [
+            {
+                "id": "s",
+                "name": "S",
+                "request": {"method": "GET", "url": "https://example.com/s"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            }
+        ],
+    }
+    manifest = parse_manifest(manifest_json)
+
+    result = build_runtime_test_values(manifest, None, None, run_configuration=None)
+
+    assert dict(result) == {"keyA": "baseline-a"}
+
+
+@pytest.mark.unit
+def test_runtime_config_baseline_delta_keys_defaults_to_empty() -> None:
+    """RuntimeConfig.baseline_delta_keys defaults to an empty frozenset."""
+    rc = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="test",
+    )
+
+    assert rc.baseline_delta_keys == frozenset()
+
+
+@pytest.mark.unit
+def test_runtime_config_baseline_delta_keys_can_be_set() -> None:
+    """RuntimeConfig.baseline_delta_keys accepts and stores a frozenset."""
+    rc = RuntimeConfig(
+        discovery_url="https://example.com/.well-known/openid-configuration",
+        environment="test",
+        baseline_delta_keys=frozenset({"creditorAccountId", "remittanceInformation"}),
+    )
+
+    assert rc.baseline_delta_keys == frozenset({"creditorAccountId", "remittanceInformation"})

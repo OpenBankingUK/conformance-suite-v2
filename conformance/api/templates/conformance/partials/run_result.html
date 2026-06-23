@@ -11,6 +11,88 @@
             <div class="metric"><strong>{{ certification_eligibility|default:"-" }}</strong><span>Certification</span></div>
         </div>
 
+        {% if custom_test_value_impact %}
+            <div class="custom-values-warning">
+                <h3>Test Data Customisation</h3>
+                <div class="grid">
+                    <div class="metric"><strong>{{ custom_test_value_impact.summary.baselineDeltaKeyCount|default:"0" }}</strong><span>Custom value keys</span></div>
+                    <div class="metric"><strong>{{ custom_test_value_impact.summary.executedReferenceCount|default:"0" }}</strong><span>Executed references</span></div>
+                    <div class="metric"><strong>{{ custom_test_value_impact.summary.referencedButNotRunCount|default:"0" }}</strong><span>Referenced, not run</span></div>
+                    <div class="metric"><strong>{% if custom_test_value_impact.source == "overridden" or custom_test_value_impact.source == "custom" %}Exploratory run{% else %}Baseline values{% endif %}</strong><span>Run type</span></div>
+                </div>
+                {% if custom_test_value_impact.value_entries %}
+                    <p><strong>Custom values used in this run</strong></p>
+                    <table class="custom-values-table">
+                        <thead>
+                            <tr>
+                                <th>Key</th>
+                                <th>Used value</th>
+                                <th>Baseline value</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for entry in custom_test_value_impact.value_entries %}
+                                <tr>
+                                    <td><code>{{ entry.key }}</code></td>
+                                    <td>
+                                        <code>{{ entry.used_value_display.preview|default:entry.used_value|default:"-" }}</code>
+                                        {% if entry.used_value_display.full_value %}<span class="muted"><br>Full {{ entry.used_value_display.full_value }}</span>{% endif %}
+                                    </td>
+                                    <td>
+                                        {% if entry.baseline_value or entry.baseline_value_display %}
+                                            <code>{{ entry.baseline_value_display.preview|default:entry.baseline_value|default:"-" }}</code>
+                                            {% if entry.baseline_value_display.full_value %}<span class="muted"><br>Full {{ entry.baseline_value_display.full_value }}</span>{% endif %}
+                                        {% else %}
+                                            -
+                                        {% endif %}
+                                    </td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                    {% for entry in custom_test_value_impact.value_entries %}
+                        {% if entry.surface_groups %}
+                            <details>
+                                <summary><code>{{ entry.key }}</code> request paths</summary>
+                                {% for surface in entry.surface_groups %}
+                                    <details{% if surface.request_area == "request-json-body" %} open{% endif %}>
+                                        <summary><strong>{{ surface.label }}</strong></summary>
+                                        <ul>
+                                            {% for row in surface.rows %}
+                                                <li style="margin-left: {{ row.depth|default:0 }}em;">
+                                                    {% if row.row_type == "group" %}
+                                                        <strong>{{ row.label }}</strong>
+                                                    {% else %}
+                                                        <code>{{ row.label }}</code>
+                                                    {% endif %}
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </details>
+                                {% endfor %}
+                            </details>
+                        {% endif %}
+                    {% endfor %}
+                {% endif %}
+            </div>
+            {% if custom_test_value_impact.referenced_but_not_run %}
+                <details>
+                    <summary><strong>Referenced but not run</strong></summary>
+                    <ul>
+                        {% for reference in custom_test_value_impact.referenced_but_not_run %}
+                            <li>
+                                <code>{{ reference.stepId|default:"-" }}</code> ·
+                                <code>{{ reference.key|default:"-" }}</code> ·
+                                {{ reference.requestArea|default:"-" }} ·
+                                <code>{{ reference.fieldPath|default:"-" }}</code> ·
+                                {{ reference.notRunReason|default:"not-run" }}
+                            </li>
+                        {% endfor %}
+                    </ul>
+                </details>
+            {% endif %}
+        {% endif %}
+
         <div class="grid">
             <div class="metric"><strong>{{ result_status_counts.passed|default:"0" }}</strong><span>Passed</span></div>
             <div class="metric"><strong>{{ result_status_counts.failed|default:"0" }}</strong><span>Failed</span></div>

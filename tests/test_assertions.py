@@ -540,7 +540,8 @@ def test_evaluate_one_of_json_field_checks_json_compatible_candidates() -> None:
 
     assert result.passed is False
     assert result.message == (
-        "JSON field token_endpoint_auth_method must equal one of: private_key_jwt, tls_client_auth"
+        "JSON field token_endpoint_auth_method must equal one of: private_key_jwt, tls_client_auth; "
+        "actual value: client_secret_basic"
     )
 
 
@@ -562,7 +563,30 @@ def test_evaluate_one_of_json_field_distinguishes_boolean_and_numeric_candidates
     )
 
     assert result.passed is False
-    assert result.message == "JSON field x must equal one of: true, 2"
+    assert result.message == "JSON field x must equal one of: true, 2; actual value: 1"
+
+
+@pytest.mark.unit
+def test_evaluate_one_of_json_field_data_status_auth_includes_pis_diagnostic_hint() -> None:
+    """Data.Status AUTH mismatch includes an explicit pre-authorisation hint."""
+    assertion = parsed_assertion(
+        {
+            "type": "json_field",
+            "path": "Data.Status",
+            "rule": "one_of",
+            "values": ["AWAU"],
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=201,
+        body={"Data": {"Status": "AUTH"}},
+    )
+
+    assert result.passed is False
+    assert "actual value: AUTH" in result.message
+    assert "pre-PSU-authorisation step" in result.message
 
 
 @pytest.mark.unit

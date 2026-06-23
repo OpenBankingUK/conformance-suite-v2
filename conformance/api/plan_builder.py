@@ -7,8 +7,10 @@ import re
 from collections.abc import Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
+from importlib import resources
 from pathlib import Path
-from typing import Literal, cast
+from types import MappingProxyType
+from typing import ClassVar, Literal, cast
 
 from django import forms
 from django.core.files.uploadedfile import UploadedFile
@@ -35,10 +37,23 @@ from conformance.manifest import (
 from conformance.model_bank_config import (
     ConfigError,
     ModelBankConfig,
+    TestDataConfig,
+    TestValuesConfig,
     TokenEndpointClientAuthMode,
     parse_model_bank_config,
 )
 from conformance.openapi_plan_metadata import StepTreeNode, build_plan_tree
+from conformance.run_configuration import compile_run_configuration
+from conformance.run_plan import (
+    RunPlan,
+    RunPlanParseError,
+    RunPlanSuiteCoordinates,
+    RunPlanTestData,
+    RunPlanTestValues,
+    compute_manifest_hash,
+    parse_run_plan,
+    serialise_run_plan,
+)
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
 from conformance.test_plan import (
     PlanTestValueContext,
@@ -53,6 +68,47 @@ StepKind = Literal["http", "psu-authorization"]
 
 SelectionMode = Literal["deselect", "select"]
 """Modes used by browser forms to describe participant step selection."""
+
+
+PlanDriftStatus = Literal["ok", "hash_mismatch", "stale_step_ids", "stale_custom_keys"]
+"""Drift classifications for imported Run Plan compatibility checks."""
+
+
+@dataclass(frozen=True)
+class PlanImportResult:
+    """Result of parsing and normalising an optional imported Run Plan payload.
+
+    Attributes:
+        imported_plan: Parsed imported plan, or ``None`` when no valid import
+            payload was supplied.
+        selected_step_ids: Imported selected step ids filtered to steps present
+            in the currently loaded manifest.
+        custom_values: Imported legacy ``testValues.customValues`` overrides
+            filtered to keys allowed by the currently loaded manifest profile
+            contract.
+        test_data_values: Participant-supplied ``testData.values`` from the
+            imported Run Plan, filtered to keys allowed by the currently
+            loaded manifest ``testValues.allowedCustomKeys`` contract.
+            Baseline filling and full-snapshot assembly are deferred to the
+            snapshot step in :func:`build_plan_preview`.
+        uses_legacy_test_values: Whether the imported Run Plan payload supplied
+            legacy ``testValues.profile`` and/or ``testValues.customValues``.
+        drift_statuses: Drift classifications detected while validating the
+            imported plan against the current manifest.
+        warnings: Human-readable non-blocking warnings shown in the preview.
+        launch_blockers: Human-readable hard blockers that disable launch.
+        plan_drift_blocks_launch: Whether drift requires launch to be blocked.
+    """
+
+    imported_plan: RunPlan | None
+    selected_step_ids: tuple[str, ...]
+    custom_values: Mapping[str, str]
+    test_data_values: Mapping[str, str]
+    uses_legacy_test_values: bool
+    drift_statuses: tuple[PlanDriftStatus, ...]
+    warnings: tuple[str, ...]
+    launch_blockers: tuple[str, ...]
+    plan_drift_blocks_launch: bool
 
 
 @dataclass(frozen=True)
@@ -223,6 +279,12 @@ class PlanPreview:
         launch_blockers: Human-readable reasons launch is disabled, including
             hard environment capability blockers for known unsupported
             suite/auth/environment combinations.
+        is_exploratory_run: Whether the selected Run Plan produces at least
+            one effective test-data value that differs from the manifest
+            baseline (new-schema manifests), or uses a non-default profile
+            or custom override values (legacy manifests).
+        exploratory_ack_required: Whether launch requires explicit exploratory
+            acknowledgement from the participant.
         certification_eligible_by_selection: Whether the submitted selection preserves certification eligibility.
         auth_inventory: Stable consent/token bundles required by selected
             token-protected steps.
@@ -231,10 +293,36 @@ class PlanPreview:
             evaluation where compatibility is unknown (e.g. undeclared custom
             environment capabilities).  These do not block launch but are
             surfaced to the participant for awareness.
+        run_plan: Snapshot of the participant-selected Run Plan generated from
+            this preview state.
+        legacy_test_values_warning: Whether ``config.testValues`` was supplied
+            through the legacy config path and will be migrated into
+            ``run_plan.test_values``.
+        run_plan_json: Pretty-printed JSON serialisation of ``run_plan`` for
+            participant export/reuse.
+        plan_drift_warnings: Human-readable warnings raised while validating an
+            imported Run Plan against the current manifest.
+        plan_drift_blocks_launch: Whether Run Plan drift has blocked launch
+            until the participant re-exports the plan from the current manifest.
+        test_value_fields: UI metadata for editable test-value keys. For new
+            manifests this is derived from selected-step references and
+            ``testValues.allowedCustomKeys``. For legacy manifests it is
+            derived from the selected ``testValueProfiles`` profile.
+        test_value_step_groups: Request-shaped tree groups for new-schema
+            manifests only.  Each group corresponds to one selected step and
+            contains per-surface trees whose leaves map onto API body paths,
+            headers, URL, or form fields.  Empty for legacy manifests; when
+            non-empty the template renders the tree UI instead of the flat
+            ``test_value_fields`` grid.
         tree_nodes: Hierarchical tree nodes derived from OpenAPI standards
             documents and manifest step analysis, for visual tree selection
             rendering. Empty when ``suite_metadata`` is ``None`` or the suite
             has no bundled OpenAPI document.
+        baseline_delta_keys: Set of test-value keys whose effective value differs
+            from the suite manifest baseline for the selected steps. Empty when
+            the manifest has no ``testValues`` block or all participant-supplied
+            values match the baseline. Populated from :class:`RunConfiguration`
+            for result evidence and certification gating.
     """
 
     config: ModelBankConfig
@@ -245,11 +333,126 @@ class PlanPreview:
     rows: tuple[PlanStepRow, ...]
     launch_supported: bool
     launch_blockers: tuple[str, ...]
+    is_exploratory_run: bool
+    exploratory_ack_required: bool
     certification_eligible_by_selection: bool
     auth_inventory: tuple[PlanAuthBundle, ...]
     step_auth_requirements: tuple[PlanStepAuthRequirement, ...]
     capability_warnings: tuple[str, ...]
+    run_plan: RunPlan
+    legacy_test_values_warning: bool
+    run_plan_json: str
+    plan_drift_warnings: tuple[str, ...]
+    plan_drift_blocks_launch: bool
+    test_value_fields: tuple[TestValueFieldSpec, ...]
+    test_value_step_groups: tuple[TestValueStepGroup, ...]
     tree_nodes: tuple[StepTreeNode, ...]
+    baseline_delta_keys: frozenset[str]
+
+
+@dataclass(frozen=True)
+class TestValueFieldSpec:
+    """Spec for one editable test-value field in the Plan Builder UI.
+
+    Attributes:
+        key: Manifest allow-listed override key (for example ``paymentAmount``).
+        default_value: Suite baseline value, or legacy selected-profile value.
+        is_overridden: Whether the participant supplied a custom value.
+        current_value: Effective value shown in the UI.
+        is_generated: Whether the manifest marks this key as runtime-generated.
+        shape_warning: Advisory warning for obvious shape mismatches, or
+            ``None`` when no warning applies.
+    """
+
+    key: str
+    default_value: str
+    is_overridden: bool
+    current_value: str
+    is_generated: bool
+    shape_warning: str | None
+
+
+@dataclass(frozen=True)
+class TestValueTreeRow:
+    """One rendered row in the request-shaped test-value tree.
+
+    Rows are either intermediate group headers (showing a path-segment label
+    only) or leaf rows (showing an editable or read-only input).  The
+    ``depth`` field controls visual indentation in the template.
+
+    Attributes:
+        row_type: ``"group"`` for path-segment headers with no input;
+            ``"leaf"`` for rows that carry an editable or read-only input.
+        depth: Visual indentation depth (0 = top-level path segment).
+        label: Display label — a path-segment name for group rows, the
+            API field name for leaf rows.
+        key: Referenced ``${testValues.<key>}`` key when ``row_type``
+            is ``"leaf"``, otherwise ``None``.
+        is_canonical: For leaf rows, ``True`` when the canonical
+            ``<input name="custom_tv_<key>">`` element is rendered here.
+            ``False`` means another step has already rendered the canonical
+            input for this key and a read-only reference is shown instead.
+        default_value: Suite baseline value for this key. Empty string
+            for group rows or keys with no baseline entry.
+        current_value: Effective participant-visible value.  Equal to
+            ``default_value`` when not overridden.
+        is_overridden: ``True`` when the participant has supplied a
+            custom value that differs from the baseline.
+        is_generated: ``True`` when the manifest marks this key as
+            runtime-generated (e.g. UUIDs minted per execution).
+        shape_warning: Advisory warning for obvious value-shape mismatches,
+            or ``None`` when no warning applies.
+    """
+
+    row_type: Literal["group", "leaf"]
+    depth: int
+    label: str
+    key: str | None
+    is_canonical: bool
+    default_value: str = ""
+    current_value: str = ""
+    is_overridden: bool = False
+    is_generated: bool = False
+    shape_warning: str | None = None
+    __test__: ClassVar[bool] = False
+
+
+@dataclass(frozen=True)
+class TestValueSurfaceTree:
+    """Test-value display tree for one HTTP request surface within a step.
+
+    Attributes:
+        surface_label: Human-readable label shown in the UI surface heading
+            (e.g. ``"Body"``, ``"Headers"``, ``"URL"``, ``"Form body"``).
+        request_area: Machine-readable area identifier as declared in
+            :class:`conformance.manifest.TestValueReference`
+            (e.g. ``"request-json-body"``).
+        rows: Ordered tree rows combining group headers and leaf inputs.
+    """
+
+    surface_label: str
+    request_area: str
+    rows: tuple[TestValueTreeRow, ...]
+
+
+@dataclass(frozen=True)
+class TestValueStepGroup:
+    """Test-value surface trees grouped under one selected plan step.
+
+    Attributes:
+        step_id: Step identifier as declared in the manifest.
+        step_name: Human-readable step name for display in the accordion.
+        surfaces: Surface trees for this step, ordered with body first.
+        has_canonical_keys: ``True`` when at least one leaf in this step
+            renders the canonical editable input.  Steps where all key
+            inputs are already rendered canonically in an earlier step
+            are shown collapsed with read-only references only.
+    """
+
+    step_id: str
+    step_name: str
+    surfaces: tuple[TestValueSurfaceTree, ...]
+    has_canonical_keys: bool
 
 
 class StepIdListField(forms.Field):
@@ -324,6 +527,10 @@ class PlanBuilderForm(forms.Form):
         guided_signing_token_endpoint_auth_method: Optional structured token
             endpoint auth-method prompt.
         selection_mode: Choice controlling whether selected or deselected ids drive the submitted plan.
+        run_plan_import: Optional textarea containing imported Run Plan JSON.
+        test_value_profile: Optional hidden profile selector value posted by the
+            test-values UI section.
+        exploratory_ack: Optional acknowledgement checkbox for exploratory runs.
         selected_step_ids: Step ids posted by checked step checkboxes.
         deselect_step_ids: Step ids posted as explicit deselections.
         preview: Typed preview built after successful form validation.
@@ -370,6 +577,13 @@ class PlanBuilderForm(forms.Form):
         choices=(("deselect", "Deselect submitted ids"), ("select", "Select submitted ids")),
         required=False,
     )
+    run_plan_import: forms.CharField = forms.CharField(
+        label="Run Plan import JSON",
+        required=False,
+        widget=forms.Textarea,
+    )
+    test_value_profile: forms.CharField = forms.CharField(required=False, widget=forms.HiddenInput)
+    exploratory_ack: forms.BooleanField = forms.BooleanField(required=False)
     selected_step_ids: StepIdListField = StepIdListField(required=False)
     deselect_step_ids: StepIdListField = StepIdListField(required=False)
 
@@ -529,14 +743,29 @@ class PlanBuilderForm(forms.Form):
         selected_step_ids = _cleaned_step_ids(cleaned_data.get("selected_step_ids"))
         deselect_step_ids = _cleaned_step_ids(cleaned_data.get("deselect_step_ids"))
         selection_mode = _cleaned_selection_mode(cleaned_data.get("selection_mode"))
+        run_plan_import = _cleaned_optional_string(cleaned_data.get("run_plan_import"))
+        test_value_profile = _cleaned_optional_string(cleaned_data.get("test_value_profile"))
+        exploratory_ack = bool(cleaned_data.get("exploratory_ack"))
+        has_custom_test_value_fields = _has_custom_test_value_fields(self.data)
+        custom_test_values = _extract_custom_test_values(self.data)
+        cleaned_data["run_plan_import"] = run_plan_import
+        cleaned_data["test_value_profile"] = test_value_profile
+        cleaned_data["exploratory_ack"] = exploratory_ack
+        cleaned_data["custom_test_values"] = custom_test_values
+        manifest_bytes = _submitted_manifest_json_bytes(self.data.get("manifest_json"))
         try:
             self.preview = build_plan_preview(
                 config=config,
                 manifest=manifest,
                 suite_metadata=suite_metadata,
+                manifest_bytes=manifest_bytes,
                 selected_step_ids=selected_step_ids,
                 deselect_step_ids=deselect_step_ids,
                 selection_mode=selection_mode,
+                run_plan_import=run_plan_import,
+                test_value_profile=test_value_profile,
+                custom_test_values=custom_test_values if has_custom_test_value_fields else None,
+                exploratory_ack=exploratory_ack,
             )
         except ValueError as error:
             raise forms.ValidationError(f"Plan validation failed: {error}", code="invalid_plan") from error
@@ -636,9 +865,14 @@ def build_plan_preview(
     config: ModelBankConfig,
     manifest: Manifest,
     suite_metadata: SuiteMetadata | None = None,
+    manifest_bytes: bytes | None = None,
     selected_step_ids: list[str] | None = None,
     deselect_step_ids: list[str] | None = None,
     selection_mode: SelectionMode = "deselect",
+    run_plan_import: str | None = None,
+    test_value_profile: str | None = None,
+    custom_test_values: Mapping[str, str] | None = None,
+    exploratory_ack: bool = False,
 ) -> PlanPreview:
     """Build the typed step-row presenter for a validated v1 manifest.
 
@@ -658,10 +892,22 @@ def build_plan_preview(
         manifest: Validated v1 manifest to preview.
         suite_metadata: Optional metadata describing the config-resolved suite
             that supplied ``manifest``.
+        manifest_bytes: Optional raw manifest bytes supplied by the caller.
+            When absent, bytes are resolved from suite metadata or a
+            deterministic manifest serialisation fallback.
         selected_step_ids: Step ids checked in a selection-mode form post.
         deselect_step_ids: Step ids unchecked or explicitly deselected by a deselection-mode form post.
         selection_mode: Whether to derive the submitted plan from selected ids
             or by deselecting ids from the default plan.
+        run_plan_import: Optional imported Run Plan JSON supplied by the
+            participant for pre-populating selection and custom values.
+        test_value_profile: Optional profile override supplied by the browser
+            form. ``None`` uses ``config.test_values.profile``.
+        custom_test_values: Optional per-key custom test-value overrides
+            supplied by the browser form. ``None`` uses
+            ``config.test_values.overrides``.
+        exploratory_ack: Whether the participant explicitly acknowledged an
+            exploratory run in the submitted form data.
 
     Returns:
         A complete plan preview with step rows and launch support flags.
@@ -671,16 +917,85 @@ def build_plan_preview(
     """
     if manifest.schema_version != "v1":
         raise ValueError("Plan builder supports v1 manifests only")
+    manifest_hash = _compute_preview_manifest_hash(
+        manifest=manifest,
+        suite_metadata=suite_metadata,
+        manifest_bytes=manifest_bytes,
+    )
+    import_result = _parse_plan_import_result(
+        run_plan_import=run_plan_import,
+        manifest=manifest,
+        current_manifest_hash=manifest_hash,
+    )
+
+    effective_selection_mode = selection_mode
+    effective_selected_step_ids = selected_step_ids or []
+    supports_test_data_schema = manifest.test_values is not None
+    if import_result.imported_plan is not None:
+        if supports_test_data_schema:
+            effective_profile = None
+            effective_custom_values = {}
+            effective_test_data_values = dict(import_result.test_data_values)
+        else:
+            effective_profile = import_result.imported_plan.test_values.profile
+            effective_custom_values = dict(import_result.custom_values)
+            effective_test_data_values = dict(import_result.imported_plan.test_data.values)
+        effective_selection_mode = "select"
+        effective_selected_step_ids = list(import_result.selected_step_ids)
+    else:
+        effective_profile = test_value_profile
+        if effective_profile is None and config.test_values is not None:
+            effective_profile = config.test_values.profile
+
+        if custom_test_values is None:
+            effective_custom_values = dict(config.test_values.overrides) if config.test_values is not None else {}
+            effective_test_data_values = dict(config.test_data.values) if config.test_data is not None else {}
+        else:
+            if supports_test_data_schema:
+                effective_profile = None
+                effective_custom_values = {}
+                # Keep raw form-posted values here; the outer normalise below
+                # strips to deltas for context/step-selection purposes.
+                effective_test_data_values = dict(custom_test_values)
+            else:
+                effective_custom_values = _normalise_custom_test_values(
+                    manifest=manifest,
+                    profile_id=effective_profile,
+                    custom_values=dict(custom_test_values),
+                )
+                effective_test_data_values = {}
+
+    # Save participant values BEFORE delta-normalisation so the full snapshot
+    # builder can include baseline-equal values in Run Plan storage.
+    participant_test_data_values = effective_test_data_values
+    if supports_test_data_schema:
+        effective_test_data_values = _normalise_test_data_values(
+            manifest=manifest,
+            test_data_values=effective_test_data_values,
+        )
+
+    effective_test_values = (
+        TestValuesConfig(
+            profile=effective_profile,
+            overrides=MappingProxyType(effective_custom_values),
+        )
+        if effective_profile is not None or bool(effective_custom_values)
+        else None
+    )
+    effective_test_data = (
+        TestDataConfig(values=MappingProxyType(effective_test_data_values)) if effective_test_data_values else None
+    )
+
     try:
-        test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+        test_value_ctx = build_plan_test_value_context(manifest, effective_test_values, effective_test_data)
     except ValueError:
         # Gracefully degrade when profile resolution fails (e.g. unknown profile
         # id in a partial config): treat as no effective test values so
         # conditional steps appear with missing-value status in the preview.
         test_value_ctx = PlanTestValueContext()
     default_plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx)
-    if selection_mode == "select":
-        selected_plan = _plan_from_selected_step_ids(default_plan, selected_step_ids or [])
+    if effective_selection_mode == "select":
+        selected_plan = _plan_from_selected_step_ids(default_plan, effective_selected_step_ids)
     else:
         selected_plan = default_plan.with_deselection(deselect_step_ids or [])
 
@@ -709,8 +1024,77 @@ def build_plan_preview(
         manifest=manifest,
         suite_metadata=suite_metadata,
     )
+    # Compile run configuration before building Run Plan so that
+    # baseline_delta_keys drives both the full snapshot and is_exploratory_run.
+    selected_step_id_set = {entry.step_id for entry in selected_plan.entries if entry.selected}
+    try:
+        run_config = compile_run_configuration(
+            manifest=manifest,
+            selected_step_ids=selected_step_id_set,
+            test_data_values=effective_test_data_values,
+        )
+    except ValueError as exc:
+        run_config = None
+        test_data_blockers: tuple[str, ...] = (str(exc),)
+    else:
+        if run_config is not None and run_config.missing_required_keys:
+            test_data_blockers = (
+                f"Run cannot proceed: test data is missing required keys: {sorted(run_config.missing_required_keys)}",
+            )
+        else:
+            test_data_blockers = ()
+    # Build the full executable snapshot for Run Plan storage.
+    # For new-schema manifests this includes baseline values for all referenced
+    # keys plus participant-supplied values for any allow-listed key, giving a
+    # complete stand-alone document that launch can execute directly.
+    run_plan_test_data_values: dict[str, str] = (
+        _build_full_test_data_snapshot(
+            manifest=manifest,
+            selected_plan=selected_plan,
+            participant_values=participant_test_data_values,
+        )
+        if supports_test_data_schema
+        else effective_test_data_values
+    )
+    run_plan = RunPlan(
+        schema_version="1",
+        suite=RunPlanSuiteCoordinates(
+            id=suite_metadata.catalog_id if suite_metadata is not None else "custom",
+            version=suite_metadata.spec_version if suite_metadata is not None else "unknown",
+            manifest_hash=manifest_hash,
+        ),
+        selected_step_ids=tuple(entry.step_id for entry in selected_plan.entries if entry.selected),
+        test_values=RunPlanTestValues(
+            profile=effective_profile,
+            custom_values=effective_custom_values,
+        ),
+        test_data=RunPlanTestData(values=MappingProxyType(run_plan_test_data_values)),
+    )
+    legacy_test_values_warning = config.test_values is not None or import_result.uses_legacy_test_values
+    run_plan_json = json.dumps(serialise_run_plan(run_plan), indent=2)
+    test_value_fields = _build_test_value_field_specs(manifest=manifest, run_plan=run_plan)
+    test_value_step_groups = _build_test_value_step_groups(manifest=manifest, run_plan=run_plan)
+    # Derive exploratory status from baseline_delta_keys for new-schema manifests
+    # so that a Run Plan containing baseline-equal values is not treated as
+    # exploratory merely because testData.values is non-empty.
+    is_exploratory_run = _is_exploratory_run(
+        run_plan,
+        supports_test_data_schema=supports_test_data_schema,
+        baseline_delta_keys=run_config.baseline_delta_keys if run_config is not None else frozenset(),
+    )
+    exploratory_ack_required = is_exploratory_run
     manifest_blockers = _launch_blockers(manifest)
-    all_blockers = (*manifest_blockers, *capability_blockers)
+    legacy_schema_blockers: tuple[str, ...] = ()
+    if supports_test_data_schema and config.test_values is not None:
+        legacy_schema_blockers = (
+            "Config uses legacy testValues.profile/testValues.overrides, but this suite uses "
+            "testValues.baseline + testData.values. Remove testValues and move custom keys to testData.values.",
+        )
+    all_blockers_list = [*manifest_blockers, *capability_blockers, *import_result.launch_blockers, *test_data_blockers]
+    all_blockers_list.extend(legacy_schema_blockers)
+    if exploratory_ack_required and not exploratory_ack:
+        all_blockers_list.append("Exploratory Run acknowledgement required — check the acknowledgement box to launch.")
+    all_blockers = tuple(all_blockers_list)
     return PlanPreview(
         config=config,
         manifest=manifest,
@@ -720,12 +1104,835 @@ def build_plan_preview(
         rows=rows,
         launch_supported=not all_blockers,
         launch_blockers=all_blockers,
-        certification_eligible_by_selection=selected_plan.is_eligible_by_selection(),
+        is_exploratory_run=is_exploratory_run,
+        exploratory_ack_required=exploratory_ack_required,
+        certification_eligible_by_selection=selected_plan.is_eligible_by_selection() and not is_exploratory_run,
         auth_inventory=auth_inventory,
         step_auth_requirements=step_auth_requirements,
         capability_warnings=capability_warnings,
+        run_plan=run_plan,
+        legacy_test_values_warning=legacy_test_values_warning,
+        run_plan_json=run_plan_json,
+        plan_drift_warnings=import_result.warnings,
+        plan_drift_blocks_launch=import_result.plan_drift_blocks_launch,
+        test_value_fields=test_value_fields,
+        test_value_step_groups=test_value_step_groups,
         tree_nodes=tree_nodes,
+        baseline_delta_keys=run_config.baseline_delta_keys if run_config is not None else frozenset(),
     )
+
+
+def _is_exploratory_run(
+    run_plan: RunPlan,
+    *,
+    supports_test_data_schema: bool = False,
+    baseline_delta_keys: frozenset[str] = frozenset(),
+) -> bool:
+    """Return whether a Run Plan is exploratory for certification purposes.
+
+    For new-schema manifests (those with a ``testValues`` baseline block),
+    exploratory status is determined by whether any effective test-data value
+    referenced by the selected steps differs from the manifest baseline, as
+    reflected in ``baseline_delta_keys`` from
+    :func:`~conformance.run_configuration.compile_run_configuration`.
+
+    For legacy manifests (those using ``testValueProfiles``), exploratory
+    status is determined by a non-default profile selection or any custom
+    override value.
+
+    Args:
+        run_plan: Run Plan generated from participant preview selections.
+        supports_test_data_schema: Whether the manifest uses the new
+            ``testValues`` baseline/allowedCustomKeys contract.  Defaults
+            to ``False`` so that callers using only a ``RunPlan`` (e.g.
+            unit tests) continue to exercise the legacy path without change.
+        baseline_delta_keys: Keys whose effective value differs from the
+            manifest baseline, as computed by
+            :func:`~conformance.run_configuration.compile_run_configuration`.
+            Meaningful only when ``supports_test_data_schema`` is ``True``.
+
+    Returns:
+        ``True`` when the run is exploratory, otherwise ``False``.
+    """
+    if supports_test_data_schema:
+        return bool(baseline_delta_keys)
+    return run_plan.test_values.profile is not None or bool(run_plan.test_values.custom_values)
+
+
+def _build_full_test_data_snapshot(
+    *,
+    manifest: Manifest,
+    selected_plan: TestPlan,
+    participant_values: Mapping[str, str],
+) -> dict[str, str]:
+    """Build the full executable test-data snapshot for Run Plan storage.
+
+    Combines manifest baseline values (for keys referenced by selected steps)
+    with participant-supplied values (for any allow-listed key) to produce a
+    complete, stand-alone snapshot covering all effective test data.  Generated
+    keys are excluded because they are materialised at execution time.
+
+    Args:
+        manifest: Manifest currently loaded in the preview.
+        selected_plan: The participant-selected execution plan.
+        participant_values: Config-supplied or form-posted test-data values
+            to overlay on the baseline foundation.
+
+    Returns:
+        Mapping of test-data keys to their effective values.  Includes all
+        allow-listed non-generated keys referenced by selected steps (seeded
+        from the manifest baseline when absent from ``participant_values``),
+        plus any additional participant-supplied allow-listed keys.
+    """
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is None:
+        return dict(participant_values)
+    baseline_values = manifest_test_values.baseline
+    allowed_custom_keys = manifest_test_values.allowed_custom_keys
+    generated_keys = manifest_test_values.generated_keys
+    selected_step_ids = {entry.step_id for entry in selected_plan.entries if entry.selected}
+    referenced_keys: set[str] = set()
+    for step in manifest.steps:
+        if step.id in selected_step_ids:
+            referenced_keys.update(step.consumed_test_value_keys)
+    snapshot: dict[str, str] = {}
+    for key in referenced_keys & allowed_custom_keys:
+        if key not in generated_keys and key in baseline_values:
+            snapshot[key] = baseline_values[key]
+    for key, value in participant_values.items():
+        if key in allowed_custom_keys and key not in generated_keys:
+            snapshot[key] = value
+    return snapshot
+
+
+def _parse_plan_import_result(
+    *,
+    run_plan_import: str | None,
+    manifest: Manifest,
+    current_manifest_hash: str,
+) -> PlanImportResult:
+    """Parse optional Run Plan import JSON and compute drift metadata.
+
+    Args:
+        run_plan_import: Raw Run Plan JSON pasted by the participant.
+        manifest: Currently loaded v1 manifest used for preview.
+        current_manifest_hash: Hash of the currently loaded manifest bytes.
+
+    Returns:
+        Parsed import metadata with preview warnings, launch blockers, and
+        filtered selection/custom-value data for the current manifest.
+    """
+    raw_import = (run_plan_import or "").strip()
+    if raw_import == "":
+        return _empty_plan_import_result()
+
+    try:
+        imported_plan = parse_run_plan(json.loads(raw_import))
+    except json.JSONDecodeError as error:
+        return _empty_plan_import_result(
+            launch_blockers=(f"Run Plan import must be valid JSON: {error.msg}",),
+        )
+    except RunPlanParseError as error:
+        return _empty_plan_import_result(
+            launch_blockers=(f"Run Plan import parse failed: {error}",),
+        )
+
+    manifest_step_ids = {step.id for step in manifest.steps}
+    stale_step_ids = sorted(
+        {step_id for step_id in imported_plan.selected_step_ids if step_id not in manifest_step_ids}
+    )
+    selected_step_ids = tuple(step_id for step_id in imported_plan.selected_step_ids if step_id in manifest_step_ids)
+    allowed_override_keys = (
+        manifest.test_value_profiles.allowed_override_keys if manifest.test_value_profiles is not None else frozenset()
+    )
+    filtered_custom_values = MappingProxyType(
+        {key: value for key, value in imported_plan.test_values.custom_values.items() if key in allowed_override_keys}
+    )
+    stale_custom_keys = sorted(
+        key for key in imported_plan.test_values.custom_values if key not in allowed_override_keys
+    )
+    allowed_test_data_keys = (
+        manifest.test_values.allowed_custom_keys if manifest.test_values is not None else frozenset()
+    )
+    filtered_import_test_data_values = {
+        key: value for key, value in imported_plan.test_data.values.items() if key in allowed_test_data_keys
+    }
+    stale_test_data_keys = sorted(key for key in imported_plan.test_data.values if key not in allowed_test_data_keys)
+    filtered_legacy_test_data_values = {
+        key: value for key, value in imported_plan.test_values.custom_values.items() if key in allowed_test_data_keys
+    }
+    stale_legacy_test_data_keys = sorted(
+        key for key in imported_plan.test_values.custom_values if key not in allowed_test_data_keys
+    )
+    legacy_profile_test_data_deltas = _map_profile_to_test_data_deltas(
+        manifest=manifest,
+        profile_id=imported_plan.test_values.profile,
+    )
+    merged_test_data_values = {
+        **legacy_profile_test_data_deltas,
+        **filtered_legacy_test_data_values,
+        **filtered_import_test_data_values,
+    }
+    # Retain participant values from the import as-is (filtered to allowed
+    # keys); the full executable snapshot is built in build_plan_preview once
+    # the selected plan is known.  Delta-only stripping is deferred to the
+    # context-normalisation step that follows.
+    normalised_test_data_values = {
+        key: value for key, value in merged_test_data_values.items() if key in allowed_test_data_keys
+    }
+    uses_legacy_test_values = imported_plan.test_values.profile is not None or bool(
+        imported_plan.test_values.custom_values
+    )
+
+    warnings: list[str] = []
+    launch_blockers: list[str] = []
+    statuses: list[PlanDriftStatus] = []
+    blocks_launch = False
+    if imported_plan.suite.manifest_hash != current_manifest_hash:
+        warnings.append(
+            "Imported Run Plan was created against a different manifest version. "
+            "Preview is available but launch is blocked until you re-export from "
+            "the current manifest."
+        )
+        launch_blockers.append(
+            "Run Plan manifest hash mismatch — re-export the plan from the current manifest before launching."
+        )
+        statuses.append("hash_mismatch")
+        blocks_launch = True
+
+    for stale_step_id in stale_step_ids:
+        warnings.append(
+            f"Step '{stale_step_id}' in the imported Run Plan is not present in the current manifest (stale step ID)."
+        )
+    if stale_step_ids:
+        warnings.append(
+            f"{len(stale_step_ids)} step(s) from the imported plan are no longer "
+            "present in the current manifest and have been removed."
+        )
+        statuses.append("stale_step_ids")
+
+    for stale_custom_key in stale_custom_keys:
+        warnings.append(
+            f"Custom value key '{stale_custom_key}' in the imported Run Plan is "
+            "not an allowed override key in the current manifest."
+        )
+    if stale_custom_keys:
+        statuses.append("stale_custom_keys")
+    stale_import_test_data_keys = sorted(set(stale_test_data_keys) | set(stale_legacy_test_data_keys))
+    for stale_test_data_key in stale_import_test_data_keys:
+        warnings.append(
+            f"Custom value key '{stale_test_data_key}' in the imported Run Plan "
+            "is not an allowed testData key in the current manifest."
+        )
+    if uses_legacy_test_values and manifest.test_values is not None:
+        warnings.append(
+            "Imported Run Plan uses legacy testValues fields; values have been migrated into testData.values."
+        )
+
+    return PlanImportResult(
+        imported_plan=imported_plan,
+        selected_step_ids=selected_step_ids,
+        custom_values=filtered_custom_values,
+        test_data_values=MappingProxyType(normalised_test_data_values),
+        uses_legacy_test_values=uses_legacy_test_values,
+        drift_statuses=tuple(statuses) if statuses else ("ok",),
+        warnings=tuple(warnings),
+        launch_blockers=tuple(launch_blockers),
+        plan_drift_blocks_launch=blocks_launch,
+    )
+
+
+def _empty_plan_import_result(
+    *,
+    launch_blockers: tuple[str, ...] = (),
+) -> PlanImportResult:
+    """Return a PlanImportResult representing no applied imported plan.
+
+    Args:
+        launch_blockers: Optional launch blockers to include when import parsing
+            fails.
+
+    Returns:
+        A :class:`PlanImportResult` with no imported plan and optional blockers.
+    """
+    return PlanImportResult(
+        imported_plan=None,
+        selected_step_ids=(),
+        custom_values=MappingProxyType({}),
+        test_data_values=MappingProxyType({}),
+        uses_legacy_test_values=False,
+        drift_statuses=("ok",),
+        warnings=(),
+        launch_blockers=launch_blockers,
+        plan_drift_blocks_launch=False,
+    )
+
+
+def _map_profile_to_test_data_deltas(*, manifest: Manifest, profile_id: str | None) -> dict[str, str]:
+    """Convert a legacy profile selection into test-data deltas from baseline.
+
+    Args:
+        manifest: Manifest currently loaded in the preview.
+        profile_id: Imported legacy ``testValues.profile`` id.
+
+    Returns:
+        Mapping of profile key/value pairs that differ from the manifest
+        baseline and are allow-listed by ``testValues.allowedCustomKeys``.
+    """
+    if profile_id is None or manifest.test_value_profiles is None or manifest.test_values is None:
+        return {}
+    selected_profile = next(
+        (profile for profile in manifest.test_value_profiles.profiles if profile.id == profile_id), None
+    )
+    if selected_profile is None:
+        return {}
+    baseline_values = manifest.test_values.baseline
+    allowed_custom_keys = manifest.test_values.allowed_custom_keys
+    return {
+        key: value
+        for key, value in selected_profile.values.items()
+        if key in allowed_custom_keys and baseline_values.get(key) != value
+    }
+
+
+def _normalise_test_data_values(*, manifest: Manifest, test_data_values: Mapping[str, str]) -> dict[str, str]:
+    """Filter test-data values to allowed keys and baseline deltas only.
+
+    Args:
+        manifest: Manifest currently loaded in the preview.
+        test_data_values: Candidate test-data values to normalise.
+
+    Returns:
+        Mapping containing only keys allow-listed by
+        ``manifest.test_values.allowed_custom_keys`` whose values differ from
+        the suite baseline.
+    """
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is None:
+        return dict(test_data_values)
+    baseline_values = manifest_test_values.baseline
+    allowed_custom_keys = manifest_test_values.allowed_custom_keys
+    return {
+        key: value
+        for key, value in test_data_values.items()
+        if key in allowed_custom_keys and baseline_values.get(key) != value
+    }
+
+
+def _normalise_custom_test_values(
+    *,
+    manifest: Manifest,
+    profile_id: str | None,
+    custom_values: dict[str, str],
+) -> dict[str, str]:
+    """Filter posted custom test values to meaningful per-profile override deltas.
+
+    Args:
+        manifest: Manifest currently loaded in the preview.
+        profile_id: Selected test-value profile id, or ``None`` for default.
+        custom_values: Raw ``custom_tv_*`` values extracted from form POST data.
+
+    Returns:
+        Filtered mapping containing only allow-listed keys whose values differ
+        from the selected profile defaults.
+    """
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None:
+        return {}
+    selected_profile_id = profile_id or profile_spec.default_profile_id
+    selected_profile = next((profile for profile in profile_spec.profiles if profile.id == selected_profile_id), None)
+    if selected_profile is None:
+        return {}
+    return {
+        key: value
+        for key, value in custom_values.items()
+        if key in profile_spec.allowed_override_keys
+        and key not in selected_profile.generated_keys
+        and value != selected_profile.values.get(key, "")
+    }
+
+
+def _build_test_value_field_specs(*, manifest: Manifest, run_plan: RunPlan) -> tuple[TestValueFieldSpec, ...]:
+    """Build UI field specs for editable test values.
+
+    Args:
+        manifest: Manifest currently loaded in the plan preview.
+        run_plan: Effective run-plan snapshot for the current preview.
+
+    Returns:
+        Tuple of field specs for each editable key, or an empty tuple when no
+        test-value UI should be rendered.
+    """
+    if manifest.test_values is not None:
+        return _build_test_data_field_specs(manifest=manifest, run_plan=run_plan)
+    return _build_legacy_test_value_field_specs(manifest=manifest, run_plan=run_plan)
+
+
+def _build_test_data_field_specs(*, manifest: Manifest, run_plan: RunPlan) -> tuple[TestValueFieldSpec, ...]:
+    """Build UI field specs for new-schema ``testData.values`` edits.
+
+    Args:
+        manifest: Manifest currently loaded in the plan preview.
+        run_plan: Effective run-plan snapshot for the current preview.
+
+    Returns:
+        Tuple of field specs for selected-step keys that are allow-listed in
+        ``testValues.allowedCustomKeys``.
+    """
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is None or not manifest_test_values.allowed_custom_keys:
+        return ()
+
+    selected_step_ids = set(run_plan.selected_step_ids)
+    referenced_keys: set[str] = set()
+    for step in manifest.steps:
+        if step.id in selected_step_ids:
+            referenced_keys.update(step.consumed_test_value_keys)
+
+    editable_keys = sorted(referenced_keys & manifest_test_values.allowed_custom_keys)
+    field_specs: list[TestValueFieldSpec] = []
+    for key in editable_keys:
+        default_value = manifest_test_values.baseline.get(key, "")
+        is_generated = key in manifest_test_values.generated_keys
+        # Run Plan now stores the full snapshot, so a key is considered
+        # overridden when its stored value differs from the baseline rather
+        # than merely being present in the mapping.
+        current_value = run_plan.test_data.values.get(key, default_value)
+        is_overridden = current_value != default_value
+        shape_warning = (
+            _infer_shape_warning(key, default_value, current_value) if is_overridden and not is_generated else None
+        )
+        field_specs.append(
+            TestValueFieldSpec(
+                key=key,
+                default_value=default_value,
+                is_overridden=is_overridden,
+                current_value=current_value,
+                is_generated=is_generated,
+                shape_warning=shape_warning,
+            )
+        )
+    return tuple(field_specs)
+
+
+def _build_legacy_test_value_field_specs(*, manifest: Manifest, run_plan: RunPlan) -> tuple[TestValueFieldSpec, ...]:
+    """Build UI field specs for legacy profile-backed test-value overrides.
+
+    Args:
+        manifest: Manifest currently loaded in the plan preview.
+        run_plan: Effective run-plan snapshot for the current preview.
+
+    Returns:
+        Tuple of field specs for each allow-listed legacy profile override key,
+        or an empty tuple when no legacy profile override UI should be rendered.
+    """
+    profile_spec = manifest.test_value_profiles
+    if profile_spec is None or not profile_spec.allowed_override_keys:
+        return ()
+    selected_profile_id = run_plan.test_values.profile or profile_spec.default_profile_id
+    selected_profile = next((profile for profile in profile_spec.profiles if profile.id == selected_profile_id), None)
+    if selected_profile is None:
+        return ()
+
+    field_specs: list[TestValueFieldSpec] = []
+    for key in sorted(profile_spec.allowed_override_keys):
+        default_value = selected_profile.values.get(key, "")
+        is_generated = key in selected_profile.generated_keys
+        is_overridden = key in run_plan.test_values.custom_values
+        current_value = run_plan.test_values.custom_values[key] if is_overridden else default_value
+        shape_warning = (
+            _infer_shape_warning(key, default_value, current_value) if is_overridden and not is_generated else None
+        )
+        field_specs.append(
+            TestValueFieldSpec(
+                key=key,
+                default_value=default_value,
+                is_overridden=is_overridden,
+                current_value=current_value,
+                is_generated=is_generated,
+                shape_warning=shape_warning,
+            )
+        )
+    return tuple(field_specs)
+
+
+_SURFACE_LABEL: dict[str, str] = {
+    "request-json-body": "Body",
+    "request-form-body": "Form body",
+    "request-header": "Headers",
+    "request-url": "URL",
+}
+"""Human-readable labels for each request-area identifier used in tree headings."""
+
+_SURFACE_ORDER: tuple[str, ...] = (
+    "request-json-body",
+    "request-form-body",
+    "request-header",
+    "request-url",
+)
+"""Display order for request surfaces — body surfaces first, URL last."""
+
+_BODY_PATH_PREFIXES: dict[str, str] = {
+    "request-json-body": "request.body.",
+    "request-form-body": "request.body.fields.",
+    "request-header": "request.headers.",
+    "request-url": "request.",
+}
+"""Field-path prefix stripped when computing display segments per request area."""
+
+
+def _strip_body_prefix(field_path: str, request_area: str) -> str:
+    """Strip the request-area prefix from a manifest field path.
+
+    Args:
+        field_path: Full dot-path field path from a
+            :class:`conformance.manifest.TestValueReference` (e.g.
+            ``"request.body.Data.Initiation.CreditorAccount.Name"``).
+        request_area: Request-area identifier matching the reference
+            (e.g. ``"request-json-body"``).
+
+    Returns:
+        The field path with its leading area prefix removed, or the
+        original path unchanged when no known prefix matches.
+    """
+    prefix = _BODY_PATH_PREFIXES.get(request_area, "")
+    if prefix and field_path.startswith(prefix):
+        return field_path[len(prefix) :]
+    return field_path
+
+
+def _insert_body_path(
+    trie: dict[str, object],
+    segments: list[str],
+    key: str,
+    is_canonical: bool,
+) -> None:
+    """Insert a body path into a mutable trie structure.
+
+    Intermediate segments create nested ``dict`` nodes; the final segment
+    records the leaf ``(key, is_canonical)`` pair alongside any children.
+
+    Args:
+        trie: Mutable dict representing the current trie level to insert into.
+        segments: Ordered path segments from the stripped field path
+            (e.g. ``["Data", "Initiation", "CreditorAccount", "Name"]``).
+        key: Test-value key to record at the leaf segment.
+        is_canonical: Whether the canonical editable input is rendered here.
+    """
+    node = trie
+    for segment in segments[:-1]:
+        if segment not in node:
+            node[segment] = {"_children": {}, "_leaf": None}
+        child = cast("dict[str, object]", node[segment])
+        node = cast("dict[str, object]", child["_children"])
+    leaf_segment = segments[-1]
+    if leaf_segment not in node:
+        node[leaf_segment] = {"_children": {}, "_leaf": None}
+    entry = cast("dict[str, object]", node[leaf_segment])
+    entry["_leaf"] = (key, is_canonical)
+
+
+def _trie_to_rows(
+    trie: dict[str, object],
+    depth: int,
+    field_specs_by_key: dict[str, TestValueFieldSpec],
+) -> list[TestValueTreeRow]:
+    """DFS-traverse a body trie and emit flat tree rows with depth metadata.
+
+    Args:
+        trie: Current trie node whose keys are sorted path-segment labels
+            and whose values are ``{"_children": …, "_leaf": …}`` dicts.
+        depth: Indentation depth for rows emitted at this level.
+        field_specs_by_key: Mapping of test-value key to its full field spec
+            for populating leaf row display data.
+
+    Returns:
+        Ordered list of :class:`TestValueTreeRow` items suitable for
+        direct template iteration.
+    """
+    rows: list[TestValueTreeRow] = []
+    for label in sorted(trie.keys()):
+        entry = cast("dict[str, object]", trie[label])
+        children: dict[str, object] = cast("dict[str, object]", entry["_children"])
+        leaf: tuple[str, bool] | None = cast("tuple[str, bool] | None", entry["_leaf"])
+        if children:
+            rows.append(TestValueTreeRow(row_type="group", depth=depth, label=label, key=None, is_canonical=False))
+            rows.extend(_trie_to_rows(children, depth + 1, field_specs_by_key))
+        if leaf is not None:
+            leaf_key, leaf_is_canonical = leaf
+            leaf_depth = depth + 1 if children else depth
+            spec = field_specs_by_key.get(leaf_key)
+            rows.append(
+                TestValueTreeRow(
+                    row_type="leaf",
+                    depth=leaf_depth,
+                    label=label,
+                    key=leaf_key,
+                    is_canonical=leaf_is_canonical,
+                    default_value=spec.default_value if spec else "",
+                    current_value=spec.current_value if spec else "",
+                    is_overridden=spec.is_overridden if spec else False,
+                    is_generated=spec.is_generated if spec else False,
+                    shape_warning=spec.shape_warning if spec else None,
+                )
+            )
+    return rows
+
+
+def _build_surface_rows_for_area(
+    refs: list[tuple[str, str, bool]],
+    request_area: str,
+    field_specs_by_key: dict[str, TestValueFieldSpec],
+) -> tuple[TestValueTreeRow, ...]:
+    """Build tree rows for one request surface from a list of references.
+
+    For JSON body surfaces the path is decomposed into a nested trie and
+    emitted as a depth-indented flat row list.  For flat surfaces (headers,
+    URL, form body) a single leaf row per reference is emitted.
+
+    Args:
+        refs: Triples of ``(field_path, key, is_canonical)`` for this surface.
+        request_area: Request-area identifier controlling path stripping and
+            tree structure (e.g. ``"request-json-body"``).
+        field_specs_by_key: Mapping of test-value key to its full field spec
+            for populating leaf row display data.
+
+    Returns:
+        Tuple of tree rows ready for template iteration.
+    """
+    if request_area == "request-json-body":
+        trie: dict[str, object] = {}
+        for field_path, key, is_canonical in refs:
+            stripped = _strip_body_prefix(field_path, request_area)
+            segments = stripped.split(".")
+            _insert_body_path(trie, segments, key, is_canonical)
+        return tuple(_trie_to_rows(trie, depth=0, field_specs_by_key=field_specs_by_key))
+    rows: list[TestValueTreeRow] = []
+    for field_path, key, is_canonical in sorted(refs, key=lambda r: r[0]):
+        stripped = _strip_body_prefix(field_path, request_area)
+        spec = field_specs_by_key.get(key)
+        rows.append(
+            TestValueTreeRow(
+                row_type="leaf",
+                depth=0,
+                label=stripped,
+                key=key,
+                is_canonical=is_canonical,
+                default_value=spec.default_value if spec else "",
+                current_value=spec.current_value if spec else "",
+                is_overridden=spec.is_overridden if spec else False,
+                is_generated=spec.is_generated if spec else False,
+                shape_warning=spec.shape_warning if spec else None,
+            )
+        )
+    return tuple(rows)
+
+
+def _build_test_value_step_groups(
+    *,
+    manifest: Manifest,
+    run_plan: RunPlan,
+) -> tuple[TestValueStepGroup, ...]:
+    """Build request-shaped test-value step groups for the Plan Builder tree UI.
+
+    Only new-schema manifests with a ``testValues`` block and at least one
+    ``allowedCustomKeys`` entry produce output.  Legacy manifests (those using
+    ``testValueProfiles``) return an empty tuple; the template falls back to
+    the flat ``test_value_fields`` grid for those.
+
+    Each selected step with test-value references yields a
+    :class:`TestValueStepGroup`.  To avoid duplicate ``name="custom_tv_<key>"``
+    form inputs, each key is marked canonical in the first step where it
+    appears among the selected steps in manifest order.  Subsequent steps
+    that reference the same key receive ``is_canonical=False`` leaf rows and
+    the template renders a read-only "also edited above" reference instead.
+
+    Args:
+        manifest: Manifest currently loaded in the plan preview.
+        run_plan: Effective run-plan snapshot for the current preview.
+
+    Returns:
+        Ordered tuple of step groups for tree rendering, or an empty
+        tuple when the manifest has no new-schema ``testValues`` block.
+    """
+    manifest_test_values = manifest.test_values
+    if manifest_test_values is None or not manifest_test_values.allowed_custom_keys:
+        return ()
+
+    selected_step_ids = set(run_plan.selected_step_ids)
+    allowed_keys = manifest_test_values.allowed_custom_keys
+
+    field_specs_by_key: dict[str, TestValueFieldSpec] = {}
+    for key in allowed_keys:
+        default_value = manifest_test_values.baseline.get(key, "")
+        is_generated = key in manifest_test_values.generated_keys
+        # Run Plan stores a full snapshot so use value-differs-from-baseline
+        # as the overridden signal rather than key-present-in-mapping.
+        current_value = run_plan.test_data.values.get(key, default_value)
+        is_overridden = current_value != default_value
+        shape_warning = (
+            _infer_shape_warning(key, default_value, current_value) if is_overridden and not is_generated else None
+        )
+        field_specs_by_key[key] = TestValueFieldSpec(
+            key=key,
+            default_value=default_value,
+            is_overridden=is_overridden,
+            current_value=current_value,
+            is_generated=is_generated,
+            shape_warning=shape_warning,
+        )
+
+    canonical_rendered: set[str] = set()
+    groups: list[TestValueStepGroup] = []
+
+    for step in manifest.steps:
+        if step.id not in selected_step_ids:
+            continue
+        refs_for_step = [ref for ref in step.test_value_references if ref.key in allowed_keys]
+        if not refs_for_step:
+            continue
+
+        refs_by_area: dict[str, list[tuple[str, str, bool]]] = {}
+        step_has_canonical = False
+        for ref in refs_for_step:
+            is_canonical = ref.key not in canonical_rendered
+            if is_canonical:
+                canonical_rendered.add(ref.key)
+                step_has_canonical = True
+            refs_by_area.setdefault(ref.request_area, []).append((ref.field_path, ref.key, is_canonical))
+
+        surfaces: list[TestValueSurfaceTree] = []
+        for area in _SURFACE_ORDER:
+            area_refs = refs_by_area.get(area)
+            if not area_refs:
+                continue
+            rows = _build_surface_rows_for_area(area_refs, area, field_specs_by_key)
+            surfaces.append(
+                TestValueSurfaceTree(
+                    surface_label=_SURFACE_LABEL.get(area, area),
+                    request_area=area,
+                    rows=rows,
+                )
+            )
+        for area, area_refs in refs_by_area.items():
+            if area not in _SURFACE_ORDER:
+                rows = _build_surface_rows_for_area(area_refs, area, field_specs_by_key)
+                surfaces.append(
+                    TestValueSurfaceTree(
+                        surface_label=_SURFACE_LABEL.get(area, area),
+                        request_area=area,
+                        rows=rows,
+                    )
+                )
+
+        groups.append(
+            TestValueStepGroup(
+                step_id=step.id,
+                step_name=step.name,
+                surfaces=tuple(surfaces),
+                has_canonical_keys=step_has_canonical,
+            )
+        )
+
+    return tuple(groups)
+
+
+def _infer_shape_warning(key: str, default_value: str, override_value: str) -> str | None:
+    """Return advisory warning text for obvious test-value shape mismatches.
+
+    Args:
+        key: Override key being validated.
+        default_value: Default value from the selected profile.
+        override_value: Participant-supplied override value.
+
+    Returns:
+        Advisory warning text when the override shape differs from the default
+        shape, or ``None`` when no warning applies.
+    """
+    if default_value == "":
+        return None
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}", default_value):
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", override_value):
+            return None
+        return f"Expected ISO date for {key} (e.g. 2025-01-15)"
+    if _matches_iso_datetime_shape(default_value):
+        if _matches_iso_datetime_shape(override_value):
+            return None
+        return f"Expected ISO datetime for {key} (e.g. 2025-01-15T10:30:00Z)"
+    if re.fullmatch(r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}", default_value):
+        if re.fullmatch(
+            r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}",
+            override_value,
+        ):
+            return None
+        return f"Expected UUID for {key} (e.g. 123e4567-e89b-12d3-a456-426614174000)"
+    if re.match(r"^https?://", default_value):
+        if re.match(r"^https?://", override_value):
+            return None
+        return f"Expected HTTPS URL for {key} (e.g. https://example.com/path)"
+    if re.fullmatch(r"\d+", default_value):
+        if re.fullmatch(r"\d+", override_value):
+            return None
+        return f"Expected integer for {key} (e.g. 123)"
+    if re.fullmatch(r"\d+\.\d+", default_value):
+        try:
+            float(override_value)
+        except ValueError:
+            return f"Expected decimal for {key} (e.g. 10.50)"
+        return None
+    if default_value in {"true", "false"}:
+        if override_value in {"true", "false"}:
+            return None
+        return f"Expected boolean for {key} (true or false)"
+    return None
+
+
+def _matches_iso_datetime_shape(value: str) -> bool:
+    """Return whether a value matches a basic ISO-8601 datetime shape.
+
+    Args:
+        value: Candidate datetime string.
+
+    Returns:
+        ``True`` when the value matches ``YYYY-MM-DDTHH:MM:SS`` with optional
+        fractional seconds and timezone suffix.
+    """
+    return bool(
+        re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})?",
+            value,
+        )
+    )
+
+
+def _compute_preview_manifest_hash(
+    *,
+    manifest: Manifest,
+    suite_metadata: SuiteMetadata | None,
+    manifest_bytes: bytes | None,
+) -> str:
+    """Resolve raw bytes for preview drift detection and return their hash.
+
+    Args:
+        manifest: Parsed manifest currently being previewed.
+        suite_metadata: Optional metadata for config-selected bundled suites.
+        manifest_bytes: Optional raw bytes supplied directly by the caller.
+
+    Returns:
+        Canonical ``sha256:<hex>`` hash of the best-available manifest bytes.
+    """
+    if manifest_bytes is not None:
+        return compute_manifest_hash(manifest_bytes)
+    if suite_metadata is not None:
+        try:
+            suite_manifest_bytes = (
+                resources.files("conformance.suites").joinpath(suite_metadata.manifest_resource).read_bytes()
+            )
+            return compute_manifest_hash(suite_manifest_bytes)
+        except FileNotFoundError, ModuleNotFoundError, OSError:
+            pass
+    fallback_source = repr(manifest).encode("utf-8")
+    return compute_manifest_hash(fallback_source)
 
 
 def _load_json_object(raw_value: str, *, label: str) -> dict[str, JsonValue]:
@@ -748,6 +1955,78 @@ def _load_json_object(raw_value: str, *, label: str) -> dict[str, JsonValue]:
     if not isinstance(raw_object, dict):
         raise forms.ValidationError(f"{label} must be a JSON object", code="invalid_json_object")
     return cast(dict[str, JsonValue], raw_object)
+
+
+def _submitted_manifest_json_bytes(raw_value: object) -> bytes | None:
+    """Return UTF-8 bytes for submitted manifest JSON text when available.
+
+    Args:
+        raw_value: Raw submitted ``manifest_json`` form value from ``self.data``.
+
+    Returns:
+        UTF-8 encoded JSON bytes when a non-blank string was supplied, or
+        ``None`` when the manifest field is absent/blank.
+    """
+    if not isinstance(raw_value, str):
+        return None
+    if raw_value.strip() == "":
+        return None
+    return raw_value.encode("utf-8")
+
+
+def _extract_custom_test_values(raw_data: Mapping[str, object]) -> dict[str, str]:
+    """Extract ``custom_tv_*`` dynamic fields from submitted browser form data.
+
+    Args:
+        raw_data: Submitted form payload mapping (typically ``self.data``).
+
+    Returns:
+        Mapping of override keys to submitted string values. Empty-string values
+        are preserved. Keys absent from the POST payload are omitted.
+    """
+    custom_values: dict[str, str] = {}
+    for field_name in raw_data:
+        if not field_name.startswith("custom_tv_"):
+            continue
+        key = field_name.removeprefix("custom_tv_")
+        if key == "":
+            continue
+        string_value = _coerce_form_value_to_string(raw_data.get(field_name))
+        if string_value is None:
+            continue
+        custom_values[key] = string_value
+    return custom_values
+
+
+def _has_custom_test_value_fields(raw_data: Mapping[str, object]) -> bool:
+    """Return whether posted form data contains any ``custom_tv_*`` fields.
+
+    Args:
+        raw_data: Submitted form payload mapping (typically ``self.data``).
+
+    Returns:
+        ``True`` when at least one dynamic custom test-value field is present.
+    """
+    return any(field_name.startswith("custom_tv_") for field_name in raw_data)
+
+
+def _coerce_form_value_to_string(value: object) -> str | None:
+    """Convert a raw form value to a submitted string when possible.
+
+    Args:
+        value: Raw value from form payload mapping.
+
+    Returns:
+        Submitted string value, or ``None`` when the value cannot be treated as
+        a single string.
+    """
+    if isinstance(value, str):
+        return value
+    if isinstance(value, tuple) and value and isinstance(value[-1], str):
+        return value[-1]
+    if isinstance(value, list) and value and isinstance(value[-1], str):
+        return value[-1]
+    return None
 
 
 def _cleaned_step_ids(value: object) -> list[str] | None:

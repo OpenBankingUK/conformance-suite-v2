@@ -13,10 +13,15 @@ import logging
 import threading
 from collections.abc import Mapping
 from datetime import UTC, datetime
+from types import MappingProxyType
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunStore, run_store
-from conformance.context import RuntimeConfig, build_runtime_test_values
+from conformance.context import (
+    RuntimeConfig,
+    build_runtime_test_values,
+    validate_test_value_config_contract,
+)
 from conformance.execution_log import (
     BufferedExecutionLogger,
     EventType,
@@ -28,7 +33,8 @@ from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
-from conformance.model_bank_config import ModelBankConfig
+from conformance.model_bank_config import ModelBankConfig, TestDataConfig
+from conformance.run_configuration import compile_run_configuration
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
 from conformance.test_plan import TestPlan, build_plan_test_value_context
@@ -141,6 +147,7 @@ def start_run(
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
     browser_psu_prompts: bool = False,
+    launch_test_data_values: Mapping[str, str] | None = None,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -156,6 +163,10 @@ def start_run(
             config-driven suite resolution.
         browser_psu_prompts: Whether to mirror raw manual PSU authorisation
             URLs into transient in-memory run state for browser-launched runs.
+        launch_test_data_values: Optional launch-time test-data snapshot from
+            the Plan Builder preview. When provided, these values are used as
+            the authoritative ``testData.values`` input for this run instead of
+            ``config.test_data``.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -164,13 +175,18 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan, config=config)
+    effective_plan = _effective_plan_for_launch(
+        manifest=manifest,
+        plan=plan,
+        config=config,
+        launch_test_data_values=launch_test_data_values,
+    )
     planned_steps = _selected_planned_steps_snapshot(manifest=manifest, plan=effective_plan)
     record = run_store.create_run(planned_steps=planned_steps)
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
-        args=(record.run_id, config, manifest, effective_plan, suite_metadata),
+        args=(record.run_id, config, manifest, effective_plan, suite_metadata, launch_test_data_values),
         kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
@@ -184,6 +200,7 @@ def _effective_plan_for_launch(
     manifest: Manifest | None,
     plan: TestPlan | None,
     config: ModelBankConfig,
+    launch_test_data_values: Mapping[str, str] | None,
 ) -> TestPlan | None:
     """Return the launch-time execution plan for a run.
 
@@ -193,6 +210,8 @@ def _effective_plan_for_launch(
             derive the default manifest plan.
         config: Parsed participant configuration used to resolve test-value
             profile context for conditional plan defaults.
+        launch_test_data_values: Optional launch-time test-data snapshot that
+            overrides ``config.test_data`` for new-schema manifests.
 
     Returns:
         The supplied plan when present, the manifest default plan when
@@ -203,8 +222,53 @@ def _effective_plan_for_launch(
         return None
     if plan is not None:
         return plan
-    test_value_ctx = build_plan_test_value_context(manifest, config.test_values)
+    effective_test_data_values = _effective_launch_test_data_values(
+        config=config,
+        launch_test_data_values=launch_test_data_values,
+    )
+    effective_test_data = (
+        TestDataConfig(values=MappingProxyType(effective_test_data_values)) if effective_test_data_values else None
+    )
+    validate_test_value_config_contract(
+        manifest=manifest,
+        config_test_values=config.test_values,
+        config_test_data=effective_test_data,
+    )
+    run_config = compile_run_configuration(
+        manifest=manifest,
+        selected_step_ids=None,
+        test_data_values=effective_test_data_values,
+    )
+    test_value_ctx = build_plan_test_value_context(
+        manifest,
+        config.test_values,
+        effective_test_data,
+        run_configuration=run_config,
+    )
     return TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx)
+
+
+def _effective_launch_test_data_values(
+    *,
+    config: ModelBankConfig,
+    launch_test_data_values: Mapping[str, str] | None,
+) -> dict[str, str]:
+    """Return launch-time participant test-data values for runtime compilation.
+
+    Args:
+        config: Parsed participant configuration for the run.
+        launch_test_data_values: Optional preview-snapshot values supplied by
+            browser launch. When provided these override ``config.test_data``.
+
+    Returns:
+        Copy of launch-effective ``testData.values`` to compile into
+        :class:`~conformance.run_configuration.RunConfiguration`.
+    """
+    if launch_test_data_values is not None:
+        return dict(launch_test_data_values)
+    if config.test_data is not None:
+        return dict(config.test_data.values)
+    return {}
 
 
 def _selected_planned_steps_snapshot(*, manifest: Manifest | None, plan: TestPlan | None) -> tuple[RunPlanStep, ...]:
@@ -264,6 +328,7 @@ def _execute_run(
     manifest: Manifest | None,
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
+    launch_test_data_values: Mapping[str, str] | None = None,
     *,
     browser_psu_prompts: bool = False,
 ) -> None:
@@ -282,6 +347,9 @@ def _execute_run(
             suite manifest's default plan.
         suite_metadata: Optional catalog metadata when ``manifest`` came from
             config-driven suite resolution.
+        launch_test_data_values: Optional launch-time test-data snapshot from
+            browser preview state. When present, these values override
+            ``config.test_data`` for run compilation and execution.
         browser_psu_prompts: Whether to wrap the execution logger so raw manual
             PSU authorisation URLs are exposed only as transient browser
             participant actions.
@@ -318,14 +386,49 @@ def _execute_run(
         if effective_manifest is None:
             result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
         else:
+            effective_test_data_values = _effective_launch_test_data_values(
+                config=config,
+                launch_test_data_values=launch_test_data_values,
+            )
+            effective_test_data = (
+                TestDataConfig(values=MappingProxyType(effective_test_data_values))
+                if effective_test_data_values
+                else None
+            )
+            validate_test_value_config_contract(
+                manifest=effective_manifest,
+                config_test_values=config.test_values,
+                config_test_data=effective_test_data,
+            )
+            run_config = compile_run_configuration(
+                manifest=effective_manifest,
+                selected_step_ids=(set(effective_plan.selected_step_ids()) if effective_plan is not None else None),
+                test_data_values=effective_test_data_values,
+            )
             if effective_plan is None:
-                test_value_ctx = build_plan_test_value_context(effective_manifest, config.test_values)
+                test_value_ctx = build_plan_test_value_context(
+                    effective_manifest,
+                    config.test_values,
+                    effective_test_data,
+                    run_configuration=run_config,
+                )
                 effective_plan = TestPlan.default_plan_from_manifest(
                     effective_manifest,
                     test_value_context=test_value_ctx,
                 )
             else:
-                test_value_ctx = build_plan_test_value_context(effective_manifest, config.test_values)
+                test_value_ctx = build_plan_test_value_context(
+                    effective_manifest,
+                    config.test_values,
+                    effective_test_data,
+                    run_configuration=run_config,
+                )
+            if run_config is None:
+                run_config = compile_run_configuration(
+                    manifest=effective_manifest,
+                    selected_step_ids=set(effective_plan.selected_step_ids()),
+                    test_data_values=effective_test_data_values,
+                )
             try:
                 http_client = build_json_http_client(
                     timeout_seconds=config.timeout_seconds,
@@ -358,10 +461,16 @@ def _execute_run(
                         oauth_open_banking_intent_id=(
                             config.oauth.open_banking_intent_id if config.oauth is not None else None
                         ),
-                        test_values=build_runtime_test_values(effective_manifest, config.test_values),
+                        test_values=build_runtime_test_values(
+                            effective_manifest,
+                            config.test_values,
+                            effective_test_data,
+                            run_configuration=run_config,
+                        ),
                         test_value_profile_id=test_value_ctx.profile_id,
                         test_value_profile_source=test_value_ctx.profile_source,
                         test_value_override_keys=tuple(sorted(test_value_ctx.override_keys)),
+                        baseline_delta_keys=(run_config.baseline_delta_keys if run_config is not None else frozenset()),
                     ),
                     fapi_signing_config=config.fapi_signing,
                     open_banking_config=config.open_banking,
@@ -371,6 +480,19 @@ def _execute_run(
                     ),
                     suite_metadata=effective_suite_metadata,
                     approved_release_policy=config.approved_release_policy,
+                    custom_test_values_active=(
+                        (run_config is not None and run_config.has_custom_values)
+                        or (
+                            run_config is None
+                            and (
+                                (
+                                    config.test_values is not None
+                                    and (config.test_values.profile is not None or bool(config.test_values.overrides))
+                                )
+                                or (config.test_data is not None and bool(config.test_data.values))
+                            )
+                        )
+                    ),
                 )
             finally:
                 http_client.close()
@@ -388,6 +510,9 @@ def _execute_run(
             return
 
         run_store.mark_completed(run_id, result=result_object)
+    except ValueError as error:
+        logger.error("Run %s failed due to invalid test-value configuration: %s", run_id, error)
+        run_store.mark_failed(run_id, error=str(error))
     except Exception:
         logger.exception("Run %s failed with an internal error", run_id)
         run_store.mark_failed(run_id, error="An internal error occurred")

@@ -7,7 +7,11 @@ from typing import cast
 
 import pytest
 
-from conformance.api.plan_builder import PlanBuilderForm, PlanPreview
+from conformance.api.plan_builder import (
+    PlanBuilderForm,
+    PlanPreview,
+    _infer_shape_warning,
+)
 from conformance.json_types import JsonValue
 
 VALID_CONFIG: dict[str, JsonValue] = {
@@ -111,9 +115,8 @@ PIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
     "openBanking": {
         "financialId": "test-financial-id",
     },
-    "testValues": {
-        "profile": "ozone-demo",
-        "overrides": {
+    "testData": {
+        "values": {
             "scheduledPaymentDateTime": "2026-07-17T10:00:00+00:00",
             "frequency": "EvryDay",
             "firstPaymentDateTime": "2026-07-17T10:00:00+00:00",
@@ -264,6 +267,47 @@ def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
     optional_row = preview.rows[2]
     assert optional_row.default_selected is False
     assert optional_row.selected_after_form is True
+
+
+@pytest.mark.unit
+def test_preview_includes_run_plan_hash_and_json_export() -> None:
+    """Plan previews expose a hashed Run Plan snapshot and JSON export payload."""
+    manifest = _v1_manifest([_http_step("mandatory", mandatory=True), _http_step("optional", optional=True)])
+    preview = _validated_preview(_bound_form(manifest, selection_mode="select", selected_step_ids=["mandatory"]))
+
+    assert preview.run_plan.suite.manifest_hash.startswith("sha256:")
+    assert preview.run_plan.suite.manifest_hash != "sha256:"
+    assert preview.run_plan_json
+    assert '"schemaVersion": "1"' in preview.run_plan_json
+    assert preview.legacy_test_values_warning is False
+
+
+@pytest.mark.unit
+def test_preview_marks_legacy_test_values_warning_when_config_contains_test_values() -> None:
+    """Legacy config.testValues input is flagged for Run Plan migration messaging."""
+    manifest = _v1_manifest([_http_step("mandatory", mandatory=True)])
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(
+                {
+                    **VALID_CONFIG,
+                    "testValues": {
+                        "profile": "sandbox",
+                        "overrides": {"paymentId": "pid-123"},
+                    },
+                }
+            ),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "deselect",
+            "selected_step_ids": [],
+            "deselect_step_ids": [],
+        }
+    )
+    preview = _validated_preview(form)
+
+    assert preview.legacy_test_values_warning is True
+    assert preview.run_plan.test_values.profile == "sandbox"
+    assert preview.run_plan.test_values.custom_values["paymentId"] == "pid-123"
 
 
 @pytest.mark.unit
@@ -656,6 +700,7 @@ def test_blank_manifest_resolves_pis_fcs_legacy_benchmark_with_conditional_gatin
             "config_json": json.dumps(PIS_FCS_LEGACY_BENCHMARK_CONFIG),
             "manifest_json": "",
             "selection_mode": "deselect",
+            "exploratory_ack": "on",
         }
     )
 
@@ -675,17 +720,13 @@ def test_blank_manifest_resolves_pis_fcs_legacy_benchmark_with_conditional_gatin
     assert standing_order_row.selected_after_form is True
     assert standing_order_row.missing_test_value_keys == ()
     assert international_row.conditional is True
-    assert international_row.selected_after_form is False
-    assert international_row.missing_test_value_keys == (
-        "currencyOfTransfer",
-        "internationalCreditorSchemeName",
-        "internationalCreditorIdentification",
-        "internationalCreditorName",
-    )
+    assert international_row.selected_after_form is True
+    assert international_row.missing_test_value_keys == ()
     selected_step_ids = preview.selected_plan.selected_step_ids()
     assert "OB-400-DOP-100800" in selected_step_ids
     assert "OB-400-DOP-101200" in selected_step_ids
-    assert "OB-400-DOP-101600" not in selected_step_ids
+    assert "OB-400-DOP-101600" in selected_step_ids
+    assert preview.is_exploratory_run is True
     assert preview.launch_supported is True
 
 
@@ -1731,8 +1772,13 @@ def test_conditional_row_deselected_via_no_context_has_missing_keys_populated(
     # Config without a testValues section: build_plan_test_value_context resolves the
     # manifest default profile (sandbox), which has paymentId → step should be selected.
     # To simulate missing values we patch the imported helper symbol in plan_builder.
-    def _empty_ctx(_manifest: object, _config_test_values: object) -> PlanTestValueContext:
+    def _empty_ctx(
+        _manifest: object,
+        _config_test_values: object,
+        _config_test_data: object | None = None,
+    ) -> PlanTestValueContext:
         """Return empty context to simulate no effective profile values."""
+        del _config_test_data
         return PlanTestValueContext()
 
     monkeypatch.setattr("conformance.api.plan_builder.build_plan_test_value_context", _empty_ctx)
@@ -1743,3 +1789,437 @@ def test_conditional_row_deselected_via_no_context_has_missing_keys_populated(
     assert cond_row.conditional is True
     assert cond_row.default_selected is False
     assert cond_row.missing_test_value_keys == ("paymentId",)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("default_value", "override_value"),
+    [
+        ("2025-01-15", "2026-02-20"),
+        ("2025-01-15T10:00:00Z", "2026-02-20T11:15:00+00:00"),
+        ("123e4567-e89b-12d3-a456-426614174000", "123e4567-e89b-12d3-a456-426614174111"),
+        ("https://example.com", "http://example.org/resource"),
+        ("42", "7"),
+        ("10.50", "1.25"),
+        ("true", "false"),
+    ],
+)
+def test_infer_shape_warning_returns_none_for_matching_shapes(default_value: str, override_value: str) -> None:
+    """Shape warnings are suppressed when override values match default shapes.
+
+    Args:
+        default_value: Profile default value used to infer shape.
+        override_value: Participant override value to validate.
+    """
+    assert _infer_shape_warning("sampleKey", default_value, override_value) is None
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("default_value", "override_value"),
+    [
+        ("2025-01-15", "15-01-2025"),
+        ("2025-01-15T10:00:00Z", "2025-01-15"),
+        ("123e4567-e89b-12d3-a456-426614174000", "not-a-uuid"),
+        ("https://example.com", "example.com"),
+        ("42", "42.5"),
+        ("10.50", "abc"),
+        ("true", "yes"),
+    ],
+)
+def test_infer_shape_warning_returns_advisory_for_mismatched_shapes(default_value: str, override_value: str) -> None:
+    """Shape warnings are returned when override values diverge from default shape.
+
+    Args:
+        default_value: Profile default value used to infer shape.
+        override_value: Participant override value to validate.
+    """
+    warning = _infer_shape_warning("sampleKey", default_value, override_value)
+    assert warning is not None
+
+
+@pytest.mark.unit
+def test_build_plan_preview_populates_test_value_fields_with_profiles() -> None:
+    """Preview includes field specs when manifest test-value profiles are declared."""
+    manifest = _manifest_with_profiles_and_conditional_step(effective_values={"paymentId": "pmnt-001"})
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(VALID_CONFIG),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "deselect",
+            "test_value_profile": "sandbox",
+            "custom_tv_paymentId": "pmnt-override",
+        }
+    )
+    preview = _validated_preview(form)
+
+    assert preview.test_value_fields
+    assert preview.test_value_fields[0].key == "paymentId"
+    assert preview.test_value_fields[0].default_value == "pmnt-001"
+    assert preview.test_value_fields[0].current_value == "pmnt-override"
+    assert preview.test_value_fields[0].is_overridden is True
+
+
+@pytest.mark.unit
+def test_build_plan_preview_populates_test_value_fields_with_test_data_schema() -> None:
+    """Preview includes field specs for selected new-schema test-data keys."""
+    manifest = _v1_manifest(
+        [
+            {
+                **_http_step("selected", mandatory=True),
+                "request": {"method": "GET", "url": "https://example.com/${testValues.paymentId}"},
+            },
+            {
+                **_http_step("unselected", optional=True),
+                "request": {"method": "GET", "url": "https://example.com/${testValues.unusedPaymentId}"},
+            },
+        ]
+    )
+    manifest["testValues"] = {
+        "baseline": {
+            "paymentId": "pmnt-001",
+            "unusedPaymentId": "unused-001",
+        },
+        "allowedCustomKeys": ["paymentId", "unusedPaymentId"],
+    }
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(VALID_CONFIG),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "select",
+            "selected_step_ids": ["selected"],
+            "custom_tv_paymentId": "pmnt-override",
+        }
+    )
+    preview = _validated_preview(form)
+
+    assert [field.key for field in preview.test_value_fields] == ["paymentId"]
+    assert preview.test_value_fields[0].default_value == "pmnt-001"
+    assert preview.test_value_fields[0].current_value == "pmnt-override"
+    assert preview.test_value_fields[0].is_overridden is True
+    assert preview.run_plan.test_data.values["paymentId"] == "pmnt-override"
+    assert preview.run_plan.test_data.values.get("unusedPaymentId") is None
+
+
+@pytest.mark.unit
+def test_build_plan_preview_test_value_fields_empty_without_test_value_metadata() -> None:
+    """Preview omits test-value field specs when manifest has no test-value metadata."""
+    manifest = _v1_manifest([_http_step("mandatory", mandatory=True)])
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert preview.test_value_fields == ()
+
+
+@pytest.mark.unit
+def test_test_value_field_is_not_overridden_when_no_custom_value_present() -> None:
+    """Preview field specs keep defaults when custom override keys are absent."""
+    manifest = _manifest_with_profiles_and_conditional_step(effective_values={"paymentId": "pmnt-001"})
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert preview.test_value_fields
+    assert preview.test_value_fields[0].is_overridden is False
+    assert preview.test_value_fields[0].shape_warning is None
+
+
+def _manifest_with_body_test_values(
+    step_id: str = "step-a",
+    *,
+    allowed_keys: list[str] | None = None,
+    baseline: dict[str, str] | None = None,
+    mandatory: bool = True,
+) -> dict[str, JsonValue]:
+    """Build a v1 manifest with a JSON-body step referencing test-value keys.
+
+    Args:
+        step_id: Step identifier for the HTTP step.
+        allowed_keys: Keys listed in ``testValues.allowedCustomKeys``.
+        baseline: Baseline values for ``testValues.baseline``.
+        mandatory: Whether the step is certification mandatory.
+
+    Returns:
+        A JSON manifest object suitable for plan-builder testing.
+    """
+    manifest = _v1_manifest(
+        [
+            {
+                **_http_step(step_id, mandatory=mandatory),
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/payments",
+                    "body": {
+                        "encoding": "json",
+                        "value": {
+                            "Data": {
+                                "Initiation": {
+                                    "Amount": "${testValues.amount}",
+                                    "Currency": "${testValues.currency}",
+                                    "CreditorAccount": {
+                                        "Name": "${testValues.creditorName}",
+                                    },
+                                },
+                            },
+                            "Risk": {},
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+        ]
+    )
+    manifest["testValues"] = cast(
+        "JsonValue",
+        {
+            "baseline": baseline or {"amount": "1.00", "currency": "GBP", "creditorName": "Test Merchant"},
+            "allowedCustomKeys": allowed_keys or ["amount", "currency", "creditorName"],
+        },
+    )
+    return manifest
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_empty_for_legacy_manifest() -> None:
+    """New-schema step groups are empty for legacy profile-based manifests."""
+    manifest = _manifest_with_profiles_and_conditional_step(effective_values={"paymentId": "pmnt-001"})
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert preview.test_value_step_groups == ()
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_empty_without_test_value_metadata() -> None:
+    """New-schema step groups are empty when manifest has no testValues block."""
+    manifest = _v1_manifest([_http_step("step-a", mandatory=True)])
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert preview.test_value_step_groups == ()
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_produced_for_new_schema_body_references() -> None:
+    """New-schema manifests with body test-value refs produce one group per step."""
+    manifest = _manifest_with_body_test_values()
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert len(preview.test_value_step_groups) == 1
+    group = preview.test_value_step_groups[0]
+    assert group.step_id == "step-a"
+    assert group.has_canonical_keys is True
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_body_surface_is_ordered_first() -> None:
+    """JSON-body surface is ordered first in step groups."""
+    manifest = _manifest_with_body_test_values()
+    preview = _validated_preview(_bound_form(manifest))
+
+    group = preview.test_value_step_groups[0]
+    body_surface = group.surfaces[0]
+    assert body_surface.request_area == "request-json-body"
+    assert body_surface.surface_label == "Body"
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_body_rows_include_group_and_leaf_nodes() -> None:
+    """Body surface rows include intermediate group nodes and leaf input nodes."""
+    manifest = _manifest_with_body_test_values()
+    preview = _validated_preview(_bound_form(manifest))
+
+    group = preview.test_value_step_groups[0]
+    body_surface = next(s for s in group.surfaces if s.request_area == "request-json-body")
+    row_types = [(r.row_type, r.label) for r in body_surface.rows]
+
+    assert ("group", "Data") in row_types
+    assert ("group", "Initiation") in row_types
+    leaf_labels = {r.label for r in body_surface.rows if r.row_type == "leaf"}
+    assert leaf_labels == {"Amount", "Currency", "Name"}
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_leaf_rows_carry_depth() -> None:
+    """Leaf rows nested under group rows carry increasing depth values."""
+    manifest = _manifest_with_body_test_values()
+    preview = _validated_preview(_bound_form(manifest))
+
+    group = preview.test_value_step_groups[0]
+    body_surface = next(s for s in group.surfaces if s.request_area == "request-json-body")
+    data_group = next(r for r in body_surface.rows if r.row_type == "group" and r.label == "Data")
+    amount_leaf = next(r for r in body_surface.rows if r.row_type == "leaf" and r.label == "Amount")
+    creditor_group = next(r for r in body_surface.rows if r.row_type == "group" and r.label == "CreditorAccount")
+    name_leaf = next(r for r in body_surface.rows if r.row_type == "leaf" and r.label == "Name")
+
+    assert data_group.depth == 0
+    assert amount_leaf.depth > data_group.depth
+    assert creditor_group.depth > data_group.depth
+    assert name_leaf.depth > creditor_group.depth
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_leaf_rows_carry_field_spec_data() -> None:
+    """Canonical leaf rows carry baseline and override data for template rendering."""
+    manifest = _manifest_with_body_test_values(
+        baseline={"amount": "1.00", "currency": "GBP", "creditorName": "Test Merchant"},
+    )
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(VALID_CONFIG),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "deselect",
+            "custom_tv_amount": "5.00",
+        }
+    )
+    preview = _validated_preview(form)
+
+    group = preview.test_value_step_groups[0]
+    body_surface = next(s for s in group.surfaces if s.request_area == "request-json-body")
+    amount_leaf = next(r for r in body_surface.rows if r.row_type == "leaf" and r.label == "Amount")
+
+    assert amount_leaf.key == "amount"
+    assert amount_leaf.default_value == "1.00"
+    assert amount_leaf.current_value == "5.00"
+    assert amount_leaf.is_overridden is True
+    assert amount_leaf.is_canonical is True
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_unselected_steps_are_excluded() -> None:
+    """Steps not included in the selected plan produce no step group."""
+    manifest = _v1_manifest(
+        [
+            {
+                **_http_step("selected-step", mandatory=True),
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/",
+                    "body": {
+                        "encoding": "json",
+                        "value": {"Amount": "${testValues.amount}"},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                **_http_step("optional-step", optional=True),
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/",
+                    "body": {
+                        "encoding": "json",
+                        "value": {"Amount": "${testValues.amount}"},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+        ]
+    )
+    manifest["testValues"] = {
+        "baseline": {"amount": "1.00"},
+        "allowedCustomKeys": ["amount"],
+    }
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(VALID_CONFIG),
+            "manifest_json": json.dumps(manifest),
+            "selection_mode": "select",
+            "selected_step_ids": ["selected-step"],
+        }
+    )
+    preview = _validated_preview(form)
+
+    step_ids = [g.step_id for g in preview.test_value_step_groups]
+    assert step_ids == ["selected-step"]
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_duplicate_key_only_canonical_in_first_step() -> None:
+    """When the same key appears in two steps, only the first step marks it canonical."""
+    manifest = _v1_manifest(
+        [
+            {
+                **_http_step("step-a", mandatory=True),
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/",
+                    "body": {
+                        "encoding": "json",
+                        "value": {"Amount": "${testValues.amount}"},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+            {
+                **_http_step("step-b", mandatory=True),
+                "request": {
+                    "method": "POST",
+                    "url": "https://example.com/other",
+                    "body": {
+                        "encoding": "json",
+                        "value": {"Amount": "${testValues.amount}"},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            },
+        ]
+    )
+    manifest["testValues"] = {
+        "baseline": {"amount": "1.00"},
+        "allowedCustomKeys": ["amount"],
+    }
+    preview = _validated_preview(_bound_form(manifest))
+
+    assert len(preview.test_value_step_groups) == 2
+    group_a = preview.test_value_step_groups[0]
+    group_b = preview.test_value_step_groups[1]
+    assert group_a.step_id == "step-a"
+    assert group_b.step_id == "step-b"
+
+    leaf_a = next(r for s in group_a.surfaces for r in s.rows if r.row_type == "leaf")
+    leaf_b = next(r for s in group_b.surfaces for r in s.rows if r.row_type == "leaf")
+    assert leaf_a.is_canonical is True
+    assert leaf_b.is_canonical is False
+    assert group_a.has_canonical_keys is True
+    assert group_b.has_canonical_keys is False
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_header_surface_is_not_primary() -> None:
+    """Header surfaces are not primary (collapsed by default)."""
+    manifest = _v1_manifest(
+        [
+            {
+                **_http_step("step-a", mandatory=True),
+                "request": {
+                    "method": "GET",
+                    "url": "https://example.com/",
+                    "headers": {"X-Custom": "${testValues.headerVal}"},
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ]
+    )
+    manifest["testValues"] = {
+        "baseline": {"headerVal": "abc"},
+        "allowedCustomKeys": ["headerVal"],
+    }
+    preview = _validated_preview(_bound_form(manifest))
+
+    group = preview.test_value_step_groups[0]
+    header_surface = next((s for s in group.surfaces if s.request_area == "request-header"), None)
+    assert header_surface is not None
+    assert header_surface.surface_label == "Headers"
+
+
+@pytest.mark.unit
+def test_test_value_step_groups_leaf_row_default_value_without_override() -> None:
+    """Canonical leaf rows with no override carry baseline as both values."""
+    manifest = _manifest_with_body_test_values(
+        baseline={"amount": "1.00", "currency": "GBP", "creditorName": "Test Merchant"},
+    )
+    preview = _validated_preview(_bound_form(manifest))
+
+    group = preview.test_value_step_groups[0]
+    body_surface = next(s for s in group.surfaces if s.request_area == "request-json-body")
+    currency_leaf = next((r for r in body_surface.rows if r.row_type == "leaf" and r.key == "currency"), None)
+    assert currency_leaf is not None
+    assert currency_leaf.default_value == "GBP"
+    assert currency_leaf.current_value == "GBP"
+    assert currency_leaf.is_overridden is False

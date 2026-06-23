@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
@@ -37,6 +37,7 @@ type CertificationValidationReason = Literal[
     "environment_capabilities_missing",
     "environment_capabilities_blocked",
     "test_value_profile_missing",
+    "test_value_profile_overridden",
     "test_value_profile_mismatch",
     "manifest_coverage_partial",
 ]
@@ -55,6 +56,10 @@ _REASON_LABELS: Mapping[CertificationValidationReason, str] = MappingProxyType(
         ),
         "environment_capabilities_blocked": "Environment capability evidence reports blocked support",
         "test_value_profile_missing": "Test-value profile evidence is required for complete coverage manifests",
+        "test_value_profile_overridden": (
+            "Custom test values were used (effective values differ from suite baseline) — "
+            "run is an Exploratory Run and not eligible for certification"
+        ),
         "test_value_profile_mismatch": "Test-value profile evidence is inconsistent with the trusted manifest",
         "manifest_coverage_partial": "Manifest is not marked as complete certification coverage",
     }
@@ -154,23 +159,39 @@ class SubmittedConditionOutcomeEvidence:
 class SubmittedTestValueProfileEvidence:
     """Submitted non-secret test-value profile evidence.
 
+    Supports both the legacy profile-based shape (``source`` is
+    ``"default"`` or ``"overridden"``) and the new baseline-delta shape
+    (``source`` is ``"baseline"`` or ``"custom"``).
+
     Attributes:
-        profile_id: Effective test-value profile id used for the run.
-        source: Whether profile selection came from defaults or overrides.
-        override_keys: Override key names applied by participant config.
-        declared_keys: Key names declared by trusted manifest metadata.
-        required_keys: Union of required test-value keys for selected plan rows.
-        condition_outcomes: Optional per-step conditional selection outcomes.
-        effective_values: Optional masked values surfaced for non-secret keys.
+        source: Evidence source label.  ``"default"``/``"overridden"`` come
+            from the legacy ``testValueProfiles`` path; ``"baseline"``/``"custom"``
+            come from the new ``testValues`` baseline-delta path.
+        profile_id: Effective test-value profile id used for the run.  Empty
+            string for new-shape evidence that carries no profile.
+        override_keys: Override key names applied by participant config (legacy
+            path only).  Empty for new-shape evidence.
+        declared_keys: Key names declared by trusted manifest metadata (legacy
+            path only).  Empty for new-shape evidence.
+        required_keys: Union of required test-value keys for selected plan rows
+            (legacy path only).  Empty for new-shape evidence.
+        condition_outcomes: Optional per-step conditional selection outcomes
+            (legacy path only).  Empty for new-shape evidence.
+        effective_values: Optional masked values surfaced for non-secret keys
+            (legacy path only).  Empty for new-shape evidence.
+        baseline_delta_keys: Sorted tuple of key names whose effective value
+            differs from the suite baseline (new ``testValues`` path only).
+            Empty for legacy-shape evidence.
     """
 
-    profile_id: str
     source: str
-    override_keys: tuple[str, ...]
-    declared_keys: tuple[str, ...]
-    required_keys: tuple[str, ...]
-    condition_outcomes: tuple[SubmittedConditionOutcomeEvidence, ...]
-    effective_values: Mapping[str, str]
+    profile_id: str = ""
+    override_keys: tuple[str, ...] = ()
+    declared_keys: tuple[str, ...] = ()
+    required_keys: tuple[str, ...] = ()
+    condition_outcomes: tuple[SubmittedConditionOutcomeEvidence, ...] = ()
+    effective_values: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
+    baseline_delta_keys: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -679,6 +700,7 @@ def _blocking_reason_lines(result: CertificationValidationResult) -> list[str]:
             "environment_capabilities_missing",
             "environment_capabilities_blocked",
             "test_value_profile_missing",
+            "test_value_profile_overridden",
             "test_value_profile_mismatch",
         }:
             lines.append(f"- {_REASON_LABELS[reason]}")
@@ -726,6 +748,13 @@ def _validate_complete_manifest_test_value_profile_evidence(
 ) -> tuple[CertificationValidationReason, ...]:
     """Validate submitted test-value profile evidence for complete manifests.
 
+    Handles both the legacy ``testValueProfiles`` shape and the new
+    ``testValues`` baseline-delta shape.  The value-purity gate blocks
+    certification when ``source`` is ``"custom"`` or ``"overridden"``, or
+    when :attr:`~SubmittedTestValueProfileEvidence.baseline_delta_keys` is
+    non-empty (new shape).  The legacy ``"default"`` and new ``"baseline"``
+    source values pass the gate.
+
     Args:
         report: Parsed submitted report.
         manifest: Trusted manifest used for the certified run.
@@ -734,13 +763,25 @@ def _validate_complete_manifest_test_value_profile_evidence(
     Returns:
         Tuple containing zero or more test-value profile blocking reasons.
     """
+    has_test_values = manifest.test_values is not None
     profile_spec = manifest.test_value_profiles
-    if manifest.certification_coverage != "complete" or profile_spec is None:
+    if manifest.certification_coverage != "complete" or (not has_test_values and profile_spec is None):
         return ()
     if report.test_value_profile is None:
         return ("test_value_profile_missing",)
-    if not _test_value_profile_evidence_matches_expected(
-        evidence=report.test_value_profile,
+
+    evidence = report.test_value_profile
+
+    # Value-purity gate: new-shape "custom" or non-empty baseline_delta_keys,
+    # or legacy "overridden", all block certification.
+    if evidence.source == "custom" or evidence.baseline_delta_keys:
+        return ("test_value_profile_overridden",)
+    if evidence.source == "overridden":
+        return ("test_value_profile_overridden",)
+
+    # For legacy profile-based manifests: validate evidence consistency.
+    if profile_spec is not None and not _test_value_profile_evidence_matches_expected(
+        evidence=evidence,
         manifest=manifest,
         report_step_ids=report_step_ids,
     ):
@@ -1316,6 +1357,12 @@ def _parse_optional_test_value_profile(
 ) -> SubmittedTestValueProfileEvidence | None:
     """Parse optional submitted ``testValueProfile`` evidence.
 
+    Accepts both the legacy profile-based shape (``source`` is ``"default"``
+    or ``"overridden"``, with ``profileId``, ``overrideKeys``, ``declaredKeys``,
+    ``requiredKeys``, ``conditionOutcomes``) and the new baseline-delta shape
+    (``source`` is ``"baseline"`` or ``"custom"``, with an optional
+    ``baselineDeltaKeys`` array).
+
     Args:
         report: Submitted report root object.
         location: Dot-path location string used in error messages.
@@ -1330,8 +1377,26 @@ def _parse_optional_test_value_profile(
     if block is None:
         return None
     source = _required_non_empty_string(block, "source", location=f"{location}.testValueProfile")
-    if source not in {"default", "overridden"}:
-        raise CertificationValidationError(f"{location}.testValueProfile.source must be one of: default, overridden")
+    _valid_sources = {"default", "overridden", "baseline", "custom"}
+    if source not in _valid_sources:
+        allowed = ", ".join(sorted(_valid_sources))
+        raise CertificationValidationError(f"{location}.testValueProfile.source must be one of: {allowed}")
+
+    # New baseline-delta shape: source is "baseline" or "custom".
+    if source in ("baseline", "custom"):
+        raw_delta_keys = _optional_array(block, "baselineDeltaKeys", location=f"{location}.testValueProfile")
+        baseline_delta_keys: tuple[str, ...] = ()
+        if raw_delta_keys is not None:
+            baseline_delta_keys = _parse_required_non_empty_string_array(
+                raw_delta_keys,
+                location=f"{location}.testValueProfile.baselineDeltaKeys",
+            )
+        return SubmittedTestValueProfileEvidence(
+            source=source,
+            baseline_delta_keys=baseline_delta_keys,
+        )
+
+    # Legacy profile-based shape: source is "default" or "overridden".
     raw_override_keys = _required_array(block, "overrideKeys", location=f"{location}.testValueProfile")
     raw_declared_keys = _required_array(block, "declaredKeys", location=f"{location}.testValueProfile")
     raw_required_keys = _required_array(block, "requiredKeys", location=f"{location}.testValueProfile")
@@ -1401,8 +1466,8 @@ def _parse_optional_test_value_profile(
         parsed_effective_values[key] = value
 
     return SubmittedTestValueProfileEvidence(
-        profile_id=_required_non_empty_string(block, "profileId", location=f"{location}.testValueProfile"),
         source=source,
+        profile_id=_required_non_empty_string(block, "profileId", location=f"{location}.testValueProfile"),
         override_keys=override_keys,
         declared_keys=declared_keys,
         required_keys=required_keys,

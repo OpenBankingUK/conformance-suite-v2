@@ -37,4 +37,4 @@ All bundled suites remain `certificationCoverage: partial`. The first planned ce
 - Do not promote a suite to `certificationCoverage: complete` until the coverage ledger, manifest, validator, docs, and Standards sign-off all agree.
 - Keep Open Banking-specific semantics in manifests and coverage artefacts where possible; add Python primitives only when they are generic and reusable.
 - Every agent-owned slice must include observable acceptance criteria, affected files, validation commands, security/masking notes, and documentation impact.
-- Custom test values are exploratory by default until a policy explicitly says which override classes can remain certifiable.
+- Custom test values are exploratory by default until a policy explicitly says which baseline-delta classes can remain certifiable.

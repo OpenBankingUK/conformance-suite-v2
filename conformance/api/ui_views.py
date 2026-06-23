@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Mapping
 from datetime import datetime
+from typing import cast
 from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
@@ -88,6 +90,14 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
             plan=preview.selected_plan,
             suite_metadata=preview.suite_metadata,
             browser_psu_prompts=True,
+            launch_test_data_values=preview.run_plan.test_data.values,
+        )
+    except ValueError as error:
+        return render(
+            request,
+            "conformance/plan_builder.html",
+            _plan_context(form, launch_error=f"Launch validation failed: {error}"),
+            status=400,
         )
     except RunConflictError as error:
         return render(
@@ -335,6 +345,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "step_progress_counts": _step_progress_counts(step_progress),
         "result_issue_count": _result_issue_count(step_progress),
         "result_status_counts": _result_status_counts(step_progress),
+        "custom_test_value_impact": _custom_test_value_impact(record.result),
         "developer_mode": _run_developer_mode(record),
         "page_auto_refresh_enabled": is_active_run,
         "live_polling_enabled": is_active_run and not has_pending_psu_authorisation_action,
@@ -438,7 +449,7 @@ def _run_time_display(timestamp: datetime | None) -> dict[str, str] | None:
     canonical_iso = timestamp.isoformat()
     display_local = timestamp.astimezone(_UI_DISPLAY_TIME_ZONE)
     return {
-        "display": display_local.strftime("%Y-%m-%d %H:%M:%S %Z"),
+        "display": display_local.strftime("%d/%m/%Y %H:%M:%S %Z"),
         "datetime": canonical_iso,
         "utc_datetime": canonical_iso,
         "title": canonical_iso,
@@ -487,6 +498,9 @@ def _step_progress_rows(record: RunRecord) -> list[dict[str, object]]:
             "response_json_preview": None,
             "remaining_details_json": None,
             "remaining_details_json_preview": None,
+            "custom_test_value_impact_references": [],
+            "custom_test_value_impact_values": [],
+            "custom_test_value_impact_count": 0,
         }
         rows.append(row)
         row_by_step_id[planned_step.step_id] = row
@@ -736,6 +750,7 @@ def _reconcile_step_progress_with_result(rows: list[dict[str, object]], result: 
         name = raw_step.get("name")
         if isinstance(name, str):
             result_by_name[name] = raw_step
+    impact_by_step = _executed_custom_test_value_impact_by_step(result)
 
     for row in rows:
         step_id = row.get("step_id")
@@ -755,6 +770,13 @@ def _reconcile_step_progress_with_result(rows: list[dict[str, object]], result: 
 
         result_details = _result_step_details(raw_step)
         row.update(result_details)
+        impact_for_step = impact_by_step.get(step_id, {})
+        references = impact_for_step.get("references")
+        value_entries = impact_for_step.get("value_entries")
+        reference_count = impact_for_step.get("reference_count")
+        row["custom_test_value_impact_references"] = references if isinstance(references, list) else []
+        row["custom_test_value_impact_values"] = value_entries if isinstance(value_entries, list) else []
+        row["custom_test_value_impact_count"] = reference_count if isinstance(reference_count, int) else 0
 
         response_status_code = result_details.get("response_status_code")
         if isinstance(response_status_code, int):
@@ -1095,6 +1117,525 @@ def _certification_eligibility(result: JsonObject | None) -> str | None:
                 return f"ineligible: {reason}"
             return "ineligible"
     return None
+
+
+_IMPACT_SURFACE_LABEL: dict[str, str] = {
+    "request-json-body": "Body",
+    "request-header": "Headers",
+    "request-url": "URL",
+    "request-form-body": "Form body",
+}
+"""Display labels for request surfaces in result custom-value panels."""
+
+_IMPACT_SURFACE_ORDER: tuple[str, ...] = (
+    "request-json-body",
+    "request-header",
+    "request-url",
+    "request-form-body",
+)
+"""Display order for request surfaces in result custom-value panels."""
+
+_IMPACT_SURFACE_PREFIX: dict[str, str] = {
+    "request-json-body": "request.body.",
+    "request-header": "request.headers.",
+    "request-url": "request.",
+    "request-form-body": "request.body.fields.",
+}
+"""Field-path prefixes removed before rendering request-surface tree labels."""
+
+
+def _custom_test_value_impact(result: JsonObject | None) -> dict[str, object] | None:
+    """Extract top-level custom-test-value impact evidence for result templates.
+
+    Handles both the new baseline-delta shape (``baselineDeltaKeys``,
+    ``baselineDeltaKeyCount``, ``source: "custom"``) and the legacy
+    override-key shape (``overrideKeys``, ``overrideKeyCount``).
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        Template-ready impact dictionary, or ``None`` when no persisted impact
+        evidence is available.
+    """
+    if result is None:
+        return None
+    impact = result.get("customTestValueImpact")
+    if not isinstance(impact, dict):
+        return None
+
+    def _summary_count(key: str) -> int:
+        """Read one integer summary count from the impact summary object.
+
+        Args:
+            key: Summary field name to parse.
+
+        Returns:
+            Parsed integer count, or ``0`` when the field is absent or invalid.
+        """
+        raw_value = summary.get(key) if isinstance(summary, dict) else None
+        return raw_value if isinstance(raw_value, int) else 0
+
+    summary = impact.get("summary")
+    baseline_delta_key_count = _summary_count("baselineDeltaKeyCount") or _summary_count("overrideKeyCount")
+    summary_block: dict[str, object]
+    if isinstance(summary, dict):
+        summary_block = {
+            "baselineDeltaKeyCount": baseline_delta_key_count,
+            "overrideKeyCount": baseline_delta_key_count,
+            "executedReferenceCount": _summary_count("executedReferenceCount"),
+            "referencedButNotRunCount": _summary_count("referencedButNotRunCount"),
+            "executedStepCount": _summary_count("executedStepCount"),
+            "referencedButNotRunStepCount": _summary_count("referencedButNotRunStepCount"),
+        }
+    else:
+        summary_block = {
+            "baselineDeltaKeyCount": 0,
+            "overrideKeyCount": 0,
+            "executedReferenceCount": 0,
+            "referencedButNotRunCount": 0,
+            "executedStepCount": 0,
+            "referencedButNotRunStepCount": 0,
+        }
+
+    executed_references = _impact_executed_references(impact)
+    references_by_key: dict[str, list[dict[str, str]]] = {}
+    for reference in executed_references:
+        references_by_key.setdefault(reference["key"], []).append(reference)
+    value_entries = _impact_value_entries(impact=impact, references_by_key=references_by_key)
+
+    source = impact.get("source")
+    delta_keys = impact.get("baselineDeltaKeys") or impact.get("overrideKeys")
+    overridden_values = impact.get("overriddenValues")
+    referenced_but_not_run = impact.get("referencedButNotRun")
+    return {
+        "source": source if isinstance(source, str) else None,
+        "delta_keys": delta_keys if isinstance(delta_keys, list) else [],
+        "overridden_values": overridden_values if isinstance(overridden_values, dict) else {},
+        "referenced_but_not_run": referenced_but_not_run if isinstance(referenced_but_not_run, list) else [],
+        "summary": summary_block,
+        "value_entries": value_entries,
+    }
+
+
+def _impact_executed_references(impact: JsonObject) -> list[dict[str, str]]:
+    """Parse executed custom-value references from impact evidence.
+
+    Args:
+        impact: Persisted ``customTestValueImpact`` evidence object.
+
+    Returns:
+        Normalised references list with snake_case keys used by templates.
+    """
+    raw_references = impact.get("executedReferences")
+    if not isinstance(raw_references, list):
+        return []
+    parsed: list[dict[str, str]] = []
+    for raw_reference in raw_references:
+        if not isinstance(raw_reference, dict):
+            continue
+        step_id = raw_reference.get("stepId")
+        key = raw_reference.get("key")
+        request_area = raw_reference.get("requestArea")
+        field_path = raw_reference.get("fieldPath")
+        status = raw_reference.get("status")
+        if not isinstance(step_id, str):
+            continue
+        if not isinstance(key, str) or not isinstance(request_area, str) or not isinstance(field_path, str):
+            continue
+        parsed.append(
+            {
+                "step_id": step_id,
+                "key": key,
+                "request_area": request_area,
+                "field_path": field_path,
+                "status": status if isinstance(status, str) else "",
+            }
+        )
+    return parsed
+
+
+def _impact_value_entries(
+    *,
+    impact: JsonObject,
+    references_by_key: dict[str, list[dict[str, str]]],
+) -> list[dict[str, object]]:
+    """Build run-level custom-value entries for result rendering.
+
+    Args:
+        impact: Persisted ``customTestValueImpact`` evidence object.
+        references_by_key: Parsed executed references grouped by custom-value key.
+
+    Returns:
+        Per-key entries containing used/baseline values and request-surface trees.
+    """
+    entries: list[dict[str, object]] = []
+    raw_value_details = impact.get("valueDetails")
+    if isinstance(raw_value_details, list):
+        for raw_detail in raw_value_details:
+            if not isinstance(raw_detail, dict):
+                continue
+            key = raw_detail.get("key")
+            if not isinstance(key, str):
+                continue
+            references = references_by_key.get(key, [])
+            entries.append(
+                _build_impact_value_entry(
+                    key=key,
+                    used_value=_impact_value_for_display(raw_detail, "usedValue", "customValue", "effectiveValue"),
+                    baseline_value=_impact_value_for_display(raw_detail, "baselineValue", "defaultValue", "baseline"),
+                    used_value_display=_impact_value_display(
+                        raw_detail,
+                        display_fields=("usedValueDisplay", "customValueDisplay", "effectiveValueDisplay"),
+                        value_fields=("usedValue", "customValue", "effectiveValue"),
+                    ),
+                    baseline_value_display=_impact_value_display(
+                        raw_detail,
+                        display_fields=("baselineValueDisplay", "defaultValueDisplay", "baselineDisplay"),
+                        value_fields=("baselineValue", "defaultValue", "baseline"),
+                    ),
+                    references=references,
+                )
+            )
+        if entries:
+            return sorted(entries, key=lambda entry: cast(str, entry["key"]))
+
+    overridden_values = impact.get("overriddenValues")
+    if not isinstance(overridden_values, dict):
+        return []
+    for key in sorted(overridden_values.keys()):
+        raw_value = overridden_values.get(key)
+        if not isinstance(key, str) or not isinstance(raw_value, dict):
+            continue
+        references = references_by_key.get(key, [])
+        entries.append(
+            _build_impact_value_entry(
+                key=key,
+                used_value=_impact_value_for_display(raw_value, "customValue", "effectiveValue"),
+                baseline_value=_impact_value_for_display(raw_value, "defaultValue", "baseline"),
+                used_value_display=_impact_value_display(
+                    raw_value,
+                    display_fields=("customValueDisplay", "effectiveValueDisplay"),
+                    value_fields=("customValue", "effectiveValue"),
+                ),
+                baseline_value_display=_impact_value_display(
+                    raw_value,
+                    display_fields=("defaultValueDisplay", "baselineDisplay"),
+                    value_fields=("defaultValue", "baseline"),
+                ),
+                references=references,
+            )
+        )
+    return entries
+
+
+def _impact_value_display(
+    raw_value: Mapping[str, object],
+    *,
+    display_fields: tuple[str, ...],
+    value_fields: tuple[str, ...],
+) -> dict[str, object] | None:
+    """Read a structured custom-value display object with legacy fallbacks.
+
+    Args:
+        raw_value: Persisted impact value object containing display fields.
+        display_fields: Candidate structured display field names checked in order.
+        value_fields: Candidate legacy string fields used to build fallback.
+
+    Returns:
+        Normalised display dictionary containing ``preview`` and optional
+        ``full_value`` when present; ``None`` when no usable value exists.
+    """
+    for field_name in display_fields:
+        candidate = raw_value.get(field_name)
+        if not isinstance(candidate, Mapping):
+            continue
+        preview = candidate.get("preview")
+        full_value = candidate.get("fullValue")
+        masked = candidate.get("masked")
+        display: dict[str, object] = {
+            "preview": preview if isinstance(preview, str) else None,
+            "full_value": full_value if isinstance(full_value, str) else None,
+            "masked": masked if isinstance(masked, bool) else None,
+        }
+        if any(display[field] is not None for field in ("preview", "full_value", "masked")):
+            return display
+    fallback_value = _impact_value_for_display(raw_value, *value_fields)
+    if fallback_value is None:
+        return None
+    return {
+        "preview": fallback_value,
+        "full_value": None,
+        "masked": fallback_value == "***",
+    }
+
+
+def _impact_value_for_display(raw_value: Mapping[str, object], *candidate_fields: str) -> str | None:
+    """Read the first string value from candidate impact fields.
+
+    Args:
+        raw_value: Value-detail or overridden-value object from impact evidence.
+        *candidate_fields: Field names checked in order.
+
+    Returns:
+        The first string value found, otherwise ``None``.
+    """
+    for field_name in candidate_fields:
+        candidate = raw_value.get(field_name)
+        if isinstance(candidate, str):
+            return candidate
+    return None
+
+
+def _build_impact_value_entry(
+    *,
+    key: str,
+    used_value: str | None,
+    baseline_value: str | None,
+    used_value_display: dict[str, object] | None,
+    baseline_value_display: dict[str, object] | None,
+    references: list[dict[str, str]],
+) -> dict[str, object]:
+    """Build one template-ready run-level custom-value entry.
+
+    Args:
+        key: Custom-value key.
+        used_value: Masked value used by the run when available.
+        baseline_value: Masked suite-baseline value when available.
+        used_value_display: Structured display object for the used value.
+        baseline_value_display: Structured display object for the baseline value.
+        references: Executed references for this key.
+
+    Returns:
+        Dictionary rendered by the run-level and per-step templates.
+    """
+    unique_references = _dedupe_references(references)
+    return {
+        "key": key,
+        "used_value": used_value,
+        "baseline_value": baseline_value,
+        "used_value_display": used_value_display,
+        "baseline_value_display": baseline_value_display,
+        "references": unique_references,
+        "consuming_paths": sorted({ref["field_path"] for ref in unique_references}),
+        "surface_groups": _request_surface_groups(unique_references),
+    }
+
+
+def _dedupe_references(references: list[dict[str, str]]) -> list[dict[str, str]]:
+    """Drop duplicate reference rows while preserving deterministic order.
+
+    Args:
+        references: Parsed executed references for one custom-value key.
+
+    Returns:
+        Deduplicated references sorted by step id and request path.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    deduped: list[dict[str, str]] = []
+    for reference in sorted(references, key=lambda ref: (ref["step_id"], ref["field_path"], ref["request_area"])):
+        fingerprint = (reference["step_id"], reference["request_area"], reference["field_path"])
+        if fingerprint in seen:
+            continue
+        seen.add(fingerprint)
+        deduped.append(reference)
+    return deduped
+
+
+def _request_surface_groups(references: list[dict[str, str]]) -> list[dict[str, object]]:
+    """Build request-surface tree groups for one custom-value key.
+
+    Args:
+        references: Deduplicated executed references for one key.
+
+    Returns:
+        Surface groups with ``rows`` payloads rendered by result templates.
+    """
+    references_by_surface: dict[str, list[dict[str, str]]] = {}
+    for reference in references:
+        references_by_surface.setdefault(reference["request_area"], []).append(reference)
+
+    groups: list[dict[str, object]] = []
+    for request_area in _IMPACT_SURFACE_ORDER:
+        surface_references = references_by_surface.pop(request_area, [])
+        if not surface_references:
+            continue
+        groups.append(
+            {
+                "request_area": request_area,
+                "label": _IMPACT_SURFACE_LABEL.get(request_area, request_area),
+                "rows": _request_surface_rows(request_area=request_area, references=surface_references),
+            }
+        )
+
+    for request_area in sorted(references_by_surface.keys()):
+        surface_references = references_by_surface[request_area]
+        groups.append(
+            {
+                "request_area": request_area,
+                "label": _IMPACT_SURFACE_LABEL.get(request_area, request_area),
+                "rows": _request_surface_rows(request_area=request_area, references=surface_references),
+            }
+        )
+    return groups
+
+
+def _request_surface_rows(*, request_area: str, references: list[dict[str, str]]) -> list[dict[str, object]]:
+    """Build flat tree rows for one request surface.
+
+    Args:
+        request_area: Request-surface identifier (for example ``request-json-body``).
+        references: References targeting this surface.
+
+    Returns:
+        Flat rows with depth metadata for template rendering.
+    """
+    if request_area == "request-json-body":
+        trie: dict[str, object] = {}
+        for reference in references:
+            stripped_path = _strip_impact_surface_prefix(
+                request_area=request_area,
+                field_path=reference["field_path"],
+            )
+            _insert_impact_path(trie=trie, segments=[segment for segment in stripped_path.split(".") if segment])
+        return _impact_trie_rows(trie=trie, depth=0)
+    rows: list[dict[str, object]] = []
+    for reference in sorted(references, key=lambda entry: entry["field_path"]):
+        rows.append(
+            {
+                "row_type": "leaf",
+                "depth": 0,
+                "label": _strip_impact_surface_prefix(
+                    request_area=request_area,
+                    field_path=reference["field_path"],
+                ),
+            }
+        )
+    return rows
+
+
+def _strip_impact_surface_prefix(*, request_area: str, field_path: str) -> str:
+    """Remove a known request-surface prefix from a reference field path.
+
+    Args:
+        request_area: Request-surface identifier from impact evidence.
+        field_path: Full field path from impact evidence.
+
+    Returns:
+        Field path without the request-surface prefix when present.
+    """
+    prefix = _IMPACT_SURFACE_PREFIX.get(request_area, "")
+    if prefix and field_path.startswith(prefix):
+        return field_path[len(prefix) :]
+    return field_path
+
+
+def _insert_impact_path(*, trie: dict[str, object], segments: list[str]) -> None:
+    """Insert one dotted request-body path into a mutable trie.
+
+    Args:
+        trie: Mutable trie root keyed by path segment.
+        segments: Body-path segments for one reference.
+    """
+    node = trie
+    for segment in segments:
+        child = node.get(segment)
+        if not isinstance(child, dict):
+            child = {}
+            node[segment] = child
+        node = child
+
+
+def _impact_trie_rows(*, trie: dict[str, object], depth: int) -> list[dict[str, object]]:
+    """Convert a request-body trie into depth-aware template rows.
+
+    Args:
+        trie: Current trie node to traverse.
+        depth: Depth for rows emitted at this level.
+
+    Returns:
+        Flat list of group/leaf rows for body-path tree rendering.
+    """
+    rows: list[dict[str, object]] = []
+    for label in sorted(trie.keys()):
+        raw_child = trie[label]
+        child = raw_child if isinstance(raw_child, dict) else {}
+        has_children = bool(child)
+        rows.append(
+            {
+                "row_type": "group" if has_children else "leaf",
+                "depth": depth,
+                "label": label,
+            }
+        )
+        if has_children:
+            rows.extend(_impact_trie_rows(trie=child, depth=depth + 1))
+    return rows
+
+
+def _executed_custom_test_value_impact_by_step(result: JsonObject | None) -> dict[str, dict[str, object]]:
+    """Index executed custom-test-value impact references and values by step id.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        Mapping from step id to dictionaries containing legacy reference lists,
+        count metrics, and value entries filtered to the step.
+    """
+    if result is None:
+        return {}
+    impact = result.get("customTestValueImpact")
+    if not isinstance(impact, dict):
+        return {}
+
+    executed_references = _impact_executed_references(impact)
+    references_by_step: dict[str, list[dict[str, str]]] = {}
+    references_by_key: dict[str, list[dict[str, str]]] = {}
+    for reference in executed_references:
+        references_by_step.setdefault(reference["step_id"], []).append(reference)
+        references_by_key.setdefault(reference["key"], []).append(reference)
+
+    value_entries = _impact_value_entries(impact=impact, references_by_key=references_by_key)
+    value_entry_by_key: dict[str, dict[str, object]] = {
+        cast(str, entry["key"]): entry for entry in value_entries if isinstance(entry.get("key"), str)
+    }
+
+    rendered: dict[str, dict[str, object]] = {}
+    for step_id, step_references in references_by_step.items():
+        step_reference_rows = [
+            {
+                "key": reference["key"],
+                "request_area": reference["request_area"],
+                "field_path": reference["field_path"],
+                "status": reference["status"],
+            }
+            for reference in step_references
+        ]
+        step_value_entries: list[dict[str, object]] = []
+        keys_for_step = sorted({reference["key"] for reference in step_references})
+        for key in keys_for_step:
+            base_entry = value_entry_by_key.get(key)
+            if base_entry is None:
+                continue
+            key_refs = [reference for reference in step_references if reference["key"] == key]
+            step_value_entries.append(
+                {
+                    "key": key,
+                    "used_value": base_entry.get("used_value"),
+                    "baseline_value": base_entry.get("baseline_value"),
+                    "used_value_display": base_entry.get("used_value_display"),
+                    "baseline_value_display": base_entry.get("baseline_value_display"),
+                    "references": _dedupe_references(key_refs),
+                    "surface_groups": _request_surface_groups(_dedupe_references(key_refs)),
+                }
+            )
+        rendered[step_id] = {
+            "references": step_reference_rows,
+            "value_entries": step_value_entries,
+            "reference_count": len(step_reference_rows),
+        }
+    return rendered
 
 
 def preview_step_counts(preview: PlanPreview) -> dict[str, int]:

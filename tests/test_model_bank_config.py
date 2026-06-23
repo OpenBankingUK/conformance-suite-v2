@@ -106,9 +106,9 @@ def test_example_pis_domestic_payment_starter_model_bank_config_is_valid_json_co
     assert config.oauth.resource_base_url == "https://rs1.obie.uk.ozoneapi.io"
     assert config.fapi_signing is not None
     assert config.fapi_signing.token_endpoint_auth_method == expected_method
-    assert config.test_values is not None
-    assert config.test_values.profile == "ozone-demo"
-    assert dict(config.test_values.overrides) == {
+    assert config.test_values is None
+    assert config.test_data is not None
+    assert dict(config.test_data.values) == {
         "creditorName": "Ozone Demo Merchant",
         "remittanceInformation": "Ozone domestic payment starter",
     }

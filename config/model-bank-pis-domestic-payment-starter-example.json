@@ -28,16 +28,15 @@
     "openBanking": {
         "financialId": "your-aspsp-financial-id-here"
     },
-    "testValues": {
-        "profile": "ozone-demo",
-        "overrides": {
-            "creditorName": "Ozone Demo Merchant",
-            "remittanceInformation": "Ozone domestic payment starter"
-        }
-    },
     "tls": {
         "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
-    "executionLogPath": "./out/execution-log.ndjson"
+    "executionLogPath": "./out/execution-log.ndjson",
+    "testData": {
+        "values": {
+            "creditorName": "Ozone Demo Merchant",
+            "remittanceInformation": "Ozone domestic payment starter"
+        }
+    }
 }
