@@ -162,7 +162,7 @@
       "name": "Account access consent creation",
       "request": {
         "method": "POST",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/account-access-consents",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
         "detachedJws": {
           "source": "fapi-signing"
         },
@@ -309,7 +309,7 @@
       "name": "Accounts resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -373,7 +373,7 @@
       "name": "Account detail resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -437,7 +437,7 @@
       "name": "Account balances resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -513,7 +513,7 @@
       "name": "Account transactions resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -590,7 +590,7 @@
       "name": "Bulk transactions resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/transactions",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/transactions",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -667,7 +667,7 @@
       "name": "Bulk balances resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/balances",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/balances",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -726,7 +726,7 @@
       "name": "Account beneficiaries resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/beneficiaries",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/beneficiaries",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -767,7 +767,7 @@
       "name": "Bulk beneficiaries resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/beneficiaries",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/beneficiaries",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -808,7 +808,7 @@
       "name": "Account direct debits resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/direct-debits",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/direct-debits",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -849,7 +849,7 @@
       "name": "Bulk direct debits resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/direct-debits",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/direct-debits",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -890,7 +890,7 @@
       "name": "Account offers resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/offers",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/offers",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -931,7 +931,7 @@
       "name": "Bulk offers resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/offers",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/offers",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -972,7 +972,7 @@
       "name": "Account party resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/party",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/party",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1013,7 +1013,7 @@
       "name": "Account parties resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/parties",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/parties",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1054,7 +1054,7 @@
       "name": "PSU party resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/party",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/party",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1095,7 +1095,7 @@
       "name": "Account product resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/product",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/product",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1136,7 +1136,7 @@
       "name": "Bulk products resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/products",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/products",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1177,7 +1177,7 @@
       "name": "Account scheduled payments resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/scheduled-payments",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/scheduled-payments",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1218,7 +1218,7 @@
       "name": "Bulk scheduled payments resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/scheduled-payments",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/scheduled-payments",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1259,7 +1259,7 @@
       "name": "Account standing orders resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/standing-orders",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/standing-orders",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1300,7 +1300,7 @@
       "name": "Bulk standing orders resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/standing-orders",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/standing-orders",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",
@@ -1341,7 +1341,7 @@
       "name": "Bulk statements resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/statements",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/statements",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}",

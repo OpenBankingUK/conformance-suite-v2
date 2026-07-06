@@ -20,6 +20,12 @@ REPO_ROOT = Path(__file__).resolve().parents[1]
 EXAMPLE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-example.json"
 EXAMPLE_PIS_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-pis-domestic-payment-starter-example.json"
 """Committed example config for the bundled PIS domestic-payment starter suite."""
+EXAMPLE_AIS_BASELINE_CONFIG_PATH = REPO_ROOT / "config" / "model-bank-ais-certification-baseline-example.json"
+"""Committed generic AIS certification baseline example config (targets v4.0.1)."""
+EXAMPLE_AIS_BASELINE_V4_0_1_CONFIG_PATH = (
+    REPO_ROOT / "config" / "model-bank-ais-certification-baseline-v4.0.1-example.json"
+)
+"""Committed explicit v4.0.1 AIS certification baseline example config."""
 
 
 def _write_approved_release_policy(tmp_path: Path, *, versions: list[str] | None = None) -> Path:
@@ -112,6 +118,46 @@ def test_example_pis_domestic_payment_starter_model_bank_config_is_valid_json_co
         "creditorName": "Ozone Demo Merchant",
         "remittanceInformation": "Ozone domestic payment starter",
     }
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "config_path",
+    [
+        pytest.param(EXAMPLE_AIS_BASELINE_CONFIG_PATH, id="generic-baseline"),
+        pytest.param(EXAMPLE_AIS_BASELINE_V4_0_1_CONFIG_PATH, id="v4.0.1-baseline"),
+    ],
+)
+def test_example_ais_certification_baseline_config_is_valid_json_config(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+    config_path: Path,
+) -> None:
+    """Committed AIS baseline example configs should parse and select the v4.0.1 suite.
+
+    Verifies that both the generic and the explicit v4.0.1 AIS baseline example configs
+    parse without error, resolve ``testSuite.specVersion`` to ``v4.0.1``, and select the
+    ``ais-certification-baseline`` suite against the ``ob-read-write`` standard.
+
+    Args:
+        monkeypatch: Pytest fixture used to isolate the output directory.
+        tmp_path: Temporary directory used as the active working directory.
+        config_path: Path to the example config JSON file under test.
+    """
+    monkeypatch.chdir(tmp_path)
+
+    config = load_model_bank_config(config_path)
+
+    assert config.environment == "ozone-model-bank"
+    assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
+    assert config.result_output_path == tmp_path / "out" / "test-results.json"
+    assert config.test_suite == SuiteSelection(
+        standard="ob-read-write",
+        spec_version="v4.0.1",
+        profile="fapi1-advanced",
+        suite="ais-certification-baseline",
+        api="ais",
+    )
 
 
 @pytest.mark.unit

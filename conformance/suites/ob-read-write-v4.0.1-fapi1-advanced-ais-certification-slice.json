@@ -159,7 +159,7 @@
       "name": "Account access consent creation",
       "request": {
         "method": "POST",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/account-access-consents",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.client-credentials-token.response.body.access_token}"
@@ -269,7 +269,7 @@
       "name": "Accounts resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -321,7 +321,7 @@
       "name": "Account balances resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
@@ -385,7 +385,7 @@
       "name": "Account transactions resource",
       "request": {
         "method": "GET",
-        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0.1/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
+        "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
         "headers": {
           "Accept": "application/json",
           "Authorization": "Bearer ${steps.token-exchange.response.body.access_token}"
