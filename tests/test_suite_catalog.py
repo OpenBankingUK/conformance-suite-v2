@@ -856,7 +856,13 @@ def test_v4_ais_certification_baseline_mandatory_resource_steps_have_schema_asse
 
 @pytest.mark.unit
 def test_v4_0_1_ais_certification_baseline_uses_versioned_schema_source() -> None:
-    """v4.0.1 baseline uses its own bundled OpenAPI source and stays partial."""
+    """v4.0.1 baseline uses its own bundled OpenAPI source, stays partial, and uses v4.0 resource paths.
+
+    Verifies that:
+    - Schema assertions reference ``ob-read-write-v4.0.1-account-info-openapi`` (v4.0.1 granularity).
+    - Resource URLs use the ``/open-banking/v4.0/aisp/...`` path family, matching the v4.0
+      OpenAPI ``servers`` URL and model-bank deployment behaviour for the v4.0 minor release.
+    """
     resolved = resolve_suite(_selection("v4.0.1", suite_name="ais-certification-baseline"))
     manifest = resolved.manifest
 
@@ -878,6 +884,17 @@ def test_v4_0_1_ais_certification_baseline_uses_versioned_schema_source() -> Non
             document=document,
             schema_ref=schema_ref,
         ), f"{step_id} is missing {schema_ref} response_schema assertion for {document}"
+
+    # Resource paths must use /open-banking/v4.0/aisp/... (not v4.0.1) because the v4.0.1
+    # OpenAPI servers URL and model-bank deployment both serve the v4.0 path family.
+    consent_step = steps_by_id["account-access-consent"]
+    accounts_step = steps_by_id["accounts-list"]
+    assert consent_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents"
+    ), "v4.0.1 baseline consent URL must use /open-banking/v4.0/aisp/... path family"
+    assert accounts_step.request.url == ("${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"), (
+        "v4.0.1 baseline accounts URL must use /open-banking/v4.0/aisp/... path family"
+    )
 
 
 @pytest.mark.unit
@@ -1603,6 +1620,40 @@ def test_resolve_ais_certification_slice_returns_bundled_manifest_for_supported_
     )
     assert resolved.manifest.schema_version == "v1"
     assert resolved.manifest.certification_coverage == "partial"
+
+
+@pytest.mark.unit
+def test_v4_0_1_ais_certification_slice_uses_v4_0_resource_paths() -> None:
+    """v4.0.1 AIS slice resource URLs use the /open-banking/v4.0/aisp/... path family.
+
+    The v4.0.1 OpenAPI ``servers`` URL and model-bank deployment both serve
+    ``/open-banking/v4.0/aisp/...``. The suite manifest must not use
+    ``/open-banking/v4.0.1/aisp/...``.
+    """
+    resolved = resolve_suite(_selection("v4.0.1", suite_name="ais-certification-slice"))
+    manifest = resolved.manifest
+
+    steps_by_id = {step.id: cast(ManifestStep, step) for step in manifest.steps}
+
+    consent_step = steps_by_id["account-access-consent"]
+    accounts_step = steps_by_id["accounts-list"]
+    balances_step = steps_by_id["account-balances"]
+    transactions_step = steps_by_id["account-transactions"]
+
+    assert consent_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/account-access-consents"
+    ), "v4.0.1 slice consent URL must use /open-banking/v4.0/aisp/... path family"
+    assert accounts_step.request.url == ("${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"), (
+        "v4.0.1 slice accounts URL must use /open-banking/v4.0/aisp/... path family"
+    )
+    assert balances_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+        "${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances"
+    ), "v4.0.1 slice balances URL must use /open-banking/v4.0/aisp/... path family"
+    assert transactions_step.request.url == (
+        "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
+        "${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions"
+    ), "v4.0.1 slice transactions URL must use /open-banking/v4.0/aisp/... path family"
 
 
 @pytest.mark.unit

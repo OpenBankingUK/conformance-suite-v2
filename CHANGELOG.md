@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **v4.0.1 AIS resource path correction**: The v4.0.1 AIS certification baseline and slice suite manifests now use `/open-banking/v4.0/aisp/...` resource URLs instead of `/open-banking/v4.0.1/aisp/...`. This aligns with the bundled v4.0.1 OpenAPI `servers` URL and model-bank deployment behaviour; the v4.0 path family is shared across the v4.0 minor release. Suite granularity (schema document id `ob-read-write-v4.0.1-account-info-openapi`, manifest filename, catalog labels) remains v4.0.1-specific.
+
+- **Model bank AIS baseline example configs updated to v4.0.1**: `config/model-bank-ais-certification-baseline-example.json` now selects `specVersion: v4.0.1`. A new explicit `config/model-bank-ais-certification-baseline-v4.0.1-example.json` is also provided for participants who want a version-named config file.
+
 - **Plan Builder Run Plan test-data snapshot**: `testData.values` in exported Run Plan JSON is now a full executable snapshot rather than a delta-only document. The snapshot includes manifest baseline values for all allow-listed keys referenced by selected steps, overlaid with any participant-supplied values from config or the Plan Builder form. Certification value purity is determined by comparing the snapshot against the manifest baseline via `RunConfiguration.baseline_delta_keys`; a Run Plan that stores baseline-equal values is not marked as exploratory. Older delta-only Run Plans imported into the Plan Builder are automatically back-filled from the manifest baseline. The `_is_exploratory_run` helper now uses `baseline_delta_keys` for new-schema manifests instead of checking whether `testData.values` is non-empty.
 
 
