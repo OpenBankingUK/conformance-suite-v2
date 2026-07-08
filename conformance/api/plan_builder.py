@@ -56,7 +56,7 @@ from conformance.run_plan import (
     parse_run_plan,
     serialise_run_plan,
 )
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites
 from conformance.target_config import TestTargetConfig
 from conformance.test_plan import (
     PlanTestValueContext,
@@ -272,7 +272,7 @@ class PlanPreview:
     Attributes:
         config: Validated model-bank configuration supplied through the form.
         manifest: Validated v1 manifest supplied through the form or resolved
-            from ``config.test_suite``.
+            from ``config.test_target``.
         suite_metadata: Display metadata for a config-resolved suite, or
             ``None`` when the preview uses an explicit manifest.
         default_plan: Default plan derived from the manifest before form input.
@@ -496,7 +496,7 @@ class PlanBuilderForm(forms.Form):
     Attributes:
         config_json: Textarea containing model-bank config JSON.
         manifest_json: Optional textarea containing v1 conformance manifest
-            JSON. When blank, ``config.testSuite`` may resolve a bundled suite.
+            JSON. When blank, ``config.testTarget`` may resolve a bundled suite.
         guided_model_bank: Structured model-bank example selector used to
             populate guided environment and discovery values.
         guided_environment: Structured environment input used when building a
@@ -725,21 +725,34 @@ class PlanBuilderForm(forms.Form):
 
         suite_metadata: SuiteMetadata | None = None
         if manifest is None:
-            if config.test_suite is None:
+            if config.test_target is None:
                 self.add_error(
                     "manifest_json",
                     forms.ValidationError(
-                        "Manifest JSON is required unless config.testSuite selects a bundled suite.",
+                        "Manifest JSON is required unless config.testTarget selects a bundled suite.",
                         code="missing_manifest_or_suite",
                     ),
                 )
                 return cleaned_data
+            from conformance.plan_executor import resolve_rw_suite_for_plan  # noqa: PLC0415
+            from conformance.run_plan_v2 import RunPlanV2, RunPlanV2TargetCoordinates  # noqa: PLC0415
+
+            derived_plan = RunPlanV2(
+                schema_version="2",
+                target=RunPlanV2TargetCoordinates(
+                    standard=config.test_target.standard,
+                    specification=config.test_target.specification,
+                    security_profile=config.test_target.security_profile,
+                    specification_version=config.test_target.specification_version,
+                    catalogue_hash="sha256:unknown",
+                ),
+                resource_groups=config.test_target.resource_groups,
+                endpoint_selections=(),
+            )
             try:
-                resolved_suite = resolve_suite(config.test_suite)
-            except SuiteCatalogError as error:
+                manifest, suite_metadata = resolve_rw_suite_for_plan(derived_plan)
+            except (SuiteCatalogError, ValueError) as error:
                 raise forms.ValidationError(f"Suite resolution failed: {error}", code="invalid_suite") from error
-            manifest = resolved_suite.manifest
-            suite_metadata = resolved_suite.metadata
         elif not isinstance(manifest, Manifest):
             return cleaned_data
 
@@ -785,7 +798,7 @@ class PlanBuilderForm(forms.Form):
         Args:
             cleaned_data: Current cleaned-data dictionary from the form.
             requires_suite: Whether blank manifest input means the guided flow
-                must provide ``testSuite`` fields.
+                must provide ``testTarget`` fields.
 
         Returns:
             Parsed and validated config built from guided fields, or ``None``
@@ -839,12 +852,12 @@ class PlanBuilderForm(forms.Form):
             "discoveryUrl": discovery_url,
         }
         if suite_option is not None:
-            raw_config["testSuite"] = {
+            raw_config["testTarget"] = {
                 "standard": suite_option.standard,
-                "specVersion": suite_option.spec_version,
-                "profile": suite_option.profile,
-                "api": suite_option.api,
-                "suite": suite_option.suite,
+                "specification": "read-write",
+                "securityProfile": suite_option.profile,
+                "specificationVersion": suite_option.spec_version,
+                "resourceGroups": [suite_option.api],
             }
 
         raw_oauth = _build_guided_oauth_object(cleaned_data)

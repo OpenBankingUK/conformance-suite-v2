@@ -10,8 +10,6 @@ from conformance.model_bank_config import (
     ConfigError,
     FapiSigningConfig,
     OpenBankingConfig,
-    SuiteSelection,
-    SuiteSpecVersion,
     load_model_bank_config,
     parse_model_bank_config,
 )
@@ -70,97 +68,6 @@ def _write_signing_material(tmp_path: Path) -> tuple[Path, Path, Path]:
 
 
 @pytest.mark.unit
-def test_example_model_bank_config_is_valid_json_config(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    monkeypatch.chdir(tmp_path)
-
-    config = load_model_bank_config(EXAMPLE_CONFIG_PATH)
-
-    assert config.environment == "ozone-model-bank"
-    assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
-    assert config.follow_up_mode == "discovery_only"
-    assert config.result_output_path == tmp_path / "out" / "test-results.json"
-    assert config.test_suite is None
-
-
-@pytest.mark.unit
-def test_example_pis_domestic_payment_starter_model_bank_config_is_valid_json_config(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Committed PIS starter example config should parse with bundled signing fixtures.
-
-    Args:
-        monkeypatch: Pytest fixture used to isolate the output directory.
-        tmp_path: Temporary directory used as the active working directory.
-    """
-    monkeypatch.chdir(tmp_path)
-    expected_method = "private_key_jwt"
-
-    config = load_model_bank_config(EXAMPLE_PIS_CONFIG_PATH)
-
-    assert config.environment == "ozone-model-bank"
-    assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
-    assert config.result_output_path == tmp_path / "out" / "test-results.json"
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="pis-domestic-payment-starter",
-        api="pis",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs1.obie.uk.ozoneapi.io"
-    assert config.fapi_signing is not None
-    assert config.fapi_signing.token_endpoint_auth_method == expected_method
-    assert config.test_values is None
-    assert config.test_data is not None
-    assert dict(config.test_data.values) == {
-        "creditorName": "Ozone Demo Merchant",
-        "remittanceInformation": "Ozone domestic payment starter",
-    }
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    "config_path",
-    [
-        pytest.param(EXAMPLE_AIS_BASELINE_CONFIG_PATH, id="generic-baseline"),
-        pytest.param(EXAMPLE_AIS_BASELINE_V4_0_1_CONFIG_PATH, id="v4.0.1-baseline"),
-    ],
-)
-def test_example_ais_certification_baseline_config_is_valid_json_config(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    config_path: Path,
-) -> None:
-    """Committed AIS baseline example configs should parse and select the v4.0.1 suite.
-
-    Verifies that both the generic and the explicit v4.0.1 AIS baseline example configs
-    parse without error, resolve ``testSuite.specVersion`` to ``v4.0.1``, and select the
-    ``ais-certification-baseline`` suite against the ``ob-read-write`` standard.
-
-    Args:
-        monkeypatch: Pytest fixture used to isolate the output directory.
-        tmp_path: Temporary directory used as the active working directory.
-        config_path: Path to the example config JSON file under test.
-    """
-    monkeypatch.chdir(tmp_path)
-
-    config = load_model_bank_config(config_path)
-
-    assert config.environment == "ozone-model-bank"
-    assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
-    assert config.result_output_path == tmp_path / "out" / "test-results.json"
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0.1",
-        profile="fapi1-advanced",
-        suite="ais-certification-baseline",
-        api="ais",
-    )
-
-
-@pytest.mark.unit
 def test_parse_model_bank_config_defaults_result_output_to_out_dir(tmp_path: Path) -> None:
     config = parse_model_bank_config(
         {
@@ -199,131 +106,6 @@ def test_load_model_bank_config_reads_json_config(monkeypatch: pytest.MonkeyPatc
     assert config.timeout_seconds == 3.0
     assert config.follow_up_mode == "discovery_only"
     assert config.result_output_path == tmp_path / "results" / "model-bank.json"
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
-def test_parse_model_bank_config_accepts_supported_test_suite(spec_version: SuiteSpecVersion, tmp_path: Path) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": spec_version,
-                "profile": "fapi1-advanced",
-                "suite": "discovery-jwks",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version=spec_version,
-        profile="fapi1-advanced",
-        suite="discovery-jwks",
-        api="ais",
-    )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
-def test_parse_model_bank_config_accepts_psu_auth_starter_suite(spec_version: SuiteSpecVersion, tmp_path: Path) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": spec_version,
-                "profile": "fapi1-advanced",
-                "suite": "psu-auth-starter",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "openBankingIntentId": "consent-123",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version=spec_version,
-        profile="fapi1-advanced",
-        suite="psu-auth-starter",
-        api="ais",
-    )
-    assert config.oauth is not None
-    assert config.oauth.client_id == "my-client-id"
-    assert config.oauth.redirect_uri == "https://example.com/callback"
-    assert config.oauth.open_banking_intent_id == "consent-123"
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_accepts_pis_domestic_payment_starter_suite(tmp_path: Path) -> None:
-    """The new PIS domestic-payment starter suite should parse with fapiSigning and testValues."""
-    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
-    expected_method = "private_key_jwt"
-
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": "v4.0",
-                "api": "pis",
-                "profile": "fapi1-advanced",
-                "suite": "pis-domestic-payment-starter",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-            "fapiSigning": {
-                "certificatePathRoot": str(certificate_root),
-                "signingCertificatePath": certificate_path.name,
-                "signingPrivateKeyPath": private_key_path.name,
-                "kid": "starter-signing-key",
-                "clientAssertionIssuer": "my-client-id",
-                "clientAssertionSubject": "my-client-id",
-                "tokenEndpointAuthMethod": expected_method,
-            },
-            "testValues": {
-                "profile": "ozone-demo",
-                "overrides": {
-                    "creditorName": "Ozone Demo Merchant",
-                    "remittanceInformation": "Ozone domestic payment starter",
-                },
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="pis-domestic-payment-starter",
-        api="pis",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com"
-    assert config.fapi_signing is not None
-    assert config.fapi_signing.certificate_path_root == certificate_root
-    assert config.fapi_signing.signing_certificate_path == certificate_path
-    assert config.fapi_signing.signing_private_key_path == private_key_path
-    assert config.fapi_signing.token_endpoint_auth_method == expected_method
-    assert config.test_values is not None
-    assert config.test_values.profile == "ozone-demo"
-    assert dict(config.test_values.overrides) == {
-        "creditorName": "Ozone Demo Merchant",
-        "remittanceInformation": "Ozone domestic payment starter",
-    }
 
 
 @pytest.mark.unit
@@ -432,315 +214,6 @@ def test_parse_model_bank_config_rejects_open_banking_unknown_keys(tmp_path: Pat
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize(
-    "placeholder_intent_id",
-    [
-        "replace-with-existing-account-access-consent-id",
-        "your-existing-account-access-consent-id",
-    ],
-)
-def test_parse_model_bank_config_rejects_psu_auth_starter_placeholder_intent_id(
-    placeholder_intent_id: str,
-    tmp_path: Path,
-) -> None:
-    """Starter suite configs must not send example consent ids to ASPSPs."""
-    with pytest.raises(ConfigError, match="oauth.openBankingIntentId must be a real pre-existing account-access"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "ob-read-write",
-                    "specVersion": "v4.0",
-                    "profile": "fapi1-advanced",
-                    "suite": "psu-auth-starter",
-                },
-                "oauth": {
-                    "clientId": "my-client-id",
-                    "redirectUri": "https://example.com/callback",
-                    "openBankingIntentId": placeholder_intent_id,
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_parse_model_bank_config_accepts_ais_certification_slice_suite(
-    spec_version: SuiteSpecVersion,
-    tmp_path: Path,
-) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": spec_version,
-                "profile": "fapi1-advanced",
-                "suite": "ais-certification-slice",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version=spec_version,
-        profile="fapi1-advanced",
-        suite="ais-certification-slice",
-        api="ais",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com"
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_parse_model_bank_config_accepts_ais_certification_baseline_suite(
-    spec_version: SuiteSpecVersion,
-    tmp_path: Path,
-) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": spec_version,
-                "profile": "fapi1-advanced",
-                "suite": "ais-certification-baseline",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version=spec_version,
-        profile="fapi1-advanced",
-        suite="ais-certification-baseline",
-        api="ais",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com"
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_accepts_v4_ais_fcs_legacy_benchmark_suite(tmp_path: Path) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": "v4.0",
-                "profile": "fapi1-advanced",
-                "suite": "ais-fcs-legacy-benchmark",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-fcs-legacy-benchmark",
-        api="ais",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com"
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_accepts_pis_fcs_legacy_benchmark_suite(tmp_path: Path) -> None:
-    """The v4 PIS FCS legacy benchmark suite should parse as a valid PIS suite selection."""
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": "v4.0",
-                "api": "pis",
-                "profile": "fapi1-advanced",
-                "suite": "pis-fcs-legacy-benchmark",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="pis-fcs-legacy-benchmark",
-        api="pis",
-    )
-    assert config.oauth is not None
-    assert config.oauth.resource_base_url == "https://rs.example.com"
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_accepts_explicit_test_suite_api(tmp_path: Path) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": "v4.0",
-                "api": "ais",
-                "profile": "fapi1-advanced",
-                "suite": "ais-certification-baseline",
-            },
-            "oauth": {
-                "clientId": "my-client-id",
-                "redirectUri": "https://example.com/callback",
-                "resourceBaseUrl": "https://rs.example.com",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite == SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-certification-baseline",
-        api="ais",
-    )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("api", ["pis", "cbpii", "vrp"])
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_parse_model_bank_config_accepts_supported_non_ais_discovery_suite(
-    api: str,
-    spec_version: SuiteSpecVersion,
-    tmp_path: Path,
-) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-            "testSuite": {
-                "standard": "ob-read-write",
-                "specVersion": spec_version,
-                "api": api,
-                "profile": "fapi1-advanced",
-                "suite": "discovery-jwks",
-            },
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite is not None
-    assert config.test_suite.api == api
-    assert config.test_suite.spec_version == spec_version
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_cvrp_until_bundled_suite_exists(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="standard=cvrp, specVersion=v4.0, api=cvrp"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "cvrp",
-                    "specVersion": "v4.0",
-                    "api": "cvrp",
-                    "profile": "fapi1-advanced",
-                    "suite": "discovery-jwks",
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_v3_ais_certification_slice_suite(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="testSuite combination is not supported"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "ob-read-write",
-                    "specVersion": "v3.1.11",
-                    "profile": "fapi1-advanced",
-                    "suite": "ais-certification-slice",
-                },
-                "oauth": {
-                    "clientId": "my-client-id",
-                    "redirectUri": "https://example.com/callback",
-                    "resourceBaseUrl": "https://rs.example.com",
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_v3_ais_certification_baseline_suite(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="testSuite combination is not supported"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "ob-read-write",
-                    "specVersion": "v3.1.11",
-                    "profile": "fapi1-advanced",
-                    "suite": "ais-certification-baseline",
-                },
-                "oauth": {
-                    "clientId": "my-client-id",
-                    "redirectUri": "https://example.com/callback",
-                    "resourceBaseUrl": "https://rs.example.com",
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_keeps_test_suite_optional_for_smoke_checks(tmp_path: Path) -> None:
-    config = parse_model_bank_config(
-        {
-            "environment": "ozone-model-bank",
-            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-        },
-        base_dir=tmp_path,
-    )
-
-    assert config.test_suite is None
-
-
-@pytest.mark.unit
 def test_parse_model_bank_config_loads_approved_release_policy(tmp_path: Path) -> None:
     policy_path = _write_approved_release_policy(tmp_path, versions=["1.2.3", "4.5.6"])
 
@@ -818,99 +291,6 @@ def test_parse_model_bank_config_wraps_malformed_approved_release_policy(tmp_pat
                 "environment": "ozone-model-bank",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "approvedReleasePolicyPath": policy_path.name,
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_non_object_test_suite(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="testSuite must be a JSON object"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": "discovery-jwks",
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_missing_test_suite_field(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match="testSuite.specVersion must be a non-empty string"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "ob-read-write",
-                    "profile": "fapi1-advanced",
-                    "suite": "discovery-jwks",
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-def test_parse_model_bank_config_rejects_unknown_test_suite_field(tmp_path: Path) -> None:
-    with pytest.raises(ConfigError, match=r"Unknown testSuite field\(s\): label"):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": {
-                    "standard": "ob-read-write",
-                    "specVersion": "v4.0",
-                    "profile": "fapi1-advanced",
-                    "suite": "discovery-jwks",
-                    "label": "Open Banking Read/Write discovery",
-                },
-            },
-            base_dir=tmp_path,
-        )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("field_name", "value", "expected_message"),
-    [
-        ("standard", "ob-business-banking", "testSuite.standard must be one of: ob-read-write, cvrp"),
-        ("specVersion", "v3.1.10", "testSuite.specVersion must be one of: v3.1.11, v4.0, v4.0.1"),
-        ("api", "cards", "testSuite.api must be one of: ais, pis, cbpii, vrp, cvrp"),
-        ("profile", "fapi2-security-profile", "testSuite.profile must be one of: fapi1-advanced"),
-        (
-            "suite",
-            "full-read-write",
-            (
-                "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, "
-                "pis-domestic-payment-starter, ais-certification-slice, "
-                "ais-certification-baseline, ais-fcs-legacy-benchmark"
-            ),
-        ),
-    ],
-)
-def test_parse_model_bank_config_rejects_unsupported_test_suite_values(
-    field_name: str,
-    value: str,
-    expected_message: str,
-    tmp_path: Path,
-) -> None:
-    test_suite: dict[str, JsonValue] = {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "discovery-jwks",
-    }
-    test_suite[field_name] = value
-
-    with pytest.raises(ConfigError, match=expected_message):
-        parse_model_bank_config(
-            {
-                "environment": "ozone-model-bank",
-                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "testSuite": test_suite,
             },
             base_dir=tmp_path,
         )
@@ -1655,3 +1035,218 @@ def test_parse_model_bank_config_rejects_malformed_fapi_signing_strings(
             },
             base_dir=tmp_path,
         )
+
+
+# ---------------------------------------------------------------------------
+# testTarget parsing
+# ---------------------------------------------------------------------------
+
+
+def _write_dcr_material(tmp_path: Path) -> dict[str, str]:
+    """Create fixture files for the five required DCR credential paths.
+
+    Args:
+        tmp_path: pytest tmp directory.
+
+    Returns:
+        Mapping of DCR credential key → basename (relative to ``tmp_path``).
+    """
+    files = {
+        "ssaPath": "software-statement.jwt",
+        "signingPrivateKeyPath": "signing.key",  # pragma: allowlist secret
+        "signingCertificatePath": "signing.crt",
+        "transportCertificatePath": "transport.crt",
+        "transportPrivateKeyPath": "transport.key",  # pragma: allowlist secret
+    }
+    for name in files.values():
+        (tmp_path / name).write_text("fixture", encoding="utf-8")
+    return files
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_test_target(tmp_path: Path) -> None:
+    """A well-formed ``testTarget`` section populates ``config.test_target``."""
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "testTarget": {
+                "standard": "obl",
+                "specification": "read-write",
+                "securityProfile": "fapi1-advanced",
+                "specificationVersion": "v4.0.1",
+                "resourceGroups": ["ais"],
+            },
+        },
+        base_dir=tmp_path,
+    )
+    assert config.test_target is not None
+    assert config.test_target.specification == "read-write"
+    assert config.test_target.resource_groups == ("ais",)
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_invalid_test_target(tmp_path: Path) -> None:
+    """A malformed ``testTarget`` section raises :class:`ConfigError`."""
+    with pytest.raises(ConfigError, match="testTarget is invalid"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testTarget": {"standard": "obl"},  # missing required fields
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_test_target_absent_yields_none(tmp_path: Path) -> None:
+    """Absent ``testTarget`` yields ``config.test_target is None``."""
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        },
+        base_dir=tmp_path,
+    )
+    assert config.test_target is None
+
+
+# ---------------------------------------------------------------------------
+# dcr section parsing
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_full_dcr_section(tmp_path: Path) -> None:
+    """A valid ``dcr`` section populates ``config.dcr`` with credential + transport."""
+    files = _write_dcr_material(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "dcr": {
+                **files,
+                "tokenEndpointAuthMethod": "private_key_jwt",
+                "disableKeepAlives": True,
+                "timeoutSeconds": 15,
+            },
+        },
+        base_dir=tmp_path,
+    )
+    assert config.dcr is not None
+    assert config.dcr.transport.token_endpoint_auth_method == "private_key_jwt"  # noqa: S105
+    assert config.dcr.transport.disable_keep_alives is True
+    assert config.dcr.transport.connection_timeout_seconds == 15
+    assert config.dcr.credential_paths.ssa_path.name == "software-statement.jwt"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_dcr_defaults_auth_method(tmp_path: Path) -> None:
+    """Missing ``tokenEndpointAuthMethod`` defaults to ``tls_client_auth``."""
+    files = _write_dcr_material(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "dcr": {**files},
+        },
+        base_dir=tmp_path,
+    )
+    assert config.dcr is not None
+    assert config.dcr.transport.token_endpoint_auth_method == "tls_client_auth"  # noqa: S105
+    assert config.dcr.transport.disable_keep_alives is False
+    assert config.dcr.transport.tls_skip_verify is False
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_dcr_non_object(tmp_path: Path) -> None:
+    """``dcr`` must be a JSON object; scalars are rejected."""
+    with pytest.raises(ConfigError, match="dcr must be a JSON object"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": "invalid",
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_dcr_missing_required_paths(tmp_path: Path) -> None:
+    """Missing required DCR credential paths produce a clear error message."""
+    (tmp_path / "ssa.jwt").write_text("x", encoding="utf-8")
+    with pytest.raises(ConfigError, match="dcr requires the following paths:"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": {"ssaPath": "ssa.jwt"},
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_dcr_unknown_key(tmp_path: Path) -> None:
+    """Unknown keys under ``dcr`` are rejected."""
+    files = _write_dcr_material(tmp_path)
+    with pytest.raises(ConfigError, match="dcr"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": {**files, "unknown": "field"},
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_dcr_unknown_auth_method(tmp_path: Path) -> None:
+    """``tokenEndpointAuthMethod`` outside the allowed set is rejected."""
+    files = _write_dcr_material(tmp_path)
+    with pytest.raises(ConfigError, match="tokenEndpointAuthMethod"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": {**files, "tokenEndpointAuthMethod": "client_secret_basic"},
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_dcr_non_bool_disable_keep_alives(tmp_path: Path) -> None:
+    """``disableKeepAlives`` must be a boolean."""
+    files = _write_dcr_material(tmp_path)
+    with pytest.raises(ConfigError, match="disableKeepAlives"):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": {**files, "disableKeepAlives": "yes"},
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_warns_on_dcr_tls_skip_verify(tmp_path: Path) -> None:
+    """``tlsSkipVerify=true`` emits a warning at parse time."""
+    files = _write_dcr_material(tmp_path)
+    with pytest.warns(UserWarning, match="TLS server certificate verification is disabled"):
+        config = parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "dcr": {**files, "tlsSkipVerify": True},
+            },
+            base_dir=tmp_path,
+        )
+    assert config.dcr is not None
+    assert config.dcr.transport.tls_skip_verify is True

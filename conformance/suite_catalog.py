@@ -1,27 +1,76 @@
-"""Resolve config-selected conformance suites to bundled manifests."""
+"""Resolve conformance suites to bundled manifests.
+
+This module owns the read/write suite catalog: the internal representation of
+:class:`SuiteSelection`, catalog metadata, and the resolver that maps a
+selection tuple to a bundled manifest.  ``SuiteSelection`` is retained as an
+internal wiring type used by :mod:`conformance.plan_executor` to translate a
+:class:`~conformance.run_plan_v2.RunPlanV2` into a bundled manifest.  The
+participant-facing ``testSuite`` config key has been replaced by the target-
+oriented ``testTarget`` shape defined in :mod:`conformance.target_config`.
+"""
 
 from __future__ import annotations
 
 import json
 from dataclasses import dataclass
 from importlib import resources
-from typing import cast
+from typing import Literal, cast
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, ManifestError, parse_manifest
-from conformance.model_bank_config import (
-    SuiteApiFamily,
-    SuiteName,
-    SuiteProfile,
-    SuiteSelection,
-    SuiteSpecVersion,
-    SuiteStandard,
-)
 from conformance.starter_safety import PIS_DOMESTIC_PAYMENT_STARTER_SAFETY, format_starter_safety_note
 
 
 class SuiteCatalogError(ValueError):
     """Raised when a config-selected suite cannot be resolved from the catalog."""
+
+
+SuiteStandard = Literal["ob-read-write", "cvrp"]
+"""Supported Open Banking standards recognised by the suite catalog."""
+
+SuiteSpecVersion = Literal["v3.1.11", "v4.0", "v4.0.1"]
+"""Supported specification versions recognised by the suite catalog."""
+
+SuiteApiFamily = Literal["ais", "pis", "cbpii", "vrp", "cvrp"]
+"""Supported API families recognised by the suite catalog."""
+
+SuiteProfile = Literal["fapi1-advanced"]
+"""Supported security profiles recognised by the suite catalog."""
+
+SuiteName = Literal[
+    "discovery-jwks",
+    "psu-auth-starter",
+    "pis-domestic-payment-starter",
+    "ais-certification-slice",
+    "ais-certification-baseline",
+    "ais-fcs-legacy-benchmark",
+    "pis-fcs-legacy-benchmark",
+]
+"""Versioned conformance suite identifiers recognised by the suite catalog."""
+
+
+@dataclass(frozen=True)
+class SuiteSelection:
+    """Versioned conformance suite key used to resolve a bundled manifest.
+
+    Historically populated from the participant ``testSuite`` config key, this
+    dataclass is now an internal wiring type used by
+    :mod:`conformance.plan_executor` when translating a
+    :class:`~conformance.run_plan_v2.RunPlanV2` into a bundled manifest.
+
+    Attributes:
+        standard: Open Banking standard family to test.
+        spec_version: Standards specification version to test.
+        profile: Security profile that scopes the suite.
+        suite: Versioned smoke/conformance suite identifier.
+        api: Open Banking API family selected for the suite.
+    """
+
+    standard: SuiteStandard
+    spec_version: SuiteSpecVersion
+    profile: SuiteProfile
+    suite: SuiteName
+    api: SuiteApiFamily = "ais"
 
 
 type SuiteCatalogKey = tuple[SuiteStandard, SuiteSpecVersion, SuiteProfile, SuiteApiFamily, SuiteName]
@@ -73,11 +122,11 @@ class SuiteMetadata:
         }
 
     def to_suite_selection(self) -> SuiteSelection:
-        """Build a :class:`~conformance.model_bank_config.SuiteSelection` from this metadata.
+        """Build a :class:`SuiteSelection` from this metadata.
 
         Convenience accessor that converts the catalog metadata fields into a
-        :class:`~conformance.model_bank_config.SuiteSelection` value, allowing
-        callers to resolve environment capability data via
+        :class:`SuiteSelection` value, allowing callers to resolve environment
+        capability data via
         :func:`conformance.environment_capabilities.resolve_suite_environment_capability`
         without having to re-construct the selection key manually.
 

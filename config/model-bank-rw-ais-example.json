@@ -5,7 +5,7 @@
     "testTarget": {
         "standard": "obl",
         "specification": "read-write",
-        "specificationVersion": "v4.0",
+        "specificationVersion": "v4.0.1",
         "resourceGroups": ["ais"]
     },
     "oauth": {
@@ -13,9 +13,18 @@
         "redirectUri": "https://conformance.example.com/callback",
         "resourceBaseUrl": "https://resource.example.com"
     },
+    "fapiSigning": {
+        "certificatePathRoot": "./certs",
+        "signingCertificatePath": "dummy-signing.crt",
+        "signingPrivateKeyPath": "dummy-signing.key",
+        "kid": "your-signing-kid-here",
+        "clientAssertionIssuer": "your-client-id-here",
+        "clientAssertionSubject": "your-client-id-here",
+        "tokenEndpointAuthMethod": "private_key_jwt"
+    },
     "tls": {
         "certificatePathRoot": "./certs"
     },
-    "resultOutputPath": "./out/test-results.json",
-    "executionLogPath": "./out/execution-log.ndjson"
+    "resultOutputPath": "./out/rw-ais-results.json",
+    "executionLogPath": "./out/rw-ais-log.ndjson"
 }

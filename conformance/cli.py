@@ -26,17 +26,32 @@ from conformance.execution_log import (
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
 from conformance.manifest import ManifestError, PsuAuthorizationStep, load_manifest
-from conformance.model_bank_config import ConfigError, load_model_bank_config
+from conformance.model_bank_config import ConfigError, ModelBankConfig, load_model_bank_config
+from conformance.plan_executor import (
+    check_catalogue_drift,
+    dcr_run_result_to_json_object,
+    execute_dcr_run,
+    resolve_rw_suite_for_plan,
+    utc_now,
+)
 from conformance.run_configuration import compile_run_configuration
+from conformance.run_plan_v2 import (
+    EndpointSelection,
+    RunPlanV2,
+    RunPlanV2ParseError,
+    RunPlanV2TargetCoordinates,
+    parse_run_plan_v2,
+)
 from conformance.runner import run_model_bank_smoke_check
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata
+from conformance.target_config import TestTargetConfig
 from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check (model-bank smoke check or manifest run).
+    """Run a conformance check (model-bank smoke check, RunPlan v2, or manifest run).
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -50,6 +65,16 @@ def run(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
     parser.add_argument("--manifest", type=Path, help="Optional manifest JSON file (v0 or v1) to execute")
     parser.add_argument(
+        "--run-plan",
+        type=Path,
+        default=None,
+        help=(
+            "Optional RunPlan v2 JSON file describing target coordinates and endpoint "
+            "selections.  When supplied, the run is driven by the plan rather than a "
+            "``testTarget`` config section or an inline manifest."
+        ),
+    )
+    parser.add_argument(
         "--deselect",
         action="append",
         default=[],
@@ -58,7 +83,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             "Deselect a v1 manifest step from the default test plan. Repeatable. "
             "Deselected steps do not run and produce no step result. Deselecting "
             "a mandatory step flips certificationEligibility to ineligible. "
-            "Only valid with --manifest or a config-selected testSuite."
+            "Only valid with --manifest or a Read/Write run plan/testTarget."
         ),
     )
     try:
@@ -74,9 +99,32 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Config error: %s", error)
         return 2
 
-    if args.deselect and args.manifest is None and config.test_suite is None:
-        logger.error("--deselect requires --manifest or config.testSuite")
+    run_plan: RunPlanV2 | None = None
+    if args.run_plan is not None:
+        try:
+            raw_plan = json.loads(args.run_plan.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as error:
+            logger.error("Unable to read run plan file %s: %s", args.run_plan, error)
+            return 2
+        try:
+            run_plan = parse_run_plan_v2(raw_plan)
+        except RunPlanV2ParseError as error:
+            logger.error("Invalid run plan: %s", error)
+            return 2
+    elif config.test_target is not None:
+        run_plan = _run_plan_from_test_target(config.test_target)
+
+    if args.deselect and args.manifest is None and run_plan is None:
+        logger.error("--deselect requires --manifest, --run-plan, or config.testTarget")
         return 2
+
+    if run_plan is not None:
+        drift = check_catalogue_drift(run_plan)
+        if drift is not None:
+            logger.warning("%s", drift)
+
+        if run_plan.target.specification == "dynamic-client-registration":
+            return _run_dcr(config=config, plan=run_plan)
 
     run_id = new_run_id()
     execution_logger = BufferedExecutionLogger(run_id=run_id)
@@ -87,21 +135,18 @@ def run(argv: Sequence[str] | None = None) -> int:
     )
 
     suite_metadata: SuiteMetadata | None = None
-    if args.manifest is None and config.test_suite is None:
+    if args.manifest is None and run_plan is None:
         result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
         if args.manifest is None:
-            suite_selection = config.test_suite
-            if suite_selection is None:
-                logger.error("No manifest or config.testSuite available to run")
+            if run_plan is None:  # pragma: no cover - defended above
+                logger.error("Internal error: run plan missing")
                 return 2
             try:
-                resolved_suite = resolve_suite(suite_selection)
-            except SuiteCatalogError as error:
-                logger.error("Suite catalog error: %s", error)
+                manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
+            except (ValueError, SuiteCatalogError) as error:
+                logger.error("Suite resolution error: %s", error)
                 return 2
-            manifest = resolved_suite.manifest
-            suite_metadata = resolved_suite.metadata
         else:
             try:
                 manifest = load_manifest(args.manifest)
@@ -266,6 +311,107 @@ def run(argv: Sequence[str] | None = None) -> int:
     return 1
 
 
+def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
+    """Execute a DCR conformance run driven by a RunPlanV2.
+
+    Args:
+        config: Validated participant configuration containing a required
+            ``dcr`` section.
+        plan: The DCR run plan authored against ``dynamic-client-registration``
+            target coordinates.
+
+    Returns:
+        Process-style exit code: 0 for pass, 1 for conformance failure, 2 for
+        invalid input, and 3 when result artifacts cannot be written.
+    """
+    run_id = new_run_id()
+    started_at = utc_now()
+    try:
+        dcr_result = execute_dcr_run(plan, config)
+    except ConfigError as error:
+        logger.error("DCR config error: %s", error)
+        return 2
+    except Exception as error:  # noqa: BLE001
+        logger.error("DCR run error: %s", error)
+        return 1
+    finished_at = utc_now()
+
+    body = dcr_run_result_to_json_object(
+        dcr_result,
+        plan=plan,
+        environment=config.environment,
+        run_id=run_id,
+        started_at=started_at,
+        finished_at=finished_at,
+    )
+
+    try:
+        config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
+        config.result_output_path.write_text(
+            json.dumps(body, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    except OSError as error:
+        logger.error("Unable to write DCR result to %s: %s", config.result_output_path, error)
+        return 3
+
+    try:
+        config.execution_log_path.parent.mkdir(parents=True, exist_ok=True)
+        config.execution_log_path.write_bytes(b"")
+    except OSError as error:
+        logger.error("Unable to write DCR execution log to %s: %s", config.execution_log_path, error)
+        return 3
+
+    summary = body["summary"]
+    assert isinstance(summary, dict)  # noqa: S101 - JSON structure invariant established by dcr_run_result_to_json_object
+    passed = summary["passed"]
+    failed = summary["failed"]
+    if body["status"] == "passed":
+        logger.info(
+            "DCR run passed (%s passed, %s failed); wrote %s",
+            passed,
+            failed,
+            config.result_output_path,
+        )
+        return 0
+    logger.error(
+        "DCR run failed (%s passed, %s failed); wrote %s",
+        passed,
+        failed,
+        config.result_output_path,
+    )
+    return 1
+
+
+def _run_plan_from_test_target(target: TestTargetConfig) -> RunPlanV2:
+    """Build a minimal RunPlanV2 from a :class:`TestTargetConfig`.
+
+    Used when the CLI or API caller supplies ``testTarget`` in config without a
+    ``runPlan`` file.  The generated plan uses an ``sha256:unknown`` catalogue
+    hash so :func:`check_catalogue_drift` treats drift detection as
+    unavailable rather than emitting a false-positive warning.
+
+    Args:
+        target: Validated target coordinates from participant config.
+
+    Returns:
+        A :class:`RunPlanV2` with no endpoint selections (all default), the
+        supplied resource groups, and a placeholder catalogue hash.
+    """
+    return RunPlanV2(
+        schema_version="2",
+        target=RunPlanV2TargetCoordinates(
+            standard=target.standard,
+            specification=target.specification,
+            security_profile=target.security_profile,
+            specification_version=target.specification_version,
+            catalogue_hash="sha256:unknown",
+        ),
+        resource_groups=target.resource_groups,
+        endpoint_selections=(),
+    )
+
+
 def _plan_has_manual_psu_step(*, manifest: object, plan: TestPlan) -> bool:
     """Return whether the selected plan includes a manual PSU step.
 
@@ -285,3 +431,10 @@ def _plan_has_manual_psu_step(*, manifest: object, plan: TestPlan) -> bool:
         for step_id, step in step_by_id.items()
         if step_id in selected_step_ids
     )
+
+
+# Endpoint selection re-export for tests that build minimal plans.
+__all__ = [
+    "EndpointSelection",
+    "run",
+]
