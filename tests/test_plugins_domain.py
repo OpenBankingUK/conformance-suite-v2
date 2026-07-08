@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
 from conformance.catalogue import Catalogue, CatalogueIdentity
 from conformance.plugins.domain import ConformancePlugin, PluginTargetMetadata
 from conformance.target_config import TestTargetConfig
-
 
 # ---------------------------------------------------------------------------
 # Minimal stub plugin for structural subtyping tests
@@ -111,8 +112,8 @@ def test_plugin_target_metadata_is_frozen() -> None:
         supported_versions=("v4.0.1",),
         uses_resource_groups=True,
     )
-    with pytest.raises(Exception):
-        meta.plugin_id = "other"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        meta.plugin_id = "other"  # type: ignore[misc]  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -122,7 +123,7 @@ def test_plugin_target_metadata_is_frozen() -> None:
 
 @pytest.mark.unit
 def test_stub_plugin_satisfies_protocol() -> None:
-    plugin: ConformancePlugin = _StubPlugin()  # type: ignore[assignment]
+    plugin: ConformancePlugin = _StubPlugin()
     assert plugin.plugin_id == "stub"
 
 

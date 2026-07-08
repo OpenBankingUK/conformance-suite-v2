@@ -2,18 +2,17 @@
 
 from __future__ import annotations
 
+import dataclasses
+from typing import cast
+
 import pytest
 
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.run_plan_v2 import (
-    EndpointSelection,
-    RunPlanV2,
     RunPlanV2ParseError,
-    RunPlanV2TargetCoordinates,
     parse_run_plan_v2,
     serialise_run_plan_v2,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -112,7 +111,7 @@ def test_parse_endpoint_selection_selected_false_no_field_values() -> None:
 @pytest.mark.unit
 def test_parse_omits_resource_groups_returns_empty_tuple() -> None:
     doc = _valid_doc()
-    del doc["resourceGroups"]  # type: ignore[attr-defined]
+    del doc["resourceGroups"]
     plan = parse_run_plan_v2(doc)
     assert plan.resource_groups == ()
 
@@ -120,7 +119,7 @@ def test_parse_omits_resource_groups_returns_empty_tuple() -> None:
 @pytest.mark.unit
 def test_parse_omits_endpoint_selections_returns_empty_tuple() -> None:
     doc = _valid_doc()
-    del doc["endpointSelections"]  # type: ignore[attr-defined]
+    del doc["endpointSelections"]
     plan = parse_run_plan_v2(doc)
     assert plan.endpoint_selections == ()
 
@@ -128,7 +127,7 @@ def test_parse_omits_endpoint_selections_returns_empty_tuple() -> None:
 @pytest.mark.unit
 def test_parse_omits_test_data_returns_empty_mapping() -> None:
     doc = _valid_doc()
-    del doc["testData"]  # type: ignore[attr-defined]
+    del doc["testData"]
     plan = parse_run_plan_v2(doc)
     assert dict(plan.test_data) == {}
 
@@ -149,7 +148,7 @@ def test_parse_schema_version_1_raises() -> None:
 @pytest.mark.unit
 def test_parse_schema_version_missing_raises() -> None:
     doc = _valid_doc()
-    del doc["schemaVersion"]  # type: ignore[attr-defined]
+    del doc["schemaVersion"]
     with pytest.raises(RunPlanV2ParseError, match="schemaVersion"):
         parse_run_plan_v2(doc)
 
@@ -170,7 +169,7 @@ def test_parse_schema_version_integer_raises() -> None:
 @pytest.mark.unit
 def test_parse_missing_target_raises() -> None:
     doc = _valid_doc()
-    del doc["target"]  # type: ignore[attr-defined]
+    del doc["target"]
     with pytest.raises(RunPlanV2ParseError, match="target"):
         parse_run_plan_v2(doc)
 
@@ -178,7 +177,7 @@ def test_parse_missing_target_raises() -> None:
 @pytest.mark.unit
 def test_parse_target_missing_standard_raises() -> None:
     doc = _valid_doc()
-    del doc["target"]["standard"]  # type: ignore[index,attr-defined]
+    cast(JsonObject, doc["target"]).pop("standard")
     with pytest.raises(RunPlanV2ParseError, match="standard"):
         parse_run_plan_v2(doc)
 
@@ -186,7 +185,7 @@ def test_parse_target_missing_standard_raises() -> None:
 @pytest.mark.unit
 def test_parse_target_empty_catalogue_hash_raises() -> None:
     doc = _valid_doc()
-    doc["target"]["catalogueHash"] = ""  # type: ignore[index]
+    cast(JsonObject, doc["target"])["catalogueHash"] = ""
     with pytest.raises(RunPlanV2ParseError, match="catalogueHash"):
         parse_run_plan_v2(doc)
 
@@ -207,7 +206,7 @@ def test_parse_endpoint_selections_not_array_raises() -> None:
 @pytest.mark.unit
 def test_parse_endpoint_selection_missing_endpoint_id_raises() -> None:
     doc = _valid_doc()
-    doc["endpointSelections"] = [{"operation": "GET", "selected": True}]  # type: ignore[list-item]
+    doc["endpointSelections"] = [{"operation": "GET", "selected": True}]
     with pytest.raises(RunPlanV2ParseError, match="endpointId"):
         parse_run_plan_v2(doc)
 
@@ -215,9 +214,7 @@ def test_parse_endpoint_selection_missing_endpoint_id_raises() -> None:
 @pytest.mark.unit
 def test_parse_endpoint_selection_non_bool_selected_raises() -> None:
     doc = _valid_doc()
-    doc["endpointSelections"] = [  # type: ignore[list-item]
-        {"endpointId": "e", "operation": "GET", "selected": "yes"}
-    ]
+    doc["endpointSelections"] = [{"endpointId": "e", "operation": "GET", "selected": "yes"}]
     with pytest.raises(RunPlanV2ParseError, match="selected"):
         parse_run_plan_v2(doc)
 
@@ -225,9 +222,7 @@ def test_parse_endpoint_selection_non_bool_selected_raises() -> None:
 @pytest.mark.unit
 def test_parse_field_values_not_object_raises() -> None:
     doc = _valid_doc()
-    doc["endpointSelections"] = [  # type: ignore[list-item]
-        {"endpointId": "e", "operation": "GET", "selected": True, "fieldValues": "bad"}
-    ]
+    doc["endpointSelections"] = [{"endpointId": "e", "operation": "GET", "selected": True, "fieldValues": "bad"}]
     with pytest.raises(RunPlanV2ParseError, match="fieldValues"):
         parse_run_plan_v2(doc)
 
@@ -235,9 +230,7 @@ def test_parse_field_values_not_object_raises() -> None:
 @pytest.mark.unit
 def test_parse_field_values_non_string_value_raises() -> None:
     doc = _valid_doc()
-    doc["endpointSelections"] = [  # type: ignore[list-item]
-        {"endpointId": "e", "operation": "GET", "selected": True, "fieldValues": {"k": 42}}
-    ]
+    doc["endpointSelections"] = [{"endpointId": "e", "operation": "GET", "selected": True, "fieldValues": {"k": 42}}]
     with pytest.raises(RunPlanV2ParseError, match="fieldValues"):
         parse_run_plan_v2(doc)
 
@@ -253,7 +246,7 @@ def test_parse_test_data_not_object_raises() -> None:
 @pytest.mark.unit
 def test_parse_test_data_non_string_value_raises() -> None:
     doc = _valid_doc()
-    doc["testData"] = {"key": 99}  # type: ignore[dict-item]
+    doc["testData"] = {"key": 99}
     with pytest.raises(RunPlanV2ParseError, match="testData"):
         parse_run_plan_v2(doc)
 
@@ -266,23 +259,23 @@ def test_parse_test_data_non_string_value_raises() -> None:
 @pytest.mark.unit
 def test_run_plan_v2_is_frozen() -> None:
     plan = parse_run_plan_v2(_minimal_doc())
-    with pytest.raises(Exception):
-        plan.schema_version = "3"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.schema_version = "3"  # type: ignore[misc, assignment]
 
 
 @pytest.mark.unit
 def test_endpoint_selection_is_frozen() -> None:
     plan = parse_run_plan_v2(_valid_doc())
     sel = plan.endpoint_selections[0]
-    with pytest.raises(Exception):
-        sel.endpoint_id = "mutated"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        sel.endpoint_id = "mutated"  # type: ignore[misc]  # type: ignore[misc]
 
 
 @pytest.mark.unit
 def test_target_coordinates_is_frozen() -> None:
     plan = parse_run_plan_v2(_valid_doc())
-    with pytest.raises(Exception):
-        plan.target.standard = "other"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        plan.target.standard = "other"  # type: ignore[misc]  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
@@ -331,15 +324,15 @@ def test_serialise_omits_test_data_when_empty() -> None:
 def test_serialise_omits_field_values_when_empty() -> None:
     plan = parse_run_plan_v2(_valid_doc())
     doc = serialise_run_plan_v2(plan)
-    sel_doc = doc["endpointSelections"][1]  # type: ignore[index]
-    assert "fieldValues" not in sel_doc
+    sel_doc = cast(JsonObject, cast("list[object]", doc["endpointSelections"])[1])
+    assert "fieldValues" not in sel_doc  # sel_doc is JsonObject (endpointSelection serialised)
 
 
 @pytest.mark.unit
 def test_serialise_uses_camel_case_keys() -> None:
     plan = parse_run_plan_v2(_valid_doc())
     doc = serialise_run_plan_v2(plan)
-    target = doc["target"]  # type: ignore[index]
+    target = doc["target"]
     assert "specificationVersion" in target  # type: ignore[operator]
     assert "securityProfile" in target  # type: ignore[operator]
     assert "catalogueHash" in target  # type: ignore[operator]

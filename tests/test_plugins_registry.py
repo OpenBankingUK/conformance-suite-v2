@@ -9,7 +9,6 @@ from conformance.plugins.domain import PluginTargetMetadata
 from conformance.plugins.registry import PluginRegistry, PluginRegistryError
 from conformance.target_config import TestTargetConfig
 
-
 # ---------------------------------------------------------------------------
 # Stub plugins
 # ---------------------------------------------------------------------------

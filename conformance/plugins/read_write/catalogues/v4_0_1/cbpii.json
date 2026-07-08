@@ -1,0 +1,54 @@
+{
+  "identity": {
+    "pluginId": "read-write",
+    "specification": "read-write",
+    "specificationVersion": "v4.0.1",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "endpoints": [
+    {
+      "endpointId": "cbpii.funds-confirmation-consents.create",
+      "operation": "CreateFundsConfirmationConsents",
+      "path": "/funds-confirmation-consents",
+      "method": "POST",
+      "resourceGroup": "cbpii",
+      "requirement": "mandatory",
+      "displayLabel": "Create Funds Confirmation Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "cbpii.funds-confirmation-consents.get",
+      "operation": "GetFundsConfirmationConsentsConsentId",
+      "path": "/funds-confirmation-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "cbpii",
+      "requirement": "mandatory",
+      "displayLabel": "Get Funds Confirmation Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "cbpii.funds-confirmation-consents.delete",
+      "operation": "DeleteFundsConfirmationConsentsConsentId",
+      "path": "/funds-confirmation-consents/{ConsentId}",
+      "method": "DELETE",
+      "resourceGroup": "cbpii",
+      "requirement": "mandatory",
+      "displayLabel": "Delete Funds Confirmation Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "cbpii.funds-confirmations.create",
+      "operation": "CreateFundsConfirmations",
+      "path": "/funds-confirmations",
+      "method": "POST",
+      "resourceGroup": "cbpii",
+      "requirement": "mandatory",
+      "displayLabel": "Create Funds Confirmation",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    }
+  ]
+}

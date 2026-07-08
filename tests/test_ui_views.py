@@ -488,7 +488,12 @@ class TestPlanBuilderUi:
         assert 'data-plan-step-checkbox data-step-id="optional" data-step-mandatory="false"' in content
 
     def test_preview_post_renders_chevron_and_separated_controls(self) -> None:
-        """Preview renders chevrons, node wrappers, and header controls without details tags."""
+        """Preview renders chevrons, node wrappers, and header controls.
+
+        The plan tree nodes must not use ``<details>``/``<summary>`` elements;
+        the page-level Advanced section may use them for the collapsible import
+        panel, which is expected and intentional.
+        """
         manifest = _v1_manifest(
             [
                 _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
@@ -503,8 +508,9 @@ class TestPlanBuilderUi:
         assert "data-plan-tree-chevron" in content
         assert "data-plan-tree-node" in content
         assert "data-node-count" in content
-        assert "<details" not in content
-        assert "<summary" not in content
+        # The plan-tree nodes must NOT use <details>/<summary>; the page-level
+        # Advanced / Import JSON collapsible section does use <details> intentionally.
+        assert 'class="tv-step"' not in content
         assert "tree-group-header" in content
         assert "aria-expanded" in content
         assert "tree-header-content" in content
@@ -2303,11 +2309,11 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "passed" in content
         assert "eligible" in content
-        assert "Plan selected" in content
+        assert "Coverage selected" in content
         assert "Warn" in content
         assert "Skipped" in content
         assert "Issues" in content
-        assert "Mandatory selected" in content
+        assert "Mandatory covered" in content
         assert f"/runs/{record.run_id}/result.json" in content
         assert 'hx-trigger="load"' in content
         assert "every 2s" not in content
@@ -2369,6 +2375,60 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "ineligible: 1 mandatory step(s) failed" in content
+
+    def test_result_partial_renders_readiness_report_sections(self) -> None:
+        """The result partial renders endpoint-first readiness sections when present."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0},
+                "readinessReport": {
+                    "schemaVersion": "2",
+                    "targetCoordinates": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:catalogue",
+                    },
+                    "catalogueHash": "sha256:catalogue",
+                    "selectedCoverageSummary": {
+                        "selectedResourceGroups": ["ais"],
+                        "selectedEndpointCount": 1,
+                        "mandatoryEndpointCount": 2,
+                        "omittedMandatoryEndpointCount": 1,
+                        "coverageComplete": False,
+                    },
+                    "overallOutcome": "incomplete",
+                    "resourceGroupSections": [
+                        {
+                            "resourceGroup": "ais",
+                            "readinessOutcome": "incomplete",
+                            "omittedMandatoryEndpoints": ["account-balances"],
+                            "selectedTestCount": 2,
+                            "passedCount": 2,
+                            "failedCount": 0,
+                            "skippedCount": 0,
+                            "certificationEligible": False,
+                        }
+                    ],
+                    "runId": record.run_id,
+                    "generatedAt": "2026-01-01T00:00:00+00:00",
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Coverage readiness" in content
+        assert "incomplete" in content
+        assert "Incomplete coverage:" in content
+        assert "account-balances" in content
 
     def test_result_partial_renders_custom_test_value_impact_panel(self) -> None:
         """Result partial renders persisted custom-test-value impact evidence."""

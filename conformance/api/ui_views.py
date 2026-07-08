@@ -13,7 +13,7 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
-from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context
+from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context, staged_ui_context
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
 from conformance.execution_log import ExecutionEvent
@@ -298,7 +298,12 @@ def _plan_context(
         failure details.
     """
     preview = form.preview
-    context: dict[str, object] = {"form": form, "preview": preview, **guided_flow_context(form)}
+    context: dict[str, object] = {
+        "form": form,
+        "preview": preview,
+        **guided_flow_context(form),
+        **staged_ui_context(),
+    }
     if preview is not None:
         context["preview_counts"] = preview_step_counts(preview)
     context["rows_by_id"] = {row.id: row for row in preview.rows} if preview else {}
@@ -341,6 +346,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
+        "readiness_report": _readiness_report(record.result),
         "step_progress": step_progress,
         "step_progress_counts": _step_progress_counts(step_progress),
         "result_issue_count": _result_issue_count(step_progress),
@@ -1116,6 +1122,23 @@ def _certification_eligibility(result: JsonObject | None) -> str | None:
             if isinstance(reason, str) and reason:
                 return f"ineligible: {reason}"
             return "ineligible"
+    return None
+
+
+def _readiness_report(result: JsonObject | None) -> JsonObject | None:
+    """Extract the endpoint-first readiness report object from result JSON.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        The ``readinessReport`` object when present, otherwise ``None``.
+    """
+    if result is None:
+        return None
+    readiness = result.get("readinessReport")
+    if isinstance(readiness, dict):
+        return readiness
     return None
 
 

@@ -1,0 +1,106 @@
+{
+  "identity": {
+    "pluginId": "dcr",
+    "specification": "dynamic-client-registration",
+    "specificationVersion": "3.2",
+    "contentHash": "sha256:7b46b76b0bc58031d38dbae66174338d45cc7e2861b1ac40eb829dcd368535d3"
+  },
+  "endpoints": [
+    {
+      "endpointId": "dcr.discovery.validate",
+      "operation": "Discovery Validation",
+      "path": "/.well-known/openid-configuration",
+      "method": "GET",
+      "requirement": "mandatory",
+      "displayLabel": "OIDC Discovery Validation"
+    },
+    {
+      "endpointId": "dcr.register.post",
+      "operation": "Register Client",
+      "path": "/register",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "POST /register"
+    },
+    {
+      "endpointId": "dcr.register.get",
+      "operation": "Retrieve Client",
+      "path": "/register/{clientId}",
+      "method": "GET",
+      "requirement": "optional",
+      "displayLabel": "GET /register/{clientId}"
+    },
+    {
+      "endpointId": "dcr.register.put",
+      "operation": "Update Client",
+      "path": "/register/{clientId}",
+      "method": "PUT",
+      "requirement": "optional",
+      "displayLabel": "PUT /register/{clientId}"
+    },
+    {
+      "endpointId": "dcr.register.delete",
+      "operation": "Delete Client",
+      "path": "/register/{clientId}",
+      "method": "DELETE",
+      "requirement": "optional",
+      "displayLabel": "DELETE /register/{clientId}"
+    },
+    {
+      "endpointId": "dcr.token.client-credentials",
+      "operation": "Client Credentials Grant",
+      "path": "/token",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "POST /token (client_credentials)"
+    },
+    {
+      "endpointId": "dcr.negative.expired-ssa",
+      "operation": "Negative: Expired SSA",
+      "path": "/register",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "DCR-005 Expired SSA"
+    },
+    {
+      "endpointId": "dcr.negative.invalid-issuer",
+      "operation": "Negative: Invalid Issuer",
+      "path": "/register",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "DCR-007 Invalid Issuer"
+    },
+    {
+      "endpointId": "dcr.negative.invalid-auth-method",
+      "operation": "Negative: Invalid Auth Method",
+      "path": "/register",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "DCR-008 Invalid Auth Method"
+    },
+    {
+      "endpointId": "dcr.negative.wrong-response-type",
+      "operation": "Negative: Wrong Response Type",
+      "path": "/register",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "DCR-009 Wrong Response Type"
+    },
+    {
+      "endpointId": "dcr.negative.deleted-client-access",
+      "operation": "Negative: Deleted Client Access",
+      "path": "/token",
+      "method": "POST",
+      "requirement": "optional",
+      "displayLabel": "DCR-010 Deleted Client Access"
+    },
+    {
+      "endpointId": "dcr.negative.wrong-client-id",
+      "operation": "Negative: Wrong Client ID",
+      "path": "/token",
+      "method": "POST",
+      "requirement": "mandatory",
+      "displayLabel": "DCR-011 Wrong Client ID"
+    }
+  ]
+}
