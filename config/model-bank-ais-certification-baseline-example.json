@@ -2,12 +2,11 @@
     "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0.1",
-        "api": "ais",
-        "profile": "fapi1-advanced",
-        "suite": "ais-certification-baseline"
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "specificationVersion": "v4.0.1",
+        "resourceGroups": ["ais"]
     },
     "oauth": {
         "clientId": "your-client-id-here",

@@ -11,7 +11,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
-- **Stage 2 — Read/Write endpoint catalogues, guided UI rebuild, report/readiness model, and native DCR plugin**:
+- **Stage 3 — CLI/API integration, `testSuite` removal, and hardening tests**:
+  - `conformance/plan_executor.py`: New bridge module connecting `RunPlanV2` + `ModelBankConfig` to plugin-specific execution. Provides `build_default_registry()` (singleton `PluginRegistry` with `ReadWritePlugin` and `DcrPlugin`), `check_catalogue_drift()` (compares live catalogue hash against plan's stored hash), `execute_dcr_run()` (derives advertise flags from `endpoint_selections` and delegates to `DcrRunner`), `dcr_run_result_to_json_object()` (serialises `DcrRunResult` to JSON-ready dict with masked evidence), `resolve_rw_suite_for_plan()` (maps `specificationVersion` + resource group to a suite-catalog selection), and `utc_now()`.
+  - `conformance/model_bank_config.py`: New `DcrConfig` frozen dataclass capturing file-backed DCR credentials and transport options. New `test_target: TestTargetConfig | None` and `dcr: DcrConfig | None` fields on `ModelBankConfig`. New `_parse_test_target_from_config()` and `_parse_dcr_config()` parsers. `tlsSkipVerify: true` emits a `warnings.warn()` with an explicit unsafe-use message.
+  - `conformance/cli.py`: `--run-plan` flag accepting a RunPlan v2 JSON file for headless target/coverage-based CLI runs. Routing for DCR (via `execute_dcr_run`) and Read/Write (via `resolve_rw_suite_for_plan`) without browser interaction, unless the selected tests require PSU/manual auth.
+  - `conformance/api/views.py`: `POST /api/runs/` now accepts a `runPlan` key (RunPlan v2 JSON object) and routes DCR or Read/Write plans through the plugin planning path.
+  - `conformance/api/run_lifecycle.py`: `start_dcr_run()` and `_execute_dcr_run()` for async background DCR execution from the API.
+  - `config/model-bank-dcr-example.json`: New example config for DCR 3.3 runs with `testTarget` and `dcr` sections.
+  - `config/model-bank-rw-ais-example.json`: New example config for Read/Write AIS v4.0.1 runs with `testTarget`.
+  - `tests/test_plan_executor.py`: Comprehensive tests for the `plan_executor` module covering registry building, catalogue drift detection, DCR run routing, and Read/Write suite resolution.
+
+### Changed
+
+- **`testSuite` config key removed** (breaking): Participant configs that include `testSuite` will now fail with `ConfigError: Unknown config field(s): testSuite`. Migrate to `testTarget` using the updated example configs in `config/`. The `SuiteSelection` type is now internal-only (in `conformance/suite_catalog.py`) and is no longer part of the public config API.
+
+- **`conformance/suite_catalog.py`**: `SuiteSelection`, `SuiteStandard`, `SuiteSpecVersion`, `SuiteApiFamily`, `SuiteProfile`, and `SuiteName` type aliases moved here from `conformance/model_bank_config.py`. These are now internal types used by `plan_executor.py` to map `RunPlanV2` coordinates to bundled manifests; they are not part of the participant-facing config API.
+
+- **Config example files updated**: All seven `config/model-bank-*-example.json` files migrated from `testSuite` to `testTarget` shape.
+
+- **README updated**: "Config-selected suite runs" section replaced with "Target-based conformance runs" documenting the `testTarget` shape for both Read/Write and DCR runs, the CLI `--run-plan` flag, and the new API `runPlan` key.
+
+
   - `conformance/plugins/read_write/`: `ReadWritePlugin` implementing `ConformancePlugin` for OB Read/Write v4.0.1. Covers AIS (28 endpoints), PIS (14), CBPII (4), and VRP (7) resource groups across versioned JSON catalogues under `conformance/plugins/read_write/catalogues/v4_0_1/`. Each entry records endpoint ID, HTTP method, path, resource group, mandatory/conditional/optional requirement level, display label, schema ref (to bundled v4.0.1 OpenAPI snapshots), and test applicability rules. Content-hash-based drift detection via `CatalogueIdentity`.
   - `conformance/plugins/dcr/`: Native Python DCR plugin with full support for DCR 3.2, 3.3, and 3.4. Preserves all legacy scenario IDs (DCR-001 through DCR-011). Implements OIDC discovery fetch and FAPI auth method selection (`tls_client_auth` preferred over `private_key_jwt`), PS256/RS256 registration JWT generation, POST/GET/PUT/DELETE registration lifecycle, client-credentials token grants, negative test cases (expired SSA, invalid issuer, invalid auth method, wrong response type, deleted/wrong client ID), per-version schema validation, and best-effort cleanup via DELETE. All sensitive values (`client_secret`, `registration_access_token`, `access_token`) are masked via `conformance.masking` before inclusion in any evidence. Reuses Stage 1 `DcrCredentialPaths` and `DcrTransportConfig` primitives.
   - `conformance/results.py` (readiness model): New `RunReadinessReport` type with `SelectedCoverageSummary`, per-resource-group `ResourceGroupReadiness`, and `DcrReadinessStatus`. Outcome logic produces `ready` / `incomplete` / `non-certifying` / `failed`. DCR runs are always `non-certifying` until a formal certification policy exists. `skipped` is reserved exclusively for selected tests blocked by runtime prerequisites; unselected coverage does not appear in the report. Omitting mandatory endpoints marks the affected resource group as `incomplete` but does not block execution.

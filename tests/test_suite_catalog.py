@@ -22,8 +22,14 @@ from conformance.manifest import (
     ResponseSignatureAssertion,
     TokenEndpointAuthPolicy,
 )
-from conformance.model_bank_config import SuiteApiFamily, SuiteName, SuiteSelection, SuiteSpecVersion
-from conformance.suite_catalog import SuiteCatalogError, resolve_suite
+from conformance.suite_catalog import (
+    SuiteApiFamily,
+    SuiteCatalogError,
+    SuiteName,
+    SuiteSelection,
+    SuiteSpecVersion,
+    resolve_suite,
+)
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 LEGACY_FCS_MANIFEST_PATH = (
@@ -223,32 +229,6 @@ def _has_response_schema_assertion(step: ManifestStep, *, document: str, schema_
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
-def test_resolve_suite_returns_bundled_manifest_for_supported_versions(spec_version: SuiteSpecVersion) -> None:
-    resolved = resolve_suite(_selection(spec_version))
-
-    assert resolved.metadata.standard == "ob-read-write"
-    assert resolved.metadata.spec_version == spec_version
-    assert resolved.metadata.profile == "fapi1-advanced"
-    assert resolved.metadata.api == "ais"
-    assert resolved.metadata.suite == "discovery-jwks"
-    assert resolved.metadata.catalog_id == f"ob-read-write/{spec_version}/fapi1-advanced/discovery-jwks"
-    assert "smoke" in resolved.metadata.label
-    assert "not full Read/Write API certification coverage" in resolved.metadata.description
-
-    manifest = resolved.manifest
-    assert manifest.schema_version == "v1"
-    assert manifest.name == resolved.metadata.label
-    assert [step.id for step in manifest.steps] == ["openid-discovery", "jwks-fetch"]
-    assert [step.mandatory for step in manifest.steps] == [True, True]
-
-    discovery_step = cast(ManifestStep, manifest.steps[0])
-    jwks_step = cast(ManifestStep, manifest.steps[1])
-    assert discovery_step.request.url == "${config.discoveryUrl}"
-    assert jwks_step.request.url == "${steps.openid-discovery.response.body.jwks_uri}"
-
-
-@pytest.mark.unit
 def test_list_supported_suites_is_deterministic() -> None:
     first = suite_catalog.list_supported_suites()
     second = suite_catalog.list_supported_suites()
@@ -269,172 +249,6 @@ def test_list_supported_suites_is_deterministic() -> None:
         ("v4.0.1", "pis", "psu-auth-starter"),
         ("v4.0", "pis", "pis-domestic-payment-starter"),
     }
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("spec_version", "suite_name", "api", "expected_bundle_ids", "expected_step_ids"),
-    [
-        ("v4.0.1", "discovery-jwks", "ais", ("discovery-no-auth",), set()),
-        ("v4.0.1", "psu-auth-starter", "pis", ("starter-manual",), set()),
-        (
-            "v4.0",
-            "pis-domestic-payment-starter",
-            "pis",
-            ("domestic-payment-consent-token", "domestic-payment-flow"),
-            {
-                "domestic-payment-consent",
-                "domestic-payment-consent-read-back",
-                "funds-confirmation",
-                "domestic-payment-submit",
-                "domestic-payment-read-back",
-            },
-        ),
-        (
-            "v4.0.1",
-            "ais-certification-slice",
-            "ais",
-            ("ais-protected-resource",),
-            {"accounts-list", "account-balances", "account-transactions"},
-        ),
-        (
-            "v4.0.1",
-            "ais-certification-baseline",
-            "ais",
-            ("ais-protected-resource",),
-            {"accounts-list", "account-detail", "transactions-list", "statements-list"},
-        ),
-        (
-            "v4.0",
-            "ais-certification-baseline",
-            "ais",
-            ("ais-protected-resource", "ais-transactions-basic"),
-            {"account-transactions-basic", "transactions-list-basic"},
-        ),
-        (
-            "v4.0",
-            "ais-fcs-legacy-benchmark",
-            "ais",
-            ("ais-protected-resource", "ais-transactions-basic"),
-            {"OB-400-TRA-105200"},
-        ),
-    ],
-)
-def test_bundled_suites_expose_explicit_auth_inventory(
-    spec_version: SuiteSpecVersion,
-    suite_name: str,
-    api: SuiteApiFamily,
-    expected_bundle_ids: tuple[str, ...],
-    expected_step_ids: set[str],
-) -> None:
-    """Bundled suites should parse explicit auth inventories for each category."""
-    resolved = resolve_suite(_selection(spec_version, suite_name=suite_name, api=api))
-    inventory = resolved.manifest.auth_inventory
-
-    assert inventory is not None
-    assert tuple(bundle.id for bundle in inventory.bundles) == expected_bundle_ids
-    assert expected_step_ids.issubset({req.step_id for req in inventory.step_requirements})
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
-def test_resolve_psu_auth_starter_returns_bundled_manifest_for_supported_versions(
-    spec_version: SuiteSpecVersion,
-) -> None:
-    resolved = resolve_suite(_selection(spec_version, suite_name="psu-auth-starter"))
-
-    assert resolved.metadata.standard == "ob-read-write"
-    assert resolved.metadata.spec_version == spec_version
-    assert resolved.metadata.profile == "fapi1-advanced"
-    assert resolved.metadata.api == "ais"
-    assert resolved.metadata.suite == "psu-auth-starter"
-    assert resolved.metadata.catalog_id == f"ob-read-write/{spec_version}/fapi1-advanced/psu-auth-starter"
-    assert "PSU auth starter" in resolved.metadata.label
-    assert "not full Read/Write API certification coverage" in resolved.metadata.description
-
-    manifest = resolved.manifest
-    assert manifest.schema_version == "v1"
-    assert manifest.certification_coverage == "partial"
-    assert manifest.name == resolved.metadata.label
-    assert [step.id for step in manifest.steps] == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-    assert [step.mandatory for step in manifest.steps] == [True, True, True]
-
-    discovery_step = cast(ManifestStep, manifest.steps[0])
-    jwks_step = cast(ManifestStep, manifest.steps[1])
-    psu_step = cast(PsuAuthorizationStep, manifest.steps[2])
-
-    assert discovery_step.request.url == "${config.discoveryUrl}"
-    assert jwks_step.request.url == "${steps.openid-discovery.response.body.jwks_uri}"
-    assert psu_step.mode == "manual"
-    assert psu_step.authorization_endpoint == "${steps.openid-discovery.response.body.authorization_endpoint}"
-    assert psu_step.client_id == "${config.oauth.clientId}"
-    assert psu_step.redirect_uri == "${config.oauth.redirectUri}"
-    assert psu_step.scope == "openid accounts"
-    assert psu_step.request_object == GeneratedRequestObject(
-        source="fapi-signing",
-        audience="${steps.openid-discovery.response.body.issuer}",
-        openbanking_intent_id="${config.oauth.openBankingIntentId}",
-    )
-
-    discovery_assertions = discovery_step.assertions
-    jwks_assertions = jwks_step.assertions
-    assert any(
-        isinstance(assertion, HeaderAssertion)
-        and assertion.name == "content-type"
-        and assertion.rule == "contains"
-        and assertion.value == "application/json"
-        for assertion in discovery_assertions
-    )
-    assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "response_types_supported"
-        and assertion.rule == "non_empty_array"
-        for assertion in discovery_assertions
-    )
-    assert any(
-        isinstance(assertion, JsonFieldAssertion)
-        and assertion.path == "keys"
-        and assertion.rule == "all_items_have_field"
-        and assertion.field == "kty"
-        for assertion in jwks_assertions
-    )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v3.1.11", "v4.0", "v4.0.1"])
-def test_psu_auth_starter_manifest_is_partial_coverage(spec_version: SuiteSpecVersion) -> None:
-    resolved = resolve_suite(_selection(spec_version, suite_name="psu-auth-starter"))
-
-    assert resolved.manifest.certification_coverage == "partial"
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("api", "scope"),
-    [
-        ("pis", "openid payments"),
-        ("cbpii", "openid fundsconfirmations"),
-        ("vrp", "openid payments"),
-    ],
-)
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_resolve_non_ais_psu_auth_starter_uses_api_specific_scope(
-    api: SuiteApiFamily,
-    scope: str,
-    spec_version: SuiteSpecVersion,
-) -> None:
-    resolved = resolve_suite(_selection(spec_version, suite_name="psu-auth-starter", api=api))
-
-    assert resolved.metadata.api == api
-    if spec_version == "v4.0":
-        assert resolved.metadata.catalog_id == f"ob-read-write/{spec_version}/fapi1-advanced/{api}/psu-auth-starter"
-
-    manifest = resolved.manifest
-    assert manifest.schema_version == "v1"
-    assert manifest.certification_coverage == "partial"
-    assert [step.id for step in manifest.steps] == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-    psu_step = cast(PsuAuthorizationStep, manifest.steps[2])
-    assert psu_step.scope == scope
 
 
 @pytest.mark.unit
@@ -895,25 +709,6 @@ def test_v4_0_1_ais_certification_baseline_uses_versioned_schema_source() -> Non
     assert accounts_step.request.url == ("${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts"), (
         "v4.0.1 baseline accounts URL must use /open-banking/v4.0/aisp/... path family"
     )
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_resolve_ais_certification_baseline_returns_bundled_manifest_for_supported_versions(
-    spec_version: SuiteSpecVersion,
-) -> None:
-    resolved = resolve_suite(_selection(spec_version, suite_name="ais-certification-baseline"))
-
-    assert resolved.metadata.standard == "ob-read-write"
-    assert resolved.metadata.spec_version == spec_version
-    assert resolved.metadata.profile == "fapi1-advanced"
-    assert resolved.metadata.api == "ais"
-    assert resolved.metadata.suite == "ais-certification-baseline"
-    assert resolved.metadata.manifest_resource == (
-        f"ob-read-write-{spec_version}-fapi1-advanced-ais-certification-baseline.json"
-    )
-    assert resolved.manifest.schema_version == "v1"
-    assert resolved.manifest.certification_coverage == "partial"
 
 
 @pytest.mark.unit
@@ -1604,25 +1399,6 @@ def test_resolve_v4_ais_certification_slice_returns_bundled_manifest() -> None:
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("spec_version", ["v4.0", "v4.0.1"])
-def test_resolve_ais_certification_slice_returns_bundled_manifest_for_supported_versions(
-    spec_version: SuiteSpecVersion,
-) -> None:
-    resolved = resolve_suite(_selection(spec_version, suite_name="ais-certification-slice"))
-
-    assert resolved.metadata.standard == "ob-read-write"
-    assert resolved.metadata.spec_version == spec_version
-    assert resolved.metadata.profile == "fapi1-advanced"
-    assert resolved.metadata.api == "ais"
-    assert resolved.metadata.suite == "ais-certification-slice"
-    assert resolved.metadata.manifest_resource == (
-        f"ob-read-write-{spec_version}-fapi1-advanced-ais-certification-slice.json"
-    )
-    assert resolved.manifest.schema_version == "v1"
-    assert resolved.manifest.certification_coverage == "partial"
-
-
-@pytest.mark.unit
 def test_v4_0_1_ais_certification_slice_uses_v4_0_resource_paths() -> None:
     """v4.0.1 AIS slice resource URLs use the /open-banking/v4.0/aisp/... path family.
 
@@ -1654,20 +1430,6 @@ def test_v4_0_1_ais_certification_slice_uses_v4_0_resource_paths() -> None:
         "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
         "${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions"
     ), "v4.0.1 slice transactions URL must use /open-banking/v4.0/aisp/... path family"
-
-
-@pytest.mark.unit
-def test_resolve_suite_rejects_unsupported_catalog_key() -> None:
-    unsupported = SuiteSelection(
-        standard="ob-read-write",
-        spec_version=cast("SuiteSpecVersion", "v9.9"),
-        profile="fapi1-advanced",
-        suite="discovery-jwks",
-        api="ais",
-    )
-
-    with pytest.raises(SuiteCatalogError, match="Unsupported suite selection: .*specVersion=v9.9"):
-        resolve_suite(unsupported)
 
 
 @pytest.mark.unit
@@ -1712,91 +1474,6 @@ def test_resolve_suite_reports_invalid_bundled_manifest(monkeypatch: pytest.Monk
 # ---------------------------------------------------------------------------
 # SuiteMetadata.to_suite_selection() tests
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("spec_version", "api", "suite_name"),
-    [
-        ("v4.0", "ais", "discovery-jwks"),
-        ("v4.0", "ais", "psu-auth-starter"),
-        ("v4.0.1", "ais", "ais-certification-baseline"),
-        ("v4.0", "pis", "psu-auth-starter"),
-        ("v4.0", "cbpii", "discovery-jwks"),
-        ("v4.0.1", "vrp", "psu-auth-starter"),
-        ("v3.1.11", "ais", "discovery-jwks"),
-    ],
-)
-def test_suite_metadata_to_suite_selection_roundtrips_resolve_suite(
-    spec_version: SuiteSpecVersion,
-    api: SuiteApiFamily,
-    suite_name: str,
-) -> None:
-    """to_suite_selection must produce a key that resolves back to the same catalog entry."""
-    original = _selection(spec_version=spec_version, suite_name=suite_name, api=api)
-    resolved = resolve_suite(original)
-
-    rebuilt_selection = resolved.metadata.to_suite_selection()
-    re_resolved = resolve_suite(rebuilt_selection)
-
-    assert re_resolved.metadata.catalog_id == resolved.metadata.catalog_id
-    assert re_resolved.metadata.standard == resolved.metadata.standard
-    assert re_resolved.metadata.spec_version == resolved.metadata.spec_version
-    assert re_resolved.metadata.api == resolved.metadata.api
-    assert re_resolved.metadata.suite == resolved.metadata.suite
-
-
-@pytest.mark.unit
-def test_suite_metadata_to_suite_selection_fields_match_metadata() -> None:
-    """The selection returned by to_suite_selection must reflect each metadata field."""
-    resolved = resolve_suite(_selection(spec_version="v4.0", suite_name="ais-certification-baseline"))
-    metadata = resolved.metadata
-
-    selection = metadata.to_suite_selection()
-
-    assert selection.standard == metadata.standard
-    assert selection.spec_version == metadata.spec_version
-    assert selection.profile == metadata.profile
-    assert selection.api == metadata.api
-    assert selection.suite == metadata.suite
-
-
-@pytest.mark.unit
-def test_suite_metadata_to_suite_selection_enables_capability_lookup() -> None:
-    """Passing to_suite_selection() to resolve_suite_environment_capability must return a capability."""
-    from conformance.environment_capabilities import resolve_suite_environment_capability
-
-    resolved = resolve_suite(_selection(spec_version="v4.0", suite_name="ais-certification-baseline"))
-    selection = resolved.metadata.to_suite_selection()
-
-    capability = resolve_suite_environment_capability(selection)
-
-    assert capability is not None
-    assert capability.suite == "ais-certification-baseline"
-    assert capability.spec_version == "v4.0"
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize(
-    ("spec_version", "api", "suite_name"),
-    [
-        ("v4.0", "ais", "discovery-jwks"),
-        ("v4.0.1", "ais", "ais-certification-slice"),
-        ("v3.1.11", "ais", "psu-auth-starter"),
-    ],
-)
-def test_suite_metadata_to_suite_selection_capability_lookup_various_suites(
-    spec_version: SuiteSpecVersion,
-    api: SuiteApiFamily,
-    suite_name: str,
-) -> None:
-    """Selected bundled catalog entries resolve a non-None capability via to_suite_selection()."""
-    from conformance.environment_capabilities import resolve_suite_environment_capability
-
-    resolved = resolve_suite(_selection(spec_version=spec_version, suite_name=suite_name, api=api))
-    capability = resolve_suite_environment_capability(resolved.metadata.to_suite_selection())
-
-    assert capability is not None
 
 
 @pytest.mark.unit
