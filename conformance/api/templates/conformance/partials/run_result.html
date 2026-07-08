@@ -9,7 +9,57 @@
             <div class="metric"><strong>{{ run.result.status|default:"-" }}</strong><span>Outcome</span></div>
             <div class="metric"><strong><a href="{{ raw_result_url }}">JSON</a></strong><span>Masked report</span></div>
             <div class="metric"><strong>{{ certification_eligibility|default:"-" }}</strong><span>Certification</span></div>
+            {% if readiness_report %}
+                <div class="metric"><strong>{{ readiness_report.overallOutcome|default:"-" }}</strong><span>Readiness</span></div>
+            {% endif %}
         </div>
+
+        {% if readiness_report %}
+            <div class="panel" style="margin-top: 12px;">
+                <h3>Coverage readiness</h3>
+                {% if readiness_report.dcrStatus %}
+                    <p>
+                        <span class="status-badge warn">Non-certifying</span>
+                        {{ readiness_report.dcrStatus.certifyingBlockedReason|default:"No DCR certification policy exists for this tool" }}
+                    </p>
+                    <div class="grid">
+                        <div class="metric"><strong>{{ readiness_report.dcrStatus.passedCount|default:"0" }}</strong><span>Passed</span></div>
+                        <div class="metric"><strong>{{ readiness_report.dcrStatus.failedCount|default:"0" }}</strong><span>Failed</span></div>
+                        <div class="metric"><strong>{{ readiness_report.dcrStatus.skippedCount|default:"0" }}</strong><span>Skipped</span></div>
+                    </div>
+                {% endif %}
+
+                {% if readiness_report.resourceGroupSections %}
+                    {% for section in readiness_report.resourceGroupSections %}
+                        <details class="result-step" open>
+                            <summary class="result-step-summary">
+                                <span class="result-step-title"><strong>{{ section.resourceGroup }}</strong></span>
+                                <span class="status-badge {{ section.readinessOutcome|default:'unknown' }}">{{ section.readinessOutcome|default:"unknown" }}</span>
+                                <span class="result-step-summary-meta">
+                                    Tests {{ section.passedCount|default:"0" }}/{{ section.selectedTestCount|default:"0" }}
+                                </span>
+                            </summary>
+                            <div style="padding-bottom: 12px;">
+                                <div class="grid">
+                                    <div class="metric"><strong>{{ section.passedCount|default:"0" }}</strong><span>Passed</span></div>
+                                    <div class="metric"><strong>{{ section.failedCount|default:"0" }}</strong><span>Failed</span></div>
+                                    <div class="metric"><strong>{{ section.skippedCount|default:"0" }}</strong><span>Skipped</span></div>
+                                </div>
+                                {% if section.readinessOutcome == "incomplete" and section.omittedMandatoryEndpoints %}
+                                    <p class="custom-values-warning">
+                                        <strong>Incomplete coverage:</strong> mandatory endpoints were omitted.
+                                        <br>
+                                        {% for endpoint_id in section.omittedMandatoryEndpoints %}
+                                            <code>{{ endpoint_id }}</code>{% if not forloop.last %}, {% endif %}
+                                        {% endfor %}
+                                    </p>
+                                {% endif %}
+                            </div>
+                        </details>
+                    {% endfor %}
+                {% endif %}
+            </div>
+        {% endif %}
 
         {% if custom_test_value_impact %}
             <div class="custom-values-warning">
@@ -100,10 +150,10 @@
             <div class="metric"><strong>{{ result_status_counts.skipped|default:"0" }}</strong><span>Skipped</span></div>
             <div class="metric"><strong>{{ result_issue_count|default:"0" }}</strong><span>Issues</span></div>
             <div class="metric"><strong>{{ result_summary.total|default:"0" }}</strong><span>Total</span></div>
-            <div class="metric"><strong>{{ plan_summary.selectedSteps|default:"0" }}</strong><span>Plan selected</span></div>
-            <div class="metric"><strong>{{ plan_summary.deselectedSteps|default:"0" }}</strong><span>Plan off</span></div>
-            <div class="metric"><strong>{{ plan_summary.mandatorySelected|default:"0" }}</strong><span>Mandatory selected</span></div>
-            <div class="metric"><strong>{{ plan_summary.mandatoryDeselected|default:"0" }}</strong><span>Mandatory off</span></div>
+            <div class="metric"><strong>{{ plan_summary.selectedSteps|default:"0" }}</strong><span>Coverage selected</span></div>
+            <div class="metric"><strong>{{ plan_summary.deselectedSteps|default:"0" }}</strong><span>Coverage omitted</span></div>
+            <div class="metric"><strong>{{ plan_summary.mandatorySelected|default:"0" }}</strong><span>Mandatory covered</span></div>
+            <div class="metric"><strong>{{ plan_summary.mandatoryDeselected|default:"0" }}</strong><span>Mandatory omitted</span></div>
         </div>
     {% elif run.status == "failed" %}
         <p>{{ run.error|default:"Run failed internally" }}</p>

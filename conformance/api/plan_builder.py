@@ -3421,9 +3421,7 @@ def staged_ui_context() -> dict[str, object]:
                     specification=spec.id,
                     version=ver.version,
                 )
-                all_rgs[std.id][spec.id][ver.version] = [
-                    {"id": rg.id, "displayLabel": rg.display_label} for rg in rgs
-                ]
+                all_rgs[std.id][spec.id][ver.version] = [{"id": rg.id, "displayLabel": rg.display_label} for rg in rgs]
 
     return {
         "staged_standard_options": stds,

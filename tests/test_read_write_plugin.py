@@ -267,14 +267,7 @@ def test_masking_fields_returns_frozenset() -> None:
 # ---------------------------------------------------------------------------
 
 
-_CATALOGUE_DIR = (
-    Path(__file__).parent.parent
-    / "conformance"
-    / "plugins"
-    / "read_write"
-    / "catalogues"
-    / "v4_0_1"
-)
+_CATALOGUE_DIR = Path(__file__).parent.parent / "conformance" / "plugins" / "read_write" / "catalogues" / "v4_0_1"
 
 
 @pytest.mark.unit

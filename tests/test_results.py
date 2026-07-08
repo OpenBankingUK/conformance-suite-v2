@@ -976,3 +976,232 @@ def test_eligibility_smoke_suite_manifests_are_partial(monkeypatch: pytest.Monke
         assert isinstance(block, dict)
         assert block["eligible"] is False, f"Smoke suite manifest {manifest_file.name} must not yield eligible=True"
         assert "Manifest is not marked as complete certification coverage" in cast(list[str], block["reasons"])
+
+
+@pytest.mark.unit
+def test_readiness_report_serialise_parse_round_trip() -> None:
+    """Readiness report serialise/parse round-trip preserves all fields."""
+    from datetime import UTC, datetime
+
+    from conformance.results import (
+        DcrReadinessStatus,
+        ResourceGroupReadiness,
+        RunReadinessReport,
+        SelectedCoverageSummary,
+        parse_readiness_report,
+        serialise_readiness_report,
+    )
+    from conformance.run_plan_v2 import RunPlanV2TargetCoordinates
+
+    report = RunReadinessReport(
+        schema_version="2",
+        target_coordinates=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:catalogue",
+        ),
+        catalogue_hash="sha256:catalogue",
+        selected_coverage_summary=SelectedCoverageSummary(
+            selected_resource_groups=("ais",),
+            selected_endpoint_count=4,
+            mandatory_endpoint_count=3,
+            omitted_mandatory_endpoint_count=1,
+            coverage_complete=False,
+        ),
+        overall_outcome="failed",
+        resource_group_sections=(
+            ResourceGroupReadiness(
+                resource_group="ais",
+                readiness_outcome="failed",
+                omitted_mandatory_endpoints=("accounts-detail",),
+                selected_test_count=5,
+                passed_count=3,
+                failed_count=1,
+                skipped_count=1,
+                certification_eligible=False,
+            ),
+        ),
+        dcr_status=DcrReadinessStatus(
+            certifying=False,
+            certifying_blocked_reason="No DCR certification policy exists for this tool",
+            passed_count=1,
+            failed_count=0,
+            skipped_count=0,
+        ),
+        run_id="run-123",
+        generated_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    )
+
+    serialised = serialise_readiness_report(report)
+    reparsed = parse_readiness_report(serialised)
+
+    assert reparsed == report
+
+
+@pytest.mark.unit
+def test_determine_readiness_outcome_variants() -> None:
+    """Readiness outcome logic covers ready/incomplete/non-certifying/failed."""
+    from conformance.results import (
+        ResourceGroupReadiness,
+        SelectedCoverageSummary,
+        build_dcr_readiness_status,
+        determine_readiness_outcome,
+    )
+
+    ready_summary = SelectedCoverageSummary(
+        selected_resource_groups=("ais",),
+        selected_endpoint_count=2,
+        mandatory_endpoint_count=2,
+        omitted_mandatory_endpoint_count=0,
+        coverage_complete=True,
+    )
+    ready_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="ready",
+        omitted_mandatory_endpoints=(),
+        selected_test_count=2,
+        passed_count=2,
+        failed_count=0,
+        skipped_count=0,
+        certification_eligible=True,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(ready_section,),
+            dcr_status=None,
+        )
+        == "ready"
+    )
+
+    incomplete_summary = SelectedCoverageSummary(
+        selected_resource_groups=("ais",),
+        selected_endpoint_count=1,
+        mandatory_endpoint_count=2,
+        omitted_mandatory_endpoint_count=1,
+        coverage_complete=False,
+    )
+    incomplete_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="incomplete",
+        omitted_mandatory_endpoints=("accounts-detail",),
+        selected_test_count=1,
+        passed_count=1,
+        failed_count=0,
+        skipped_count=0,
+        certification_eligible=False,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=incomplete_summary,
+            resource_group_sections=(incomplete_section,),
+            dcr_status=None,
+        )
+        == "incomplete"
+    )
+
+    failed_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="failed",
+        omitted_mandatory_endpoints=(),
+        selected_test_count=2,
+        passed_count=1,
+        failed_count=1,
+        skipped_count=0,
+        certification_eligible=False,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(failed_section,),
+            dcr_status=None,
+        )
+        == "failed"
+    )
+
+    dcr_status = build_dcr_readiness_status(passed_count=1, failed_count=0, skipped_count=0)
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(),
+            dcr_status=dcr_status,
+        )
+        == "non-certifying"
+    )
+
+
+@pytest.mark.unit
+def test_omitted_mandatory_endpoint_detection_uses_selected_resource_groups() -> None:
+    """Readiness omission detection returns omitted mandatory endpoints by group."""
+    from conformance.catalogue import Catalogue, CatalogueIdentity, EndpointCatalogueEntry
+    from conformance.results import omitted_mandatory_endpoint_ids_by_resource_group
+    from conformance.run_plan_v2 import EndpointSelection, RunPlanV2, RunPlanV2TargetCoordinates
+
+    catalogue = Catalogue(
+        identity=CatalogueIdentity(
+            plugin_id="read-write",
+            specification="read-write",
+            specification_version="v4.0.1",
+            content_hash="sha256:catalogue",
+        ),
+        endpoints=(
+            EndpointCatalogueEntry(
+                endpoint_id="accounts-list",
+                operation="GET",
+                path="/accounts",
+                method="GET",
+                resource_group="ais",
+                requirement="mandatory",
+                display_label="Accounts list",
+            ),
+            EndpointCatalogueEntry(
+                endpoint_id="account-balances",
+                operation="GET",
+                path="/accounts/{AccountId}/balances",
+                method="GET",
+                resource_group="ais",
+                requirement="mandatory",
+                display_label="Account balances",
+            ),
+            EndpointCatalogueEntry(
+                endpoint_id="domestic-payments",
+                operation="POST",
+                path="/domestic-payments",
+                method="POST",
+                resource_group="pis",
+                requirement="mandatory",
+                display_label="Domestic payments",
+            ),
+        ),
+    )
+    run_plan = RunPlanV2(
+        schema_version="2",
+        target=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:catalogue",
+        ),
+        resource_groups=("ais",),
+        endpoint_selections=(
+            EndpointSelection(
+                endpoint_id="accounts-list",
+                operation="GET",
+                selected=True,
+                field_values={},
+            ),
+            EndpointSelection(
+                endpoint_id="account-balances",
+                operation="GET",
+                selected=False,
+                field_values={},
+            ),
+        ),
+    )
+
+    omitted = omitted_mandatory_endpoint_ids_by_resource_group(catalogue, run_plan)
+
+    assert omitted == {"ais": ("account-balances",)}

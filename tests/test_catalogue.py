@@ -2,26 +2,27 @@
 
 from __future__ import annotations
 
+import dataclasses
 import json
+from typing import cast
 
 import pytest
 
 from conformance.catalogue import (
-    Catalogue,
     CatalogueIdentity,
     CatalogueParseError,
     EndpointCatalogueEntry,
     compute_catalogue_hash,
     parse_catalogue,
 )
-
+from conformance.json_types import JsonObject
 
 # ---------------------------------------------------------------------------
 # Fixture helpers
 # ---------------------------------------------------------------------------
 
 
-def _minimal_catalogue_doc() -> dict[str, object]:
+def _minimal_catalogue_doc() -> JsonObject:
     """Return a minimal valid catalogue JSON document."""
     return {
         "identity": {
@@ -43,9 +44,9 @@ def _endpoint_entry_doc(
     resource_group: str | None = "ais",
     requirement: str = "mandatory",
     display_label: str = "Get Accounts",
-) -> dict[str, object]:
+) -> JsonObject:
     """Return a minimal valid endpoint entry dict."""
-    entry: dict[str, object] = {
+    entry: JsonObject = {
         "endpointId": endpoint_id,
         "operation": operation,
         "path": path,
@@ -94,7 +95,7 @@ def test_catalogue_identity_is_frozen() -> None:
         specification_version="v4.0.1",
         content_hash="sha256:abc",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         identity.plugin_id = "other"  # type: ignore[misc]
 
 
@@ -116,7 +117,7 @@ def test_parse_minimal_catalogue() -> None:
 @pytest.mark.unit
 def test_parse_catalogue_with_one_mandatory_endpoint() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = [_endpoint_entry_doc()]  # type: ignore[index]
+    doc["endpoints"] = [_endpoint_entry_doc()]
     catalogue = parse_catalogue(doc)
     assert len(catalogue.endpoints) == 1
     entry = catalogue.endpoints[0]
@@ -132,7 +133,7 @@ def test_parse_catalogue_with_one_mandatory_endpoint() -> None:
 @pytest.mark.unit
 def test_parse_catalogue_with_null_resource_group() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = [_endpoint_entry_doc(resource_group=None)]  # type: ignore[index]
+    doc["endpoints"] = [_endpoint_entry_doc(resource_group=None)]
     catalogue = parse_catalogue(doc)
     assert catalogue.endpoints[0].resource_group is None
 
@@ -144,7 +145,7 @@ def test_parse_catalogue_with_missing_resource_group_key() -> None:
     # _endpoint_entry_doc(resource_group=None) omits the key entirely
     entry = _endpoint_entry_doc(resource_group=None)
     assert "resourceGroup" not in entry
-    doc["endpoints"] = [entry]  # type: ignore[index]
+    doc["endpoints"] = [entry]
     catalogue = parse_catalogue(doc)
     assert catalogue.endpoints[0].resource_group is None
 
@@ -152,7 +153,7 @@ def test_parse_catalogue_with_missing_resource_group_key() -> None:
 @pytest.mark.unit
 def test_parse_catalogue_conditional_and_optional_requirements() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = [  # type: ignore[index]
+    doc["endpoints"] = [
         _endpoint_entry_doc(endpoint_id="e1", requirement="conditional"),
         _endpoint_entry_doc(endpoint_id="e2", requirement="optional"),
     ]
@@ -164,7 +165,7 @@ def test_parse_catalogue_conditional_and_optional_requirements() -> None:
 @pytest.mark.unit
 def test_parse_catalogue_preserves_endpoint_order() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = [  # type: ignore[index]
+    doc["endpoints"] = [
         _endpoint_entry_doc(endpoint_id="z"),
         _endpoint_entry_doc(endpoint_id="a"),
     ]
@@ -193,7 +194,7 @@ def test_parse_missing_identity_raises() -> None:
 @pytest.mark.unit
 def test_parse_identity_missing_plugin_id_raises() -> None:
     doc = _minimal_catalogue_doc()
-    del doc["identity"]["pluginId"]  # type: ignore[index,attr-defined]
+    cast(JsonObject, doc["identity"]).pop("pluginId")
     with pytest.raises(CatalogueParseError, match="pluginId"):
         parse_catalogue(doc)
 
@@ -201,7 +202,7 @@ def test_parse_identity_missing_plugin_id_raises() -> None:
 @pytest.mark.unit
 def test_parse_identity_empty_specification_raises() -> None:
     doc = _minimal_catalogue_doc()
-    doc["identity"]["specification"] = ""  # type: ignore[index]
+    cast(JsonObject, doc["identity"])["specification"] = ""
     with pytest.raises(CatalogueParseError):
         parse_catalogue(doc)
 
@@ -209,13 +210,15 @@ def test_parse_identity_empty_specification_raises() -> None:
 @pytest.mark.unit
 def test_parse_missing_endpoints_raises() -> None:
     with pytest.raises(CatalogueParseError, match="endpoints"):
-        parse_catalogue({"identity": {"pluginId": "p", "specification": "s", "specificationVersion": "v", "contentHash": "h"}})
+        parse_catalogue(
+            {"identity": {"pluginId": "p", "specification": "s", "specificationVersion": "v", "contentHash": "h"}}
+        )
 
 
 @pytest.mark.unit
 def test_parse_endpoints_not_array_raises() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = {}  # type: ignore[assignment]
+    doc["endpoints"] = {}
     with pytest.raises(CatalogueParseError, match="endpoints"):
         parse_catalogue(doc)
 
@@ -223,7 +226,7 @@ def test_parse_endpoints_not_array_raises() -> None:
 @pytest.mark.unit
 def test_parse_endpoint_entry_not_object_raises() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = ["not-an-object"]  # type: ignore[assignment]
+    doc["endpoints"] = ["not-an-object"]
     with pytest.raises(CatalogueParseError, match="endpoints\\[0\\]"):
         parse_catalogue(doc)
 
@@ -232,8 +235,8 @@ def test_parse_endpoint_entry_not_object_raises() -> None:
 def test_parse_endpoint_missing_endpoint_id_raises() -> None:
     doc = _minimal_catalogue_doc()
     entry = _endpoint_entry_doc()
-    del entry["endpointId"]  # type: ignore[attr-defined]
-    doc["endpoints"] = [entry]  # type: ignore[index]
+    entry.pop("endpointId")
+    doc["endpoints"] = [entry]
     with pytest.raises(CatalogueParseError, match="endpointId"):
         parse_catalogue(doc)
 
@@ -241,7 +244,7 @@ def test_parse_endpoint_missing_endpoint_id_raises() -> None:
 @pytest.mark.unit
 def test_parse_endpoint_invalid_requirement_raises() -> None:
     doc = _minimal_catalogue_doc()
-    doc["endpoints"] = [_endpoint_entry_doc(requirement="required")]  # type: ignore[index]
+    doc["endpoints"] = [_endpoint_entry_doc(requirement="required")]
     with pytest.raises(CatalogueParseError, match="requirement"):
         parse_catalogue(doc)
 
@@ -250,8 +253,8 @@ def test_parse_endpoint_invalid_requirement_raises() -> None:
 def test_parse_endpoint_resource_group_not_string_raises() -> None:
     doc = _minimal_catalogue_doc()
     entry = _endpoint_entry_doc()
-    entry["resourceGroup"] = 42  # type: ignore[assignment]
-    doc["endpoints"] = [entry]  # type: ignore[index]
+    entry["resourceGroup"] = 42  # valid int JsonValue for negative test
+    doc["endpoints"] = [entry]
     with pytest.raises(CatalogueParseError, match="resourceGroup"):
         parse_catalogue(doc)
 
@@ -261,7 +264,7 @@ def test_parse_endpoint_resource_group_empty_string_raises() -> None:
     doc = _minimal_catalogue_doc()
     entry = _endpoint_entry_doc()
     entry["resourceGroup"] = ""
-    doc["endpoints"] = [entry]  # type: ignore[index]
+    doc["endpoints"] = [entry]
     with pytest.raises(CatalogueParseError, match="resourceGroup"):
         parse_catalogue(doc)
 
@@ -282,7 +285,7 @@ def test_endpoint_catalogue_entry_is_frozen() -> None:
         requirement="mandatory",
         display_label="Foo",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         entry.endpoint_id = "other"  # type: ignore[misc]
 
 
@@ -294,7 +297,7 @@ def test_endpoint_catalogue_entry_is_frozen() -> None:
 @pytest.mark.unit
 def test_catalogue_is_frozen() -> None:
     cat = parse_catalogue(_minimal_catalogue_doc())
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         cat.endpoints = ()  # type: ignore[misc]
 
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 from pathlib import Path
 
 import pytest
@@ -13,7 +14,6 @@ from conformance.dcr.credentials import (
     load_dcr_credentials,
     validate_dcr_credential_paths,
 )
-
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -55,7 +55,7 @@ def _make_paths(tmp_path: Path, *, include_ca_bundle: bool = False) -> DcrCreden
 @pytest.mark.unit
 def test_credential_paths_is_frozen(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         paths.ssa_path = tmp_path  # type: ignore[misc]
 
 
@@ -162,7 +162,7 @@ def test_load_credentials_with_ca_bundle(tmp_path: Path) -> None:
 def test_load_credentials_returns_frozen_dataclass(tmp_path: Path) -> None:
     paths = _make_paths(tmp_path)
     creds = load_dcr_credentials(paths)
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         creds.ssa_jwt = b"mutated"  # type: ignore[misc]
 
 
@@ -217,5 +217,5 @@ def test_dcr_credentials_is_frozen() -> None:
         transport_certificate_pem=b"tcert",
         transport_private_key_pem=b"tkey",
     )
-    with pytest.raises(Exception):
+    with pytest.raises(dataclasses.FrozenInstanceError):
         creds.ssa_jwt = b"mutated"  # type: ignore[misc]

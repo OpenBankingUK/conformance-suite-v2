@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 import pytest
 
+from conformance.json_types import JsonObject
 from conformance.target_config import (
     TestTargetConfig,
     TestTargetConfigError,
@@ -11,13 +14,12 @@ from conformance.target_config import (
     serialise_test_target_config,
 )
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 
 
-def _valid_rw_doc() -> dict[str, object]:
+def _valid_rw_doc() -> JsonObject:
     """Return a minimal valid Read/Write testTarget JSON doc."""
     return {
         "standard": "obl",
@@ -28,7 +30,7 @@ def _valid_rw_doc() -> dict[str, object]:
     }
 
 
-def _valid_dcr_doc() -> dict[str, object]:
+def _valid_dcr_doc() -> JsonObject:
     """Return a minimal valid DCR testTarget JSON doc."""
     return {
         "standard": "obl",
@@ -63,7 +65,7 @@ def test_parse_dcr_target_no_resource_groups() -> None:
 @pytest.mark.unit
 def test_parse_omits_security_profile_defaults_to_fapi1_advanced() -> None:
     doc = _valid_rw_doc()
-    del doc["securityProfile"]  # type: ignore[attr-defined]
+    del doc["securityProfile"]
     target = parse_test_target_config(doc)
     assert target.security_profile == "fapi1-advanced"
 
@@ -71,7 +73,7 @@ def test_parse_omits_security_profile_defaults_to_fapi1_advanced() -> None:
 @pytest.mark.unit
 def test_parse_omits_resource_groups_returns_empty_tuple() -> None:
     doc = _valid_rw_doc()
-    del doc["resourceGroups"]  # type: ignore[attr-defined]
+    del doc["resourceGroups"]
     target = parse_test_target_config(doc)
     assert target.resource_groups == ()
 
@@ -98,7 +100,7 @@ def test_parse_non_object_raises() -> None:
 @pytest.mark.unit
 def test_parse_missing_standard_raises() -> None:
     doc = _valid_rw_doc()
-    del doc["standard"]  # type: ignore[attr-defined]
+    del doc["standard"]
     with pytest.raises(TestTargetConfigError, match="standard"):
         parse_test_target_config(doc)
 
@@ -114,7 +116,7 @@ def test_parse_unsupported_standard_raises() -> None:
 @pytest.mark.unit
 def test_parse_missing_specification_raises() -> None:
     doc = _valid_rw_doc()
-    del doc["specification"]  # type: ignore[attr-defined]
+    del doc["specification"]
     with pytest.raises(TestTargetConfigError, match="specification"):
         parse_test_target_config(doc)
 
@@ -130,7 +132,7 @@ def test_parse_unsupported_specification_raises() -> None:
 @pytest.mark.unit
 def test_parse_missing_specification_version_raises() -> None:
     doc = _valid_rw_doc()
-    del doc["specificationVersion"]  # type: ignore[attr-defined]
+    del doc["specificationVersion"]
     with pytest.raises(TestTargetConfigError, match="specificationVersion"):
         parse_test_target_config(doc)
 
@@ -196,8 +198,8 @@ def test_target_config_is_frozen() -> None:
         security_profile="fapi1-advanced",
         specification_version="v4.0.1",
     )
-    with pytest.raises(Exception):
-        target.standard = "other"  # type: ignore[misc]
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        target.standard = "other"  # type: ignore[misc, assignment]
 
 
 # ---------------------------------------------------------------------------
