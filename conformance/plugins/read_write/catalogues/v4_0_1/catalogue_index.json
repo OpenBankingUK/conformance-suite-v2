@@ -1,0 +1,26 @@
+{
+  "specification": "read-write",
+  "specificationVersion": "v4.0.1",
+  "resourceGroups": [
+    {
+      "id": "ais",
+      "displayLabel": "Accounts and Transactions (AIS)",
+      "catalogueFile": "ais.json"
+    },
+    {
+      "id": "pis",
+      "displayLabel": "Payments (PIS)",
+      "catalogueFile": "pis.json"
+    },
+    {
+      "id": "cbpii",
+      "displayLabel": "Confirmation of Funds (CBPII)",
+      "catalogueFile": "cbpii.json"
+    },
+    {
+      "id": "vrp",
+      "displayLabel": "Variable Recurring Payments (VRP)",
+      "catalogueFile": "vrp.json"
+    }
+  ]
+}

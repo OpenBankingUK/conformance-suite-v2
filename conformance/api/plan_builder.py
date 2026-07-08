@@ -43,6 +43,8 @@ from conformance.model_bank_config import (
     parse_model_bank_config,
 )
 from conformance.openapi_plan_metadata import StepTreeNode, build_plan_tree
+from conformance.plugins.read_write.plugin import ReadWritePlugin
+from conformance.plugins.registry import PluginRegistry
 from conformance.run_configuration import compile_run_configuration
 from conformance.run_plan import (
     RunPlan,
@@ -55,6 +57,7 @@ from conformance.run_plan import (
     serialise_run_plan,
 )
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
+from conformance.target_config import TestTargetConfig
 from conformance.test_plan import (
     PlanTestValueContext,
     TestPlan,
@@ -3105,3 +3108,326 @@ def _stable_bundle_id(
     digest_source = "|".join((token_step_id, ",".join(required_scopes), ",".join(required_permissions)))
     digest = sha256(digest_source.encode("utf-8")).hexdigest()[:12]
     return f"auth-{token_step_id}-{digest}"
+
+
+# ---------------------------------------------------------------------------
+# Plugin-aware staged UI helpers (endpoint-first DCR/plugin architecture)
+# ---------------------------------------------------------------------------
+
+#: Module-level singleton registry pre-populated with bundled plugins.
+_PLUGIN_REGISTRY: PluginRegistry = PluginRegistry()
+_PLUGIN_REGISTRY.register(ReadWritePlugin())
+
+
+@dataclass(frozen=True)
+class StandardOption:
+    """One standard option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable standard identifier (e.g. ``"obl"``).
+        display_label: Human-readable label shown in the UI.
+    """
+
+    id: str
+    display_label: str
+
+
+@dataclass(frozen=True)
+class SpecificationOption:
+    """One specification option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable specification identifier (e.g. ``"read-write"``).
+        display_label: Human-readable label shown in the UI.
+        standard: Standard identifier this specification belongs to.
+    """
+
+    id: str
+    display_label: str
+    standard: str
+
+
+@dataclass(frozen=True)
+class VersionOption:
+    """One specification version option for the guided staged UI.
+
+    Attributes:
+        version: Specification version string (e.g. ``"v4.0.1"``).
+        standard: Standard identifier.
+        specification: Specification identifier.
+    """
+
+    version: str
+    standard: str
+    specification: str
+
+
+@dataclass(frozen=True)
+class ResourceGroupOption:
+    """One resource-group option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable resource-group identifier (e.g. ``"ais"``).
+        display_label: Human-readable label shown in the UI.
+        standard: Standard identifier.
+        specification: Specification identifier.
+        version: Specification version string.
+    """
+
+    id: str
+    display_label: str
+    standard: str
+    specification: str
+    version: str
+
+
+@dataclass(frozen=True)
+class EndpointCoverageOption:
+    """One endpoint option for the coverage selection step.
+
+    Attributes:
+        endpoint_id: Stable endpoint identifier.
+        display_label: Human-readable label shown in the UI.
+        method: HTTP method string.
+        path: API path template.
+        resource_group: Resource-group the endpoint belongs to.
+        requirement: Requirement level (mandatory/conditional/optional).
+    """
+
+    endpoint_id: str
+    display_label: str
+    method: str
+    path: str
+    resource_group: str | None
+    requirement: str
+
+
+def plugin_registry() -> PluginRegistry:
+    """Return the module-level plugin registry singleton.
+
+    Returns:
+        The :class:`~conformance.plugins.registry.PluginRegistry` pre-populated
+        with all bundled plugins.
+    """
+    return _PLUGIN_REGISTRY
+
+
+def standard_options() -> tuple[StandardOption, ...]:
+    """Return the ordered list of standards available in the staged UI.
+
+    Currently only Open Banking Limited (``"obl"``) is supported.
+
+    Returns:
+        Ordered tuple of :class:`StandardOption` instances.
+    """
+    return (StandardOption(id="obl", display_label="Open Banking Limited"),)
+
+
+def specification_options(*, standard: str) -> tuple[SpecificationOption, ...]:
+    """Return specification options for a given standard from registered plugins.
+
+    Iterates over all registered plugins and collects the distinct
+    specifications they expose for the requested standard.
+
+    Args:
+        standard: Standard identifier to filter by (e.g. ``"obl"``).
+
+    Returns:
+        Ordered tuple of :class:`SpecificationOption` instances whose
+        ``standard`` field matches the given value.
+    """
+    seen: set[tuple[str, str]] = set()
+    options: list[SpecificationOption] = []
+    for plugin_id in _PLUGIN_REGISTRY.plugin_ids:
+        plugin = _PLUGIN_REGISTRY.get(plugin_id)
+        meta = plugin.target_metadata()
+        key = (meta.standard, meta.specification)
+        if meta.standard != standard or key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            SpecificationOption(
+                id=meta.specification,
+                display_label=meta.display_label or meta.specification,
+                standard=meta.standard,
+            )
+        )
+    return tuple(options)
+
+
+def version_options(*, standard: str, specification: str) -> tuple[VersionOption, ...]:
+    """Return version options for a standard/specification pair from registered plugins.
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+
+    Returns:
+        Ordered tuple of :class:`VersionOption` instances for all
+        supported versions of the matching plugin, in the order declared
+        by :attr:`~conformance.plugins.domain.PluginTargetMetadata.supported_versions`.
+    """
+    options: list[VersionOption] = []
+    for plugin_id in _PLUGIN_REGISTRY.plugin_ids:
+        plugin = _PLUGIN_REGISTRY.get(plugin_id)
+        meta = plugin.target_metadata()
+        if meta.standard != standard or meta.specification != specification:
+            continue
+        for version in meta.supported_versions:
+            options.append(
+                VersionOption(
+                    version=version,
+                    standard=standard,
+                    specification=specification,
+                )
+            )
+    return tuple(options)
+
+
+def resource_group_options(
+    *,
+    standard: str,
+    specification: str,
+    version: str,
+) -> tuple[ResourceGroupOption, ...]:
+    """Return resource-group options for the guided staged UI selection step.
+
+    Resolves the plugin for the given coordinates and returns one option per
+    resource group declared by the plugin's target metadata.  Returns an empty
+    tuple for plugins that do not use resource groups (e.g. DCR).
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+        version: Specification version string (e.g. ``"v4.0.1"``).
+
+    Returns:
+        Ordered tuple of :class:`ResourceGroupOption` instances, or an empty
+        tuple when the specification does not use resource groups or when no
+        plugin matches.
+    """
+    target = TestTargetConfig(
+        standard=standard,  # type: ignore[arg-type]
+        specification=specification,  # type: ignore[arg-type]
+        security_profile="fapi1-advanced",
+        specification_version=version,
+    )
+    try:
+        plugin = _PLUGIN_REGISTRY.resolve(target)
+    except Exception:  # noqa: BLE001 — registry miss returns empty options
+        return ()
+    meta = plugin.target_metadata()
+    if not meta.uses_resource_groups:
+        return ()
+    _rg_labels: dict[str, str] = {
+        "ais": "Accounts and Transactions (AIS)",
+        "pis": "Payments (PIS)",
+        "cbpii": "Confirmation of Funds (CBPII)",
+        "vrp": "Variable Recurring Payments (VRP)",
+    }
+    return tuple(
+        ResourceGroupOption(
+            id=rg,
+            display_label=_rg_labels.get(rg, rg.upper()),
+            standard=standard,
+            specification=specification,
+            version=version,
+        )
+        for rg in meta.resource_groups
+    )
+
+
+def endpoint_coverage_options(
+    *,
+    standard: str,
+    specification: str,
+    version: str,
+    resource_groups: tuple[str, ...],
+) -> tuple[EndpointCoverageOption, ...]:
+    """Return endpoint coverage options for the guided staged UI.
+
+    Loads the catalogue for the given target and returns one option per
+    endpoint entry, filtered to those whose ``resource_group`` is in the
+    requested ``resource_groups`` set.  When ``resource_groups`` is empty
+    all endpoints are returned.
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+        version: Specification version string (e.g. ``"v4.0.1"``).
+        resource_groups: Tuple of selected resource-group identifiers to
+            filter by.  An empty tuple returns all endpoints.
+
+    Returns:
+        Ordered tuple of :class:`EndpointCoverageOption` instances for the
+        matching endpoints, in catalogue order.
+    """
+    target = TestTargetConfig(
+        standard=standard,  # type: ignore[arg-type]
+        specification=specification,  # type: ignore[arg-type]
+        security_profile="fapi1-advanced",
+        specification_version=version,
+        resource_groups=resource_groups,
+    )
+    try:
+        plugin = _PLUGIN_REGISTRY.resolve(target)
+        catalogue = plugin.load_catalogue(target)
+    except Exception:  # noqa: BLE001 — registry miss or I/O error → empty
+        return ()
+
+    rg_filter: frozenset[str] = frozenset(resource_groups) if resource_groups else frozenset()
+    return tuple(
+        EndpointCoverageOption(
+            endpoint_id=entry.endpoint_id,
+            display_label=entry.display_label,
+            method=entry.method,
+            path=entry.path,
+            resource_group=entry.resource_group,
+            requirement=entry.requirement,
+        )
+        for entry in catalogue.endpoints
+        if not rg_filter or entry.resource_group in rg_filter
+    )
+
+
+def staged_ui_context() -> dict[str, object]:
+    """Build the base template context for the staged plan-builder UI.
+
+    Returns the initial stage data needed to render the first step of the
+    staged journey (standard selection) along with options for all stages so
+    the client-side state machine can populate subsequent steps.
+
+    Returns:
+        Template context mapping with ``standard_options``,
+        ``specification_options_by_standard``, and plugin metadata.
+    """
+    stds = standard_options()
+    all_specs: dict[str, list[dict[str, object]]] = {}
+    all_versions: dict[str, dict[str, list[dict[str, object]]]] = {}
+    all_rgs: dict[str, dict[str, dict[str, list[dict[str, object]]]]] = {}
+
+    for std in stds:
+        specs = specification_options(standard=std.id)
+        all_specs[std.id] = [{"id": s.id, "displayLabel": s.display_label} for s in specs]
+        all_versions[std.id] = {}
+        all_rgs[std.id] = {}
+        for spec in specs:
+            versions = version_options(standard=std.id, specification=spec.id)
+            all_versions[std.id][spec.id] = [{"version": v.version} for v in versions]
+            all_rgs[std.id][spec.id] = {}
+            for ver in versions:
+                rgs = resource_group_options(
+                    standard=std.id,
+                    specification=spec.id,
+                    version=ver.version,
+                )
+                all_rgs[std.id][spec.id][ver.version] = [
+                    {"id": rg.id, "displayLabel": rg.display_label} for rg in rgs
+                ]
+
+    return {
+        "staged_standard_options": stds,
+        "staged_specification_options": json.dumps(all_specs),
+        "staged_version_options": json.dumps(all_versions),
+        "staged_resource_group_options": json.dumps(all_rgs),
+    }

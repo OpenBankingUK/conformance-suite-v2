@@ -1,0 +1,87 @@
+{
+  "identity": {
+    "pluginId": "read-write",
+    "specification": "read-write",
+    "specificationVersion": "v4.0.1",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "endpoints": [
+    {
+      "endpointId": "vrp.domestic-vrp-consents.create",
+      "operation": "CreateDomesticVRPConsents",
+      "path": "/domestic-vrp-consents",
+      "method": "POST",
+      "resourceGroup": "vrp",
+      "requirement": "mandatory",
+      "displayLabel": "Create Domestic VRP Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrp-consents.get",
+      "operation": "GetDomesticVRPConsentsConsentId",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "vrp",
+      "requirement": "mandatory",
+      "displayLabel": "Get Domestic VRP Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrp-consents.delete",
+      "operation": "DeleteDomesticVRPConsentsConsentId",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "method": "DELETE",
+      "resourceGroup": "vrp",
+      "requirement": "mandatory",
+      "displayLabel": "Delete Domestic VRP Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrp-consents.get-funds-confirmation",
+      "operation": "GetDomesticVRPConsentsConsentIdFundsConfirmation",
+      "path": "/domestic-vrp-consents/{ConsentId}/funds-confirmation",
+      "method": "GET",
+      "resourceGroup": "vrp",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic VRP Consent Funds Confirmation",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrps.create",
+      "operation": "CreateDomesticVRPs",
+      "path": "/domestic-vrps",
+      "method": "POST",
+      "resourceGroup": "vrp",
+      "requirement": "mandatory",
+      "displayLabel": "Create Domestic VRP",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrps.get",
+      "operation": "GetDomesticVRPsDomesticVRPId",
+      "path": "/domestic-vrps/{DomesticVRPId}",
+      "method": "GET",
+      "resourceGroup": "vrp",
+      "requirement": "mandatory",
+      "displayLabel": "Get Domestic VRP",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "vrp.domestic-vrps.get-payment-details",
+      "operation": "GetDomesticVRPsDomesticVRPIdPaymentDetails",
+      "path": "/domestic-vrps/{DomesticVRPId}/payment-details",
+      "method": "GET",
+      "resourceGroup": "vrp",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic VRP Payment Details",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    }
+  ]
+}

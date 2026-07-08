@@ -1,0 +1,318 @@
+{
+  "identity": {
+    "pluginId": "read-write",
+    "specification": "read-write",
+    "specificationVersion": "v4.0.1",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "endpoints": [
+    {
+      "endpointId": "ais.account-access-consents.create",
+      "operation": "CreateAccountAccessConsents",
+      "path": "/account-access-consents",
+      "method": "POST",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Create Account Access Consent",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents/post",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.account-access-consents.get",
+      "operation": "GetAccountAccessConsentsConsentId",
+      "path": "/account-access-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Get Account Access Consent",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents~1{ConsentId}/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.account-access-consents.delete",
+      "operation": "DeleteAccountAccessConsentsConsentId",
+      "path": "/account-access-consents/{ConsentId}",
+      "method": "DELETE",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Delete Account Access Consent",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents~1{ConsentId}/delete",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.accounts.get-accounts",
+      "operation": "GetAccounts",
+      "path": "/accounts",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Get Accounts",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.accounts.get-account",
+      "operation": "GetAccountsAccountId",
+      "path": "/accounts/{AccountId}",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Get Account",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.transactions.get-account-transactions",
+      "operation": "GetAccountsAccountIdTransactions",
+      "path": "/accounts/{AccountId}/transactions",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Get Account Transactions",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1transactions/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.balances.get-account-balances",
+      "operation": "GetAccountsAccountIdBalances",
+      "path": "/accounts/{AccountId}/balances",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "mandatory",
+      "displayLabel": "Get Account Balances",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1balances/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.beneficiaries.get-account-beneficiaries",
+      "operation": "GetAccountsAccountIdBeneficiaries",
+      "path": "/accounts/{AccountId}/beneficiaries",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Beneficiaries",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1beneficiaries/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.direct-debits.get-account-direct-debits",
+      "operation": "GetAccountsAccountIdDirectDebits",
+      "path": "/accounts/{AccountId}/direct-debits",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Direct Debits",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1direct-debits/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.offers.get-account-offers",
+      "operation": "GetAccountsAccountIdOffers",
+      "path": "/accounts/{AccountId}/offers",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Offers",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1offers/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.parties.get-account-parties",
+      "operation": "GetAccountsAccountIdParties",
+      "path": "/accounts/{AccountId}/parties",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Parties",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1parties/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.parties.get-account-party",
+      "operation": "GetAccountsAccountIdParty",
+      "path": "/accounts/{AccountId}/party",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Party",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1party/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.products.get-account-product",
+      "operation": "GetAccountsAccountIdProduct",
+      "path": "/accounts/{AccountId}/product",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Product",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1product/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.scheduled-payments.get-account-scheduled-payments",
+      "operation": "GetAccountsAccountIdScheduledPayments",
+      "path": "/accounts/{AccountId}/scheduled-payments",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Scheduled Payments",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1scheduled-payments/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.standing-orders.get-account-standing-orders",
+      "operation": "GetAccountsAccountIdStandingOrders",
+      "path": "/accounts/{AccountId}/standing-orders",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Standing Orders",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1standing-orders/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.statements.get-account-statements",
+      "operation": "GetAccountsAccountIdStatements",
+      "path": "/accounts/{AccountId}/statements",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Statements",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.statements.get-account-statement",
+      "operation": "GetAccountsAccountIdStatementsStatementId",
+      "path": "/accounts/{AccountId}/statements/{StatementId}",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Statement",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements~1{StatementId}/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.statements.get-account-statement-transactions",
+      "operation": "GetAccountsAccountIdStatementsStatementIdTransactions",
+      "path": "/accounts/{AccountId}/statements/{StatementId}/transactions",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Account Statement Transactions",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements~1{StatementId}~1transactions/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.balances.get-balances",
+      "operation": "GetBalances",
+      "path": "/balances",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Balances (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1balances/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.beneficiaries.get-beneficiaries",
+      "operation": "GetBeneficiaries",
+      "path": "/beneficiaries",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Beneficiaries (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1beneficiaries/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.direct-debits.get-direct-debits",
+      "operation": "GetDirectDebits",
+      "path": "/direct-debits",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Direct Debits (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1direct-debits/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.offers.get-offers",
+      "operation": "GetOffers",
+      "path": "/offers",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Offers (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1offers/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.parties.get-party",
+      "operation": "GetParty",
+      "path": "/party",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Party",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1party/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.products.get-products",
+      "operation": "GetProducts",
+      "path": "/products",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Products (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1products/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.scheduled-payments.get-scheduled-payments",
+      "operation": "GetScheduledPayments",
+      "path": "/scheduled-payments",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Scheduled Payments (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1scheduled-payments/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.standing-orders.get-standing-orders",
+      "operation": "GetStandingOrders",
+      "path": "/standing-orders",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Standing Orders (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1standing-orders/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.statements.get-statements",
+      "operation": "GetStatements",
+      "path": "/statements",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Statements (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1statements/get",
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "ais.transactions.get-transactions",
+      "operation": "GetTransactions",
+      "path": "/transactions",
+      "method": "GET",
+      "resourceGroup": "ais",
+      "requirement": "conditional",
+      "displayLabel": "Get Transactions (bulk)",
+      "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1transactions/get",
+      "testApplicabilityRules": []
+    }
+  ]
+}

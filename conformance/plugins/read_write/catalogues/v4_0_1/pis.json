@@ -1,0 +1,164 @@
+{
+  "identity": {
+    "pluginId": "read-write",
+    "specification": "read-write",
+    "specificationVersion": "v4.0.1",
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "endpoints": [
+    {
+      "endpointId": "pis.domestic-payment-consents.create",
+      "operation": "CreateDomesticPaymentConsents",
+      "path": "/domestic-payment-consents",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "mandatory",
+      "displayLabel": "Create Domestic Payment Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-payment-consents.get",
+      "operation": "GetDomesticPaymentConsentsConsentId",
+      "path": "/domestic-payment-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "mandatory",
+      "displayLabel": "Get Domestic Payment Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-payment-consents.get-funds-confirmation",
+      "operation": "GetDomesticPaymentConsentsConsentIdFundsConfirmation",
+      "path": "/domestic-payment-consents/{ConsentId}/funds-confirmation",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Payment Consent Funds Confirmation",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-payments.create",
+      "operation": "CreateDomesticPayments",
+      "path": "/domestic-payments",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "mandatory",
+      "displayLabel": "Create Domestic Payment",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-payments.get",
+      "operation": "GetDomesticPaymentsDomesticPaymentId",
+      "path": "/domestic-payments/{DomesticPaymentId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "mandatory",
+      "displayLabel": "Get Domestic Payment",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-payments.get-payment-details",
+      "operation": "GetDomesticPaymentsDomesticPaymentIdPaymentDetails",
+      "path": "/domestic-payments/{DomesticPaymentId}/payment-details",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Payment Details",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-scheduled-payment-consents.create",
+      "operation": "CreateDomesticScheduledPaymentConsents",
+      "path": "/domestic-scheduled-payment-consents",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Create Domestic Scheduled Payment Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-scheduled-payment-consents.get",
+      "operation": "GetDomesticScheduledPaymentConsentsConsentId",
+      "path": "/domestic-scheduled-payment-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Scheduled Payment Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-scheduled-payments.create",
+      "operation": "CreateDomesticScheduledPayments",
+      "path": "/domestic-scheduled-payments",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Create Domestic Scheduled Payment",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-scheduled-payments.get",
+      "operation": "GetDomesticScheduledPaymentsDomesticScheduledPaymentId",
+      "path": "/domestic-scheduled-payments/{DomesticScheduledPaymentId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Scheduled Payment",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-standing-order-consents.create",
+      "operation": "CreateDomesticStandingOrderConsents",
+      "path": "/domestic-standing-order-consents",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Create Domestic Standing Order Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-standing-order-consents.get",
+      "operation": "GetDomesticStandingOrderConsentsConsentId",
+      "path": "/domestic-standing-order-consents/{ConsentId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Standing Order Consent",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-standing-orders.create",
+      "operation": "CreateDomesticStandingOrders",
+      "path": "/domestic-standing-orders",
+      "method": "POST",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Create Domestic Standing Order",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    },
+    {
+      "endpointId": "pis.domestic-standing-orders.get",
+      "operation": "GetDomesticStandingOrdersDomesticStandingOrderId",
+      "path": "/domestic-standing-orders/{DomesticStandingOrderId}",
+      "method": "GET",
+      "resourceGroup": "pis",
+      "requirement": "conditional",
+      "displayLabel": "Get Domestic Standing Order",
+      "schemaRef": null,
+      "testApplicabilityRules": []
+    }
+  ]
+}
