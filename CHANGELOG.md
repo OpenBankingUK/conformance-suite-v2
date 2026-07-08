@@ -9,6 +9,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Stage 1 foundation trunk — plugin framework, target model, catalogue loader, DCR primitives, and Run Plan v2**:
+  - `conformance/plugins/domain.py`: `ConformancePlugin` structural Protocol, `PluginTargetMetadata`, and `PluginId` type alias. Defines the full plugin interface contract (target metadata, catalogue identity, catalogue loader, target applicability predicate, masking fields) that every internal plugin must satisfy.
+  - `conformance/plugins/registry.py`: `PluginRegistry` — ordered registration and target-based resolution of `ConformancePlugin` instances. Raises `PluginRegistryError` on duplicate registration or unresolvable target.
+  - `conformance/target_config.py`: `TestTargetConfig` frozen dataclass replacing the legacy `testSuite` config shape. Introduces `Standard`, `Specification`, and `SecurityProfile` literals, plus `parse_test_target_config` / `serialise_test_target_config` with camelCase JSON wire format.
+  - `conformance/catalogue.py`: Versioned JSON catalogue domain types (`CatalogueIdentity`, `EndpointCatalogueEntry`, `Catalogue`, `EndpointRequirement`) and `parse_catalogue` / `compute_catalogue_hash` functions. Content hashing uses the same `"sha256:<hex>"` format as the Run Plan v1 manifest hash.
+  - `conformance/dcr/credentials.py`: `DcrCredentialPaths`, `DcrCredentials`, `validate_dcr_credential_paths`, and `load_dcr_credentials`. File-backed DCR credential loading (SSA, signing key/cert, transport cert/key, CA bundle) with `Path.resolve()` containment checks under a configured root — same pattern as `conformance.signing_credentials`.
+  - `conformance/dcr/transport.py`: `DcrTransportConfig` frozen dataclass capturing mTLS transport options (`token_endpoint_auth_method`, `disable_keep_alives`, `tls_skip_verify`, timeouts). `tls_skip_verify=True` emits an explicit unsafe warning. `DcrTokenEndpointAuthMethod` restricts token-endpoint auth to FAPI 1 Advanced-compatible `tls_client_auth` and `private_key_jwt`.
+  - `conformance/run_plan_v2.py`: Schema version `"2"` intent-based `RunPlanV2` replacing suite-centric `RunPlanSuiteCoordinates` with `RunPlanV2TargetCoordinates` (standard, specification, securityProfile, specificationVersion, catalogueHash). Stores user intent — resource groups, per-endpoint `EndpointSelection` with field values, and test data — from which the engine derives applicable tests at execution time. Includes `parse_run_plan_v2`, `serialise_run_plan_v2`, and `RunPlanV2ParseError`.
+
 ### Changed
 
 - **v4.0.1 AIS resource path correction**: The v4.0.1 AIS certification baseline and slice suite manifests now use `/open-banking/v4.0/aisp/...` resource URLs instead of `/open-banking/v4.0.1/aisp/...`. This aligns with the bundled v4.0.1 OpenAPI `servers` URL and model-bank deployment behaviour; the v4.0 path family is shared across the v4.0 minor release. Suite granularity (schema document id `ob-read-write-v4.0.1-account-info-openapi`, manifest filename, catalog labels) remains v4.0.1-specific.
