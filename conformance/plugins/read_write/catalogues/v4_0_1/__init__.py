@@ -1,8 +1,7 @@
-"""Endpoint catalogues for the Open Banking Read/Write API specification v4.0.1.
+"""Bundled Read/Write v4.0.1 schema v2 catalogue resources.
 
-Contains one JSON catalogue file per resource group (``ais.json``,
-``pis.json``, ``cbpii.json``, ``vrp.json``) and a ``catalogue_index.json``
-that lists the available resource groups.  Each catalogue file conforms to the
-:class:`~conformance.catalogue.Catalogue` schema and is loaded at run time by
-:class:`~conformance.plugins.read_write.plugin.ReadWritePlugin`.
+The consolidated ``catalogue.json`` file is the authoritative schema v2
+catalogue loaded at run time.  The resource-group JSON files in this package
+are retained as phase-1 migration inputs until legacy cleanup removes old
+intermediate artefacts.
 """

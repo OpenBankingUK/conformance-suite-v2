@@ -74,6 +74,17 @@
         .test-value-row { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: #ffffff; }
         .test-value-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
         .test-value-reset { min-height: 30px; padding: 4px 10px; font-size: 0.85rem; }
+        .field-value-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+        .field-value-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: #ffffff; }
+        .field-value-card input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; margin-right: 8px; vertical-align: middle; }
+        .field-value-card .field-value-checkbox-label { display: flex; align-items: center; gap: 8px; margin-bottom: 0; font-weight: 500; }
+        .staged-import textarea { min-height: 140px; }
+        .staged-import .file-input { min-height: auto; padding: 8px 0; border: 0; background: transparent; }
+        .advanced-test-data-grid { display: grid; gap: 8px; margin-top: 10px; }
+        .advanced-test-data-row { display: grid; grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) auto; gap: 8px; align-items: end; }
+        .advanced-test-data-row button { min-height: 42px; }
+        .preview-list { margin: 8px 0 0; padding-left: 18px; }
+        .preview-list li { margin: 4px 0; }
         .tv-step-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
         .tv-step { border: 1px solid var(--border); border-radius: 6px; background: #ffffff; }
         .tv-step-summary { padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 600; list-style: none; user-select: none; }
@@ -155,6 +166,7 @@
         @media (max-width: 820px) {
             header, .grid, .field-grid { display: block; }
             .grid > div + div, .field-grid > div + div { margin-top: 14px; }
+            .field-value-grid { grid-template-columns: 1fr; }
             textarea { min-height: 220px; }
         }
     </style>
@@ -170,8 +182,27 @@
 
     {# ── STAGED JOURNEY (endpoint-first, plugin-aware) ───────────────────── #}
     <section class="panel" aria-labelledby="staged-heading" id="staged-section">
-        <h2 id="staged-heading">New: Endpoint-first plan builder</h2>
-        <p class="helper" style="margin-bottom:12px">Select your standard, specification, version and endpoints. The run plan will be generated from your selections.</p>
+        <h2 id="staged-heading">New: Endpoint-first test-plan builder</h2>
+        <p class="helper" style="margin-bottom:12px">Select your standard, specification, version and endpoints. The saved config will include a testPlan generated from your selections.</p>
+
+        <details class="staged-import" id="staged-import-section">
+            <summary>Load or edit saved config JSON</summary>
+            <p class="helper">Paste or choose a participant config JSON with testTarget and, optionally, a top-level testPlan. Older standalone plan files must be rebuilt in the builder and exported as a saved config.</p>
+            <div class="field-grid full">
+                <div>
+                    <label for="staged-import-json">Saved config JSON</label>
+                    <textarea id="staged-import-json" spellcheck="false" placeholder="Paste saved config JSON"></textarea>
+                </div>
+                <div>
+                    <label for="staged-import-file">Load JSON file</label>
+                    <input id="staged-import-file" class="file-input" type="file" accept="application/json,.json">
+                </div>
+            </div>
+            <div class="actions preview-actions">
+                <button type="button" class="secondary" data-staged-import-apply>Load into builder</button>
+                <span class="muted" data-staged-import-status></span>
+            </div>
+        </details>
 
         <div class="staged-journey" id="staged-journey" role="list">
 
@@ -284,6 +315,11 @@
                 <div class="stage-body" id="stage-6-body" hidden>
                     <p class="helper">Required endpoints are pre-selected. Uncheck to exclude from the run entirely (unchecked endpoints will not be executed).</p>
                     <div id="stage-6-mandatory-warning" class="message warning" hidden>One or more mandatory endpoints are deselected. This run will be incomplete.</div>
+                    <div class="actions preview-actions" aria-label="Endpoint bulk selection controls">
+                        <button type="button" class="secondary" data-endpoint-bulk-action="deselect-all">Deselect all</button>
+                        <button type="button" class="secondary" data-endpoint-bulk-action="select-mandatory">Select mandatory</button>
+                        <button type="button" class="secondary" data-endpoint-bulk-action="select-all">Select all</button>
+                    </div>
                     <div id="stage-6-endpoints"></div>
                     <div class="stage-nav" style="margin-top:16px">
                         <button type="button" class="secondary" onclick="goToStage(5)">← Back</button>
@@ -292,15 +328,24 @@
                 </div>
             </div>
 
-            {# Stage 7: Field Values (stub — future stage) #}
+            {# Stage 7: Field Values #}
             <div class="stage-step" id="stage-7" role="listitem" aria-label="Stage 7: Field Values">
                 <div class="stage-header" onclick="toggleStage(7)" role="button" aria-expanded="false" aria-controls="stage-7-body">
                     <span class="stage-number" aria-hidden="true">7</span>
                     <span class="stage-title">Field Values</span>
-                    <span class="stage-summary" id="stage-7-summary"><span class="badge">Coming in next stage</span></span>
+                    <span class="stage-summary" id="stage-7-summary"></span>
                 </div>
                 <div class="stage-body" id="stage-7-body" hidden>
-                    <p class="helper">Request field values (OAuth credentials, resource base URL, signing configuration) will be configurable here in a later stage.</p>
+                    <p class="helper">These prompts come from the selected catalogue. Credential material remains path-only; enter exact absolute file paths, not certificate or key contents.</p>
+                    <div id="stage-7-required-warning" class="message warning" hidden>Required runtime fields are still blank. The saved config preview will omit blank values until they are supplied.</div>
+                    <div id="stage-7-base-fields"></div>
+                    <div id="stage-7-fields"></div>
+                    <div class="run-plan-preview" aria-labelledby="advanced-test-data-heading">
+                        <h3 id="advanced-test-data-heading">Advanced testData.values</h3>
+                        <p>Add non-secret suite test-data values for power-user imports. Keys must match the config contract: start with a letter and use letters, numbers, underscores, or hyphens.</p>
+                        <div id="advanced-test-data-values" class="advanced-test-data-grid"></div>
+                        <button type="button" class="secondary" data-add-test-data-value>Add testData value</button>
+                    </div>
                     <div class="stage-nav">
                         <button type="button" class="secondary" onclick="goToStage(6)">← Back</button>
                         <button type="button" class="secondary" onclick="advanceStage(7)">Next →</button>
@@ -328,9 +373,9 @@
         </div>
     </section>
 
-    {# ── LEGACY / ADVANCED: v1 manifest selection ──────────────────────────── #}
+    {# ── Advanced: raw target config preview/launch ───────────────────────── #}
     <details id="advanced-section">
-        <summary>Advanced / Import JSON (v1 manifest selection)</summary>
+        <summary>Advanced / Import target config JSON</summary>
 
         <form method="post" action="{% url 'plan-preview' %}" style="margin-top:8px">
             {% csrf_token %}
@@ -341,6 +386,7 @@
             <section class="panel" aria-labelledby="input-heading">
                 <h2 id="input-heading">Inputs</h2>
                 {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+                {% if form.manifest_json.errors %}{{ form.manifest_json.errors }}{% endif %}
                 {% if launch_error %}
                     <div class="message error">
                         {{ launch_error }}
@@ -348,195 +394,16 @@
                     </div>
                 {% endif %}
 
-                <div style="display:grid;grid-template-columns:1.25fr 1fr;gap:16px;margin-bottom:16px">
-                    <section style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fbfcfe" aria-labelledby="guided-flow-heading">
-                        <h3 id="guided-flow-heading" style="margin:0 0 8px;font-size:1rem">Guided flow</h3>
-                        <p class="helper">Select a version, then an API family, then a bundled run configuration. The browser form will build the same config shape the JSON path already accepts.</p>
+                <section style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fbfcfe;margin-bottom:16px" aria-labelledby="json-mode-heading">
+                    <h3 id="json-mode-heading" style="margin:0 0 8px;font-size:1rem">Raw target config</h3>
+                    <p class="helper">Paste a participant config that uses <span class="step-id">testTarget</span> or the saved-config <span class="step-id">testPlan</span> section.</p>
+                </section>
 
-                        <fieldset class="field-row">
-                            <div class="field-grid">
-                                <div>
-                                    <label for="{{ form.guided_spec_version.id_for_label }}">Specification version</label>
-                                    {{ form.guided_spec_version.errors }}
-                                    <select id="{{ form.guided_spec_version.id_for_label }}" name="guided_spec_version" data-guided-spec-version>
-                                        <option value="">Select version</option>
-                                        {% for version in guided_versions %}
-                                            <option value="{{ version }}" {% if form.guided_spec_version.value == version %}selected{% endif %}>{{ version }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_api.id_for_label }}">API family</label>
-                                    {{ form.guided_api.errors }}
-                                    <select id="{{ form.guided_api.id_for_label }}" name="guided_api" data-guided-api>
-                                        <option value="">Select API</option>
-                                        {% for option in guided_api_options %}
-                                            <option value="{{ option.api }}" data-spec-version="{{ option.spec_version }}" {% if form.guided_api.value == option.api and form.guided_spec_version.value == option.spec_version %}selected{% endif %}>{{ option.label }}</option>
-                                        {% endfor %}
-                                    </select>
-                                </div>
-                            </div>
-                            <div class="field-row">
-                                <label for="{{ form.guided_suite.id_for_label }}">Bundled run configuration</label>
-                                {{ form.guided_suite.errors }}
-                                <select id="{{ form.guided_suite.id_for_label }}" name="guided_suite" data-guided-suite>
-                                    <option value="">Select configuration</option>
-                                    {% for option in guided_suite_options %}
-                                        <option value="{{ option.suite }}"
-                                                data-standard="{{ option.standard }}"
-                                                data-spec-version="{{ option.spec_version }}"
-                                                data-profile="{{ option.profile }}"
-                                                data-api="{{ option.api }}"
-                                                data-description="{{ option.description }}"
-                                                data-prompts-oauth="{% if option.prompts_oauth %}true{% else %}false{% endif %}"
-                                                data-prompts-intent-id="{% if option.prompts_intent_id %}true{% else %}false{% endif %}"
-                                                data-prompts-resource-base-url="{% if option.prompts_resource_base_url %}true{% else %}false{% endif %}"
-                                                data-prompts-signing="{% if option.prompts_signing %}true{% else %}false{% endif %}"
-                                                {% if form.guided_suite.value == option.suite and form.guided_spec_version.value == option.spec_version and form.guided_api.value == option.api %}selected{% endif %}>{{ option.label }}</option>
-                                    {% endfor %}
-                                </select>
-                                <div class="helper" data-guided-suite-description>
-                                    {% if guided_selected_suite %}{{ guided_selected_suite.description }}{% else %}Pick a configuration to see the scope and the relevant browser prompts.{% endif %}
-                                </div>
-                            </div>
-                        </fieldset>
-
-                        <fieldset class="field-row">
-                            <div class="field-row">
-                                <label for="{{ form.guided_model_bank.id_for_label }}">Model bank example</label>
-                                {{ form.guided_model_bank.errors }}
-                                <select id="{{ form.guided_model_bank.id_for_label }}" name="guided_model_bank" data-guided-model-bank>
-                                    <option value="">Custom environment</option>
-                                    {% for option in guided_model_bank_options %}
-                                        <option value="{{ option.value }}"
-                                                data-environment="{{ option.environment }}"
-                                                data-discovery-url="{{ option.discovery_url }}"
-                                                {% if form.guided_model_bank.value == option.value %}selected{% endif %}>{{ option.label }}</option>
-                                    {% endfor %}
-                                </select>
-                                <div class="helper">Known model-bank environment and discovery values. Custom entries stay editable below.</div>
-                            </div>
-                            <div class="field-grid">
-                                <div>
-                                    <label for="{{ form.guided_environment.id_for_label }}">Environment</label>
-                                    {{ form.guided_environment.errors }}
-                                    <input id="{{ form.guided_environment.id_for_label }}" name="guided_environment" type="text" value="{{ form.guided_environment.value|default_if_none:'' }}" autocomplete="off" data-guided-environment-input>
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_discovery_url.id_for_label }}">Discovery URL</label>
-                                    {{ form.guided_discovery_url.errors }}
-                                    <input id="{{ form.guided_discovery_url.id_for_label }}" name="guided_discovery_url" type="url" value="{{ form.guided_discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url" data-guided-discovery-url-input>
-                                </div>
-                            </div>
-                        </fieldset>
-
-                        <fieldset class="field-row" id="guided-oauth-panel" {% if not guided_selected_suite or not guided_selected_suite.prompts_oauth %}hidden{% endif %}>
-                            <div class="field-grid">
-                                <div>
-                                    <label for="{{ form.guided_client_id.id_for_label }}">Client ID</label>
-                                    {{ form.guided_client_id.errors }}
-                                    <input id="{{ form.guided_client_id.id_for_label }}" name="guided_client_id" type="text" value="{{ form.guided_client_id.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_redirect_uri.id_for_label }}">Redirect URI</label>
-                                    {{ form.guided_redirect_uri.errors }}
-                                    <input id="{{ form.guided_redirect_uri.id_for_label }}" name="guided_redirect_uri" type="url" value="{{ form.guided_redirect_uri.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                                </div>
-                            </div>
-                            <div class="field-row">
-                                <label for="{{ form.guided_authorization_endpoint.id_for_label }}">Authorization endpoint override</label>
-                                {{ form.guided_authorization_endpoint.errors }}
-                                <input id="{{ form.guided_authorization_endpoint.id_for_label }}" name="guided_authorization_endpoint" type="url" value="{{ form.guided_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                                <div class="helper">Optional override for environments whose registered client still targets a legacy authorization endpoint.</div>
-                            </div>
-                        </fieldset>
-
-                        <fieldset class="field-row" id="guided-intent-panel" {% if not guided_selected_suite or not guided_selected_suite.prompts_intent_id %}hidden{% endif %}>
-                            <label for="{{ form.guided_open_banking_intent_id.id_for_label }}">Intent ID</label>
-                            {{ form.guided_open_banking_intent_id.errors }}
-                            <input id="{{ form.guided_open_banking_intent_id.id_for_label }}" name="guided_open_banking_intent_id" type="text" value="{{ form.guided_open_banking_intent_id.value|default_if_none:'' }}" autocomplete="off">
-                            <div class="helper">Required for the starter configuration request object when the ASPSP expects a pre-created intent or consent identifier.</div>
-                        </fieldset>
-
-                        <fieldset class="field-row" id="guided-resource-panel" {% if not guided_selected_suite or not guided_selected_suite.prompts_resource_base_url %}hidden{% endif %}>
-                            <label for="{{ form.guided_resource_base_url.id_for_label }}">Resource base URL</label>
-                            {{ form.guided_resource_base_url.errors }}
-                            <input id="{{ form.guided_resource_base_url.id_for_label }}" name="guided_resource_base_url" type="url" value="{{ form.guided_resource_base_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                            <div class="helper">Root protected-resource URL without the <span class="step-id">/open-banking/...</span> path prefix.</div>
-                        </fieldset>
-
-                        <fieldset class="field-row" id="guided-signing-panel" {% if not guided_selected_suite or not guided_selected_suite.prompts_signing %}hidden{% endif %}>
-                            <div class="field-grid">
-                                <div>
-                                    <label for="{{ form.guided_signing_certificate_path_root.id_for_label }}">Certificate path root</label>
-                                    {{ form.guided_signing_certificate_path_root.errors }}
-                                    <input id="{{ form.guided_signing_certificate_path_root.id_for_label }}" name="guided_signing_certificate_path_root" type="text" value="{{ form.guided_signing_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_kid.id_for_label }}">Signing key ID</label>
-                                    {{ form.guided_signing_kid.errors }}
-                                    <input id="{{ form.guided_signing_kid.id_for_label }}" name="guided_signing_kid" type="text" value="{{ form.guided_signing_kid.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_certificate_path.id_for_label }}">Signing certificate path</label>
-                                    {{ form.guided_signing_certificate_path.errors }}
-                                    <input id="{{ form.guided_signing_certificate_path.id_for_label }}" name="guided_signing_certificate_path" type="text" value="{{ form.guided_signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_private_key_path.id_for_label }}">Signing private key path</label>
-                                    {{ form.guided_signing_private_key_path.errors }}
-                                    <input id="{{ form.guided_signing_private_key_path.id_for_label }}" name="guided_signing_private_key_path" type="text" value="{{ form.guided_signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_client_assertion_issuer.id_for_label }}">Client assertion issuer</label>
-                                    {{ form.guided_signing_client_assertion_issuer.errors }}
-                                    <input id="{{ form.guided_signing_client_assertion_issuer.id_for_label }}" name="guided_signing_client_assertion_issuer" type="text" value="{{ form.guided_signing_client_assertion_issuer.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_client_assertion_subject.id_for_label }}">Client assertion subject</label>
-                                    {{ form.guided_signing_client_assertion_subject.errors }}
-                                    <input id="{{ form.guided_signing_client_assertion_subject.id_for_label }}" name="guided_signing_client_assertion_subject" type="text" value="{{ form.guided_signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
-                                </div>
-                                <div>
-                                    <label for="{{ form.guided_signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method</label>
-                                    {{ form.guided_signing_token_endpoint_auth_method.errors }}
-                                    <select id="{{ form.guided_signing_token_endpoint_auth_method.id_for_label }}" name="guided_signing_token_endpoint_auth_method">
-                                        <option value="">Select auth method</option>
-                                        <option value="private_key_jwt" {% if form.guided_signing_token_endpoint_auth_method.value == 'private_key_jwt' %}selected{% endif %}>private_key_jwt</option>
-                                        <option value="tls_client_auth" {% if form.guided_signing_token_endpoint_auth_method.value == 'tls_client_auth' %}selected{% endif %}>tls_client_auth</option>
-                                    </select>
-                                </div>
-                            </div>
-                        </fieldset>
-                    </section>
-
-                    <aside>
-                        <section style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fbfcfe" aria-labelledby="json-mode-heading">
-                            <h3 id="json-mode-heading" style="margin:0 0 8px;font-size:1rem">JSON mode</h3>
-                            <p class="helper">Keep using pasted config and manifest JSON whenever you need a fully explicit authoring path. Guided fields and raw JSON can coexist; pasted config still wins.</p>
-                        </section>
-                        <section style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fbfcfe;margin-top:12px" aria-labelledby="generated-config-heading">
-                            <h3 id="generated-config-heading" style="margin:0 0 8px;font-size:1rem">Generated config</h3>
-                            {% if generated_config_json %}
-                                <textarea aria-label="Generated config JSON" spellcheck="false" readonly>{{ generated_config_json }}</textarea>
-                            {% else %}
-                                <p class="helper">Preview a guided selection to inspect the generated config JSON before launch.</p>
-                            {% endif %}
-                        </section>
-                    </aside>
-                </div>
-
-                <div class="grid">
-                    <div>
-                        <label for="{{ form.config_json.id_for_label }}">Config JSON</label>
-                        {{ form.config_json.errors }}
-                        <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
-                    </div>
-                    <div>
-                        <label for="{{ form.manifest_json.id_for_label }}">Manifest JSON</label>
-                        {{ form.manifest_json.errors }}
-                        <textarea id="{{ form.manifest_json.id_for_label }}" name="manifest_json" spellcheck="false">{{ form.manifest_json.value|default_if_none:"" }}</textarea>
-                    </div>
+                <input type="hidden" name="manifest_json" value="">
+                <div>
+                    <label for="{{ form.config_json.id_for_label }}">Config JSON</label>
+                    {{ form.config_json.errors }}
+                    <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
                 </div>
 
                 <div class="actions">
@@ -550,14 +417,6 @@
             {% if preview %}
                 <section class="panel" aria-labelledby="preview-heading" data-plan-preview>
                     <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
-                    {% if preview.suite_metadata %}
-                        <div class="muted">
-                            {{ preview.suite_metadata.label }} &middot; {{ preview.suite_metadata.standard }}
-                            {{ preview.suite_metadata.spec_version }} &middot; {{ preview.suite_metadata.profile }} &middot;
-                            {{ preview.suite_metadata.suite }}
-                        </div>
-                    {% endif %}
-
                     <div class="counts" aria-label="Plan counts">
                         <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>
                         <div class="count"><strong data-plan-count-selected>{{ preview_counts.selected }}</strong><span>Selected</span></div>
@@ -578,14 +437,14 @@
                         <div class="message warning" data-plan-certification-message>Certification selection ineligible</div>
                     {% endif %}
 
-                    <section class="run-plan-preview" aria-labelledby="run-plan-heading">
-                        <h3 id="run-plan-heading">Run Plan</h3>
-                        <p>Run Plan (export this to reuse your test configuration)</p>
+                    <section class="run-plan-preview" aria-labelledby="launch-readiness-heading">
+                        <h3 id="launch-readiness-heading">Launch readiness</h3>
+                        <p>The staged builder is the supported path for saving reusable configs. This advanced preview can still launch the pasted config.</p>
                         {% if preview.legacy_test_values_warning %}
-                            <div class="message warning">Your configuration includes testValues — these will be migrated to a Run Plan on launch.</div>
+                            <div class="message warning">Your configuration includes legacy testValues — move reusable custom values to testData.values before saving a new config.</div>
                         {% endif %}
                         {% if preview.plan_drift_blocks_launch %}
-                            <div class="message error">Imported Run Plan drift blocks launch until you re-export from the current manifest.</div>
+                            <div class="message error">Imported plan drift blocks launch until you rebuild and export a saved config from the current catalogue.</div>
                         {% endif %}
                         {% for drift_warning in preview.plan_drift_warnings %}
                             <div class="message warning">{{ drift_warning }}</div>
@@ -597,13 +456,6 @@
                                 <label for="exploratory_ack">I understand this is an Exploratory Run and results will not be eligible for certification.</label>
                             </div>
                         {% endif %}
-                        <label for="run-plan-import">Import Run Plan JSON</label>
-                        <textarea id="run-plan-import" name="run_plan_import" rows="4" class="run-plan-import" placeholder="Paste a Run Plan JSON here to import..." spellcheck="false">{{ form.run_plan_import.value|default_if_none:"" }}</textarea>
-                        <div class="run-plan-actions">
-                            <button type="button" class="secondary" data-run-plan-copy>Copy to clipboard</button>
-                            <span class="muted" data-run-plan-copy-status></span>
-                        </div>
-                        <pre class="run-plan-json" data-run-plan-json>{{ preview.run_plan_json }}</pre>
                     </section>
 
                     {% if preview.test_value_step_groups %}
@@ -750,6 +602,9 @@
     const STAGED_SPECS = {{ staged_specification_options|safe }};
     const STAGED_VERSIONS = {{ staged_version_options|safe }};
     const STAGED_RGS = {{ staged_resource_group_options|safe }};
+    const STAGED_CATALOGUES = {{ staged_catalogue_data|safe }};
+    const STAGED_DISCOVERY_PREVIEW_URL = "{% url 'plan-discovery-preview' %}";
+    const STAGED_LAUNCH_URL = "{% url 'plan-staged-launch' %}";
 
     // ── Staged journey state ──────────────────────────────────────────────
     const state = {
@@ -757,15 +612,59 @@
         specification: null,
         version: null,
         resourceGroups: [],
-        endpointSelections: {},  // endpointId → { selected, requirement }
+        endpointSelections: {},
+        fieldValues: {},
+        baseConfig: {
+            discoveryUrl: '',
+            resultOutputPath: '',
+            executionLogPath: '',
+        },
+        advancedTestDataValues: {},
+        discoveryPreview: null,
     };
 
     let currentStage = 1;
     const TOTAL_STAGES = 8;
+    let showAllApplicableTests = false;
 
     function getStepEl(n) { return document.getElementById(`stage-${n}`); }
     function getBodyEl(n) { return document.getElementById(`stage-${n}-body`); }
     function getSummaryEl(n) { return document.getElementById(`stage-${n}-summary`); }
+    function getCatalogue() {
+        return (((STAGED_CATALOGUES[state.standard] || {})[state.specification] || {})[state.version]) || null;
+    }
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+    function isPlainObject(value) {
+        return value !== null && typeof value === 'object' && !Array.isArray(value);
+    }
+    function isValidConfigTestDataKey(key) {
+        return /^[A-Za-z][A-Za-z0-9_-]*$/.test(key);
+    }
+    function nonBlank(value) {
+        return typeof value === 'string' && value.trim() !== '';
+    }
+    function csrfToken() {
+        return document.querySelector('input[name=csrfmiddlewaretoken]')?.value || '';
+    }
+    async function postJson(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken(),
+            },
+            body: JSON.stringify(payload),
+        });
+        let body = {};
+        try {
+            body = await response.json();
+        } catch {
+            body = { error: 'Server returned a non-JSON response.' };
+        }
+        return { response, body };
+    }
 
     function toggleStage(n) {
         const body = getBodyEl(n);
@@ -814,6 +713,7 @@
         if (next === 4) populateVersionStage();
         if (next === 5) populateResourceGroupStage();
         if (next === 6) populateEndpointStage();
+        if (next === 7) populateFieldValueStage();
         if (next === 8) populatePreviewStage();
         goToStage(next);
     }
@@ -841,6 +741,10 @@
                 container.querySelectorAll('.stage-option').forEach(el => el.classList.remove('selected'));
                 label.classList.add('selected');
                 state.specification = spec.id;
+                state.version = null;
+                state.resourceGroups = [];
+                state.endpointSelections = {};
+                state.fieldValues = {};
                 getSummaryEl(2).textContent = spec.displayLabel;
             });
             const span = document.createElement('span');
@@ -883,6 +787,9 @@
                 container.querySelectorAll('.stage-option').forEach(el => el.classList.remove('selected'));
                 label.classList.add('selected');
                 state.version = v.version;
+                state.resourceGroups = [];
+                state.endpointSelections = {};
+                state.fieldValues = {};
                 getSummaryEl(4).textContent = v.version;
             });
             const span = document.createElement('span');
@@ -909,7 +816,9 @@
         const rgs = ((STAGED_RGS[state.standard] || {})[state.specification] || {})[state.version] || [];
         container.innerHTML = '';
         if (rgs.length === 0) {
-            container.innerHTML = '<p class="helper">No resource groups available for this specification.</p>';
+            state.resourceGroups = [];
+            container.innerHTML = '<p class="helper">This specification selects operations directly, without resource groups.</p>';
+            getSummaryEl(5).textContent = 'Operations selected next';
             return;
         }
         rgs.forEach(rg => {
@@ -931,6 +840,7 @@
                     label.classList.remove('selected');
                     state.resourceGroups = state.resourceGroups.filter(r => r !== rg.id);
                 }
+                state.endpointSelections = {};
                 updateRgSummary();
             });
             const span = document.createElement('span');
@@ -958,72 +868,69 @@
     }
 
     function populateEndpointStage() {
-        // Build endpoint list grouped by resource group from preloaded data
-        // We use the STAGED_RGS to get rg info, and we need endpoint data.
-        // Since endpoint data isn't preloaded (too large), we build a simple
-        // representation from what we know about the selected rgs.
         const container = document.getElementById('stage-6-endpoints');
         if (!container) return;
 
         const rgs = ((STAGED_RGS[state.standard] || {})[state.specification] || {})[state.version] || [];
         const selectedRgs = rgs.filter(rg => state.resourceGroups.includes(rg.id));
+        const catalogue = getCatalogue();
 
-        if (selectedRgs.length === 0) {
+        if (!catalogue) {
+            container.innerHTML = '<p class="helper">No catalogue data is available for this target.</p>';
+            getSummaryEl(6).textContent = 'No catalogue';
+            return;
+        }
+        if (catalogue.usesResourceGroups && selectedRgs.length === 0) {
             container.innerHTML = '<p class="helper">No resource groups selected.</p>';
+            getSummaryEl(6).textContent = 'No resource groups';
             return;
         }
 
-        // Reset endpoint selections
-        state.endpointSelections = {};
-
-        // Build the endpoint table (data is server-rendered via a JSON data attribute)
-        const endpointDataEl = document.getElementById('staged-endpoint-data');
-        let allEndpoints = [];
-        if (endpointDataEl) {
-            try {
-                allEndpoints = JSON.parse(endpointDataEl.textContent || '[]');
-            } catch { allEndpoints = []; }
-        }
-
-        // Filter to selected rgs
-        const filtered = allEndpoints.filter(ep => state.resourceGroups.includes(ep.resourceGroup));
+        const selectedRgIds = new Set(state.resourceGroups);
+        const filtered = (catalogue.endpoints || []).filter(ep => !catalogue.usesResourceGroups || selectedRgIds.has(ep.resourceGroup));
 
         if (filtered.length === 0) {
-            container.innerHTML = '<p class="helper">No endpoint data available. Endpoint coverage will be configured in a later stage.</p>';
+            container.innerHTML = '<p class="helper">No endpoint or operation coverage is available for this target.</p>';
             getSummaryEl(6).textContent = 'No data';
             return;
         }
 
-        // Group by resource group
         const byRg = {};
         filtered.forEach(ep => {
-            if (!byRg[ep.resourceGroup]) byRg[ep.resourceGroup] = [];
-            byRg[ep.resourceGroup].push(ep);
+            const groupKey = ep.resourceGroup || 'operations';
+            if (!byRg[groupKey]) byRg[groupKey] = [];
+            byRg[groupKey].push(ep);
         });
 
         const html = [];
         Object.entries(byRg).forEach(([rgId, eps]) => {
             const rgMeta = rgs.find(r => r.id === rgId);
-            html.push(`<h4 style="margin:16px 0 8px;font-size:0.95rem">${rgMeta ? rgMeta.displayLabel : rgId.toUpperCase()}</h4>`);
+            const groupLabel = rgMeta ? rgMeta.displayLabel : (rgId === 'operations' ? 'Operations' : rgId.toUpperCase());
+            html.push(`<h4 style="margin:16px 0 8px;font-size:0.95rem">${escapeHtml(groupLabel)}</h4>`);
             html.push('<table class="endpoint-table"><thead><tr><th></th><th>Method</th><th>Path</th><th>Label</th><th>Requirement</th></tr></thead><tbody>');
             eps.forEach(ep => {
                 const isMandatory = ep.requirement === 'mandatory';
-                const isSelected = ep.requirement !== 'optional';
-                state.endpointSelections[ep.endpointId] = { selected: isSelected, requirement: ep.requirement };
+                const previous = state.endpointSelections[ep.endpointId];
+                const isSelected = previous ? previous.selected : ep.requirement !== 'optional';
+                state.endpointSelections[ep.endpointId] = {
+                    selected: isSelected,
+                    requirement: ep.requirement,
+                    operation: ep.operation,
+                    method: ep.method,
+                };
                 const badgeClass = isMandatory ? 'required' : (ep.requirement === 'conditional' ? 'conditional' : 'optional');
-                html.push(`<tr data-endpoint-row="${ep.endpointId}">
-                    <td><input type="checkbox" data-endpoint-checkbox="${ep.endpointId}" ${isSelected ? 'checked' : ''} aria-label="Include ${ep.displayLabel}"></td>
-                    <td><span class="method-badge method-${ep.method}">${ep.method}</span></td>
-                    <td class="step-id">${ep.path}</td>
-                    <td>${ep.displayLabel}</td>
-                    <td><span class="badge ${badgeClass}">${ep.requirement}</span></td>
+                html.push(`<tr data-endpoint-row="${escapeHtml(ep.endpointId)}">
+                    <td><input type="checkbox" data-endpoint-checkbox="${escapeHtml(ep.endpointId)}" ${isSelected ? 'checked' : ''} aria-label="Include ${escapeHtml(ep.displayLabel)}"></td>
+                    <td><span class="method-badge method-${escapeHtml(ep.method)}">${escapeHtml(ep.method)}</span></td>
+                    <td class="step-id">${escapeHtml(ep.path)}</td>
+                    <td>${escapeHtml(ep.displayLabel)}</td>
+                    <td><span class="badge ${badgeClass}">${escapeHtml(ep.requirement)}</span></td>
                 </tr>`);
             });
             html.push('</tbody></table>');
         });
         container.innerHTML = html.join('');
 
-        // Wire up checkboxes
         container.querySelectorAll('[data-endpoint-checkbox]').forEach(cb => {
             cb.addEventListener('change', () => {
                 const id = cb.dataset.endpointCheckbox;
@@ -1037,6 +944,26 @@
         updateEndpointSummary(filtered);
     }
 
+    function applyEndpointBulkAction(action) {
+        const endpoints = selectedEndpointEntries();
+        for (const ep of endpoints) {
+            const nextSelected = action === 'select-all' || (action === 'select-mandatory' && ep.requirement === 'mandatory');
+            state.endpointSelections[ep.endpointId] = {
+                ...(state.endpointSelections[ep.endpointId] || {}),
+                selected: action === 'deselect-all' ? false : nextSelected,
+                requirement: ep.requirement,
+                operation: ep.operation,
+                method: ep.method,
+            };
+        }
+        for (const cb of document.querySelectorAll('[data-endpoint-checkbox]')) {
+            const id = cb.dataset.endpointCheckbox;
+            cb.checked = Boolean(state.endpointSelections[id]?.selected);
+        }
+        checkMandatoryWarning();
+        updateEndpointSummary(endpoints);
+    }
+
     function checkMandatoryWarning() {
         const warningEl = document.getElementById('stage-6-mandatory-warning');
         if (!warningEl) return;
@@ -1048,51 +975,626 @@
 
     function updateEndpointSummary(allEndpoints) {
         const total = allEndpoints.length;
-        const selected = Object.values(state.endpointSelections).filter(ep => ep.selected).length;
-        getSummaryEl(6).textContent = `${selected}/${total} endpoints`;
+        const selected = allEndpoints.filter(ep => state.endpointSelections[ep.endpointId]?.selected).length;
+        getSummaryEl(6).textContent = `${selected}/${total} ${getCatalogue()?.usesResourceGroups ? 'endpoints' : 'operations'}`;
+    }
+
+    function populateFieldValueStage() {
+        const container = document.getElementById('stage-7-fields');
+        if (!container) return;
+        populateBaseConfigFields();
+        const fields = runtimeMappedFields();
+        if (fields.length === 0) {
+            container.innerHTML = '<p class="helper">This catalogue does not declare participant field prompts.</p>';
+            populateAdvancedTestDataValues();
+            getSummaryEl(7).textContent = 'No fields';
+            return;
+        }
+
+        const html = ['<div class="field-value-grid">'];
+        fields.forEach(field => {
+            const value = state.fieldValues[field.fieldId] || '';
+            const requiredBadge = field.required ? '<span class="badge required">Required</span>' : '<span class="badge optional">Optional</span>';
+            const sensitiveBadge = field.sensitive ? '<span class="badge">Path-only / masked</span>' : '';
+            html.push(`<div class="field-value-card" data-field-card="${escapeHtml(field.fieldId)}">`);
+            if (field.valueType === 'boolean') {
+                html.push(`<label class="field-value-checkbox-label"><input type="checkbox" data-field-value="${escapeHtml(field.fieldId)}" ${value === 'true' ? 'checked' : ''}>${escapeHtml(field.displayLabel)}</label>`);
+            } else if (field.valueType === 'choice' && field.fieldId.endsWith('tokenEndpointAuthMethod')) {
+                html.push(`<label for="field-${escapeHtml(field.fieldId)}">${escapeHtml(field.displayLabel)}</label>`);
+                html.push(`<select id="field-${escapeHtml(field.fieldId)}" data-field-value="${escapeHtml(field.fieldId)}">
+                    <option value="">Select auth method</option>
+                    <option value="private_key_jwt" ${value === 'private_key_jwt' ? 'selected' : ''}>private_key_jwt</option>
+                    <option value="tls_client_auth" ${value === 'tls_client_auth' ? 'selected' : ''}>tls_client_auth</option>
+                </select>`);
+            } else {
+                const inputType = field.valueType === 'url' ? 'url' : 'text';
+                html.push(`<label for="field-${escapeHtml(field.fieldId)}">${escapeHtml(field.displayLabel)}</label>`);
+                html.push(`<input id="field-${escapeHtml(field.fieldId)}" data-field-value="${escapeHtml(field.fieldId)}" type="${inputType}" value="${escapeHtml(value)}" autocomplete="off">`);
+            }
+            html.push(`<div class="test-value-meta"><div>${requiredBadge} ${sensitiveBadge} <span class="badge">${escapeHtml(field.valueType)}</span></div><span class="step-id">${escapeHtml(field.fieldId)}</span></div>`);
+            if (field.valueType === 'path') html.push('<div class="helper">Enter the exact absolute filesystem path. Do not paste key or certificate contents.</div>');
+            html.push('</div>');
+        });
+        html.push('</div>');
+        container.innerHTML = html.join('');
+        container.querySelectorAll('[data-field-value]').forEach(input => {
+            input.addEventListener('input', () => updateFieldValue(input));
+            input.addEventListener('change', () => updateFieldValue(input));
+        });
+        populateAdvancedTestDataValues();
+        updateFieldSummary();
+    }
+
+    function runtimeMappedFields() {
+        return getCatalogue()?.fieldSchemas || [];
+    }
+
+    function populateBaseConfigFields() {
+        const container = document.getElementById('stage-7-base-fields');
+        if (!container) return;
+        const baseFields = [
+            ['discoveryUrl', 'Discovery URL', 'url', true, 'OpenID Provider discovery URL. Use preview to fetch non-secret metadata and prefill empty endpoint fields.'],
+            ['resultOutputPath', 'Result output path', 'text', false, 'Optional result JSON output path for CLI/API reuse.'],
+            ['executionLogPath', 'Execution log path', 'text', false, 'Optional NDJSON execution log output path for CLI/API reuse.'],
+        ];
+        container.innerHTML = `<div class="field-value-grid">${baseFields.map(([key, label, type, required, help]) => `
+            <div class="field-value-card">
+                <label for="base-config-${key}">${escapeHtml(label)}</label>
+                <input id="base-config-${key}" data-base-config-value="${escapeHtml(key)}" type="${type}" value="${escapeHtml(state.baseConfig[key] || '')}" autocomplete="off">
+                <div class="test-value-meta"><div><span class="badge ${required ? 'required' : 'optional'}">${required ? 'Required' : 'Optional'}</span></div><span class="step-id">${escapeHtml(key)}</span></div>
+                <div class="helper">${escapeHtml(help)}</div>
+                ${key === 'discoveryUrl' ? `
+                    <div class="actions preview-actions">
+                        <button type="button" class="secondary" data-discovery-preview>Preview discovery</button>
+                        <span class="muted" data-discovery-preview-status></span>
+                    </div>
+                    <div data-discovery-preview-content></div>
+                ` : ''}
+            </div>`).join('')}</div>`;
+        container.querySelectorAll('[data-base-config-value]').forEach(input => {
+            input.addEventListener('input', () => updateBaseConfigValue(input));
+            input.addEventListener('change', () => updateBaseConfigValue(input));
+        });
+        container.querySelector('[data-discovery-preview]')?.addEventListener('click', fetchDiscoveryPreview);
+        renderDiscoveryPreview();
+    }
+
+    function updateBaseConfigValue(input) {
+        const key = input.dataset.baseConfigValue;
+        if (!key) return;
+        state.baseConfig[key] = input.value;
+        updateFieldSummary();
+    }
+
+    async function fetchDiscoveryPreview() {
+        const status = document.querySelector('[data-discovery-preview-status]');
+        if (status) status.textContent = 'Fetching discovery metadata...';
+        try {
+            const { response, body } = await postJson(STAGED_DISCOVERY_PREVIEW_URL, {
+                discoveryUrl: state.baseConfig.discoveryUrl,
+            });
+            if (!response.ok) {
+                if (status) status.textContent = body.error || 'Discovery preview failed.';
+                return;
+            }
+            state.discoveryPreview = body.discovery || {};
+            applyDiscoveryPrefill(state.discoveryPreview);
+            renderDiscoveryPreview();
+            updateFieldSummary();
+            const nextStatus = document.querySelector('[data-discovery-preview-status]');
+            if (nextStatus) nextStatus.textContent = 'Discovery metadata loaded. Empty matching fields were prefilled.';
+        } catch (error) {
+            if (status) status.textContent = `Discovery preview failed: ${error.message}`;
+        }
+    }
+
+    function applyDiscoveryPrefill(discovery) {
+        const isDcrTarget = state.specification === 'dynamic-client-registration';
+        if (!isDcrTarget) prefillEmptyField('oauth.authorizationBaseUrl', discovery.authorizationEndpoint);
+        if (Array.isArray(discovery.tokenEndpointAuthMethodsSupported)) {
+            const preferredMethod = discovery.tokenEndpointAuthMethodsSupported.includes('tls_client_auth')
+                ? 'tls_client_auth'
+                : (discovery.tokenEndpointAuthMethodsSupported.includes('private_key_jwt') ? 'private_key_jwt' : '');
+            if (isDcrTarget) {
+                prefillEmptyField('dcr.tokenEndpointAuthMethod', preferredMethod);
+            } else {
+                prefillEmptyField('fapiSigning.tokenEndpointAuthMethod', preferredMethod);
+            }
+        }
+        populateFieldValueStage();
+    }
+
+    function prefillEmptyField(fieldId, value) {
+        if (!nonBlank(value) || nonBlank(state.fieldValues[fieldId])) return;
+        state.fieldValues[fieldId] = value;
+    }
+
+    function renderDiscoveryPreview() {
+        const container = document.querySelector('[data-discovery-preview-content]');
+        if (!container) return;
+        const discovery = state.discoveryPreview;
+        if (!discovery) {
+            container.innerHTML = '';
+            return;
+        }
+        const rows = [
+            ['Issuer', discovery.issuer],
+            ['Authorization endpoint', discovery.authorizationEndpoint],
+            ['Token endpoint', discovery.tokenEndpoint],
+            ['JWKS URI', discovery.jwksUri],
+            ['Registration endpoint', discovery.registrationEndpoint],
+            ['Grant types', Array.isArray(discovery.grantTypesSupported) ? discovery.grantTypesSupported.join(', ') : ''],
+            ['Response types', Array.isArray(discovery.responseTypesSupported) ? discovery.responseTypesSupported.join(', ') : ''],
+            ['Token endpoint auth methods', Array.isArray(discovery.tokenEndpointAuthMethodsSupported) ? discovery.tokenEndpointAuthMethodsSupported.join(', ') : ''],
+        ].filter(([, value]) => nonBlank(value));
+        container.innerHTML = rows.length ? `
+            <div class="run-plan-preview">
+                <h3>Discovery preview</h3>
+                <p>This metadata is used only for preview/prefill. The saved config keeps the discovery URL and explicit field values, not the fetched document.</p>
+                <dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd class="step-id">${escapeHtml(value)}</dd>`).join('')}</dl>
+            </div>` : '';
+    }
+
+    function updateFieldValue(input) {
+        const fieldId = input.dataset.fieldValue;
+        if (!fieldId) return;
+        if (input.type === 'checkbox') {
+            state.fieldValues[fieldId] = input.checked ? 'true' : '';
+        } else {
+            state.fieldValues[fieldId] = input.value;
+        }
+        updateFieldSummary();
+    }
+
+    function updateFieldSummary() {
+        const fields = runtimeMappedFields();
+        const requiredMissing = fields.filter(field => field.required && !(state.fieldValues[field.fieldId] || '').trim()).length;
+        const supplied = fields.filter(field => (state.fieldValues[field.fieldId] || '').trim()).length;
+        const baseMissing = ['discoveryUrl'].filter(key => !nonBlank(state.baseConfig[key])).length;
+        const warning = document.getElementById('stage-7-required-warning');
+        if (warning) warning.hidden = requiredMissing === 0 && baseMissing === 0;
+        getSummaryEl(7).textContent = `${supplied}/${fields.length} catalogue fields, ${baseMissing ? `${baseMissing} base missing` : 'base ready'}`;
+    }
+
+    function selectedEndpointEntries() {
+        const catalogue = getCatalogue();
+        if (!catalogue) return [];
+        const selectedRgIds = new Set(state.resourceGroups);
+        return (catalogue.endpoints || []).filter(ep => !catalogue.usesResourceGroups || selectedRgIds.has(ep.resourceGroup));
+    }
+
+    function buildTestPlan() {
+        const catalogue = getCatalogue();
+        const target = {
+            standard: state.standard,
+            specification: state.specification,
+            securityProfile: 'fapi1-advanced',
+            specificationVersion: state.version,
+            catalogueHash: catalogue?.catalogueHash || '',
+        };
+        const plan = {
+            target,
+            endpointSelections: selectedEndpointEntries().map(ep => ({
+                endpointId: ep.endpointId,
+                operation: ep.operation,
+                selected: Boolean(state.endpointSelections[ep.endpointId]?.selected),
+            })),
+        };
+        if (catalogue?.usesResourceGroups) plan.resourceGroups = [...state.resourceGroups];
+        for (const [key, value] of Object.entries(state.advancedTestDataValues)) {
+            if (!isValidConfigTestDataKey(key) || !nonBlank(value)) continue;
+            if (!plan.testData) plan.testData = {};
+            plan.testData[key] = value;
+        }
+        return plan;
+    }
+
+    function buildEnhancedConfigDocument() {
+        const config = {};
+        if (nonBlank(state.baseConfig.discoveryUrl)) config.discoveryUrl = state.baseConfig.discoveryUrl.trim();
+        if (nonBlank(state.baseConfig.resultOutputPath)) config.resultOutputPath = state.baseConfig.resultOutputPath.trim();
+        if (nonBlank(state.baseConfig.executionLogPath)) config.executionLogPath = state.baseConfig.executionLogPath.trim();
+        config.testTarget = {
+            standard: state.standard,
+            specification: state.specification,
+            securityProfile: 'fapi1-advanced',
+            specificationVersion: state.version,
+        };
+        if (getCatalogue()?.usesResourceGroups) config.testTarget.resourceGroups = [...state.resourceGroups];
+        applyMappedRuntimeConfig(config);
+        const advancedValues = Object.fromEntries(
+            Object.entries(state.advancedTestDataValues).filter(([key, value]) => isValidConfigTestDataKey(key) && nonBlank(value))
+        );
+        if (Object.keys(advancedValues).length > 0) config.testData = { values: advancedValues };
+        config.testPlan = buildTestPlan();
+        return config;
+    }
+
+    function setNestedObjectValue(obj, section, key, value) {
+        if (!nonBlank(value)) return;
+        if (!obj[section]) obj[section] = {};
+        obj[section][key] = value.trim();
+    }
+
+    function setNestedBooleanValue(obj, section, key, value) {
+        if (value !== 'true') return;
+        if (!obj[section]) obj[section] = {};
+        obj[section][key] = true;
+    }
+
+    function applyMappedRuntimeConfig(config) {
+        const v = state.fieldValues;
+        if (state.specification === 'dynamic-client-registration') {
+            for (const key of ['ssaPath', 'signingPrivateKeyPath', 'signingCertificatePath', 'transportCertificatePath', 'transportPrivateKeyPath', 'caBundlePath', 'tokenEndpointAuthMethod']) {
+                setNestedObjectValue(config, 'dcr', key, v[`dcr.${key}`]);
+            }
+            setNestedBooleanValue(config, 'dcr', 'disableKeepAlives', v['dcr.disableKeepAlives']);
+            setNestedBooleanValue(config, 'dcr', 'tlsSkipVerify', v['dcr.tlsSkipVerify']);
+            return;
+        }
+        setNestedObjectValue(config, 'oauth', 'clientId', v['oauth.clientId']);
+        setNestedObjectValue(config, 'oauth', 'redirectUri', v['psu.authorizationRedirectUri']);
+        setNestedObjectValue(config, 'oauth', 'authorizationEndpoint', v['oauth.authorizationBaseUrl']);
+        setNestedObjectValue(config, 'oauth', 'resourceBaseUrl', v['oauth.resourceBaseUrl']);
+        setNestedObjectValue(config, 'tls', 'clientCertificatePath', v['tls.certPath']);
+        setNestedObjectValue(config, 'tls', 'clientPrivateKeyPath', v['tls.keyPath']);
+        setNestedObjectValue(config, 'tls', 'caBundlePath', v['tls.caBundlePath']);
+        setNestedObjectValue(config, 'fapiSigning', 'signingCertificatePath', v['fapiSigning.signingCertificatePath']);
+        setNestedObjectValue(config, 'fapiSigning', 'signingPrivateKeyPath', v['fapiSigning.signingPrivateKeyPath']);
+        setNestedObjectValue(config, 'fapiSigning', 'kid', v['fapiSigning.kid']);
+        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionIssuer', v['fapiSigning.clientAssertionIssuer']);
+        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionSubject', v['fapiSigning.clientAssertionSubject']);
+        setNestedObjectValue(config, 'fapiSigning', 'tokenEndpointAuthMethod', v['fapiSigning.tokenEndpointAuthMethod']);
+        setNestedObjectValue(config, 'fapiSigning', 'signatureIssuer', v['fapiSigning.signatureIssuer']);
+        setNestedObjectValue(config, 'fapiSigning', 'signatureTrustAnchor', v['fapiSigning.signatureTrustAnchor']);
+        setNestedObjectValue(config, 'openBanking', 'financialId', v['openBanking.financialId']);
+    }
+
+    function applicableTests() {
+        const catalogue = getCatalogue();
+        if (!catalogue) return [];
+        const selectedEndpoints = new Set(Object.entries(state.endpointSelections).filter(([, value]) => value.selected).map(([id]) => id));
+        const selectedRgIds = new Set(state.resourceGroups);
+        return (catalogue.executableTests || []).filter(test => {
+            const endpointApplies = !test.endpointId || selectedEndpoints.has(test.endpointId);
+            const resourceGroupApplies = !catalogue.usesResourceGroups || !test.resourceGroup || selectedRgIds.has(test.resourceGroup);
+            return endpointApplies && resourceGroupApplies;
+        });
+    }
+
+    function omittedMandatoryEndpoints() {
+        return selectedEndpointEntries().filter(ep => ep.requirement === 'mandatory' && !state.endpointSelections[ep.endpointId]?.selected);
     }
 
     function populatePreviewStage() {
         const container = document.getElementById('stage-8-preview-content');
         if (!container) return;
 
-        const selectedIds = Object.entries(state.endpointSelections)
-            .filter(([, v]) => v.selected)
-            .map(([id]) => id);
-
-        const plan = {
-            testTarget: {
-                standard: state.standard,
-                specification: state.specification,
-                securityProfile: 'fapi1-advanced',
-                specificationVersion: state.version,
-                resourceGroups: state.resourceGroups,
-            },
-            selectedEndpoints: selectedIds,
-        };
+        const catalogue = getCatalogue();
+        const tests = applicableTests();
+        const omittedMandatory = omittedMandatoryEndpoints();
+        const readiness = catalogue?.readinessPolicy;
+        const selectedCount = selectedEndpointEntries().filter(ep => state.endpointSelections[ep.endpointId]?.selected).length;
+        const visibleTests = showAllApplicableTests ? tests : tests.slice(0, 12);
+        const testsPreview = visibleTests.map(test => `<li><span class="step-id">${escapeHtml(test.testId)}</span> ${escapeHtml(test.displayLabel)}</li>`).join('');
+        const omittedPreview = omittedMandatory.map(ep => `<li><span class="step-id">${escapeHtml(ep.endpointId)}</span> ${escapeHtml(ep.displayLabel)}</li>`).join('');
+        const configJson = JSON.stringify(buildEnhancedConfigDocument(), null, 2);
 
         container.innerHTML = `
             <div style="margin-bottom:12px">
                 <div class="muted" style="margin-bottom:8px">Standard: <strong>${state.standard || '—'}</strong> &nbsp; Specification: <strong>${state.specification || '—'}</strong> &nbsp; Version: <strong>${state.version || '—'}</strong></div>
-                <div class="muted">Security Profile: <span class="badge fapi">FAPI 1 Advanced</span> &nbsp; Resource Groups: <strong>${state.resourceGroups.join(', ') || '—'}</strong></div>
+                <div class="muted">Security Profile: <span class="badge fapi">FAPI 1 Advanced</span> &nbsp; ${catalogue?.usesResourceGroups ? `Resource Groups: <strong>${escapeHtml(state.resourceGroups.join(', ') || '—')}</strong>` : 'Operations selected directly'}</div>
             </div>
-            <div class="muted" style="margin:8px 0">Selected endpoints: <strong>${selectedIds.length}</strong></div>
+            <div class="muted" style="margin:8px 0">Catalogue hash: <span class="step-id">${escapeHtml(catalogue?.catalogueHash || 'unavailable')}</span></div>
+            <div class="counts" aria-label="Staged plan counts">
+                <div class="count"><strong>${selectedCount}</strong><span>${catalogue?.usesResourceGroups ? 'Endpoints' : 'Operations'} selected</span></div>
+                <div class="count"><strong>${tests.length}</strong><span>Applicable tests</span></div>
+                <div class="count"><strong>${omittedMandatory.length}</strong><span>Mandatory omitted</span></div>
+                <div class="count"><strong>${escapeHtml(readiness?.certificationStatus || 'unknown')}</strong><span>Readiness policy</span></div>
+            </div>
+            ${readiness ? `<div class="message ${omittedMandatory.length ? 'warning' : 'success'}">Readiness: omitted mandatory coverage results in <strong>${escapeHtml(readiness.omittedMandatoryOutcome)}</strong>; failed selected tests result in <strong>${escapeHtml(readiness.failedSelectedOutcome)}</strong>.</div>` : ''}
+            ${omittedMandatory.length ? `<div class="message warning">Omitted mandatory ${catalogue?.usesResourceGroups ? 'endpoints' : 'operations'}:<ul class="preview-list">${omittedPreview}</ul></div>` : '<div class="message success">No mandatory coverage is omitted.</div>'}
             <div class="run-plan-preview">
-                <h3>Derived Plan (JSON)</h3>
-                <pre class="run-plan-json" style="max-height:320px;overflow-y:auto">${JSON.stringify(plan, null, 2)}</pre>
+                <h3>Applicable tests</h3>
+                ${tests.length ? `<ul class="preview-list">${testsPreview}</ul>${tests.length > 12 ? `<button type="button" class="secondary" data-toggle-applicable-tests>${showAllApplicableTests ? 'Show fewer' : `Show all ${tests.length} tests`}</button>` : ''}` : '<p>No applicable tests derived from the selected coverage.</p>'}
+            </div>
+            <div class="run-plan-preview">
+                <h3>Saved config JSON</h3>
+                <p>Download one self-contained participant config containing runtime fields, testTarget, advanced testData.values, and the embedded testPlan snapshot.</p>
+                <div class="run-plan-actions">
+                    <button type="button" data-staged-launch-run>Launch run</button>
+                    <button type="button" data-staged-config-download>Save config JSON</button>
+                    <button type="button" class="secondary" data-staged-config-copy>Copy config JSON</button>
+                    <span class="muted" data-staged-config-status></span>
+                </div>
+                <pre class="run-plan-json" style="max-height:320px;overflow-y:auto" data-staged-config-json>${escapeHtml(configJson)}</pre>
             </div>`;
 
-        getSummaryEl(8).textContent = `${selectedIds.length} endpoints selected`;
+        const toggleTestsButton = container.querySelector('[data-toggle-applicable-tests]');
+        if (toggleTestsButton) {
+            toggleTestsButton.addEventListener('click', () => {
+                showAllApplicableTests = !showAllApplicableTests;
+                populatePreviewStage();
+            });
+        }
+        const configCopy = container.querySelector('[data-staged-config-copy]');
+        if (configCopy) configCopy.addEventListener('click', () => copyStagedText(configJson, '[data-staged-config-status]'));
+        const configDownload = container.querySelector('[data-staged-config-download]');
+        if (configDownload) configDownload.addEventListener('click', () => downloadJson(configJson, stagedConfigFilename()));
+        const launchRun = container.querySelector('[data-staged-launch-run]');
+        if (launchRun) launchRun.addEventListener('click', () => launchStagedRun(JSON.parse(configJson)));
+        getSummaryEl(8).textContent = `${selectedCount} selected, ${tests.length} tests`;
     }
 
-    // ── Legacy guided-flow JS (v1 manifest path) ──────────────────────────
+    async function launchStagedRun(configDocument) {
+        const status = document.querySelector('[data-staged-config-status]');
+        if (status) status.textContent = 'Launching run...';
+        try {
+            const { response, body } = await postJson(STAGED_LAUNCH_URL, configDocument);
+            if (response.ok && body.redirectUrl) {
+                window.location.assign(body.redirectUrl);
+                return;
+            }
+            if (body.activeRunUrl) {
+                if (status) status.innerHTML = `${escapeHtml(body.error || 'A run is already active')} <a href="${escapeHtml(body.activeRunUrl)}">Open active run</a>`;
+                return;
+            }
+            if (status) status.textContent = body.error || 'Launch failed.';
+        } catch (error) {
+            if (status) status.textContent = `Launch failed: ${error.message}`;
+        }
+    }
+
+    function stagedConfigFilename() {
+        const groups = state.resourceGroups.length ? state.resourceGroups.join('-') : 'operations';
+        const date = new Date().toISOString().slice(0, 10);
+        const raw = `${state.standard}-${state.specification}-${state.version}-${groups}-${date}-config.json`;
+        return raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+    }
+
+    async function copyStagedText(text, statusSelector) {
+        const status = document.querySelector(statusSelector);
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            if (status) status.textContent = 'Clipboard API unavailable in this browser.';
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            if (status) status.textContent = 'Copied';
+        } catch {
+            if (status) status.textContent = 'Copy failed';
+        }
+    }
+
+    function downloadJson(text, filename) {
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        const status = document.querySelector('[data-staged-config-status]');
+        if (status) status.textContent = `Saved as ${filename}`;
+    }
+
+    function populateAdvancedTestDataValues() {
+        const container = document.getElementById('advanced-test-data-values');
+        if (!container) return;
+        const entries = Object.entries(state.advancedTestDataValues);
+        if (!entries.length) entries.push(['', '']);
+        container.innerHTML = entries.map(([key, value], idx) => `
+            <div class="advanced-test-data-row" data-test-data-row="${idx}">
+                <div>
+                    <label for="advanced-test-data-key-${idx}">Key</label>
+                    <input id="advanced-test-data-key-${idx}" data-test-data-key value="${escapeHtml(key)}" autocomplete="off">
+                </div>
+                <div>
+                    <label for="advanced-test-data-value-${idx}">Value</label>
+                    <input id="advanced-test-data-value-${idx}" data-test-data-value value="${escapeHtml(value)}" autocomplete="off">
+                </div>
+                <button type="button" class="secondary" data-remove-test-data-value>Remove</button>
+            </div>`).join('');
+        syncAdvancedTestDataListeners();
+    }
+
+    function syncAdvancedTestDataListeners() {
+        const container = document.getElementById('advanced-test-data-values');
+        if (!container) return;
+        const persist = () => {
+            const next = {};
+            for (const row of container.querySelectorAll('[data-test-data-row]')) {
+                const key = row.querySelector('[data-test-data-key]')?.value.trim() || '';
+                const value = row.querySelector('[data-test-data-value]')?.value || '';
+                if (key) next[key] = value;
+            }
+            state.advancedTestDataValues = next;
+        };
+        container.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', persist);
+            input.addEventListener('change', persist);
+        });
+        container.querySelectorAll('[data-remove-test-data-value]').forEach(button => {
+            button.addEventListener('click', () => {
+                button.closest('[data-test-data-row]')?.remove();
+                persist();
+                populateAdvancedTestDataValues();
+            });
+        });
+    }
+
+    function addAdvancedTestDataValue() {
+        const keyBase = 'customValue';
+        let key = keyBase;
+        let idx = 2;
+        while (Object.prototype.hasOwnProperty.call(state.advancedTestDataValues, key)) {
+            key = `${keyBase}${idx}`;
+            idx += 1;
+        }
+        state.advancedTestDataValues[key] = '';
+        populateAdvancedTestDataValues();
+    }
+
+    function applyImportedDocument(raw) {
+        if (!isPlainObject(raw)) throw new Error('JSON root must be an object.');
+        if (raw.schemaVersion === '2' && isPlainObject(raw.target)) {
+            throw new Error('Retired standalone plan JSON is no longer supported. Rebuild the selection and export a saved config JSON with testPlan.');
+        }
+        if (Object.prototype.hasOwnProperty.call(raw, 'runPlan')) {
+            throw new Error('runPlan is no longer supported. Rebuild/export the config JSON with top-level testPlan.');
+        }
+        const importedTestPlan = raw.testPlan;
+        if (importedTestPlan && !isPlainObject(importedTestPlan)) throw new Error('testPlan must be a JSON object.');
+        const importedConfig = raw;
+        const target = importedTestPlan?.target || importedConfig.testTarget;
+        if (!isPlainObject(target)) throw new Error('Import must contain config.testTarget or config.testPlan target coordinates.');
+
+        state.standard = target.standard || 'obl';
+        state.specification = target.specification || null;
+        state.version = target.specificationVersion || null;
+        state.resourceGroups = Array.isArray(importedTestPlan?.resourceGroups)
+            ? [...importedTestPlan.resourceGroups]
+            : (Array.isArray(importedConfig.testTarget?.resourceGroups) ? [...importedConfig.testTarget.resourceGroups] : []);
+        state.endpointSelections = {};
+        state.fieldValues = {};
+        state.advancedTestDataValues = {};
+        validateDcrSectionMatchesTarget(importedConfig);
+        applyImportedBaseConfig(importedConfig);
+        applyImportedRuntimeSections(importedConfig);
+        if (Array.isArray(importedTestPlan?.endpointSelections)) {
+            for (const selection of importedTestPlan.endpointSelections) {
+                if (!isPlainObject(selection) || typeof selection.endpointId !== 'string') continue;
+                state.endpointSelections[selection.endpointId] = {
+                    selected: Boolean(selection.selected),
+                    operation: typeof selection.operation === 'string' ? selection.operation : '',
+                    requirement: state.endpointSelections[selection.endpointId]?.requirement || 'optional',
+                };
+            }
+        }
+        applyImportedTestPlanData(importedTestPlan?.testData);
+        applyImportedConfigTestData(importedConfig.testData?.values);
+        refreshStagedUiAfterImport();
+    }
+
+    function validateDcrSectionMatchesTarget(config) {
+        if (state.specification === 'dynamic-client-registration' || !isPlainObject(config.dcr)) return;
+        throw new Error(`The top-level 'dcr' section is only valid for dynamic-client-registration test plans; this config targets '${state.specification}'. Remove the 'dcr' section or rebuild/export the config for a Dynamic Client Registration test plan.`);
+    }
+
+    function applyImportedBaseConfig(config) {
+        state.baseConfig = {
+            discoveryUrl: typeof config.discoveryUrl === 'string' ? config.discoveryUrl : '',
+            resultOutputPath: typeof config.resultOutputPath === 'string' ? config.resultOutputPath : '',
+            executionLogPath: typeof config.executionLogPath === 'string' ? config.executionLogPath : '',
+        };
+    }
+
+    function applyImportedRuntimeSections(config) {
+        const oauth = isPlainObject(config.oauth) ? config.oauth : {};
+        const tls = isPlainObject(config.tls) ? config.tls : {};
+        const dcr = isPlainObject(config.dcr) ? config.dcr : {};
+        const fapiSigning = isPlainObject(config.fapiSigning) ? config.fapiSigning : {};
+        const openBanking = isPlainObject(config.openBanking) ? config.openBanking : {};
+        if (state.specification === 'dynamic-client-registration') {
+            for (const [key, value] of Object.entries(dcr)) {
+                if (typeof value === 'string') state.fieldValues[`dcr.${key}`] = value;
+                if (typeof value === 'boolean') state.fieldValues[`dcr.${key}`] = value ? 'true' : '';
+            }
+            return;
+        }
+        const mappings = {
+            'oauth.clientId': oauth.clientId,
+            'oauth.resourceBaseUrl': oauth.resourceBaseUrl,
+            'oauth.authorizationBaseUrl': oauth.authorizationEndpoint,
+            'psu.authorizationRedirectUri': oauth.redirectUri,
+            'tls.certPath': tls.clientCertificatePath,
+            'tls.keyPath': tls.clientPrivateKeyPath,
+            'tls.caBundlePath': tls.caBundlePath,
+            'fapiSigning.signingCertificatePath': fapiSigning.signingCertificatePath,
+            'fapiSigning.signingPrivateKeyPath': fapiSigning.signingPrivateKeyPath,
+            'fapiSigning.kid': fapiSigning.kid,
+            'fapiSigning.clientAssertionIssuer': fapiSigning.clientAssertionIssuer,
+            'fapiSigning.clientAssertionSubject': fapiSigning.clientAssertionSubject,
+            'fapiSigning.tokenEndpointAuthMethod': fapiSigning.tokenEndpointAuthMethod,
+            'fapiSigning.signatureIssuer': fapiSigning.signatureIssuer,
+            'fapiSigning.signatureTrustAnchor': fapiSigning.signatureTrustAnchor,
+            'openBanking.financialId': openBanking.financialId,
+        };
+        for (const [fieldId, value] of Object.entries(mappings)) {
+            if (typeof value === 'string') state.fieldValues[fieldId] = value;
+        }
+    }
+
+    function applyImportedTestPlanData(testData) {
+        if (!isPlainObject(testData)) return;
+        const fieldIds = new Set((getCatalogue()?.fieldSchemas || []).map(field => field.fieldId));
+        for (const [key, value] of Object.entries(testData)) {
+            if (typeof value !== 'string') continue;
+            if (fieldIds.has(key)) state.fieldValues[key] = value;
+            else if (isValidConfigTestDataKey(key)) state.advancedTestDataValues[key] = value;
+        }
+    }
+
+    function applyImportedConfigTestData(values) {
+        if (!isPlainObject(values)) return;
+        for (const [key, value] of Object.entries(values)) {
+            if (typeof value === 'string' && isValidConfigTestDataKey(key)) state.advancedTestDataValues[key] = value;
+        }
+    }
+
+    function refreshStagedUiAfterImport() {
+        populateSpecStage();
+        populateVersionStage();
+        populateResourceGroupStage();
+        populateEndpointStage();
+        populateFieldValueStage();
+        populatePreviewStage();
+        for (let i = 1; i <= TOTAL_STAGES; i++) markStageComplete(i);
+        markStageActive(7);
+        goToStage(7);
+    }
+
+    function loadStagedImportFromTextarea() {
+        const textarea = document.getElementById('staged-import-json');
+        const status = document.querySelector('[data-staged-import-status]');
+        try {
+            applyImportedDocument(JSON.parse(textarea.value || '{}'));
+            if (status) status.textContent = 'Loaded into builder. Review missing required fields before saving or launching.';
+        } catch (error) {
+            if (status) status.textContent = `Import failed: ${error.message}`;
+        }
+    }
+
+    document.querySelector('[data-staged-import-apply]')?.addEventListener('click', loadStagedImportFromTextarea);
+    document.getElementById('staged-import-file')?.addEventListener('change', event => {
+        const file = event.target.files?.[0];
+        const textarea = document.getElementById('staged-import-json');
+        const status = document.querySelector('[data-staged-import-status]');
+        if (!file || !textarea) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            textarea.value = typeof reader.result === 'string' ? reader.result : '';
+            if (status) status.textContent = `Loaded ${file.name}; click Load into builder to apply it.`;
+        });
+        reader.addEventListener('error', () => {
+            if (status) status.textContent = `Could not read ${file.name}.`;
+        });
+        reader.readAsText(file);
+    });
+    document.querySelectorAll('[data-endpoint-bulk-action]').forEach(button => {
+        button.addEventListener('click', () => applyEndpointBulkAction(button.dataset.endpointBulkAction));
+    });
+    document.querySelector('[data-add-test-data-value]')?.addEventListener('click', addAdvancedTestDataValue);
+
+    // ── Advanced preview JS ───────────────────────────────────────────────
     (() => {
         const specSelect = document.querySelector('[data-guided-spec-version]');
         const modelBankSelect = document.querySelector('[data-guided-model-bank]');
         const apiSelect = document.querySelector('[data-guided-api]');
         const suiteSelect = document.querySelector('[data-guided-suite]');
         const suiteDescription = document.querySelector('[data-guided-suite-description]');
-        const environmentInput = document.querySelector('[data-guided-environment-input]');
         const discoveryUrlInput = document.querySelector('[data-guided-discovery-url-input]');
         const oauthPanel = document.getElementById('guided-oauth-panel');
         const intentPanel = document.getElementById('guided-intent-panel');
@@ -1105,9 +1607,6 @@
         const selectedCountValue = document.querySelector('[data-plan-count-selected]');
         const mandatoryOffCountValue = document.querySelector('[data-plan-count-mandatory-off]');
         const certificationMessage = document.querySelector('[data-plan-certification-message]');
-        const runPlanCopyButton = document.querySelector('[data-run-plan-copy]');
-        const runPlanJson = document.querySelector('[data-run-plan-json]');
-        const runPlanCopyStatus = document.querySelector('[data-run-plan-copy-status]');
         const syncTestValueResetState = (input) => {
             const key = input.dataset.customTestValueInput;
             if (!key) return;
@@ -1136,7 +1635,7 @@
                 syncTestValueResetState(input);
             });
         }
-        if (!specSelect || !apiSelect || !suiteSelect || !suiteDescription) return;
+        const hasGuidedFlowControls = Boolean(specSelect && apiSelect && suiteSelect && suiteDescription);
 
         const optionMatches = (option, datasetKey, expectedValue) => {
             if (!expectedValue) return true;
@@ -1149,10 +1648,9 @@
             return '';
         };
         const syncModelBankExample = ({ onlyBlank = false } = {}) => {
-            if (!modelBankSelect || !environmentInput || !discoveryUrlInput) return;
+            if (!modelBankSelect || !discoveryUrlInput) return;
             const selectedOption = modelBankSelect.selectedOptions[0];
             if (!selectedOption || !selectedOption.value) return;
-            if (!onlyBlank || !environmentInput.value) environmentInput.value = selectedOption.dataset.environment || '';
             if (!onlyBlank || !discoveryUrlInput.value) discoveryUrlInput.value = selectedOption.dataset.discoveryUrl || '';
         };
         const syncApiOptions = () => {
@@ -1252,7 +1750,7 @@
                 if (action === 'deselect-all') { setStepSelectionState(checkbox, false); }
             }
         };
-        specSelect.addEventListener('change', syncGuidedFlow);
+        if (hasGuidedFlowControls) specSelect.addEventListener('change', syncGuidedFlow);
         const chevronButtons = document.querySelectorAll('[data-plan-tree-chevron]');
         const toggleTreeGroup = (chevron) => {
             const treeNode = chevron.closest('[data-plan-tree-node]');
@@ -1294,9 +1792,9 @@
                 if (leafRow) { const cb = leafRow.querySelector('[data-plan-step-checkbox]'); if (cb) { setStepSelectionState(cb, !cb.checked); refreshPlanSelectionPreview(); } }
             });
         }
-        if (modelBankSelect) modelBankSelect.addEventListener('change', syncModelBankExample);
-        apiSelect.addEventListener('change', () => { syncSuiteOptions(); syncPromptPanels(); });
-        suiteSelect.addEventListener('change', syncPromptPanels);
+        if (hasGuidedFlowControls && modelBankSelect) modelBankSelect.addEventListener('change', syncModelBankExample);
+        if (hasGuidedFlowControls) apiSelect.addEventListener('change', () => { syncSuiteOptions(); syncPromptPanels(); });
+        if (hasGuidedFlowControls) suiteSelect.addEventListener('change', syncPromptPanels);
         for (const button of bulkButtons) button.addEventListener('click', () => { applyBulkSelection(button.dataset.planBulkAction); refreshPlanSelectionPreview(); });
         for (const checkbox of stepCheckboxes) checkbox.addEventListener('change', refreshPlanSelectionPreview);
         for (const parentCheckbox of parentCheckboxes) {
@@ -1307,15 +1805,10 @@
                 refreshPlanSelectionPreview();
             });
         }
-        if (runPlanCopyButton && runPlanJson) {
-            runPlanCopyButton.addEventListener('click', async () => {
-                if (!navigator.clipboard || !navigator.clipboard.writeText) { if (runPlanCopyStatus) runPlanCopyStatus.textContent = 'Clipboard API unavailable in this browser.'; return; }
-                try { await navigator.clipboard.writeText(runPlanJson.textContent || ''); if (runPlanCopyStatus) runPlanCopyStatus.textContent = 'Copied'; }
-                catch { if (runPlanCopyStatus) runPlanCopyStatus.textContent = 'Copy failed'; }
-            });
+        if (hasGuidedFlowControls) {
+            syncGuidedFlow();
+            syncModelBankExample({ onlyBlank: true });
         }
-        syncGuidedFlow();
-        syncModelBankExample({ onlyBlank: true });
         refreshPlanSelectionPreview();
     })();
 </script>

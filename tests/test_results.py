@@ -794,6 +794,7 @@ def test_readiness_report_serialise_parse_round_trip() -> None:
     """Readiness report serialise/parse round-trip preserves all fields."""
     from datetime import UTC, datetime
 
+    from conformance.catalogue import CatalogueReadinessPolicy
     from conformance.results import (
         DcrReadinessStatus,
         ResourceGroupReadiness,
@@ -831,6 +832,7 @@ def test_readiness_report_serialise_parse_round_trip() -> None:
                 passed_count=3,
                 failed_count=1,
                 skipped_count=1,
+                certification_status="not-ready",
                 certification_eligible=False,
             ),
         ),
@@ -840,6 +842,12 @@ def test_readiness_report_serialise_parse_round_trip() -> None:
             passed_count=1,
             failed_count=0,
             skipped_count=0,
+        ),
+        readiness_policy=CatalogueReadinessPolicy(
+            policy_id="read-write-resource-group-readiness-v1",
+            certification_status="certifying",
+            omitted_mandatory_outcome="not-ready",
+            failed_selected_outcome="not-ready",
         ),
         run_id="run-123",
         generated_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
@@ -876,6 +884,7 @@ def test_determine_readiness_outcome_variants() -> None:
         passed_count=2,
         failed_count=0,
         skipped_count=0,
+        certification_status="certifying",
         certification_eligible=True,
     )
     assert (
@@ -902,6 +911,7 @@ def test_determine_readiness_outcome_variants() -> None:
         passed_count=1,
         failed_count=0,
         skipped_count=0,
+        certification_status="not-ready",
         certification_eligible=False,
     )
     assert (
@@ -921,6 +931,7 @@ def test_determine_readiness_outcome_variants() -> None:
         passed_count=1,
         failed_count=1,
         skipped_count=0,
+        certification_status="not-ready",
         certification_eligible=False,
     )
     assert (
@@ -1016,3 +1027,67 @@ def test_omitted_mandatory_endpoint_detection_uses_selected_resource_groups() ->
     omitted = omitted_mandatory_endpoint_ids_by_resource_group(catalogue, run_plan)
 
     assert omitted == {"ais": ("account-balances",)}
+
+
+@pytest.mark.unit
+def test_build_readiness_report_from_compiled_run_uses_catalogue_policy() -> None:
+    """Compiled catalogue coverage drives readiness and certification status."""
+    from datetime import UTC, datetime
+
+    from conformance.plan_executor import compile_catalogue_graph_for_plan
+    from conformance.results import (
+        ResourceGroupExecutionSummary,
+        build_readiness_report_from_compiled_run,
+        serialise_readiness_report,
+    )
+    from conformance.run_plan_v2 import EndpointSelection, RunPlanV2, RunPlanV2TargetCoordinates
+
+    plan = RunPlanV2(
+        schema_version="2",
+        target=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:unknown",
+        ),
+        resource_groups=("ais",),
+        endpoint_selections=(
+            EndpointSelection(
+                endpoint_id="ais.accounts.get-accounts",
+                operation="GET",
+                selected=True,
+                field_values={},
+            ),
+        ),
+    )
+    compiled = compile_catalogue_graph_for_plan(plan)
+
+    report = build_readiness_report_from_compiled_run(
+        compiled,
+        run_id="run-456",
+        generated_at=datetime(2026, 1, 2, tzinfo=UTC),
+        execution_summary_by_resource_group={
+            "ais": ResourceGroupExecutionSummary(
+                selected_test_count=1,
+                passed_count=1,
+                failed_count=0,
+                skipped_count=0,
+            )
+        },
+    )
+    serialised = serialise_readiness_report(report)
+
+    assert serialised["overallOutcome"] == "incomplete"
+    assert serialised["catalogueHash"] == compiled.catalogue_identity.content_hash
+    policy = serialised["readinessPolicy"]
+    assert isinstance(policy, dict)
+    assert policy["policyId"] == "read-write-resource-group-readiness-v1"
+    sections = serialised["resourceGroupSections"]
+    assert isinstance(sections, list)
+    first_section = cast(dict[str, object], sections[0])
+    assert first_section["certificationStatus"] == "not-ready"
+    assert first_section["certificationEligible"] is False
+    omitted = first_section["omittedMandatoryEndpoints"]
+    assert isinstance(omitted, list)
+    assert "ais.account-access-consents.create" in omitted

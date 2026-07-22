@@ -20,12 +20,34 @@ from django.test import Client
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunConflictError, RunPlanStep, run_store
 from conformance.api.ui_views import _run_context
+from conformance.http import JsonHttpClientError, JsonHttpResponse
 from conformance.json_types import JsonValue
 from tests.test_executor import _executor_signing_config
 
 VALID_CONFIG: dict[str, JsonValue] = {
     "environment": "test-env",
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+}
+
+TARGET_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "securityProfile": "fapi1-advanced",
+        "specificationVersion": "v4.0.1",
+        "resourceGroups": ["ais"],
+    },
+}
+
+DCR_TARGET_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "dynamic-client-registration",
+        "securityProfile": "fapi1-advanced",
+        "specificationVersion": "3.3",
+    },
 }
 
 SUITE_CONFIG: dict[str, JsonValue] = {
@@ -296,7 +318,6 @@ def _ais_baseline_suite_form_data(
     config = {
         **AIS_BASELINE_CONFIG,
         "fapiSigning": {
-            "certificatePathRoot": str(signing_config.certificate_path_root),
             "signingCertificatePath": str(signing_config.signing_certificate_path),
             "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
             "kid": signing_config.key_id,
@@ -425,16 +446,142 @@ class TestPlanBuilderUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "Test plan builder" in content
-        assert "Guided flow" in content
-        assert "Model bank example" in content
-        assert "Ozone OBIE pre-production" in content
-        assert "Custom environment" in content
-        assert "Specification version" in content
-        assert "API family" in content
+        assert "Endpoint-first test-plan builder" in content
+        assert "Field Values" in content
+        assert "Derived RunPlanV2 JSON" not in content
+        assert "Load or edit saved config JSON" in content
+        assert "Deselect all" in content
+        assert "Select mandatory" in content
+        assert "Select all" in content
+        assert "Advanced testData.values" in content
+        assert "Save config JSON" in content
+        assert "Preview discovery" in content
+        assert "Launch run" in content
+        assert "Show all" in content
+        assert "Specification Version" in content
         assert "Config JSON" in content
-        assert "Manifest JSON" in content
+        assert "Manifest JSON" not in content
+        assert "RunPlanV2" not in content
+        assert "testPlan" in content
         assert 'href="/health/"' in content
         assert "hx-post" not in content
+
+    def test_plan_builder_get_exposes_staged_import_export_hooks(self) -> None:
+        """GET /plan/ renders staged import, endpoint bulk, and export hooks."""
+        response = Client().get("/plan/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        expected_hooks = [
+            "data-staged-import-apply",
+            'data-endpoint-bulk-action="deselect-all"',
+            'data-endpoint-bulk-action="select-mandatory"',
+            'data-endpoint-bulk-action="select-all"',
+            "data-add-test-data-value",
+            "data-staged-config-download",
+            "data-discovery-preview",
+            "data-staged-launch-run",
+            "data-toggle-applicable-tests",
+        ]
+        for hook in expected_hooks:
+            assert hook in content
+
+    @patch("conformance.api.ui_views.get_json")
+    @patch("conformance.api.ui_views.build_json_http_client")
+    def test_discovery_preview_returns_curated_non_secret_metadata(
+        self,
+        mock_build_client: Mock,
+        mock_get_json: Mock,
+    ) -> None:
+        """Discovery preview fetches server-side and returns only curated fields."""
+        mock_client = Mock()
+        mock_build_client.return_value = mock_client
+        mock_get_json.return_value = JsonHttpResponse(
+            url="https://auth.example.com/.well-known/openid-configuration",
+            status_code=200,
+            body={
+                "issuer": "https://auth.example.com",
+                "authorization_endpoint": "https://auth.example.com/authorize",
+                "token_endpoint": "https://auth.example.com/token",
+                "jwks_uri": "https://auth.example.com/jwks",
+                "registration_endpoint": "https://auth.example.com/register",
+                "grant_types_supported": ["authorization_code", "client_credentials", 42],
+                "response_types_supported": ["code"],
+                "token_endpoint_auth_methods_supported": ["tls_client_auth", "private_key_jwt"],
+                "client_secret": "must-not-be-returned",  # pragma: allowlist secret
+            },
+        )
+
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()["discovery"]
+        assert data == {
+            "issuer": "https://auth.example.com",
+            "authorizationEndpoint": "https://auth.example.com/authorize",
+            "tokenEndpoint": "https://auth.example.com/token",
+            "jwksUri": "https://auth.example.com/jwks",
+            "registrationEndpoint": "https://auth.example.com/register",
+            "grantTypesSupported": ["authorization_code", "client_credentials"],
+            "responseTypesSupported": ["code"],
+            "tokenEndpointAuthMethodsSupported": ["tls_client_auth", "private_key_jwt"],
+        }
+        mock_build_client.assert_called_once_with(timeout_seconds=5.0)
+        mock_get_json.assert_called_once_with(mock_client, "https://auth.example.com/.well-known/openid-configuration")
+        mock_client.close.assert_called_once_with()
+
+    @patch("conformance.api.ui_views.get_json")
+    def test_discovery_preview_rejects_non_https_url_before_fetch(self, mock_get_json: Mock) -> None:
+        """Discovery preview requires HTTPS and does not fetch invalid URLs."""
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "http://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "HTTPS" in response.json()["error"]
+        mock_get_json.assert_not_called()
+
+    def test_staged_template_scopes_discovery_prefill_to_current_specification(self) -> None:
+        """Discovery prefill only writes runtime fields relevant to the selected specification."""
+        template_path = Path("conformance/api/templates/conformance/plan_builder.html")
+        template = template_path.read_text(encoding="utf-8")
+
+        assert "const isDcrTarget = state.specification === 'dynamic-client-registration';" in template
+        assert "if (!isDcrTarget) prefillEmptyField('oauth.authorizationBaseUrl'" in template
+        assert re.search(
+            r"if \(isDcrTarget\) \{\s+prefillEmptyField\('dcr\.tokenEndpointAuthMethod', preferredMethod\);"
+            r"\s+\} else \{\s+prefillEmptyField\('fapiSigning\.tokenEndpointAuthMethod', preferredMethod\);",
+            template,
+        )
+        assert "validateDcrSectionMatchesTarget(importedConfig);" in template
+
+    @patch("conformance.api.ui_views.get_json")
+    @patch("conformance.api.ui_views.build_json_http_client")
+    def test_discovery_preview_surfaces_fetch_errors(
+        self,
+        mock_build_client: Mock,
+        mock_get_json: Mock,
+    ) -> None:
+        """Discovery preview returns an inline error when the server-side fetch fails."""
+        mock_client = Mock()
+        mock_build_client.return_value = mock_client
+        mock_get_json.side_effect = JsonHttpClientError("Request failed")
+
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 502
+        assert "Discovery fetch failed" in response.json()["error"]
+        mock_client.close.assert_called_once_with()
 
     def test_preview_post_renders_step_selection_table(self) -> None:
         """POST /plan/preview/ renders selectable step rows in the tree UI."""
@@ -674,6 +821,115 @@ class TestPlanBuilderUi:
         assert plan.selected_step_ids() == ["mandatory"]
 
     @patch("conformance.api.ui_views.start_run")
+    def test_staged_launch_post_routes_read_write_config_to_lifecycle(self, mock_start_run: Mock) -> None:
+        """Staged launch posts enhanced config JSON through target-derived Read/Write routing."""
+        mock_start_run.return_value = {"id": "staged-run", "status": "pending"}
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        assert response.json() == {
+            "runId": "staged-run",
+            "status": "pending",
+            "redirectUrl": "/runs/staged-run/",
+        }
+        assert mock_start_run.call_count == 1
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert mock_start_run.call_args.kwargs["compiled_run"] is not None
+
+    def test_staged_launch_post_blocks_test_plan_catalogue_hash_drift(self) -> None:
+        """Staged browser launch refuses stale saved testPlan catalogue hashes."""
+        config: dict[str, JsonValue] = {
+            **VALID_CONFIG,
+            "testPlan": {
+                "target": {
+                    "standard": "obl",
+                    "specification": "read-write",
+                    "securityProfile": "fapi1-advanced",
+                    "specificationVersion": "v4.0.1",
+                    "catalogueHash": "sha256:definitely-not-the-live-hash",
+                },
+                "resourceGroups": ["ais"],
+            },
+        }
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(config),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "Catalogue drift detected" in response.json()["error"]
+
+    def test_staged_launch_post_rejects_dcr_section_for_read_write_target(self) -> None:
+        """Staged launch reports DCR sections as invalid for Read/Write test plans."""
+        config: dict[str, JsonValue] = {
+            **TARGET_CONFIG,
+            "dcr": {"tokenEndpointAuthMethod": "tls_client_auth"},
+        }
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(config),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        error = response.json()["error"]
+        assert "top-level 'dcr' section" in error
+        assert "read-write" in error
+
+    @patch("conformance.api.ui_views.start_dcr_run")
+    def test_staged_launch_post_routes_dcr_config_to_dcr_lifecycle(self, mock_start_dcr_run: Mock) -> None:
+        """Staged launch dispatches DCR targets to the DCR run lifecycle."""
+        mock_start_dcr_run.return_value = {"id": "dcr-run", "status": "pending"}
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(DCR_TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        assert response.json()["redirectUrl"] == "/runs/dcr-run/"
+        assert mock_start_dcr_run.call_count == 1
+        assert mock_start_dcr_run.call_args.kwargs["compiled_run"] is not None
+
+    def test_staged_launch_post_returns_inline_validation_errors(self) -> None:
+        """Staged launch returns JSON validation errors for incomplete configs."""
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps({"environment": "test-env"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "Config validation failed" in response.json()["error"]
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_staged_launch_post_returns_active_run_conflict(self, mock_start_run: Mock) -> None:
+        """Staged launch surfaces active-run conflicts as inline JSON."""
+        mock_start_run.side_effect = RunConflictError("active-run")
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "error": "A run is already active",
+            "activeRunId": "active-run",
+            "activeRunUrl": "/runs/active-run/",
+        }
+
+    @patch("conformance.api.ui_views.start_run")
     def test_launch_post_passes_preview_test_data_values_to_lifecycle(self, mock_start_run: Mock) -> None:
         """Launch forwards preview-normalised ``testData.values`` to ``start_run``."""
         mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
@@ -751,6 +1007,20 @@ class TestPlanBuilderUi:
 
         assert rejected.status_code == 403
 
+        discovery_rejected = client.post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+        assert discovery_rejected.status_code == 403
+
+        staged_launch_rejected = client.post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+        assert staged_launch_rejected.status_code == 403
+
         get_response = client.get("/plan/")
         csrf_token = get_response.cookies["csrftoken"].value
         accepted = client.post(
@@ -758,6 +1028,42 @@ class TestPlanBuilderUi:
             data={**_plan_form_data(manifest, selected_step_ids=["standard"]), "csrfmiddlewaretoken": csrf_token},
         )
         assert accepted.status_code == 200
+
+        with (
+            patch("conformance.api.ui_views.get_json") as mock_get_json,
+            patch(
+                "conformance.api.ui_views.build_json_http_client",
+            ) as mock_build_client,
+        ):
+            mock_client = Mock()
+            mock_build_client.return_value = mock_client
+            mock_get_json.return_value = JsonHttpResponse(
+                url="https://auth.example.com/.well-known/openid-configuration",
+                status_code=200,
+                body={"issuer": "https://auth.example.com"},
+            )
+            discovery_accepted = client.post(
+                "/plan/discovery-preview/",
+                data=json.dumps(
+                    {
+                        "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                        "csrfmiddlewaretoken": csrf_token,
+                    }
+                ),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+            )
+        assert discovery_accepted.status_code == 200
+
+        with patch("conformance.api.ui_views.start_run") as mock_staged_start_run:
+            mock_staged_start_run.return_value = {"id": "csrf-run", "status": "pending"}
+            staged_launch_accepted = client.post(
+                "/plan/staged/launch/",
+                data=json.dumps(TARGET_CONFIG),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+            )
+        assert staged_launch_accepted.status_code == 201
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_is_csrf_protected(self, mock_start_run: Mock) -> None:
@@ -1557,6 +1863,7 @@ class TestRunDetailUi:
                             "passedCount": 2,
                             "failedCount": 0,
                             "skippedCount": 0,
+                            "certificationStatus": "not-ready",
                             "certificationEligible": False,
                         }
                     ],
@@ -1572,6 +1879,7 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "Coverage readiness" in content
         assert "incomplete" in content
+        assert "not-ready" in content
         assert "Incomplete coverage:" in content
         assert "account-balances" in content
 

@@ -12,11 +12,13 @@ import json
 import logging
 import threading
 from collections.abc import Mapping
+from dataclasses import replace
 from datetime import UTC, datetime
 from types import MappingProxyType
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunStore, run_store
+from conformance.catalogue_execution import CompiledCatalogueRun, CompiledCatalogueStep
 from conformance.context import (
     RuntimeConfig,
     build_runtime_test_values,
@@ -34,7 +36,13 @@ from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
 from conformance.model_bank_config import ConfigError, ModelBankConfig, TestDataConfig
-from conformance.plan_executor import dcr_run_result_to_json_object, execute_dcr_run, utc_now
+from conformance.plan_executor import (
+    dcr_run_result_to_json_object,
+    emit_dcr_execution_log,
+    execute_dcr_run,
+    readiness_report_for_smoke_result,
+    utc_now,
+)
 from conformance.run_configuration import compile_run_configuration
 from conformance.run_plan_v2 import RunPlanV2
 from conformance.runner import run_model_bank_smoke_check
@@ -150,6 +158,7 @@ def start_run(
     suite_metadata: SuiteMetadata | None = None,
     browser_psu_prompts: bool = False,
     launch_test_data_values: Mapping[str, str] | None = None,
+    compiled_run: CompiledCatalogueRun | None = None,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -167,6 +176,8 @@ def start_run(
             the Plan Builder preview. When provided, these values are used as
             the authoritative ``testData.values`` input for this run instead of
             ``config.test_data``.
+        compiled_run: Optional catalogue-native graph compiled from the
+            participant target/run plan for readiness reporting.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -186,7 +197,7 @@ def start_run(
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_run,
-        args=(record.run_id, config, manifest, effective_plan, suite_metadata, launch_test_data_values),
+        args=(record.run_id, config, manifest, effective_plan, suite_metadata, launch_test_data_values, compiled_run),
         kwargs={"browser_psu_prompts": browser_psu_prompts},
         daemon=True,
     )
@@ -309,6 +320,41 @@ def _selected_planned_steps_snapshot(*, manifest: Manifest | None, plan: TestPla
     return tuple(planned_steps)
 
 
+def _catalogue_planned_steps_snapshot(compiled_run: CompiledCatalogueRun) -> tuple[RunPlanStep, ...]:
+    """Build launch-time run-store step snapshots from a catalogue graph.
+
+    Args:
+        compiled_run: Catalogue-native graph compiled from the participant's
+            RunPlanV2 target and coverage selections.
+
+    Returns:
+        Tuple of planned-step snapshots in catalogue execution order.
+    """
+    return tuple(_catalogue_step_snapshot(step, order=order) for order, step in enumerate(compiled_run.steps))
+
+
+def _catalogue_step_snapshot(step: CompiledCatalogueStep, *, order: int) -> RunPlanStep:
+    """Convert one compiled catalogue step into a run-store snapshot.
+
+    Args:
+        step: Compiled catalogue step to present in run progress.
+        order: Zero-based order in the compiled execution graph.
+
+    Returns:
+        Immutable run-store step snapshot.
+    """
+    return RunPlanStep(
+        step_id=step.step_id,
+        name=step.display_label,
+        kind=step.primitive_type,
+        group=step.resource_group,
+        phase="execution" if step.test_id is not None else "setup",
+        mandatory=True,
+        optional=False,
+        order=order,
+    )
+
+
 def _manifest_step_kind(step: V1Step) -> str:
     """Return the run-store step-kind discriminator for a manifest step.
 
@@ -329,6 +375,7 @@ def _execute_run(
     plan: TestPlan | None,
     suite_metadata: SuiteMetadata | None = None,
     launch_test_data_values: Mapping[str, str] | None = None,
+    compiled_run: CompiledCatalogueRun | None = None,
     *,
     browser_psu_prompts: bool = False,
 ) -> None:
@@ -348,6 +395,8 @@ def _execute_run(
         launch_test_data_values: Optional launch-time test-data snapshot from
             browser preview state. When present, these values override
             ``config.test_data`` for run compilation and execution.
+        compiled_run: Optional catalogue-native graph compiled from the
+            participant target/run plan for readiness reporting.
         browser_psu_prompts: Whether to wrap the execution logger so raw manual
             PSU authorisation URLs are exposed only as transient browser
             participant actions.
@@ -483,10 +532,21 @@ def _execute_run(
                         )
                     ),
                 )
+                if compiled_run is not None:
+                    result = replace(
+                        result,
+                        readiness_report=readiness_report_for_smoke_result(
+                            compiled_run,
+                            result,
+                            run_id=run_id,
+                        ),
+                    )
             finally:
                 http_client.close()
 
         result_object = result.to_json_object()
+        if compiled_run is not None:
+            result_object.pop("suite", None)
         try:
             _persist_configured_artifacts(
                 config=config,
@@ -544,7 +604,12 @@ def _persist_configured_artifacts(
         execution_logger.flush_to_path(config.execution_log_path)
 
 
-def start_dcr_run(*, config: ModelBankConfig, plan: RunPlanV2) -> JsonObject:
+def start_dcr_run(
+    *,
+    config: ModelBankConfig,
+    plan: RunPlanV2,
+    compiled_run: CompiledCatalogueRun | None = None,
+) -> JsonObject:
     """Reserve a run slot and start asynchronous DCR conformance execution.
 
     Args:
@@ -552,6 +617,8 @@ def start_dcr_run(*, config: ModelBankConfig, plan: RunPlanV2) -> JsonObject:
             ``dcr`` section.
         plan: The DCR run plan describing target coordinates and endpoint
             selections.
+        compiled_run: Optional catalogue-native graph already compiled by the
+            caller. When provided, its steps are snapshotted into run progress.
 
     Returns:
         Initial public run-status JSON captured while the record is still in
@@ -560,11 +627,12 @@ def start_dcr_run(*, config: ModelBankConfig, plan: RunPlanV2) -> JsonObject:
     Raises:
         RunConflictError: If another run is already pending or running.
     """
-    record = run_store.create_run(planned_steps=())
+    planned_steps = _catalogue_planned_steps_snapshot(compiled_run) if compiled_run is not None else ()
+    record = run_store.create_run(planned_steps=planned_steps)
     warn_if_developer_mode()
     thread = threading.Thread(
         target=_execute_dcr_run,
-        args=(record.run_id, config, plan),
+        args=(record.run_id, config, plan, compiled_run),
         daemon=True,
     )
     initial_status = record.to_status_json()
@@ -572,7 +640,12 @@ def start_dcr_run(*, config: ModelBankConfig, plan: RunPlanV2) -> JsonObject:
     return initial_status
 
 
-def _execute_dcr_run(run_id: str, config: ModelBankConfig, plan: RunPlanV2) -> None:
+def _execute_dcr_run(
+    run_id: str,
+    config: ModelBankConfig,
+    plan: RunPlanV2,
+    compiled_run: CompiledCatalogueRun | None = None,
+) -> None:
     """Execute a DCR conformance run in a background thread.
 
     Transitions the run record through running -> completed/failed and
@@ -585,9 +658,19 @@ def _execute_dcr_run(run_id: str, config: ModelBankConfig, plan: RunPlanV2) -> N
             ``dcr`` section.
         plan: DCR run plan describing target coordinates and endpoint
             selections.
+        compiled_run: Optional catalogue-native graph used to derive the
+            endpoint-first readiness report.
     """
     try:
         run_store.mark_running(run_id)
+        run_record = run_store.get_run(run_id)
+        if run_record is None:
+            logger.debug(
+                "DCR run %s disappeared before execution started; skipping lifecycle processing",
+                run_id,
+            )
+            return
+        execution_logger = run_record.execution_logger or BufferedExecutionLogger(run_id=run_id)
         started_at = utc_now()
         try:
             dcr_result = execute_dcr_run(plan, config)
@@ -603,12 +686,14 @@ def _execute_dcr_run(run_id: str, config: ModelBankConfig, plan: RunPlanV2) -> N
             run_id=run_id,
             started_at=started_at,
             finished_at=finished_at,
+            compiled_run=compiled_run,
         )
+        emit_dcr_execution_log(dcr_result, execution_logger=execution_logger)
         try:
             _persist_configured_artifacts(
                 config=config,
                 result_object=result_object,
-                execution_logger=None,
+                execution_logger=execution_logger,
             )
         except OSError as error:
             logger.error(

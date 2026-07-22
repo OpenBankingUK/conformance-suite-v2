@@ -30,10 +30,10 @@ def run_model_bank_smoke_check(
         Smoke-check result containing ordered discovery and optional JWKS steps.
     """
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
-    logger_sink.emit(
-        "run-started",
-        payload={"environment": config.environment, "mode": "model-bank-smoke-check"},
-    )
+    run_started_payload: dict[str, str] = {"mode": "model-bank-smoke-check"}
+    if config.environment is not None:
+        run_started_payload["environment"] = config.environment
+    logger_sink.emit("run-started", payload=run_started_payload)
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
     owns_client = client is None
@@ -188,7 +188,7 @@ def run_model_bank_smoke_check(
 
 
 def _finalise(
-    environment: str,
+    environment: str | None,
     steps: list[StepResult],
     *,
     started_at: datetime,
@@ -198,7 +198,7 @@ def _finalise(
     """Build the aggregate result and emit the terminating ``run-completed`` event.
 
     Args:
-        environment: Environment name copied into the result file.
+        environment: Optional legacy environment name copied into the result file.
         steps: Ordered step results collected by the smoke-check run.
         started_at: UTC timestamp captured before execution began.
         logger_sink: Execution-log sink that receives the ``run-completed`` event.

@@ -1,5 +1,4 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
     "testTarget": {
@@ -7,9 +6,6 @@
         "specification": "read-write",
         "specificationVersion": "v4.0",
         "resourceGroups": ["ais"]
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"

@@ -71,13 +71,13 @@ def _write_signing_material(tmp_path: Path) -> tuple[Path, Path, Path]:
 def test_parse_model_bank_config_defaults_result_output_to_out_dir(tmp_path: Path) -> None:
     config = parse_model_bank_config(
         {
-            "environment": "ozone-model-bank",
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
         },
         base_dir=tmp_path,
         output_base_dir=tmp_path,
     )
 
+    assert config.environment is None
     assert config.result_output_path == tmp_path / "out" / "test-results.json"
 
 
@@ -111,16 +111,15 @@ def test_load_model_bank_config_reads_json_config(monkeypatch: pytest.MonkeyPatc
 @pytest.mark.unit
 def test_parse_model_bank_config_accepts_fapi_signing_ob_metadata(tmp_path: Path) -> None:
     """fapiSigning.signatureIssuer and signatureTrustAnchor should be parsed into FapiSigningConfig."""
-    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
 
     config = parse_model_bank_config(
         {
             "environment": "ozone-model-bank",
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
             "fapiSigning": {
-                "certificatePathRoot": str(certificate_root),
-                "signingCertificatePath": certificate_path.name,
-                "signingPrivateKeyPath": private_key_path.name,
+                "signingCertificatePath": str(certificate_path),
+                "signingPrivateKeyPath": str(private_key_path),
                 "kid": "ob-signing-key",
                 "clientAssertionIssuer": "my-client-id",
                 "clientAssertionSubject": "my-client-id",
@@ -140,7 +139,7 @@ def test_parse_model_bank_config_accepts_fapi_signing_ob_metadata(tmp_path: Path
 @pytest.mark.unit
 def test_parse_model_bank_config_rejects_fapi_signing_ob_metadata_partial(tmp_path: Path) -> None:
     """Supplying only one of signatureIssuer/signatureTrustAnchor must be rejected."""
-    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
     with pytest.raises(
         ConfigError,
         match="fapiSigning.signatureIssuer and fapiSigning.signatureTrustAnchor must be supplied together",
@@ -150,9 +149,8 @@ def test_parse_model_bank_config_rejects_fapi_signing_ob_metadata_partial(tmp_pa
                 "environment": "ozone-model-bank",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "fapiSigning": {
-                    "certificatePathRoot": str(certificate_root),
-                    "signingCertificatePath": certificate_path.name,
-                    "signingPrivateKeyPath": private_key_path.name,
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
                     "kid": "ob-key",
                     "clientAssertionIssuer": "client-id",
                     "clientAssertionSubject": "client-id",
@@ -401,8 +399,7 @@ def test_parse_model_bank_config_requires_client_cert_and_key_together(tmp_path:
                 "environment": "ozone-model-bank",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "tls": {
-                    "certificatePathRoot": "certs",
-                    "clientCertificatePath": "client.pem",
+                    "clientCertificatePath": str(cert_path),
                 },
             },
             base_dir=tmp_path,
@@ -410,20 +407,15 @@ def test_parse_model_bank_config_requires_client_cert_and_key_together(tmp_path:
 
 
 @pytest.mark.unit
-def test_parse_model_bank_config_rejects_certificate_path_traversal(tmp_path: Path) -> None:
-    cert_root = tmp_path / "certs"
-    cert_root.mkdir()
-    outside_cert = tmp_path / "outside.pem"
-    outside_cert.write_text("certificate", encoding="utf-8")
-
-    with pytest.raises(ConfigError, match="must resolve inside certificatePathRoot"):
+def test_parse_model_bank_config_rejects_relative_certificate_path(tmp_path: Path) -> None:
+    """TLS credential paths must be exact absolute files."""
+    with pytest.raises(ConfigError, match="caBundlePath must be an absolute file path"):
         parse_model_bank_config(
             {
                 "environment": "ozone-model-bank",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
                 "tls": {
-                    "certificatePathRoot": "certs",
-                    "caBundlePath": "../outside.pem",
+                    "caBundlePath": "relative-ca.pem",
                 },
             },
             base_dir=tmp_path,
@@ -431,29 +423,20 @@ def test_parse_model_bank_config_rejects_certificate_path_traversal(tmp_path: Pa
 
 
 @pytest.mark.unit
-def test_parse_model_bank_config_resolves_existing_certificate_root_from_cwd(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Repo-relative certificate roots work when config JSON is pasted."""
-    config_dir = tmp_path / "local-config" / "configs"
-    cert_root = tmp_path / "local-config" / "certs"
-    config_dir.mkdir(parents=True)
-    cert_root.mkdir(parents=True)
-    ca_bundle = cert_root / "openbanking-preprod-ca-bundle.pem"
+def test_parse_model_bank_config_accepts_exact_absolute_ca_bundle_path(tmp_path: Path) -> None:
+    """TLS CA bundle paths are accepted as exact absolute file paths."""
+    ca_bundle = tmp_path / "openbanking-preprod-ca-bundle.pem"
     ca_bundle.write_text("certificate", encoding="utf-8")
-    monkeypatch.chdir(tmp_path)
 
     config = parse_model_bank_config(
         {
             "environment": "ozone-model-bank",
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
             "tls": {
-                "certificatePathRoot": "local-config/certs",
-                "caBundlePath": "openbanking-preprod-ca-bundle.pem",
+                "caBundlePath": str(ca_bundle),
             },
         },
-        base_dir=config_dir,
+        base_dir=tmp_path,
     )
 
     assert config.tls.ca_bundle_path == ca_bundle.resolve()
@@ -811,9 +794,8 @@ def test_parse_model_bank_config_accepts_fapi_signing_section(tmp_path: Path) ->
             "environment": "sandbox",
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "fapiSigning": {
-                "certificatePathRoot": certificate_root.name,
-                "signingCertificatePath": certificate_path.name,
-                "signingPrivateKeyPath": private_key_path.name,
+                "signingCertificatePath": str(certificate_path),
+                "signingPrivateKeyPath": str(private_key_path),
                 "kid": "signing-key-001",
                 "clientAssertionIssuer": "client-issuer",
                 "clientAssertionSubject": "client-subject",
@@ -859,9 +841,8 @@ def test_parse_model_bank_config_accepts_missing_signing_files_until_runtime(tmp
             "environment": "sandbox",
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "fapiSigning": {
-                "certificatePathRoot": certificate_root.name,
-                "signingCertificatePath": "missing.crt",
-                "signingPrivateKeyPath": "missing.key",  # pragma: allowlist secret
+                "signingCertificatePath": str(certificate_root / "missing.crt"),
+                "signingPrivateKeyPath": str(certificate_root / "missing.key"),  # pragma: allowlist secret
                 "kid": "signing-key-001",
                 "clientAssertionIssuer": "client-issuer",
                 "clientAssertionSubject": "client-subject",
@@ -892,7 +873,7 @@ def test_parse_model_bank_config_rejects_non_object_fapi_signing(tmp_path: Path)
 
 @pytest.mark.unit
 def test_parse_model_bank_config_rejects_unknown_fapi_signing_field(tmp_path: Path) -> None:
-    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
 
     with pytest.raises(ConfigError, match=r"Unknown fapiSigning field\(s\): jwk"):
         parse_model_bank_config(
@@ -900,9 +881,8 @@ def test_parse_model_bank_config_rejects_unknown_fapi_signing_field(tmp_path: Pa
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "fapiSigning": {
-                    "certificatePathRoot": certificate_root.name,
-                    "signingCertificatePath": certificate_path.name,
-                    "signingPrivateKeyPath": private_key_path.name,
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
                     "clientAssertionIssuer": "client-issuer",
                     "clientAssertionSubject": "client-subject",
@@ -916,7 +896,7 @@ def test_parse_model_bank_config_rejects_unknown_fapi_signing_field(tmp_path: Pa
 
 @pytest.mark.unit
 def test_parse_model_bank_config_requires_signing_cert_and_key_together(tmp_path: Path) -> None:
-    certificate_root, certificate_path, _ = _write_signing_material(tmp_path)
+    _, certificate_path, _ = _write_signing_material(tmp_path)
 
     with pytest.raises(
         ConfigError,
@@ -927,8 +907,7 @@ def test_parse_model_bank_config_requires_signing_cert_and_key_together(tmp_path
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "fapiSigning": {
-                    "certificatePathRoot": certificate_root.name,
-                    "signingCertificatePath": certificate_path.name,
+                    "signingCertificatePath": str(certificate_path),
                     "kid": "signing-key-001",
                     "clientAssertionIssuer": "client-issuer",
                     "clientAssertionSubject": "client-subject",
@@ -940,20 +919,18 @@ def test_parse_model_bank_config_requires_signing_cert_and_key_together(tmp_path
 
 
 @pytest.mark.unit
-def test_parse_model_bank_config_rejects_fapi_signing_path_traversal(tmp_path: Path) -> None:
-    certificate_root, _, private_key_path = _write_signing_material(tmp_path)
-    outside_certificate = tmp_path / "outside.crt"
-    outside_certificate.write_text("certificate", encoding="utf-8")
+def test_parse_model_bank_config_rejects_fapi_signing_relative_path(tmp_path: Path) -> None:
+    """FAPI signing paths must be exact absolute paths."""
+    _, _, private_key_path = _write_signing_material(tmp_path)
 
-    with pytest.raises(ConfigError, match="signingCertificatePath must resolve inside certificatePathRoot"):
+    with pytest.raises(ConfigError, match="signingCertificatePath must be an absolute file path"):
         parse_model_bank_config(
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "fapiSigning": {
-                    "certificatePathRoot": certificate_root.name,
-                    "signingCertificatePath": "../outside.crt",
-                    "signingPrivateKeyPath": private_key_path.name,
+                    "signingCertificatePath": "relative.crt",
+                    "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
                     "clientAssertionIssuer": "client-issuer",
                     "clientAssertionSubject": "client-subject",
@@ -966,7 +943,7 @@ def test_parse_model_bank_config_rejects_fapi_signing_path_traversal(tmp_path: P
 
 @pytest.mark.unit
 def test_parse_model_bank_config_rejects_unknown_token_endpoint_auth_method(tmp_path: Path) -> None:
-    certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
 
     with pytest.raises(
         ConfigError,
@@ -977,9 +954,8 @@ def test_parse_model_bank_config_rejects_unknown_token_endpoint_auth_method(tmp_
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
                 "fapiSigning": {
-                    "certificatePathRoot": certificate_root.name,
-                    "signingCertificatePath": certificate_path.name,
-                    "signingPrivateKeyPath": private_key_path.name,
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
                     "clientAssertionIssuer": "client-issuer",
                     "clientAssertionSubject": "client-subject",
@@ -1016,9 +992,8 @@ def test_parse_model_bank_config_rejects_malformed_fapi_signing_strings(
     certificate_root, certificate_path, private_key_path = _write_signing_material(tmp_path)
 
     fapi_signing: dict[str, JsonValue] = {
-        "certificatePathRoot": certificate_root.name,
-        "signingCertificatePath": certificate_path.name,
-        "signingPrivateKeyPath": private_key_path.name,
+        "signingCertificatePath": str(certificate_path),
+        "signingPrivateKeyPath": str(private_key_path),
         "kid": "signing-key-001",
         "clientAssertionIssuer": "client-issuer",
         "clientAssertionSubject": "client-subject",
@@ -1049,7 +1024,7 @@ def _write_dcr_material(tmp_path: Path) -> dict[str, str]:
         tmp_path: pytest tmp directory.
 
     Returns:
-        Mapping of DCR credential key → basename (relative to ``tmp_path``).
+        Mapping of DCR credential key to exact absolute path string.
     """
     files = {
         "ssaPath": "software-statement.jwt",
@@ -1060,7 +1035,7 @@ def _write_dcr_material(tmp_path: Path) -> dict[str, str]:
     }
     for name in files.values():
         (tmp_path / name).write_text("fixture", encoding="utf-8")
-    return files
+    return {key: str(tmp_path / name) for key, name in files.items()}
 
 
 @pytest.mark.unit
@@ -1184,7 +1159,7 @@ def test_parse_model_bank_config_rejects_dcr_missing_required_paths(tmp_path: Pa
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-                "dcr": {"ssaPath": "ssa.jwt"},
+                "dcr": {"ssaPath": str(tmp_path / "ssa.jwt")},
             },
             base_dir=tmp_path,
         )

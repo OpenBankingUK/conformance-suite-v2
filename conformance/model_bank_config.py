@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 import warnings
 from collections.abc import Mapping
@@ -88,7 +89,8 @@ class TlsConfig:
     """Transport TLS file paths for outbound model-bank requests.
 
     Attributes:
-        ca_bundle_path: Optional CA bundle used to verify the model bank.
+        ca_bundle_path: Optional participant-supplied CA bundle appended to the
+            default system roots and bundled Open Banking CA roots.
         client_certificate_path: Optional client certificate for mTLS.
         client_private_key_path: Optional private key paired with the client certificate.
     """
@@ -103,8 +105,8 @@ class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
 
     Attributes:
-        certificate_path_root: Root directory under which signing certificate
-            and private-key paths must resolve.
+        certificate_path_root: Deprecated internal compatibility root derived
+            from the exact signing certificate and private-key paths.
         signing_certificate_path: X.509 certificate path used for PS256 JOSE
             signing operations such as request objects and private-key JWT
             client assertions.
@@ -206,7 +208,8 @@ class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
     Attributes:
-        environment: Human-readable environment name written to the result file.
+        environment: Optional legacy human-readable environment name. Targeted
+            participant configs no longer require or export it.
         discovery_url: HTTPS OpenID Provider discovery document URL.
         timeout_seconds: Per-request timeout for model-bank HTTP calls.
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
@@ -237,7 +240,7 @@ class ModelBankConfig:
         fapi_signing: Optional FAPI signing and client-auth configuration kept
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
-            certificate root.
+            exact absolute credential paths.
         test_values: Optional participant test-value profile selection and key
             overrides. When absent, the manifest's default profile is used with
             no overrides.
@@ -249,7 +252,7 @@ class ModelBankConfig:
             write requests. When absent, no financial-id header is added.
     """
 
-    environment: str
+    environment: str | None
     discovery_url: str
     timeout_seconds: float = 10.0
     follow_up_mode: FollowUpMode = "jwks"
@@ -339,11 +342,11 @@ def parse_model_bank_config(
         location="config",
     )
 
-    environment = _required_string(raw_config, "environment")
+    environment = _optional_string_at(raw_config, "environment", location="config")
     discovery_url = _required_https_url(raw_config, "discoveryUrl")
     timeout_seconds = _optional_positive_number(raw_config, "timeoutSeconds", default=10.0)
     follow_up_mode = _parse_follow_up(raw_config)
-    tls = _parse_tls_config(raw_config, base_dir=base_dir)
+    tls = _parse_tls_config(raw_config)
     result_output_path = _optional_path(
         raw_config,
         "resultOutputPath",
@@ -453,16 +456,16 @@ def _parse_test_target_from_config(raw_config: dict[str, JsonValue]) -> TestTarg
 def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> DcrConfig | None:
     """Parse the optional ``dcr`` section of a participant config.
 
-    Validates credential file paths using path-containment checks under
-    ``credentialPathRoot`` (defaulting to ``base_dir``).  Constructs
+    Validates credential file paths as exact absolute paths.  Constructs
     :class:`~conformance.dcr.credentials.DcrCredentialPaths` and
     :class:`~conformance.dcr.transport.DcrTransportConfig` and bundles them
     into a :class:`DcrConfig`.
 
     Args:
         raw_config: Top-level raw configuration dictionary.
-        base_dir: Directory of the config file used as the default credential
-            path root when ``dcr.credentialPathRoot`` is absent.
+        base_dir: Directory of the config file.  Kept for API symmetry; DCR
+            credential paths must be absolute and are not resolved relative to
+            it.
 
     Returns:
         A validated :class:`DcrConfig`, or ``None`` when the config omits the
@@ -470,9 +473,8 @@ def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Dc
 
     Raises:
         ConfigError: If ``dcr`` is present but structurally invalid, contains
-            unknown keys, omits required credential paths, specifies paths
-            that escape ``credentialPathRoot``, or names an unsupported
-            ``tokenEndpointAuthMethod``.
+            unknown keys, omits required credential paths, supplies relative
+            credential paths, or names an unsupported ``tokenEndpointAuthMethod``.
     """
     raw_dcr = raw_config.get("dcr")
     if raw_dcr is None:
@@ -483,7 +485,6 @@ def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Dc
     _reject_unknown_keys(
         raw_dcr,
         allowed_keys={
-            "credentialPathRoot",
             "ssaPath",
             "signingPrivateKeyPath",
             "signingCertificatePath",
@@ -498,19 +499,12 @@ def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Dc
         location="dcr",
     )
 
-    credential_root = _optional_path(
-        raw_dcr,
-        "credentialPathRoot",
-        base_dir=base_dir,
-        default=base_dir,
-    )
-
-    ssa_path = _optional_child_path(raw_dcr, "ssaPath", root=credential_root)
-    signing_key_path = _optional_child_path(raw_dcr, "signingPrivateKeyPath", root=credential_root)
-    signing_cert_path = _optional_child_path(raw_dcr, "signingCertificatePath", root=credential_root)
-    transport_cert_path = _optional_child_path(raw_dcr, "transportCertificatePath", root=credential_root)
-    transport_key_path = _optional_child_path(raw_dcr, "transportPrivateKeyPath", root=credential_root)
-    ca_bundle_path = _optional_child_path(raw_dcr, "caBundlePath", root=credential_root)
+    ssa_path = _optional_absolute_path(raw_dcr, "ssaPath")
+    signing_key_path = _optional_absolute_path(raw_dcr, "signingPrivateKeyPath")
+    signing_cert_path = _optional_absolute_path(raw_dcr, "signingCertificatePath")
+    transport_cert_path = _optional_absolute_path(raw_dcr, "transportCertificatePath")
+    transport_key_path = _optional_absolute_path(raw_dcr, "transportPrivateKeyPath")
+    ca_bundle_path = _optional_absolute_path(raw_dcr, "caBundlePath")
 
     missing_paths: list[str] = []
     if ssa_path is None:
@@ -552,7 +546,15 @@ def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Dc
         warnings.warn(_DCR_TLS_SKIP_VERIFY_WARNING, stacklevel=4)
 
     credential_paths = DcrCredentialPaths(
-        credential_path_root=credential_root,
+        credential_path_root=_credential_compatibility_root(
+            ssa_path,
+            signing_key_path,
+            signing_cert_path,
+            transport_cert_path,
+            transport_key_path,
+            ca_bundle_path,
+            fallback=base_dir,
+        ),
         ssa_path=ssa_path,
         signing_private_key_path=signing_key_path,
         signing_certificate_path=signing_cert_path,
@@ -754,8 +756,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Args:
         raw_config: Top-level raw configuration dictionary from the JSON
             config file or API request.
-        base_dir: Directory of the config file, used as the default
-            ``certificatePathRoot`` for signing material.
+        base_dir: Directory of the config file. Kept for API symmetry; signing
+            credential paths must be absolute and are not resolved relative to
+            it.
 
     Returns:
         Parsed ``FapiSigningConfig``, or ``None`` when the config omits the
@@ -764,7 +767,7 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Raises:
         ConfigError: If ``fapiSigning`` is not a JSON object, contains unknown
             keys, omits required values, specifies an unsupported token-endpoint
-            auth method, or points to paths that escape ``certificatePathRoot``.
+            auth method, or supplies relative signing credential paths.
     """
     raw_fapi_signing = raw_config.get("fapiSigning")
     if raw_fapi_signing is None:
@@ -775,7 +778,6 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     _reject_unknown_keys(
         raw_fapi_signing,
         allowed_keys={
-            "certificatePathRoot",
             "signingCertificatePath",
             "signingPrivateKeyPath",
             "kid",
@@ -788,22 +790,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         location="fapiSigning",
     )
 
-    certificate_root = _optional_path(
-        raw_fapi_signing,
-        "certificatePathRoot",
-        base_dir=base_dir,
-        default=base_dir,
-    )
-    signing_certificate_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingCertificatePath",
-        root=certificate_root,
-    )
-    signing_private_key_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingPrivateKeyPath",
-        root=certificate_root,
-    )
+    signing_certificate_path = _optional_absolute_path(raw_fapi_signing, "signingCertificatePath")
+    signing_private_key_path = _optional_absolute_path(raw_fapi_signing, "signingPrivateKeyPath")
     if signing_certificate_path is None or signing_private_key_path is None:
         raise ConfigError(
             "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
@@ -826,7 +814,11 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         raise ConfigError("fapiSigning.signatureIssuer and fapiSigning.signatureTrustAnchor must be supplied together")
 
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
+        certificate_path_root=_credential_compatibility_root(
+            signing_certificate_path,
+            signing_private_key_path,
+            fallback=base_dir,
+        ),
         signing_certificate_path=signing_certificate_path,
         signing_private_key_path=signing_private_key_path,
         key_id=key_id,
@@ -907,26 +899,23 @@ def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
     raise ConfigError("followUp.mode must be one of: jwks, discovery_only")
 
 
-def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> TlsConfig:
+def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
     """Parse the optional ``tls`` section of a model bank config dict.
 
     If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
-    returned.  Relative certificate paths are resolved against ``base_dir``.
+    returned. Certificate paths must be exact absolute file paths.
     ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be supplied
     together or not at all.
 
     Args:
         raw_config: Top-level raw configuration dictionary.
-        base_dir: Directory of the config file, used as the root for resolving
-            relative certificate paths.
 
     Returns:
         A populated ``TlsConfig`` dataclass.
 
     Raises:
         ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
-            specifies paths that escape ``certificatePathRoot``, specifies
-            paths that do not exist, or supplies only one of the client
+            supplies relative paths, specifies paths that do not exist, or supplies only one of the client
             certificate / private key pair.
     """
     raw_tls = raw_config.get("tls")
@@ -937,14 +926,13 @@ def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Tl
 
     _reject_unknown_keys(
         raw_tls,
-        allowed_keys={"certificatePathRoot", "caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
+        allowed_keys={"caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
         location="tls",
     )
 
-    certificate_root = _optional_path(raw_tls, "certificatePathRoot", base_dir=base_dir, default=base_dir)
-    ca_bundle_path = _optional_existing_child_path(raw_tls, "caBundlePath", root=certificate_root)
-    client_certificate_path = _optional_existing_child_path(raw_tls, "clientCertificatePath", root=certificate_root)
-    client_private_key_path = _optional_existing_child_path(raw_tls, "clientPrivateKeyPath", root=certificate_root)
+    ca_bundle_path = _optional_existing_absolute_file_path(raw_tls, "caBundlePath")
+    client_certificate_path = _optional_existing_absolute_file_path(raw_tls, "clientCertificatePath")
+    client_private_key_path = _optional_existing_absolute_file_path(raw_tls, "clientPrivateKeyPath")
 
     if (client_certificate_path is None) != (client_private_key_path is None):
         raise ConfigError("clientCertificatePath and clientPrivateKeyPath must be supplied together")
@@ -1158,26 +1146,19 @@ def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path
     return base_relative_path
 
 
-def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root`` and point to an existing file.
-
-    Enforces a path-traversal guard: the resolved path must be ``root`` itself
-    or a descendant of ``root``.  Both absolute and relative path strings are
-    accepted; relative paths are resolved against ``root``.
+def _optional_absolute_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional exact absolute path without checking file contents.
 
     Args:
         raw_config: Raw configuration dictionary to read from.
         key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside (the
-            ``certificatePathRoot``).
 
     Returns:
         Absolute resolved ``Path`` when the key is present, or ``None``.
 
     Raises:
         ConfigError: If the key is present but the value is not a non-empty
-            string, the resolved path escapes ``root``, or the path does not
-            point to an existing file.
+            string or is not an absolute path.
     """
     value = raw_config.get(key)
     if value is None:
@@ -1186,49 +1167,48 @@ def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *,
         raise ConfigError(f"{key} must be a non-empty string when supplied")
 
     raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
+    if not raw_path.is_absolute():
+        raise ConfigError(f"{key} must be an absolute file path")
+    return raw_path.resolve()
 
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
+
+def _optional_existing_absolute_file_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional exact absolute path that must point to an existing file.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+
+    Returns:
+        Absolute resolved ``Path`` when the key is present, or ``None``.
+
+    Raises:
+        ConfigError: If the key is present but invalid, relative, or not an
+            existing file.
+    """
+    resolved_path = _optional_absolute_path(raw_config, key)
+    if resolved_path is None:
+        return None
     if not resolved_path.is_file():
         raise ConfigError(f"{key} must point to an existing file")
     return resolved_path
 
 
-def _optional_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root``.
-
-    Unlike :func:`_optional_existing_child_path`, this helper does not touch
-    the filesystem. It is used for config sections whose file existence and PEM
-    validity must be deferred until execution time so config parsing can remain
-    placeholder-safe without eagerly loading signing material.
+def _credential_compatibility_root(*paths: Path | None, fallback: Path) -> Path:
+    """Derive an internal compatibility root from exact credential paths.
 
     Args:
-        raw_config: Raw configuration dictionary to read from.
-        key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside.
+        *paths: Optional absolute credential paths supplied by the participant.
+        fallback: Directory used when no paths are present.
 
     Returns:
-        Absolute resolved ``Path`` when the key is present, or ``None``.
-
-    Raises:
-        ConfigError: If the key is present but the value is not a non-empty
-            string or the resolved path escapes ``root``.
+        Common parent directory for the supplied paths, or ``fallback`` when no
+        credential paths are available.
     """
-    value = raw_config.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{key} must be a non-empty string when supplied")
-
-    raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
-
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
-    return resolved_path
+    parent_paths = [path.resolve().parent for path in paths if path is not None]
+    if not parent_paths:
+        return fallback.resolve()
+    return Path(os.path.commonpath([str(parent) for parent in parent_paths])).resolve()
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:

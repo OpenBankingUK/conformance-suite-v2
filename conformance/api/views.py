@@ -34,20 +34,21 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_dcr_run, start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.context import validate_test_value_config_contract
-from conformance.json_types import JsonObject
-from conformance.manifest import ManifestError, load_manifest_from_object
-from conformance.model_bank_config import ConfigError, parse_model_bank_config
-from conformance.plan_executor import check_catalogue_drift, resolve_rw_suite_for_plan
-from conformance.run_configuration import compile_run_configuration
-from conformance.run_plan_v2 import (
-    RunPlanV2,
-    RunPlanV2ParseError,
-    RunPlanV2TargetCoordinates,
-    parse_run_plan_v2,
+from conformance.config_document import (
+    ConfigDocumentError,
+    parse_participant_config_document,
+    resolve_config_document_execution_plan,
 )
+from conformance.json_types import JsonObject
+from conformance.model_bank_config import ConfigError
+from conformance.plan_executor import (
+    compile_catalogue_graph_for_plan,
+    require_no_catalogue_drift,
+    resolve_rw_suite_for_plan,
+    run_plan_from_test_target,
+)
+from conformance.plugins.registry import PluginRegistryError
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata
-from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
@@ -231,20 +232,17 @@ def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
     The request body must be a JSON object with a required ``config`` key
-    (model-bank config object) and any of these optional keys:
+    (participant config object). The config may contain a top-level
+    ``testPlan`` section; when it is omitted, the API derives equivalent
+    catalogue intent from ``config.testTarget``.
 
-    * ``manifest`` — an inline v0/v1 manifest object.
-    * ``runPlan`` — a RunPlan v2 JSON object describing target coordinates
-      and endpoint selections.
-    * ``deselectStepIds`` — an array of step ids to deselect from the plan.
-
-    Manifest resolution order: an inline ``manifest`` wins.  Otherwise a
-    ``runPlan`` (or a ``config.testTarget``-derived plan) is used to resolve
-    a bundled suite for Read/Write targets, or to route to the DCR runner for
-    ``dynamic-client-registration`` targets.  Otherwise the request falls
-    back to the legacy smoke check.  ``deselectStepIds`` without a manifest
-    source is rejected.  The run executes asynchronously in a background
-    thread; the response returns immediately with the run ID and status.
+    Participant manifest execution has been removed. Requests containing
+    ``manifest`` or ``deselectStepIds`` are rejected. The resolved run plan is
+    compiled through the catalogue planner and then routed to the DCR runner
+    for ``dynamic-client-registration`` targets or to the temporary bundled
+    Read/Write suite bridge for non-DCR targets. The run executes
+    asynchronously in a background thread; the response returns immediately
+    with the run ID and status.
 
     CSRF is exempt because this is an unauthenticated API designed for
     programmatic/CI access (PRD Phase 1). No browser session is involved.
@@ -276,69 +274,66 @@ def create_run(request: HttpRequest) -> JsonResponse:
     if raw_config is None or not isinstance(raw_config, dict):
         return JsonResponse({"error": '"config" key is required and must be a JSON object'}, status=400)
 
-    raw_manifest = body.get("manifest")
-    if raw_manifest is not None and not isinstance(raw_manifest, dict):
-        return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
-
-    raw_run_plan = body.get("runPlan")
-    if raw_run_plan is not None and not isinstance(raw_run_plan, dict):
-        return JsonResponse({"error": '"runPlan" must be a JSON object if provided'}, status=400)
-
-    raw_deselect = body.get("deselectStepIds")
-    if raw_deselect is not None and (
-        not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect)
-    ):
+    if "manifest" in body:
         return JsonResponse(
-            {"error": '"deselectStepIds" must be an array of strings'},
+            {"error": '"manifest" is no longer supported; use config.testPlan or config.testTarget'},
+            status=400,
+        )
+
+    if "runPlan" in body:
+        return JsonResponse(
+            {"error": '"runPlan" is no longer supported; use config.testPlan in the one-file config JSON'},
+            status=400,
+        )
+
+    if "deselectStepIds" in body:
+        return JsonResponse(
+            {"error": '"deselectStepIds" is no longer supported; use config.testPlan endpoint selections'},
             status=400,
         )
 
     # Validate config eagerly so the caller gets immediate feedback.
     # base_dir anchors relative TLS certificate paths in the request body to
     # the Django process CWD (set by the Docker entrypoint). Path traversal
-    # is rejected by parse_model_bank_config itself.
+    # is rejected by participant config parsing itself.
     try:
-        config = parse_model_bank_config(raw_config, base_dir=Path.cwd())
+        config_document = parse_participant_config_document(raw_config, base_dir=Path.cwd())
     except ConfigError as error:
         return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
+    config = config_document.config
 
-    # Resolve an effective RunPlanV2 from the explicit runPlan body or from
-    # config.testTarget.  Used for both DCR routing and Read/Write suite
-    # resolution.
-    run_plan: RunPlanV2 | None = None
-    if raw_run_plan is not None:
-        try:
-            run_plan = parse_run_plan_v2(raw_run_plan)
-        except RunPlanV2ParseError as error:
-            return JsonResponse({"error": f"Run plan validation failed: {error}"}, status=400)
-    elif config.test_target is not None:
-        run_plan = RunPlanV2(
-            schema_version="2",
-            target=RunPlanV2TargetCoordinates(
-                standard=config.test_target.standard,
-                specification=config.test_target.specification,
-                security_profile=config.test_target.security_profile,
-                specification_version=config.test_target.specification_version,
-                catalogue_hash="sha256:unknown",
-            ),
-            resource_groups=config.test_target.resource_groups,
-            endpoint_selections=(),
-        )
-
-    if run_plan is not None:
-        drift = check_catalogue_drift(run_plan)
-        if drift is not None:
-            logger.warning("%s", drift)
-
-    # DCR runs bypass the manifest execution path entirely.
-    if raw_manifest is None and run_plan is not None and run_plan.target.specification == "dynamic-client-registration":
-        if raw_deselect:
+    # Resolve effective catalogue intent from config.testPlan or config.testTarget.
+    try:
+        run_plan = resolve_config_document_execution_plan(config_document)
+    except ConfigDocumentError as error:
+        return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
+    if run_plan is None:
+        if config.test_target is None:
             return JsonResponse(
-                {"error": '"deselectStepIds" is not supported for DCR runs'},
+                {"error": "config.testPlan or config.testTarget is required for participant runs"},
                 status=400,
             )
         try:
-            response_body = start_dcr_run(config=config, plan=run_plan)
+            run_plan = run_plan_from_test_target(config.test_target)
+        except (PluginRegistryError, ValueError) as error:
+            return JsonResponse({"error": f"Target planning failed: {error}"}, status=400)
+
+    if run_plan is not None:
+        try:
+            compiled_run = compile_catalogue_graph_for_plan(run_plan)
+        except (PluginRegistryError, ValueError) as error:
+            return JsonResponse({"error": f"Catalogue planning failed: {error}"}, status=400)
+        try:
+            require_no_catalogue_drift(run_plan)
+        except ValueError as error:
+            return JsonResponse({"error": str(error)}, status=400)
+    else:
+        compiled_run = None
+
+    # DCR runs bypass the manifest execution path entirely.
+    if run_plan is not None and run_plan.target.specification == "dynamic-client-registration":
+        try:
+            response_body = start_dcr_run(config=config, plan=run_plan, compiled_run=compiled_run)
         except RunConflictError as error:
             return JsonResponse(
                 {"error": "A run is already active", "activeRunId": error.active_run_id},
@@ -346,56 +341,22 @@ def create_run(request: HttpRequest) -> JsonResponse:
             )
         return JsonResponse(response_body, status=201)
 
-    # Validate manifest eagerly if provided.
-    manifest = None
-    plan: TestPlan | None = None
+    # Resolve the temporary Read/Write suite bridge from target coverage.
     suite_metadata: SuiteMetadata | None = None
-    if raw_manifest is not None:
-        try:
-            manifest = load_manifest_from_object(raw_manifest)
-        except ManifestError as error:
-            return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
-    elif run_plan is not None:
-        try:
-            manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
-        except (SuiteCatalogError, ValueError) as error:
-            return JsonResponse({"error": f"Suite resolution failed: {error}"}, status=400)
-    elif raw_deselect is not None:
-        return JsonResponse(
-            {"error": '"deselectStepIds" is only valid with an inline "manifest", a "runPlan", or config.testTarget'},
-            status=400,
-        )
-
-    if manifest is not None:
-        # Build the default plan, then narrow via deselection. ValueError
-        # from with_deselection means the caller named an unknown step —
-        # surface as 400 so the participant can correct the request rather
-        # than discover the typo after the run starts.
-        try:
-            validate_test_value_config_contract(
-                manifest=manifest,
-                config_test_values=config.test_values,
-                config_test_data=config.test_data,
-            )
-            run_config = compile_run_configuration(
-                manifest=manifest,
-                selected_step_ids=None,
-                test_data_values=(dict(config.test_data.values) if config.test_data is not None else {}),
-            )
-            test_value_ctx = build_plan_test_value_context(
-                manifest,
-                config.test_values,
-                config.test_data,
-                run_configuration=run_config,
-            )
-            plan = TestPlan.default_plan_from_manifest(manifest, test_value_context=test_value_ctx).with_deselection(
-                raw_deselect or []
-            )
-        except ValueError as error:
-            return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
+    assert run_plan is not None  # noqa: S101 - guarded by participant input validation above.
+    try:
+        manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
+    except (SuiteCatalogError, ValueError) as error:
+        return JsonResponse({"error": f"Target resolution failed: {error}"}, status=400)
 
     try:
-        response_body = start_run(config=config, manifest=manifest, plan=plan, suite_metadata=suite_metadata)
+        response_body = start_run(
+            config=config,
+            manifest=manifest,
+            plan=None,
+            suite_metadata=suite_metadata,
+            compiled_run=compiled_run,
+        )
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},

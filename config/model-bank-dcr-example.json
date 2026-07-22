@@ -1,5 +1,4 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 30,
     "testTarget": {
@@ -8,18 +7,12 @@
         "specificationVersion": "3.3"
     },
     "dcr": {
-        "credentialPathRoot": "./certs",
-        "ssaPath": "ssa.jwt",
-        "signingPrivateKeyPath": "signing.key",
-        "signingCertificatePath": "signing.crt",
-        "transportCertificatePath": "transport.crt",
-        "transportPrivateKeyPath": "transport.key",
+        "ssaPath": "/path/to/ssa.jwt",
+        "signingPrivateKeyPath": "/path/to/signing.key",
+        "signingCertificatePath": "/path/to/signing.crt",
+        "transportCertificatePath": "/path/to/transport.crt",
+        "transportPrivateKeyPath": "/path/to/transport.key",
         "tokenEndpointAuthMethod": "tls_client_auth"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs",
-        "clientCertificatePath": "transport.crt",
-        "clientPrivateKeyPath": "transport.key"
     },
     "resultOutputPath": "./out/dcr-results.json",
     "executionLogPath": "./out/dcr-log.ndjson"

@@ -78,18 +78,17 @@ def test_validate_accepts_ca_bundle_under_root(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# validate_dcr_credential_paths — escape detection
+# validate_dcr_credential_paths — exact absolute path validation
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_validate_raises_when_ssa_escapes_root(tmp_path: Path) -> None:
+def test_validate_raises_when_ssa_path_is_relative(tmp_path: Path) -> None:
+    """DCR SSA paths must be exact absolute paths."""
     paths = _make_paths(tmp_path)
-    outside_file = tmp_path / "outside.jwt"
-    outside_file.write_bytes(b"x")
     bad_paths = DcrCredentialPaths(
         credential_path_root=paths.credential_path_root,
-        ssa_path=outside_file,
+        ssa_path=Path("relative.jwt"),
         signing_private_key_path=paths.signing_private_key_path,
         signing_certificate_path=paths.signing_certificate_path,
         transport_certificate_path=paths.transport_certificate_path,
@@ -100,27 +99,25 @@ def test_validate_raises_when_ssa_escapes_root(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_validate_raises_when_transport_key_escapes_root(tmp_path: Path) -> None:
+def test_validate_raises_when_transport_key_path_is_relative(tmp_path: Path) -> None:
+    """DCR transport key paths must be exact absolute paths."""
     paths = _make_paths(tmp_path)
-    outside_key = tmp_path / "outside.key"
-    outside_key.write_bytes(b"x")
     bad_paths = DcrCredentialPaths(
         credential_path_root=paths.credential_path_root,
         ssa_path=paths.ssa_path,
         signing_private_key_path=paths.signing_private_key_path,
         signing_certificate_path=paths.signing_certificate_path,
         transport_certificate_path=paths.transport_certificate_path,
-        transport_private_key_path=outside_key,
+        transport_private_key_path=Path("relative.key"),
     )
     with pytest.raises(DcrCredentialError, match="transport_private_key_path"):
         validate_dcr_credential_paths(bad_paths)
 
 
 @pytest.mark.unit
-def test_validate_raises_when_ca_bundle_escapes_root(tmp_path: Path) -> None:
+def test_validate_raises_when_ca_bundle_path_is_relative(tmp_path: Path) -> None:
+    """DCR CA bundle paths must be exact absolute paths when supplied."""
     paths = _make_paths(tmp_path)
-    outside_ca = tmp_path / "outside-ca.pem"
-    outside_ca.write_bytes(b"x")
     bad_paths = DcrCredentialPaths(
         credential_path_root=paths.credential_path_root,
         ssa_path=paths.ssa_path,
@@ -128,7 +125,7 @@ def test_validate_raises_when_ca_bundle_escapes_root(tmp_path: Path) -> None:
         signing_certificate_path=paths.signing_certificate_path,
         transport_certificate_path=paths.transport_certificate_path,
         transport_private_key_path=paths.transport_private_key_path,
-        ca_bundle_path=outside_ca,
+        ca_bundle_path=Path("relative-ca.pem"),
     )
     with pytest.raises(DcrCredentialError, match="ca_bundle_path"):
         validate_dcr_credential_paths(bad_paths)
@@ -187,19 +184,18 @@ def test_load_raises_when_file_missing(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_load_raises_when_path_escapes_root(tmp_path: Path) -> None:
+def test_load_raises_when_path_is_relative(tmp_path: Path) -> None:
+    """DCR credential loading rejects relative paths before reading files."""
     paths = _make_paths(tmp_path)
-    outside = tmp_path / "escape.jwt"
-    outside.write_bytes(b"x")
     bad_paths = DcrCredentialPaths(
         credential_path_root=paths.credential_path_root,
-        ssa_path=outside,
+        ssa_path=Path("relative.jwt"),
         signing_private_key_path=paths.signing_private_key_path,
         signing_certificate_path=paths.signing_certificate_path,
         transport_certificate_path=paths.transport_certificate_path,
         transport_private_key_path=paths.transport_private_key_path,
     )
-    with pytest.raises(DcrCredentialError, match="credential_path_root"):
+    with pytest.raises(DcrCredentialError, match="absolute file path"):
         load_dcr_credentials(bad_paths)
 
 

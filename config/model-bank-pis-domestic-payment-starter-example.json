@@ -1,5 +1,4 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
     "testTarget": {
@@ -14,9 +13,8 @@
         "resourceBaseUrl": "https://rs1.obie.uk.ozoneapi.io"
     },
     "fapiSigning": {
-        "certificatePathRoot": "./certs",
-        "signingCertificatePath": "dummy-signing.crt",
-        "signingPrivateKeyPath": "dummy-signing.key",
+        "signingCertificatePath": "/path/to/dummy-signing.crt",
+        "signingPrivateKeyPath": "/path/to/dummy-signing.key",
         "kid": "your-signing-kid-here",
         "clientAssertionIssuer": "your-client-id-here",
         "clientAssertionSubject": "your-client-id-here",
@@ -26,9 +24,6 @@
     },
     "openBanking": {
         "financialId": "your-aspsp-financial-id-here"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson",

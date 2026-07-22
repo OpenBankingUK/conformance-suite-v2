@@ -11,6 +11,8 @@ from conformance.api.plan_builder import (
     PlanBuilderForm,
     PlanPreview,
     _infer_shape_warning,
+    staged_catalogue_data,
+    staged_ui_context,
 )
 from conformance.json_types import JsonValue
 
@@ -104,9 +106,8 @@ PIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
         "resourceBaseUrl": "https://resource.example.com",
     },
     "fapiSigning": {
-        "certificatePathRoot": "./certs",
-        "signingCertificatePath": "dummy-signing.crt",
-        "signingPrivateKeyPath": "dummy-signing.key",  # pragma: allowlist secret
+        "signingCertificatePath": "/local-config/certs/dummy-signing.crt",
+        "signingPrivateKeyPath": "/local-config/certs/dummy-signing.key",  # pragma: allowlist secret
         "kid": "test-signing-kid",
         "clientAssertionIssuer": "test-client-id",
         "clientAssertionSubject": "test-client-id",
@@ -240,6 +241,58 @@ def _validated_preview(form: PlanBuilderForm) -> PlanPreview:
 
 
 @pytest.mark.unit
+def test_staged_ui_context_exposes_catalogue_backed_targets() -> None:
+    """Staged UI context includes Read/Write and DCR catalogue target metadata."""
+    context = staged_ui_context()
+
+    specifications = json.loads(cast(str, context["staged_specification_options"]))
+    catalogues = json.loads(cast(str, context["staged_catalogue_data"]))
+
+    assert {item["id"] for item in specifications["obl"]} >= {
+        "read-write",
+        "dynamic-client-registration",
+    }
+    assert catalogues["obl"]["read-write"]["v4.0.0"]["catalogueHash"].startswith("sha256:")
+    assert catalogues["obl"]["dynamic-client-registration"]["3.3"]["catalogueHash"].startswith("sha256:")
+
+
+@pytest.mark.unit
+def test_staged_catalogue_data_contains_fields_readiness_and_tests() -> None:
+    """Catalogue data for staged UI includes fields, readiness, and executable tests."""
+    catalogues = staged_catalogue_data()
+    dcr = cast(dict[str, JsonValue], cast(dict[str, JsonValue], catalogues["obl"])["dynamic-client-registration"])
+    dcr_33 = cast(dict[str, JsonValue], dcr["3.3"])
+    fields = cast(list[dict[str, JsonValue]], dcr_33["fieldSchemas"])
+    tests = cast(list[dict[str, JsonValue]], dcr_33["executableTests"])
+    readiness = cast(dict[str, JsonValue], dcr_33["readinessPolicy"])
+
+    assert dcr_33["usesResourceGroups"] is False
+    assert any(field["fieldId"] == "dcr.ssaPath" and field["valueType"] == "path" for field in fields)
+    assert any(test["testId"] == "DCR-001" for test in tests)
+    assert readiness["certificationStatus"] == "non-certifying"
+
+
+@pytest.mark.unit
+def test_staged_read_write_fields_are_runtime_mapped_config_fields() -> None:
+    """Read/Write staged fields include only saved-config runtime mappings."""
+    catalogues = staged_catalogue_data()
+    read_write = cast(dict[str, JsonValue], cast(dict[str, JsonValue], catalogues["obl"])["read-write"])
+    rw_401 = cast(dict[str, JsonValue], read_write["v4.0.1"])
+    fields = cast(list[dict[str, JsonValue]], rw_401["fieldSchemas"])
+    field_ids = {cast(str, field["fieldId"]) for field in fields}
+
+    assert "oauth.tokenEndpoint" not in field_ids
+    assert "transport.disableKeepAlives" not in field_ids
+    assert "transport.tlsSkipVerify" not in field_ids
+    assert "fapiSigning.signingCertificatePath" in field_ids
+    assert "fapiSigning.signingPrivateKeyPath" in field_ids
+    assert "fapiSigning.clientAssertionIssuer" in field_ids
+    assert "fapiSigning.clientAssertionSubject" in field_ids
+    assert "fapiSigning.tokenEndpointAuthMethod" in field_ids
+    assert "fapiSigning.privateKeyPath" not in field_ids
+
+
+@pytest.mark.unit
 def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
     manifest = _v1_manifest(
         [
@@ -356,14 +409,13 @@ def test_select_mode_with_empty_selection_deselects_all_rows() -> None:
 
 
 @pytest.mark.unit
-def test_guided_model_bank_example_allows_custom_environment_override() -> None:
-    """Custom guided environment and discovery values take precedence over an example."""
+def test_guided_model_bank_example_allows_custom_discovery_override() -> None:
+    """Custom guided discovery values take precedence over an example."""
     form = PlanBuilderForm(
         data={
             "config_json": "",
             "manifest_json": json.dumps(_v1_manifest([_http_step("guided-custom")])),
             "guided_model_bank": "ozone-obie-preprod",
-            "guided_environment": "custom-env",
             "guided_discovery_url": "https://custom.example.com/.well-known/openid-configuration",
             "selection_mode": "select",
             "selected_step_ids": ["guided-custom"],
@@ -372,20 +424,19 @@ def test_guided_model_bank_example_allows_custom_environment_override() -> None:
 
     preview = _validated_preview(form)
 
-    assert preview.config.environment == "custom-env"
+    assert preview.config.environment is None
     assert preview.config.discovery_url == "https://custom.example.com/.well-known/openid-configuration"
     assert form.generated_config_json is not None
-    assert '"environment": "custom-env"' in form.generated_config_json
+    assert '"environment"' not in form.generated_config_json
 
 
 @pytest.mark.unit
 def test_guided_fields_can_build_config_for_explicit_manifest_without_suite_selection() -> None:
-    """Guided environment and OAuth fields still work with an explicit manifest override."""
+    """Guided discovery and OAuth fields still work with an explicit manifest override."""
     form = PlanBuilderForm(
         data={
             "config_json": "",
             "manifest_json": json.dumps(_v1_manifest([_http_step("guided-explicit")])),
-            "guided_environment": "guided-explicit-env",
             "guided_discovery_url": "https://example.com/.well-known/openid-configuration",
             "guided_client_id": "guided-client",
             "guided_redirect_uri": "https://conformance.example.com/callback",
@@ -398,7 +449,7 @@ def test_guided_fields_can_build_config_for_explicit_manifest_without_suite_sele
 
     assert preview.suite_metadata is None
     assert preview.manifest.name == "Plan builder manifest"
-    assert preview.config.environment == "guided-explicit-env"
+    assert preview.config.environment is None
     assert preview.config.oauth is not None
     assert preview.config.oauth.client_id == "guided-client"
 
@@ -461,6 +512,72 @@ def test_invalid_config_json_returns_form_error() -> None:
 
     assert form.is_valid() is False
     assert "Config JSON must be valid JSON" in form.errors["config_json"][0]
+
+
+@pytest.mark.unit
+def test_bare_run_plan_json_in_config_field_returns_clear_form_error() -> None:
+    """Bare RunPlanV2 pasted as Config JSON gets a targeted error message."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(
+                {
+                    "schemaVersion": "2",
+                    "target": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:test",
+                    },
+                    "resourceGroups": ["ais"],
+                }
+            ),
+            "manifest_json": json.dumps(_v1_manifest([_http_step("standard")])),
+        }
+    )
+
+    assert form.is_valid() is False
+    assert "bare RunPlanV2" in form.errors["config_json"][0]
+
+
+@pytest.mark.unit
+def test_config_field_accepts_embedded_test_plan_with_explicit_manifest() -> None:
+    """Browser config parsing accepts enhanced one-file config documents."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(
+                {
+                    **VALID_CONFIG,
+                    "testTarget": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "resourceGroups": ["ais"],
+                    },
+                    "testPlan": {
+                        "target": {
+                            "standard": "obl",
+                            "specification": "read-write",
+                            "securityProfile": "fapi1-advanced",
+                            "specificationVersion": "v4.0.1",
+                            "catalogueHash": "sha256:test",
+                        },
+                        "resourceGroups": ["ais"],
+                    },
+                }
+            ),
+            "manifest_json": json.dumps(_v1_manifest([_http_step("standard")])),
+            "selection_mode": "select",
+            "selected_step_ids": ["standard"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.config.test_target is not None
+    assert form.embedded_test_plan is not None
+    assert form.embedded_test_plan.target.specification_version == "v4.0.1"
 
 
 @pytest.mark.unit

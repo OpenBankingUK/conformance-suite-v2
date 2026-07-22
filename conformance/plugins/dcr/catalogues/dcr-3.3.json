@@ -1,9 +1,12 @@
 {
+  "schemaVersion": 2,
   "identity": {
     "pluginId": "dcr",
+    "standard": "obl",
     "specification": "dynamic-client-registration",
+    "securityProfile": "fapi1-advanced",
     "specificationVersion": "3.3",
-    "contentHash": "sha256:05b9b51eba0a70241727e5b18d178aa6a40a799da551e68d166476a6510b4240"
+    "contentHash": "sha256:computed-at-load-time"
   },
   "endpoints": [
     {
@@ -101,6 +104,360 @@
       "method": "POST",
       "requirement": "mandatory",
       "displayLabel": "DCR-011 Wrong Client ID"
+    }
+  ],
+  "fieldSchemas": [
+    {
+      "fieldId": "dcr.ssaPath",
+      "displayLabel": "Software Statement Assertion path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.signingPrivateKeyPath",
+      "displayLabel": "Signing private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.signingCertificatePath",
+      "displayLabel": "Signing certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.transportCertificatePath",
+      "displayLabel": "mTLS transport certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.transportPrivateKeyPath",
+      "displayLabel": "mTLS transport private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.caBundlePath",
+      "displayLabel": "Optional CA bundle path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "fieldId": "dcr.tokenEndpointAuthMethod",
+      "displayLabel": "Token endpoint authentication method",
+      "scope": "shared",
+      "valueType": "choice",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "dcr.disableKeepAlives",
+      "displayLabel": "Disable HTTP keep-alives",
+      "scope": "shared",
+      "valueType": "boolean",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "dcr.tlsSkipVerify",
+      "displayLabel": "Skip TLS verification",
+      "scope": "shared",
+      "valueType": "boolean",
+      "required": false,
+      "sensitive": false
+    }
+  ],
+  "runnerPrimitives": [
+    {
+      "primitiveId": "dcr.scenario",
+      "type": "dcr-scenario",
+      "description": "Execute a DCR scenario with validated credentials, mTLS transport, masked evidence, and scenario-specific assertions."
+    }
+  ],
+  "readinessPolicy": {
+    "policyId": "dcr-non-certifying-readiness-v1",
+    "certificationStatus": "non-certifying",
+    "omittedMandatoryOutcome": "non-certifying",
+    "failedSelectedOutcome": "failed"
+  },
+  "masking": {
+    "maskedFields": [
+      "dcr.ssaPath",
+      "dcr.signingPrivateKeyPath",
+      "dcr.signingCertificatePath",
+      "dcr.transportCertificatePath",
+      "dcr.transportPrivateKeyPath",
+      "dcr.caBundlePath",
+      "registration_access_token",
+      "client_secret",
+      "access_token",
+      "client_assertion"
+    ],
+    "evidencePaths": [
+      "$.request.headers.Authorization",
+      "$.request.body.client_assertion",
+      "$.response.body.registration_access_token",
+      "$.response.body.client_secret",
+      "$.response.body.access_token"
+    ]
+  },
+  "sourceCoverage": {
+    "baselinePath": "docs/requirements/suite-coverage/migration-parity-baseline.json",
+    "scenarioSource": "conformance.plugins.dcr.scenarios.ALL_SCENARIOS"
+  },
+  "tests": [
+    {
+      "testId": "DCR-001",
+      "displayLabel": "Registration with valid SSA and valid claims",
+      "endpointId": "dcr.register.post",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.register.post"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-001",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-002",
+      "displayLabel": "Retrieve registered client",
+      "endpointId": "dcr.register.get",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.register.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-002",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-003",
+      "displayLabel": "Update registered client",
+      "endpointId": "dcr.register.put",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.register.put"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-003",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-004",
+      "displayLabel": "Delete registered client",
+      "endpointId": "dcr.register.delete",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.register.delete"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-004",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-005",
+      "displayLabel": "Registration with expired SSA",
+      "endpointId": "dcr.negative.expired-ssa",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.expired-ssa"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-005",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-007",
+      "displayLabel": "Registration with invalid issuer",
+      "endpointId": "dcr.negative.invalid-issuer",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.invalid-issuer"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-007",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-008",
+      "displayLabel": "Registration with invalid token endpoint auth method",
+      "endpointId": "dcr.negative.invalid-auth-method",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.invalid-auth-method"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-008",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-009",
+      "displayLabel": "Registration with wrong response type",
+      "endpointId": "dcr.negative.wrong-response-type",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.wrong-response-type"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-009",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-010",
+      "displayLabel": "Access using deleted client ID",
+      "endpointId": "dcr.negative.deleted-client-access",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.deleted-client-access"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-010",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "DCR-011",
+      "displayLabel": "Access using wrong client ID",
+      "endpointId": "dcr.negative.wrong-client-id",
+      "runnerPrimitiveId": "dcr.scenario",
+      "applicability": [
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "dcr.negative.wrong-client-id"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "dcr-scenario",
+          "sourceId": "DCR-011",
+          "mappingMode": "primary-scenario-id",
+          "sourceFiles": [
+            "conformance/plugins/dcr/scenarios.py"
+          ]
+        }
+      ]
     }
   ]
 }

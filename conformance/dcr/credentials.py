@@ -10,9 +10,8 @@ DCR requires several file-backed secrets and certificates:
   on all DCR and token-endpoint HTTP connections.
 - An optional CA bundle — used to verify the ASPSP's server certificate.
 
-All paths must resolve under a single validated root directory.  The root
-containment check (using :meth:`pathlib.Path.resolve`) is the same pattern
-used by :mod:`conformance.signing_credentials` for FAPI signing material.
+All participant-supplied paths must be exact absolute file paths. Config
+parsing stores only paths; file bytes are loaded immediately before execution.
 
 :class:`DcrCredentialPaths` stores the validated, resolved paths.
 :func:`load_dcr_credentials` reads the files and returns in-memory
@@ -38,13 +37,11 @@ class DcrCredentialError(ValueError):
 class DcrCredentialPaths:
     """Validated file-backed paths for DCR credential material.
 
-    All paths must resolve under :attr:`credential_path_root`.  The root
-    containment check is performed at construction time by
-    :func:`validate_dcr_credential_paths`.
+    All participant-supplied paths must be exact absolute file paths.
 
     Attributes:
-        credential_path_root: Trusted root directory under which all
-            credential paths must resolve.
+        credential_path_root: Deprecated internal compatibility root derived
+            from the exact credential paths.
         ssa_path: Path to the Software Statement Assertion JWT file.
         signing_private_key_path: Path to the PEM-encoded RSA private key
             used for signing DCR registration JWTs and (for
@@ -55,9 +52,9 @@ class DcrCredentialPaths:
             certificate used on all DCR HTTP connections.
         transport_private_key_path: Path to the PEM-encoded private key
             paired with :attr:`transport_certificate_path`.
-        ca_bundle_path: Optional path to a PEM CA bundle used to verify the
-            ASPSP's server certificate.  When ``None`` the system default CA
-            store is used.
+        ca_bundle_path: Optional path to a PEM CA bundle appended to the default
+            system roots and bundled Open Banking CA roots when verifying the
+            ASPSP's server certificate.
     """
 
     credential_path_root: Path
@@ -101,34 +98,31 @@ class DcrCredentials:
 
 
 def validate_dcr_credential_paths(paths: DcrCredentialPaths) -> None:
-    """Validate that all credential paths resolve under the configured root.
+    """Validate that all credential paths are exact absolute paths.
 
     Checks each configured credential path (except ``ca_bundle_path`` when
-    absent) against ``credential_path_root`` using resolved-path containment.
-    The function is a no-op when all paths are valid.
+    absent). The function is a no-op when all paths are valid.
 
     Args:
         paths: The :class:`DcrCredentialPaths` to validate.
 
     Raises:
-        DcrCredentialError: If any credential path resolves outside
-            ``credential_path_root``.
+        DcrCredentialError: If any credential path is relative.
     """
-    root = paths.credential_path_root.resolve()
-    _check_path(paths.ssa_path, root=root, label="ssa_path")
-    _check_path(paths.signing_private_key_path, root=root, label="signing_private_key_path")
-    _check_path(paths.signing_certificate_path, root=root, label="signing_certificate_path")
-    _check_path(paths.transport_certificate_path, root=root, label="transport_certificate_path")
-    _check_path(paths.transport_private_key_path, root=root, label="transport_private_key_path")
+    _check_path(paths.ssa_path, label="ssa_path")
+    _check_path(paths.signing_private_key_path, label="signing_private_key_path")
+    _check_path(paths.signing_certificate_path, label="signing_certificate_path")
+    _check_path(paths.transport_certificate_path, label="transport_certificate_path")
+    _check_path(paths.transport_private_key_path, label="transport_private_key_path")
     if paths.ca_bundle_path is not None:
-        _check_path(paths.ca_bundle_path, root=root, label="ca_bundle_path")
+        _check_path(paths.ca_bundle_path, label="ca_bundle_path")
 
 
 def load_dcr_credentials(paths: DcrCredentialPaths) -> DcrCredentials:
     """Load DCR credential files from disk for immediate runtime use.
 
     Reads each credential file into memory and returns a :class:`DcrCredentials`
-    instance.  Path containment validation is performed before any file read.
+    instance. Absolute-path validation is performed before any file read.
     File-read errors use a label-only message so path details are not exposed
     in exception messages that may surface in API error responses.
 
@@ -139,8 +133,8 @@ def load_dcr_credentials(paths: DcrCredentialPaths) -> DcrCredentials:
         In-memory :class:`DcrCredentials` ready for DCR execution.
 
     Raises:
-        DcrCredentialError: If any path escapes ``credential_path_root``,
-            or if any file cannot be read from disk.
+        DcrCredentialError: If any path is relative, or if any file cannot be
+            read from disk.
     """
     validate_dcr_credential_paths(paths)
 
@@ -169,20 +163,18 @@ def load_dcr_credentials(paths: DcrCredentialPaths) -> DcrCredentials:
 # ---------------------------------------------------------------------------
 
 
-def _check_path(path: Path, *, root: Path, label: str) -> None:
-    """Assert that a resolved path resides under a trusted root directory.
+def _check_path(path: Path, *, label: str) -> None:
+    """Assert that a credential path is absolute.
 
     Args:
         path: The credential path to validate.
-        root: The trusted root directory (already resolved).
         label: Human-readable field name used in the error message.
 
     Raises:
-        DcrCredentialError: If ``path`` resolves outside ``root``.
+        DcrCredentialError: If ``path`` is relative.
     """
-    resolved = path.resolve()
-    if resolved != root and root not in resolved.parents:
-        raise DcrCredentialError(f"DCR credential {label!r} must resolve inside credential_path_root")
+    if not path.is_absolute():
+        raise DcrCredentialError(f"DCR credential {label!r} must be an absolute file path")
 
 
 def _read_bytes(path: Path, *, label: str) -> bytes:

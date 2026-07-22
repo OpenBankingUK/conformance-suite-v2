@@ -152,8 +152,30 @@ class DcrPlugin:
                 file is structurally invalid.
         """
         raw_bytes = self._load_catalogue_bytes(target.specification_version)
+        content_hash = compute_catalogue_hash(raw_bytes)
         raw_json = json.loads(raw_bytes)
-        return parse_catalogue(raw_json)
+        catalogue = parse_catalogue(raw_json)
+        identity = CatalogueIdentity(
+            plugin_id=catalogue.identity.plugin_id,
+            specification=catalogue.identity.specification,
+            specification_version=catalogue.identity.specification_version,
+            content_hash=content_hash,
+            standard=catalogue.identity.standard,
+            security_profile=catalogue.identity.security_profile,
+            version_aliases=catalogue.identity.version_aliases,
+        )
+        return Catalogue(
+            identity=identity,
+            endpoints=catalogue.endpoints,
+            schema_version=catalogue.schema_version,
+            resource_groups=catalogue.resource_groups,
+            field_schemas=catalogue.field_schemas,
+            runner_primitives=catalogue.runner_primitives,
+            executable_tests=catalogue.executable_tests,
+            readiness_policy=catalogue.readiness_policy,
+            masking=catalogue.masking,
+            source_coverage=catalogue.source_coverage,
+        )
 
     def masking_fields(self) -> frozenset[str]:
         """Return the runtime field names that must be masked in DCR evidence.

@@ -7,12 +7,14 @@ Open Banking Read/Write API specification.
 The plugin:
 
 - Covers the ``"obl"`` standard and ``"read-write"`` specification.
-- Supports specification version ``"v4.0.1"``.
+- Supports specification versions ``"v3.1.11"``, ``"v4.0.0"``, and
+  ``"v4.0.1"``.  The legacy migration alias ``"v4.0"`` resolves to the
+  canonical patch-explicit version ``"v4.0.0"``.
 - Organises endpoints by resource group: AIS, PIS, CBPII, and VRP.
-- Loads endpoint catalogues from JSON files bundled under
-  ``catalogues/<version_dir>/`` relative to this package.
-- Computes a canonical content hash from the combined bytes of all
-  resource-group catalogue files for drift detection.
+- Loads consolidated schema v2 catalogues from
+  ``catalogues/<version_dir>/catalogue.json`` relative to this package.
+- Computes a canonical content hash from the consolidated catalogue bytes for
+  drift detection so executable tests and policy metadata affect drift.
 
 Security note: no participant-controlled values are used in catalogue file
 resolution; the version directory mapping is derived solely from the
@@ -24,13 +26,7 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from conformance.catalogue import (
-    Catalogue,
-    CatalogueIdentity,
-    EndpointCatalogueEntry,
-    compute_catalogue_hash,
-    parse_catalogue,
-)
+from conformance.catalogue import Catalogue, CatalogueIdentity, compute_catalogue_hash, parse_catalogue
 from conformance.plugins.domain import PluginId, PluginTargetMetadata
 from conformance.target_config import TestTargetConfig
 
@@ -47,8 +43,11 @@ _STANDARD: str = "obl"
 _SPECIFICATION: str = "read-write"
 """Specification identifier for the Read/Write API."""
 
-_SUPPORTED_VERSIONS: frozenset[str] = frozenset({"v4.0.1"})
+_SUPPORTED_VERSIONS: tuple[str, ...] = ("v3.1.11", "v4.0.0", "v4.0.1")
 """Specification versions served by this plugin."""
+
+_VERSION_ALIASES: dict[str, str] = {"v4.0": "v4.0.0"}
+"""Temporary migration aliases normalised to patch-explicit versions."""
 
 _RESOURCE_GROUPS: tuple[str, ...] = ("ais", "pis", "cbpii", "vrp")
 """Ordered tuple of resource-group identifiers in display order."""
@@ -95,15 +94,16 @@ class ReadWritePlugin:
 
     Implements the :class:`~conformance.plugins.domain.ConformancePlugin`
     protocol for the ``"obl"`` standard and ``"read-write"`` specification.
-    Supports specification version ``"v4.0.1"``.
+    Supports specification versions ``"v3.1.11"``, ``"v4.0.0"``, and
+    ``"v4.0.1"``.
 
     Catalogues are loaded from JSON files bundled alongside this module
-    under ``catalogues/<version_dir>/<resource_group>.json``.  The
+    under ``catalogues/<version_dir>/catalogue.json``.  The
     content hash returned by :meth:`catalogue_identity` and embedded in
     the :class:`~conformance.catalogue.Catalogue` returned by
-    :meth:`load_catalogue` is computed from the concatenated raw bytes of
-    all resource-group catalogue files in :data:`_RESOURCE_GROUPS` order.
-    This ensures the hash changes whenever any catalogue file is modified.
+    :meth:`load_catalogue` is computed from the consolidated catalogue bytes.
+    This ensures the hash changes whenever endpoint, executable test, masking,
+    field schema, or readiness policy metadata is modified.
 
     The ``"contentHash"`` placeholder values inside the JSON files are
     overridden at load time; callers must not rely on those embedded values.
@@ -130,7 +130,7 @@ class ReadWritePlugin:
             plugin_id=_PLUGIN_ID,
             standard=_STANDARD,
             specification=_SPECIFICATION,
-            supported_versions=tuple(sorted(_SUPPORTED_VERSIONS)),
+            supported_versions=_SUPPORTED_VERSIONS,
             uses_resource_groups=True,
             resource_groups=_RESOURCE_GROUPS,
             display_label="Read/Write API",
@@ -153,44 +153,46 @@ class ReadWritePlugin:
         return (
             target.standard == _STANDARD
             and target.specification == _SPECIFICATION
-            and target.specification_version in _SUPPORTED_VERSIONS
+            and _normalise_version(target.specification_version) in _SUPPORTED_VERSIONS
         )
 
     def catalogue_identity(self, target: TestTargetConfig) -> CatalogueIdentity:
         """Return the catalogue identity for a given target.
 
-        Computes the content hash from the combined raw bytes of all
-        resource-group catalogue files for the requested specification
-        version.  The hash changes whenever any catalogue file is modified,
-        enabling drift detection without loading the full catalogue.
+        Computes the content hash from the consolidated catalogue JSON bytes
+        for the requested specification version.  The hash changes whenever
+        endpoints, executable tests, masking metadata, field schemas, or
+        readiness policy change.
 
         Args:
             target: The target coordinates used to select the catalogue
                 version directory.
 
         Returns:
-            :class:`~conformance.catalogue.CatalogueIdentity` with the
-            combined content hash for the target's specification version.
+            :class:`~conformance.catalogue.CatalogueIdentity` with the live
+            content hash for the target's canonical specification version.
         """
-        combined_bytes = self._combined_catalogue_bytes(target.specification_version)
+        version = _normalise_version(target.specification_version)
+        catalogue_bytes = self._catalogue_bytes(version)
         return CatalogueIdentity(
             plugin_id=_PLUGIN_ID,
             specification=_SPECIFICATION,
-            specification_version=target.specification_version,
-            content_hash=compute_catalogue_hash(combined_bytes),
+            specification_version=version,
+            content_hash=compute_catalogue_hash(catalogue_bytes),
+            standard=_STANDARD,
+            security_profile=target.security_profile,
+            version_aliases=tuple(alias for alias, canonical in _VERSION_ALIASES.items() if canonical == version),
         )
 
     def load_catalogue(self, target: TestTargetConfig) -> Catalogue:
-        """Load and return the merged endpoint catalogue for a target.
+        """Load and return the consolidated catalogue for a target.
 
-        Loads all four resource-group catalogue files for the requested
-        specification version, merges their endpoints into a single
-        ordered tuple, and returns a :class:`~conformance.catalogue.Catalogue`
-        whose identity carries the combined content hash.
+        Loads the schema v2 catalogue file for the requested specification
+        version and returns a :class:`~conformance.catalogue.Catalogue` whose
+        identity carries the recomputed live content hash.
 
-        The ``contentHash`` placeholder values stored inside the individual
-        JSON files are NOT used; the hash is always recomputed from the raw
-        file bytes.
+        The ``contentHash`` placeholder stored inside the JSON file is NOT
+        used; the hash is always recomputed from the raw catalogue bytes.
 
         Args:
             target: The target coordinates specifying the specification
@@ -201,23 +203,32 @@ class ReadWritePlugin:
             containing all endpoint entries for all resource groups at the
             requested version, with a computed content hash.
         """
-        version = target.specification_version
-        combined_bytes = self._combined_catalogue_bytes(version)
-        content_hash = compute_catalogue_hash(combined_bytes)
-
-        all_entries: list[EndpointCatalogueEntry] = []
-        for rg in _RESOURCE_GROUPS:
-            rg_bytes = self._resource_group_file_bytes(version, rg)
-            rg_catalogue = parse_catalogue(json.loads(rg_bytes))
-            all_entries.extend(rg_catalogue.endpoints)
-
+        version = _normalise_version(target.specification_version)
+        catalogue_bytes = self._catalogue_bytes(version)
+        content_hash = compute_catalogue_hash(catalogue_bytes)
+        raw_catalogue = json.loads(catalogue_bytes)
+        catalogue = parse_catalogue(raw_catalogue)
         identity = CatalogueIdentity(
-            plugin_id=_PLUGIN_ID,
-            specification=_SPECIFICATION,
+            plugin_id=catalogue.identity.plugin_id,
+            specification=catalogue.identity.specification,
             specification_version=version,
             content_hash=content_hash,
+            standard=catalogue.identity.standard,
+            security_profile=catalogue.identity.security_profile,
+            version_aliases=catalogue.identity.version_aliases,
         )
-        return Catalogue(identity=identity, endpoints=tuple(all_entries))
+        return Catalogue(
+            identity=identity,
+            endpoints=catalogue.endpoints,
+            schema_version=catalogue.schema_version,
+            resource_groups=catalogue.resource_groups,
+            field_schemas=catalogue.field_schemas,
+            runner_primitives=catalogue.runner_primitives,
+            executable_tests=catalogue.executable_tests,
+            readiness_policy=catalogue.readiness_policy,
+            masking=catalogue.masking,
+            source_coverage=catalogue.source_coverage,
+        )
 
     def masking_fields(self) -> frozenset[str]:
         """Return the set of runtime field names that must be masked.
@@ -248,34 +259,31 @@ class ReadWritePlugin:
         """
         return _CATALOGUES_DIR / _version_to_dir(version)
 
-    def _resource_group_file_bytes(self, version: str, resource_group: str) -> bytes:
-        """Read the raw bytes of one resource-group catalogue file.
+    def _catalogue_bytes(self, version: str) -> bytes:
+        """Read the raw bytes of one consolidated catalogue file.
 
         Args:
             version: Specification version string (e.g. ``"v4.0.1"``).
-            resource_group: Resource-group identifier (e.g. ``"ais"``).
 
         Returns:
             Raw UTF-8 bytes of the catalogue JSON file.
+
+        Raises:
+            ValueError: If ``version`` is not a supported canonical version.
         """
-        file_path = self._catalogue_dir(version) / f"{resource_group}.json"
+        if version not in _SUPPORTED_VERSIONS:
+            raise ValueError(f"Unsupported Read/Write specification version {version!r}")
+        file_path = self._catalogue_dir(version) / "catalogue.json"
         return file_path.read_bytes()
 
-    def _combined_catalogue_bytes(self, version: str) -> bytes:
-        """Concatenate raw catalogue bytes for all resource groups.
 
-        Reads every resource-group catalogue file in :data:`_RESOURCE_GROUPS`
-        order and concatenates their raw bytes.  This combined value is used
-        as the input to :func:`~conformance.catalogue.compute_catalogue_hash`
-        so the hash reflects the full set of catalogue data.
+def _normalise_version(version: str) -> str:
+    """Normalise a Read/Write specification version to its canonical form.
 
-        Args:
-            version: Specification version string (e.g. ``"v4.0.1"``).
+    Args:
+        version: Specification version string from a target.
 
-        Returns:
-            Concatenated raw bytes of all resource-group catalogue files.
-        """
-        combined = b""
-        for rg in _RESOURCE_GROUPS:
-            combined += self._resource_group_file_bytes(version, rg)
-        return combined
+    Returns:
+        Patch-explicit canonical version string.
+    """
+    return _VERSION_ALIASES.get(version, version)

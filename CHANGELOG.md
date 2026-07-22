@@ -11,11 +11,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Phase 2/3 endpoint-first catalogue migration**: Added schema v2 catalogue
+  metadata for Read/Write catalogues, consolidated versioned catalogue files
+  for `v3.1.11`, `v4.0.0` (with temporary `v4.0` alias), and `v4.0.1`, and
+  parser/plugin tests covering resource groups, executable test metadata,
+  field schemas, readiness policy, masking metadata, source coverage, and
+  catalogue hash drift over policy metadata.
+- **Phase 4 catalogue-native planner/executor foundation**: Added RunPlanV2
+  compilation into catalogue dependency graphs, canonical predicate evaluation,
+  shared Read/Write prerequisite de-duplication, resource-group-isolated
+  token/PSU prerequisites, omitted mandatory coverage reporting, and a generic
+  primitive-handler executor that skips only selected tests blocked by failed
+  prerequisites.
+- **Phase 5 DCR completion**: Migrated DCR 3.2, 3.3, and 3.4 catalogues to
+  schema v2 metadata with selectable operations, primary `DCR-001`/`DCR-002`/
+  `DCR-003`/`DCR-004`/`DCR-005`/`DCR-007`/`DCR-008`/`DCR-009`/`DCR-010`/
+  `DCR-011` executable test IDs, non-certifying readiness policy, credential
+  path masking metadata, catalogue-native GET/PUT/DELETE selection IDs, and
+  masked DCR scenario NDJSON events for CLI/API runs.
+- **Phase 6 field-value model and UI**: Made the staged browser plan builder
+  catalogue-backed for Read/Write and DCR, including DCR specification/version
+  selection, endpoint/operation coverage, catalogue-driven field and credential
+  path prompts, live catalogue hash display, applicable test previews, readiness
+  policy implications, omitted mandatory coverage, and saved config preview.
+  The participant advanced panel now exposes raw `testTarget`/`testPlan` config
+  preview/launch without manifest JSON authoring controls.
+- **Phase 7 CLI/API convergence**: Added shared `testTarget` to RunPlanV2
+  derivation using live plugin catalogue identity and hashes, and routed config
+  `testTarget`/`testPlan` inputs through catalogue-native compilation before
+  dispatch. DCR API launches now expose catalogue-derived scenario progress rows,
+  and stale DCR operation IDs are rejected by catalogue validation before execution.
+- **Phase 8 reporting and readiness**: Added catalogue-policy-backed
+  `readinessReport` output for target-driven CLI/API Read/Write and DCR runs,
+  including target coordinates, catalogue hash, selected coverage, omitted
+  mandatory coverage, per-resource-group readiness/certification status, DCR
+  non-certifying status, and masked evidence continuity through existing result
+  and NDJSON log paths.
+- **QA follow-up builder launch journey**: Added the enhanced one-file config
+  document flow for the browser builder, including load/edit/export support,
+  endpoint bulk selection controls, server-side OpenID discovery preview and
+  empty-field prefill, staged launch routing through the shared target/test-plan
+  planning path, and focused UI/API/CLI/config coverage for the contract.
+
 - **Stage 3 — CLI/API integration, `testSuite` removal, and hardening tests**:
   - `conformance/plan_executor.py`: New bridge module connecting `RunPlanV2` + `ModelBankConfig` to plugin-specific execution. Provides `build_default_registry()` (singleton `PluginRegistry` with `ReadWritePlugin` and `DcrPlugin`), `check_catalogue_drift()` (compares live catalogue hash against plan's stored hash), `execute_dcr_run()` (derives advertise flags from `endpoint_selections` and delegates to `DcrRunner`), `dcr_run_result_to_json_object()` (serialises `DcrRunResult` to JSON-ready dict with masked evidence), `resolve_rw_suite_for_plan()` (maps `specificationVersion` + resource group to a suite-catalog selection), and `utc_now()`.
   - `conformance/model_bank_config.py`: New `DcrConfig` frozen dataclass capturing file-backed DCR credentials and transport options. New `test_target: TestTargetConfig | None` and `dcr: DcrConfig | None` fields on `ModelBankConfig`. New `_parse_test_target_from_config()` and `_parse_dcr_config()` parsers. `tlsSkipVerify: true` emits a `warnings.warn()` with an explicit unsafe-use message.
-  - `conformance/cli.py`: `--run-plan` flag accepting a RunPlan v2 JSON file for headless target/coverage-based CLI runs. Routing for DCR (via `execute_dcr_run`) and Read/Write (via `resolve_rw_suite_for_plan`) without browser interaction, unless the selected tests require PSU/manual auth.
-  - `conformance/api/views.py`: `POST /api/runs/` now accepts a `runPlan` key (RunPlan v2 JSON object) and routes DCR or Read/Write plans through the plugin planning path.
+  - `conformance/cli.py`: Routes one-file config JSON documents with `testTarget`/`testPlan` through DCR (via `execute_dcr_run`) and Read/Write (via `resolve_rw_suite_for_plan`) without browser interaction, unless the selected tests require PSU/manual auth.
+  - `conformance/api/views.py`: `POST /api/runs/` accepts config JSON with `testTarget`/`testPlan` and routes DCR or Read/Write plans through the plugin planning path.
   - `conformance/api/run_lifecycle.py`: `start_dcr_run()` and `_execute_dcr_run()` for async background DCR execution from the API.
   - `config/model-bank-dcr-example.json`: New example config for DCR 3.3 runs with `testTarget` and `dcr` sections.
   - `config/model-bank-rw-ais-example.json`: New example config for Read/Write AIS v4.0.1 runs with `testTarget`.
@@ -23,13 +65,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Participant config contract tightened**: Generated/test-plan configs no longer
+  require or export `environment`, `tls.certificatePathRoot`,
+  `fapiSigning.certificatePathRoot`, or `dcr.credentialPathRoot`. TLS, FAPI
+  signing, and DCR credential fields now use exact absolute file paths.
+- **Saved test-plan drift enforcement**: CLI, REST API, and browser staged
+  launch now reject saved `testPlan` documents when the stored catalogue hash
+  differs from the bundled catalogue hash, requiring a fresh builder export.
+- **Default Open Banking CA trust**: Read/Write and DCR HTTP clients now verify
+  server certificates with system roots plus bundled public Open Banking
+  production and pre-production CA roots inherited from the previous FCS.
+  Participant-supplied `tls.caBundlePath`/`dcr.caBundlePath` values remain
+  optional additive trust bundles for custom sandbox or ASPSP chains.
+- **Browser saved-config contract tightened**: The staged browser journey now
+  exports a single config JSON with top-level `testPlan`, removes the separate
+  derived plan preview/copy surface, rejects retired `runPlan` imports with
+  rebuild guidance, and filters Field Values to saved runtime config fields.
+
 - **`testSuite` config key removed** (breaking): Participant configs that include `testSuite` will now fail with `ConfigError: Unknown config field(s): testSuite`. Migrate to `testTarget` using the updated example configs in `config/`. The `SuiteSelection` type is now internal-only (in `conformance/suite_catalog.py`) and is no longer part of the public config API.
 
 - **`conformance/suite_catalog.py`**: `SuiteSelection`, `SuiteStandard`, `SuiteSpecVersion`, `SuiteApiFamily`, `SuiteProfile`, and `SuiteName` type aliases moved here from `conformance/model_bank_config.py`. These are now internal types used by `plan_executor.py` to map `RunPlanV2` coordinates to bundled manifests; they are not part of the participant-facing config API.
 
 - **Config example files updated**: All seven `config/model-bank-*-example.json` files migrated from `testSuite` to `testTarget` shape.
 
-- **README updated**: "Config-selected suite runs" section replaced with "Target-based conformance runs" documenting the `testTarget` shape for both Read/Write and DCR runs, the CLI `--run-plan` flag, and the new API `runPlan` key.
+- **README updated**: "Config-selected suite runs" section replaced with "Target-based conformance runs" documenting the one-file `testTarget`/`testPlan` config shape for both Read/Write and DCR runs.
 
 
   - `conformance/plugins/read_write/`: `ReadWritePlugin` implementing `ConformancePlugin` for OB Read/Write v4.0.1. Covers AIS (28 endpoints), PIS (14), CBPII (4), and VRP (7) resource groups across versioned JSON catalogues under `conformance/plugins/read_write/catalogues/v4_0_1/`. Each entry records endpoint ID, HTTP method, path, resource group, mandatory/conditional/optional requirement level, display label, schema ref (to bundled v4.0.1 OpenAPI snapshots), and test applicability rules. Content-hash-based drift detection via `CatalogueIdentity`.
@@ -42,7 +101,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - `conformance/plugins/registry.py`: `PluginRegistry` — ordered registration and target-based resolution of `ConformancePlugin` instances. Raises `PluginRegistryError` on duplicate registration or unresolvable target.
   - `conformance/target_config.py`: `TestTargetConfig` frozen dataclass replacing the legacy `testSuite` config shape. Introduces `Standard`, `Specification`, and `SecurityProfile` literals, plus `parse_test_target_config` / `serialise_test_target_config` with camelCase JSON wire format.
   - `conformance/catalogue.py`: Versioned JSON catalogue domain types (`CatalogueIdentity`, `EndpointCatalogueEntry`, `Catalogue`, `EndpointRequirement`) and `parse_catalogue` / `compute_catalogue_hash` functions. Content hashing uses the same `"sha256:<hex>"` format as the Run Plan v1 manifest hash.
-  - `conformance/dcr/credentials.py`: `DcrCredentialPaths`, `DcrCredentials`, `validate_dcr_credential_paths`, and `load_dcr_credentials`. File-backed DCR credential loading (SSA, signing key/cert, transport cert/key, CA bundle) with `Path.resolve()` containment checks under a configured root — same pattern as `conformance.signing_credentials`.
+  - `conformance/dcr/credentials.py`: `DcrCredentialPaths`, `DcrCredentials`, `validate_dcr_credential_paths`, and `load_dcr_credentials`. File-backed DCR credential loading (SSA, signing key/cert, transport cert/key, CA bundle) with exact absolute path validation and no credential-content persistence.
   - `conformance/dcr/transport.py`: `DcrTransportConfig` frozen dataclass capturing mTLS transport options (`token_endpoint_auth_method`, `disable_keep_alives`, `tls_skip_verify`, timeouts). `tls_skip_verify=True` emits an explicit unsafe warning. `DcrTokenEndpointAuthMethod` restricts token-endpoint auth to FAPI 1 Advanced-compatible `tls_client_auth` and `private_key_jwt`.
   - `conformance/run_plan_v2.py`: Schema version `"2"` intent-based `RunPlanV2` replacing suite-centric `RunPlanSuiteCoordinates` with `RunPlanV2TargetCoordinates` (standard, specification, securityProfile, specificationVersion, catalogueHash). Stores user intent — resource groups, per-endpoint `EndpointSelection` with field values, and test data — from which the engine derives applicable tests at execution time. Includes `parse_run_plan_v2`, `serialise_run_plan_v2`, and `RunPlanV2ParseError`.
 
@@ -52,7 +111,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Model bank AIS baseline example configs updated to v4.0.1**: `config/model-bank-ais-certification-baseline-example.json` now selects `specVersion: v4.0.1`. A new explicit `config/model-bank-ais-certification-baseline-v4.0.1-example.json` is also provided for participants who want a version-named config file.
 
-- **Plan Builder Run Plan test-data snapshot**: `testData.values` in exported Run Plan JSON is now a full executable snapshot rather than a delta-only document. The snapshot includes manifest baseline values for all allow-listed keys referenced by selected steps, overlaid with any participant-supplied values from config or the Plan Builder form. Certification value purity is determined by comparing the snapshot against the manifest baseline via `RunConfiguration.baseline_delta_keys`; a Run Plan that stores baseline-equal values is not marked as exploratory. Older delta-only Run Plans imported into the Plan Builder are automatically back-filled from the manifest baseline. The `_is_exploratory_run` helper now uses `baseline_delta_keys` for new-schema manifests instead of checking whether `testData.values` is non-empty.
+- **Plan Builder test-data snapshot**: `testData.values` in exported saved config JSON is now a full executable snapshot rather than a delta-only document. The snapshot includes manifest baseline values for all allow-listed keys referenced by selected steps, overlaid with any participant-supplied values from config or the Plan Builder form. Certification value purity is determined by comparing the snapshot against the manifest baseline via `RunConfiguration.baseline_delta_keys`; a saved config that stores baseline-equal values is not marked as exploratory. The `_is_exploratory_run` helper now uses `baseline_delta_keys` for new-schema manifests instead of checking whether `testData.values` is non-empty.
 
 
 
@@ -79,9 +138,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - **Run Plan model** (`conformance/run_plan.py`): schema-versioned participant-owned artifact for suite coordinates, manifest hash, step selection, and test-value choices. `parse_run_plan`, `serialise_run_plan`, `compute_manifest_hash`, and `run_plan_to_test_values_config` adapter.
-- **Custom Test Value UI**: Plan Builder now shows a "Run Plan" panel with profile selector, per-key override fields, diff-from-default badges, reset-to-default, and advisory shape warnings.
+- **Custom Test Value UI**: Plan Builder now shows a "Test Values" panel with profile selector, per-key override fields, diff-from-default badges, reset-to-default, and advisory shape warnings.
 - **Exploratory Run gate**: runs using a non-default test-value profile or any Custom Test Values are labelled as Exploratory Runs; launch requires acknowledgement; `certificationEligibility.eligible` is `false`.
-- **Run Plan import/export**: participants can export Run Plan JSON for reuse and import it to pre-populate step selection and test values. Hash drift detection blocks launch on manifest mismatch; stale step IDs and custom keys surface as warnings.
+- **Saved config import/export**: participants can export one config JSON with `testPlan` for reuse and import it to pre-populate endpoint selection and test values. Retired standalone plan imports are rejected with rebuild guidance.
 - **Per-step test-value evidence**: `StepResult` now records `consumedTestValueKeys` and `customisedTestValueKeys` in the result JSON `details` block.
 - **Certification validator blocking reason**: `test_value_profile_overridden` added to `CertificationValidationReason`; OBL-side validation now blocks certification when evidence shows `source: overridden`.
 - **Consumed test-value key tracking**: `ManifestStep`, `PsuAuthorizationStep`, and `TestPlanEntry` now carry `consumed_test_value_keys` derived from `${testValues.<key>}` placeholder scanning.
@@ -98,7 +157,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browser plan preview, API launch surfaces, and CLI suite-resolution flows now share the same expanded OBL version/API suite matrix and plan-level auth inventory model, including stable auth-bundle IDs and explicit selected-step-to-bundle mappings used by runtime token binding.
 - Local runtime entry points now standardise on port `8443`, matching the callback port used by legacy previous-FCS Ozone model-bank registrations such as `https://0.0.0.0:8443/conformancesuite/callback`. This covers `make dev`, `make serve`, Docker port publishing, the container command, container healthcheck, and CI smoke-test health probing.
 - Local debug and Makefile-launched Uvicorn/Docker runs now include `0.0.0.0` in `ALLOWED_HOSTS`, so browser requests and ASPSP redirects using the legacy registered host `0.0.0.0:8443` are accepted instead of raising Django `DisallowedHost`.
-- Browser guided-flow inputs now include a model-bank example selector that fills known environment and discovery values while preserving editable custom endpoint fields.
+- Browser guided-flow inputs now include a model-bank example selector that fills known discovery values while preserving editable custom endpoint fields.
 - Result JSON now persists a first-class `customTestValueImpact` block for participant override keys, including field-level manifest reference paths split into `executedReferences` and `referencedButNotRun`, and the run detail UI now surfaces this evidence in a top-level impact panel plus per-step impact badges/details.
 
 - Added `joserfc` as the maintained JOSE dependency for forthcoming FAPI request-object and `private_key_jwt` signing support. Chunk A now includes a PS256 signing/verification smoke test using generated ephemeral keys only, and the dependency decision preserves a maintained path for RFC 7797 detached JWS support needed by future Open Banking signed-request work.
