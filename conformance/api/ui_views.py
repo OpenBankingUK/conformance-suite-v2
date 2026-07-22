@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Mapping
 from datetime import datetime
+from pathlib import Path
 from typing import cast
+from urllib.parse import urlparse
 from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
@@ -13,17 +16,51 @@ from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_GET, require_POST
 
-from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context
-from conformance.api.run_lifecycle import start_run
+from conformance.api.plan_builder import PlanBuilderForm, PlanPreview, guided_flow_context, staged_ui_context
+from conformance.api.run_lifecycle import start_dcr_run, start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
+from conformance.config_document import (
+    ConfigDocumentError,
+    ParticipantConfigDocument,
+    parse_participant_config_document,
+    resolve_config_document_execution_plan,
+)
 from conformance.execution_log import ExecutionEvent
+from conformance.http import JsonHttpClientError, build_json_http_client, get_json
 from conformance.json_types import JsonObject, JsonValue
+from conformance.model_bank_config import ConfigError
+from conformance.plan_executor import (
+    compile_catalogue_graph_for_plan,
+    require_no_catalogue_drift,
+    resolve_rw_suite_for_plan,
+    run_plan_from_test_target,
+)
+from conformance.plugins.registry import PluginRegistryError
+from conformance.run_plan_v2 import RunPlanV2
+from conformance.suite_catalog import SuiteCatalogError
+
+logger = logging.getLogger(__name__)
 
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
 
 _RUN_WAIT_MAX_TIMEOUT_SECONDS = 30.0
 """Maximum server-side wait duration for the browser long-poll endpoint."""
+
+_DISCOVERY_PREVIEW_TIMEOUT_SECONDS = 5.0
+"""Short timeout for local OpenID discovery preview fetches."""
+
+_DISCOVERY_PREVIEW_FIELDS: tuple[str, ...] = (
+    "issuer",
+    "authorization_endpoint",
+    "token_endpoint",
+    "jwks_uri",
+    "registration_endpoint",
+    "grant_types_supported",
+    "response_types_supported",
+    "token_endpoint_auth_methods_supported",
+)
+"""Non-secret OpenID Provider metadata keys returned by discovery preview."""
 
 
 @require_GET
@@ -114,6 +151,89 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
     run_id = status_body["id"]
     assert isinstance(run_id, str)  # noqa: S101 - lifecycle response contract
     return redirect("ui-run-detail", run_id=run_id)
+
+
+@require_POST
+def discovery_preview(request: HttpRequest) -> JsonResponse:
+    """Fetch a curated OpenID Provider discovery preview for the staged builder.
+
+    Args:
+        request: Browser POST request containing a JSON object with
+            ``discoveryUrl``.
+
+    Returns:
+        JSON response with non-secret discovery metadata, or a validation/fetch
+        error. Django's CSRF middleware protects this local browser route.
+    """
+    try:
+        body = _json_request_object(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
+    raw_discovery_url = body.get("discoveryUrl")
+    if not isinstance(raw_discovery_url, str):
+        return JsonResponse({"error": "discoveryUrl is required and must be a string"}, status=400)
+    discovery_url = raw_discovery_url.strip()
+    if not _is_https_url(discovery_url):
+        return JsonResponse({"error": "Discovery URL must be an absolute HTTPS URL"}, status=400)
+
+    http_client = build_json_http_client(timeout_seconds=_DISCOVERY_PREVIEW_TIMEOUT_SECONDS)
+    try:
+        response = get_json(http_client, discovery_url)
+    except JsonHttpClientError as error:
+        return JsonResponse({"error": f"Discovery fetch failed: {error}"}, status=502)
+    finally:
+        http_client.close()
+
+    if response.status_code >= 400:
+        return JsonResponse(
+            {"error": f"Discovery endpoint returned HTTP {response.status_code}"},
+            status=502,
+        )
+    return JsonResponse({"discovery": _curated_discovery_metadata(response.body)})
+
+
+@require_POST
+def staged_plan_launch(request: HttpRequest) -> JsonResponse:
+    """Launch a staged-builder enhanced config document.
+
+    Args:
+        request: Browser POST request whose JSON body is an enhanced
+            participant config document with optional embedded ``testPlan``.
+
+    Returns:
+        JSON response containing the run id and browser redirect URL on
+        success, or inline launch error details for the staged preview.
+    """
+    try:
+        raw_config = _json_request_object(request)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+
+    try:
+        response_body = _launch_config_document(raw_config, browser_psu_prompts=True)
+    except ValueError as error:
+        return JsonResponse({"error": str(error)}, status=400)
+    except RunConflictError as error:
+        return JsonResponse(
+            {
+                "error": "A run is already active",
+                "activeRunId": error.active_run_id,
+                "activeRunUrl": reverse("ui-run-detail", kwargs={"run_id": error.active_run_id}),
+            },
+            status=409,
+        )
+
+    run_id = response_body["id"]
+    assert isinstance(run_id, str)  # noqa: S101 - lifecycle response contract
+    return JsonResponse(
+        {
+            "runId": run_id,
+            "status": response_body.get("status"),
+            "redirectUrl": reverse("ui-run-detail", kwargs={"run_id": run_id}),
+        },
+        status=201,
+    )
 
 
 @require_GET
@@ -280,6 +400,154 @@ def run_result_download(request: HttpRequest, run_id: str) -> JsonResponse:
     return response
 
 
+def _json_request_object(request: HttpRequest) -> JsonObject:
+    """Parse a browser JSON request body as a JSON object.
+
+    Args:
+        request: Incoming request whose body should contain UTF-8 JSON.
+
+    Returns:
+        Parsed JSON object.
+
+    Raises:
+        ValueError: If the body is not valid JSON or does not contain a JSON
+            object.
+    """
+    try:
+        parsed_body = json.loads(request.body)
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise ValueError("Request body must be valid JSON") from error
+    if not isinstance(parsed_body, dict):
+        raise ValueError("Request body must be a JSON object")
+    return cast(JsonObject, parsed_body)
+
+
+def _is_https_url(raw_url: str) -> bool:
+    """Return whether a user-supplied URL is an absolute HTTPS URL.
+
+    Args:
+        raw_url: URL string supplied by the browser.
+
+    Returns:
+        ``True`` when the URL uses HTTPS and includes a network location.
+    """
+    parsed = urlparse(raw_url)
+    return parsed.scheme == "https" and bool(parsed.netloc)
+
+
+def _curated_discovery_metadata(discovery_document: JsonObject) -> JsonObject:
+    """Return the non-secret discovery fields exposed to the browser.
+
+    Args:
+        discovery_document: Full OpenID Provider discovery document returned
+            by the ASPSP.
+
+    Returns:
+        JSON object containing only the reviewed non-secret discovery subset.
+    """
+    curated: JsonObject = {}
+    for field_name in _DISCOVERY_PREVIEW_FIELDS:
+        value = discovery_document.get(field_name)
+        camel_case_name = _snake_to_camel(field_name)
+        if isinstance(value, str):
+            curated[camel_case_name] = value
+        elif isinstance(value, list):
+            string_values = [item for item in value if isinstance(item, str)]
+            curated[camel_case_name] = cast(JsonValue, string_values)
+    return curated
+
+
+def _snake_to_camel(value: str) -> str:
+    """Convert a snake_case discovery key to the browser JSON shape.
+
+    Args:
+        value: Snake-case discovery metadata key.
+
+    Returns:
+        Lower-camel-case representation.
+    """
+    parts = value.split("_")
+    return parts[0] + "".join(part.capitalize() for part in parts[1:])
+
+
+def _launch_config_document(raw_config: JsonObject, *, browser_psu_prompts: bool) -> JsonObject:
+    """Launch an enhanced config through the target/run-plan planning path.
+
+    Args:
+        raw_config: Enhanced participant config document posted by the staged
+            builder.
+        browser_psu_prompts: Whether Read/Write runs should expose transient
+            browser PSU prompts.
+
+    Returns:
+        Initial run status JSON from the lifecycle layer.
+
+    Raises:
+        ValueError: If config validation, target planning, catalogue
+            compilation, or suite resolution fails.
+        RunConflictError: If another run is already active.
+    """
+    try:
+        config_document = parse_participant_config_document(raw_config, base_dir=Path.cwd())
+    except (ConfigDocumentError, ConfigError) as error:
+        raise ValueError(f"Config validation failed: {error}") from error
+    config = config_document.config
+
+    try:
+        run_plan = _resolve_browser_run_plan(config_document)
+    except (ConfigDocumentError, PluginRegistryError, ValueError) as error:
+        raise ValueError(f"Target planning failed: {error}") from error
+
+    try:
+        compiled_run = compile_catalogue_graph_for_plan(run_plan)
+    except (PluginRegistryError, ValueError) as error:
+        raise ValueError(f"Catalogue planning failed: {error}") from error
+
+    try:
+        require_no_catalogue_drift(run_plan)
+    except ValueError as error:
+        raise ValueError(str(error)) from error
+
+    if run_plan.target.specification == "dynamic-client-registration":
+        return start_dcr_run(config=config, plan=run_plan, compiled_run=compiled_run)
+
+    try:
+        manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
+    except (SuiteCatalogError, ValueError) as error:
+        raise ValueError(f"Target resolution failed: {error}") from error
+    return start_run(
+        config=config,
+        manifest=manifest,
+        plan=None,
+        suite_metadata=suite_metadata,
+        browser_psu_prompts=browser_psu_prompts,
+        compiled_run=compiled_run,
+    )
+
+
+def _resolve_browser_run_plan(config_document: ParticipantConfigDocument) -> RunPlanV2:
+    """Resolve internal catalogue intent from a config document.
+
+    Args:
+        config_document: Parsed participant config document.
+
+    Returns:
+        Effective internal catalogue intent for staged browser launch.
+
+    Raises:
+        ConfigDocumentError: If config-document planning input is invalid.
+        ValueError: If neither embedded ``testPlan`` nor ``config.testTarget`` is
+            available.
+        PluginRegistryError: If target planning cannot resolve a plugin.
+    """
+    run_plan = resolve_config_document_execution_plan(config_document)
+    if run_plan is not None:
+        return run_plan
+    if config_document.config.test_target is None:
+        raise ValueError("config.testPlan or config.testTarget is required for staged launch")
+    return run_plan_from_test_target(config_document.config.test_target)
+
+
 def _plan_context(
     form: PlanBuilderForm,
     *,
@@ -298,7 +566,12 @@ def _plan_context(
         failure details.
     """
     preview = form.preview
-    context: dict[str, object] = {"form": form, "preview": preview, **guided_flow_context(form)}
+    context: dict[str, object] = {
+        "form": form,
+        "preview": preview,
+        **guided_flow_context(form),
+        **staged_ui_context(),
+    }
     if preview is not None:
         context["preview_counts"] = preview_step_counts(preview)
     context["rows_by_id"] = {row.id: row for row in preview.rows} if preview else {}
@@ -341,6 +614,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
+        "readiness_report": _readiness_report(record.result),
         "step_progress": step_progress,
         "step_progress_counts": _step_progress_counts(step_progress),
         "result_issue_count": _result_issue_count(step_progress),
@@ -1116,6 +1390,23 @@ def _certification_eligibility(result: JsonObject | None) -> str | None:
             if isinstance(reason, str) and reason:
                 return f"ineligible: {reason}"
             return "ineligible"
+    return None
+
+
+def _readiness_report(result: JsonObject | None) -> JsonObject | None:
+    """Extract the endpoint-first readiness report object from result JSON.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        The ``readinessReport`` object when present, otherwise ``None``.
+    """
+    if result is None:
+        return None
+    readiness = result.get("readinessReport")
+    if isinstance(readiness, dict):
+        return readiness
     return None
 
 

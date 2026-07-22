@@ -1,21 +1,16 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "api": "ais",
-        "profile": "fapi1-advanced",
-        "suite": "psu-auth-starter"
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "specificationVersion": "v4.0",
+        "resourceGroups": ["ais"]
     },
     "oauth": {
         "clientId": "your-client-id-here",
         "redirectUri": "https://conformance.example.com/callback",
         "openBankingIntentId": "aac-example-consent-id"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"

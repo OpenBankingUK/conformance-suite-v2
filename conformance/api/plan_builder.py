@@ -17,12 +17,25 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import MultiValueDict
 
 from conformance.auth_metadata import AuthBundleDeclaration
+from conformance.catalogue import (
+    CatalogueExecutableTest,
+    CatalogueFieldSchema,
+    CatalogueReadinessPolicy,
+)
+from conformance.config_document import (
+    ConfigDocumentError,
+    parse_participant_config_document,
+    resolve_config_document_execution_plan,
+)
 from conformance.environment_capabilities import (
+    EnvironmentReference,
     PsuMode,
     evaluate_suite_environment_support,
+    list_environment_presets,
     make_custom_environment_reference,
+    make_preset_environment_reference,
 )
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     FormBody,
     GeneratedRequestObject,
@@ -43,6 +56,10 @@ from conformance.model_bank_config import (
     parse_model_bank_config,
 )
 from conformance.openapi_plan_metadata import StepTreeNode, build_plan_tree
+from conformance.plan_executor import compile_catalogue_graph_for_plan, run_plan_from_test_target
+from conformance.plugins.dcr.plugin import DcrPlugin
+from conformance.plugins.read_write.plugin import ReadWritePlugin
+from conformance.plugins.registry import PluginRegistry, PluginRegistryError
 from conformance.run_configuration import compile_run_configuration
 from conformance.run_plan import (
     RunPlan,
@@ -54,7 +71,9 @@ from conformance.run_plan import (
     parse_run_plan,
     serialise_run_plan,
 )
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
+from conformance.run_plan_v2 import RunPlanV2
+from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites
+from conformance.target_config import Specification, Standard, TestTargetConfig
 from conformance.test_plan import (
     PlanTestValueContext,
     TestPlan,
@@ -72,6 +91,44 @@ SelectionMode = Literal["deselect", "select"]
 
 PlanDriftStatus = Literal["ok", "hash_mismatch", "stale_step_ids", "stale_custom_keys"]
 """Drift classifications for imported Run Plan compatibility checks."""
+
+_RUNTIME_MAPPED_FIELD_IDS: Mapping[str, frozenset[str]] = MappingProxyType(
+    {
+        "read-write": frozenset(
+            {
+                "oauth.resourceBaseUrl",
+                "oauth.authorizationBaseUrl",
+                "oauth.clientId",
+                "psu.authorizationRedirectUri",
+                "tls.certPath",
+                "tls.keyPath",
+                "tls.caBundlePath",
+                "fapiSigning.signingCertificatePath",
+                "fapiSigning.signingPrivateKeyPath",
+                "fapiSigning.kid",
+                "fapiSigning.clientAssertionIssuer",
+                "fapiSigning.clientAssertionSubject",
+                "fapiSigning.tokenEndpointAuthMethod",
+                "fapiSigning.signatureIssuer",
+                "fapiSigning.signatureTrustAnchor",
+                "openBanking.financialId",
+            }
+        ),
+        "dynamic-client-registration": frozenset(
+            {
+                "dcr.ssaPath",
+                "dcr.signingPrivateKeyPath",
+                "dcr.signingCertificatePath",
+                "dcr.transportCertificatePath",
+                "dcr.transportPrivateKeyPath",
+                "dcr.caBundlePath",
+                "dcr.tokenEndpointAuthMethod",
+                "dcr.disableKeepAlives",
+            }
+        ),
+    }
+)
+"""Catalogue field IDs that are exported into the participant runtime config."""
 
 
 @dataclass(frozen=True)
@@ -159,19 +216,17 @@ class GuidedSuiteOption:
 
 @dataclass(frozen=True)
 class GuidedModelBankOption:
-    """One known model-bank environment available in the guided flow.
+    """One known model-bank discovery preset available in the guided flow.
 
     Attributes:
         value: Stable option value posted by the browser form.
         label: Human-readable model-bank label shown in the browser UI.
-        environment: Environment value written into generated config JSON.
         discovery_url: OpenID Provider discovery URL written into generated
             config JSON.
     """
 
     value: str
     label: str
-    environment: str
     discovery_url: str
 
 
@@ -269,7 +324,7 @@ class PlanPreview:
     Attributes:
         config: Validated model-bank configuration supplied through the form.
         manifest: Validated v1 manifest supplied through the form or resolved
-            from ``config.test_suite``.
+            from ``config.test_target``.
         suite_metadata: Display metadata for a config-resolved suite, or
             ``None`` when the preview uses an explicit manifest.
         default_plan: Default plan derived from the manifest before form input.
@@ -493,11 +548,9 @@ class PlanBuilderForm(forms.Form):
     Attributes:
         config_json: Textarea containing model-bank config JSON.
         manifest_json: Optional textarea containing v1 conformance manifest
-            JSON. When blank, ``config.testSuite`` may resolve a bundled suite.
+            JSON. When blank, ``config.testTarget`` may resolve a bundled suite.
         guided_model_bank: Structured model-bank example selector used to
-            populate guided environment and discovery values.
-        guided_environment: Structured environment input used when building a
-            config from guided browser fields instead of pasted JSON.
+            populate guided discovery values.
         guided_discovery_url: Structured discovery URL input used by the
             guided browser flow.
         guided_spec_version: Structured selector for the target spec version.
@@ -513,8 +566,6 @@ class PlanBuilderForm(forms.Form):
             id prompt for starter suites.
         guided_resource_base_url: Optional structured protected-resource base
             URL prompt for AIS suites.
-        guided_signing_certificate_path_root: Optional structured root path for
-            signing certificate material.
         guided_signing_certificate_path: Optional structured signing
             certificate path prompt.
         guided_signing_private_key_path: Optional structured signing private
@@ -536,12 +587,12 @@ class PlanBuilderForm(forms.Form):
         preview: Typed preview built after successful form validation.
         generated_config_json: Optional generated JSON emitted from guided
             fields after validation.
+        embedded_test_plan: Optional internal catalogue intent embedded in submitted config JSON.
     """
 
     config_json: forms.CharField = forms.CharField(label="Config JSON", required=False, widget=forms.Textarea)
     manifest_json: forms.CharField = forms.CharField(label="Manifest JSON", required=False, widget=forms.Textarea)
     guided_model_bank: forms.ChoiceField = forms.ChoiceField(label="Model bank example", required=False)
-    guided_environment: forms.CharField = forms.CharField(label="Environment", required=False)
     guided_discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
     guided_spec_version: forms.ChoiceField = forms.ChoiceField(label="Specification version", required=False)
     guided_api: forms.ChoiceField = forms.ChoiceField(label="API family", required=False)
@@ -554,10 +605,6 @@ class PlanBuilderForm(forms.Form):
     )
     guided_open_banking_intent_id: forms.CharField = forms.CharField(label="Intent ID", required=False)
     guided_resource_base_url: forms.CharField = forms.CharField(label="Resource base URL", required=False)
-    guided_signing_certificate_path_root: forms.CharField = forms.CharField(
-        label="Certificate path root",
-        required=False,
-    )
     guided_signing_certificate_path: forms.CharField = forms.CharField(label="Signing certificate path", required=False)
     guided_signing_private_key_path: forms.CharField = forms.CharField(label="Signing private key path", required=False)
     guided_signing_kid: forms.CharField = forms.CharField(label="Signing key id", required=False)
@@ -589,6 +636,7 @@ class PlanBuilderForm(forms.Form):
 
     preview: PlanPreview | None = None
     generated_config_json: str | None = None
+    embedded_test_plan: RunPlanV2 | None = None
 
     def __init__(
         self,
@@ -644,7 +692,7 @@ class PlanBuilderForm(forms.Form):
             forms.ChoiceField,
             self.fields["guided_signing_token_endpoint_auth_method"],
         )
-        guided_model_bank_field.choices = [("", "Custom environment"), *guided_model_bank_choices()]
+        guided_model_bank_field.choices = [("", "Custom discovery URL"), *guided_model_bank_choices()]
         guided_spec_version_field.choices = [("", "Select version"), *guided_spec_version_choices()]
         guided_api_field.choices = [("", "Select API"), *guided_api_choices()]
         guided_suite_field.choices = [("", "Select suite"), *guided_suite_name_choices()]
@@ -673,9 +721,11 @@ class PlanBuilderForm(forms.Form):
             return None
         raw_config = _load_json_object(raw_value, label="Config JSON")
         try:
-            return parse_model_bank_config(raw_config, base_dir=Path.cwd())
-        except ConfigError as error:
+            document = parse_participant_config_document(raw_config, base_dir=Path.cwd())
+        except ConfigDocumentError as error:
             raise forms.ValidationError(f"Config validation failed: {error}", code="invalid_config") from error
+        self.embedded_test_plan = resolve_config_document_execution_plan(document)
+        return document.config
 
     def clean_manifest_json(self) -> Manifest | None:
         """Validate the submitted v1 conformance manifest JSON.
@@ -722,21 +772,28 @@ class PlanBuilderForm(forms.Form):
 
         suite_metadata: SuiteMetadata | None = None
         if manifest is None:
-            if config.test_suite is None:
+            if config.test_target is None and self.embedded_test_plan is None:
                 self.add_error(
                     "manifest_json",
                     forms.ValidationError(
-                        "Manifest JSON is required unless config.testSuite selects a bundled suite.",
+                        "Manifest JSON is required unless config.testTarget or config.testPlan selects a "
+                        "bundled suite.",
                         code="missing_manifest_or_suite",
                     ),
                 )
                 return cleaned_data
+            from conformance.plan_executor import resolve_rw_suite_for_plan  # noqa: PLC0415
+
             try:
-                resolved_suite = resolve_suite(config.test_suite)
-            except SuiteCatalogError as error:
+                if self.embedded_test_plan is not None:
+                    derived_plan = self.embedded_test_plan
+                else:
+                    assert config.test_target is not None  # noqa: S101 - guarded by validation above.
+                    derived_plan = run_plan_from_test_target(config.test_target)
+                compile_catalogue_graph_for_plan(derived_plan)
+                manifest, suite_metadata = resolve_rw_suite_for_plan(derived_plan)
+            except (PluginRegistryError, SuiteCatalogError, ValueError) as error:
                 raise forms.ValidationError(f"Suite resolution failed: {error}", code="invalid_suite") from error
-            manifest = resolved_suite.manifest
-            suite_metadata = resolved_suite.metadata
         elif not isinstance(manifest, Manifest):
             return cleaned_data
 
@@ -782,7 +839,7 @@ class PlanBuilderForm(forms.Form):
         Args:
             cleaned_data: Current cleaned-data dictionary from the form.
             requires_suite: Whether blank manifest input means the guided flow
-                must provide ``testSuite`` fields.
+                must provide ``testTarget`` fields.
 
         Returns:
             Parsed and validated config built from guided fields, or ``None``
@@ -800,13 +857,9 @@ class PlanBuilderForm(forms.Form):
             return None
 
         model_bank_option = _guided_model_bank_option_from_cleaned_data(cleaned_data)
-        environment = _cleaned_optional_string(cleaned_data.get("guided_environment"))
         discovery_url = _cleaned_optional_string(cleaned_data.get("guided_discovery_url"))
         if model_bank_option is not None:
-            environment = environment or model_bank_option.environment
             discovery_url = discovery_url or model_bank_option.discovery_url
-        if environment is None:
-            self.add_error("guided_environment", "Environment is required for guided config generation.")
         if discovery_url is None:
             self.add_error("guided_discovery_url", "Discovery URL is required for guided config generation.")
 
@@ -831,17 +884,14 @@ class PlanBuilderForm(forms.Form):
         if self.errors:
             return None
 
-        raw_config: dict[str, JsonValue] = {
-            "environment": environment,
-            "discoveryUrl": discovery_url,
-        }
+        raw_config: dict[str, JsonValue] = {"discoveryUrl": discovery_url}
         if suite_option is not None:
-            raw_config["testSuite"] = {
+            raw_config["testTarget"] = {
                 "standard": suite_option.standard,
-                "specVersion": suite_option.spec_version,
-                "profile": suite_option.profile,
-                "api": suite_option.api,
-                "suite": suite_option.suite,
+                "specification": "read-write",
+                "securityProfile": suite_option.profile,
+                "specificationVersion": suite_option.spec_version,
+                "resourceGroups": [suite_option.api],
             }
 
         raw_oauth = _build_guided_oauth_object(cleaned_data)
@@ -2168,17 +2218,16 @@ def guided_suite_options() -> tuple[GuidedSuiteOption, ...]:
 
 
 def guided_model_bank_options() -> tuple[GuidedModelBankOption, ...]:
-    """Return known model-bank examples for environment/discovery input.
+    """Return known model-bank examples for discovery input.
 
     Returns:
-        Guided model-bank examples that can populate editable environment and
-        discovery URL fields.
+        Guided model-bank examples that can populate editable discovery URL
+        fields.
     """
     return (
         GuidedModelBankOption(
             value="ozone-obie-preprod",
             label="Ozone OBIE pre-production",
-            environment="ozone-model-bank",
             discovery_url="https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
         ),
     )
@@ -2348,7 +2397,6 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
         _cleaned_optional_string(cleaned_data.get(field_name)) is not None
         for field_name in (
             "guided_model_bank",
-            "guided_environment",
             "guided_discovery_url",
             "guided_spec_version",
             "guided_api",
@@ -2358,7 +2406,6 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
             "guided_authorization_endpoint",
             "guided_open_banking_intent_id",
             "guided_resource_base_url",
-            "guided_signing_certificate_path_root",
             "guided_signing_certificate_path",
             "guided_signing_private_key_path",
             "guided_signing_kid",
@@ -2403,7 +2450,6 @@ def _build_guided_fapi_signing_object(cleaned_data: dict[str, object]) -> dict[s
         Guided signing JSON object, or ``None`` when all signing fields are blank.
     """
     field_mapping = {
-        "certificatePathRoot": "guided_signing_certificate_path_root",
         "signingCertificatePath": "guided_signing_certificate_path",
         "signingPrivateKeyPath": "guided_signing_private_key_path",  # pragma: allowlist secret
         "kid": "guided_signing_kid",
@@ -2618,8 +2664,8 @@ def _evaluate_capability_support(
 
     For catalog suites, the evaluation calls
     :func:`~conformance.environment_capabilities.evaluate_suite_environment_support`
-    using a custom :class:`~conformance.environment_capabilities.EnvironmentReference`
-    built from :attr:`~conformance.model_bank_config.ModelBankConfig.environment`.
+    using an :class:`~conformance.environment_capabilities.EnvironmentReference`
+    resolved from discovery URL first, then the legacy config environment label.
     Known hard blockers (e.g. unsupported suite/auth/PSU combinations) are
     returned as capability blockers.  Unknown custom environment dimensions
     produce warnings rather than blockers, matching the contract defined by
@@ -2639,7 +2685,7 @@ def _evaluate_capability_support(
         return (), ()
 
     selection = suite_metadata.to_suite_selection()
-    environment = make_custom_environment_reference(label=config.environment)
+    environment = _environment_reference_for_config(config)
     psu_mode = _manifest_psu_mode(manifest)
     blockers: list[str] = []
     warnings: list[str] = []
@@ -2653,6 +2699,24 @@ def _evaluate_capability_support(
         blockers.extend(evaluation.blockers)
         warnings.extend(evaluation.warnings)
     return tuple(dict.fromkeys(blockers)), tuple(dict.fromkeys(warnings))
+
+
+def _environment_reference_for_config(config: ModelBankConfig) -> EnvironmentReference:
+    """Resolve an environment-capability reference for a config preview.
+
+    Args:
+        config: Validated model-bank configuration.
+
+    Returns:
+        Preset reference when the discovery URL matches a known preset;
+        otherwise a conservative custom reference.
+    """
+    for preset in list_environment_presets():
+        if config.discovery_url == preset.discovery_url:
+            preset_reference = make_preset_environment_reference(preset.key)
+            if preset_reference is not None:
+                return preset_reference
+    return make_custom_environment_reference(label=config.environment or "target/discovery config")
 
 
 def _build_auth_inventory_from_explicit_metadata(
@@ -3105,3 +3169,462 @@ def _stable_bundle_id(
     digest_source = "|".join((token_step_id, ",".join(required_scopes), ",".join(required_permissions)))
     digest = sha256(digest_source.encode("utf-8")).hexdigest()[:12]
     return f"auth-{token_step_id}-{digest}"
+
+
+# ---------------------------------------------------------------------------
+# Plugin-aware staged UI helpers (endpoint-first DCR/plugin architecture)
+# ---------------------------------------------------------------------------
+
+#: Module-level singleton registry pre-populated with bundled plugins.
+_PLUGIN_REGISTRY: PluginRegistry = PluginRegistry()
+_PLUGIN_REGISTRY.register(ReadWritePlugin())
+_PLUGIN_REGISTRY.register(DcrPlugin())
+
+
+@dataclass(frozen=True)
+class StandardOption:
+    """One standard option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable standard identifier (e.g. ``"obl"``).
+        display_label: Human-readable label shown in the UI.
+    """
+
+    id: str
+    display_label: str
+
+
+@dataclass(frozen=True)
+class SpecificationOption:
+    """One specification option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable specification identifier (e.g. ``"read-write"``).
+        display_label: Human-readable label shown in the UI.
+        standard: Standard identifier this specification belongs to.
+    """
+
+    id: str
+    display_label: str
+    standard: str
+
+
+@dataclass(frozen=True)
+class VersionOption:
+    """One specification version option for the guided staged UI.
+
+    Attributes:
+        version: Specification version string (e.g. ``"v4.0.1"``).
+        standard: Standard identifier.
+        specification: Specification identifier.
+    """
+
+    version: str
+    standard: str
+    specification: str
+
+
+@dataclass(frozen=True)
+class ResourceGroupOption:
+    """One resource-group option for the guided staged UI.
+
+    Attributes:
+        id: Machine-readable resource-group identifier (e.g. ``"ais"``).
+        display_label: Human-readable label shown in the UI.
+        standard: Standard identifier.
+        specification: Specification identifier.
+        version: Specification version string.
+    """
+
+    id: str
+    display_label: str
+    standard: str
+    specification: str
+    version: str
+
+
+@dataclass(frozen=True)
+class EndpointCoverageOption:
+    """One endpoint option for the coverage selection step.
+
+    Attributes:
+        endpoint_id: Stable endpoint identifier.
+        display_label: Human-readable label shown in the UI.
+        method: HTTP method string.
+        path: API path template.
+        resource_group: Resource-group the endpoint belongs to.
+        requirement: Requirement level (mandatory/conditional/optional).
+    """
+
+    endpoint_id: str
+    display_label: str
+    method: str
+    path: str
+    resource_group: str | None
+    requirement: str
+
+
+def plugin_registry() -> PluginRegistry:
+    """Return the module-level plugin registry singleton.
+
+    Returns:
+        The :class:`~conformance.plugins.registry.PluginRegistry` pre-populated
+        with all bundled plugins.
+    """
+    return _PLUGIN_REGISTRY
+
+
+def standard_options() -> tuple[StandardOption, ...]:
+    """Return the ordered list of standards available in the staged UI.
+
+    Currently only Open Banking Limited (``"obl"``) is supported.
+
+    Returns:
+        Ordered tuple of :class:`StandardOption` instances.
+    """
+    return (StandardOption(id="obl", display_label="Open Banking Limited"),)
+
+
+def specification_options(*, standard: str) -> tuple[SpecificationOption, ...]:
+    """Return specification options for a given standard from registered plugins.
+
+    Iterates over all registered plugins and collects the distinct
+    specifications they expose for the requested standard.
+
+    Args:
+        standard: Standard identifier to filter by (e.g. ``"obl"``).
+
+    Returns:
+        Ordered tuple of :class:`SpecificationOption` instances whose
+        ``standard`` field matches the given value.
+    """
+    seen: set[tuple[str, str]] = set()
+    options: list[SpecificationOption] = []
+    for plugin_id in _PLUGIN_REGISTRY.plugin_ids:
+        plugin = _PLUGIN_REGISTRY.get(plugin_id)
+        meta = plugin.target_metadata()
+        key = (meta.standard, meta.specification)
+        if meta.standard != standard or key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            SpecificationOption(
+                id=meta.specification,
+                display_label=meta.display_label or meta.specification,
+                standard=meta.standard,
+            )
+        )
+    return tuple(options)
+
+
+def version_options(*, standard: str, specification: str) -> tuple[VersionOption, ...]:
+    """Return version options for a standard/specification pair from registered plugins.
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+
+    Returns:
+        Ordered tuple of :class:`VersionOption` instances for all
+        supported versions of the matching plugin, in the order declared
+        by :attr:`~conformance.plugins.domain.PluginTargetMetadata.supported_versions`.
+    """
+    options: list[VersionOption] = []
+    for plugin_id in _PLUGIN_REGISTRY.plugin_ids:
+        plugin = _PLUGIN_REGISTRY.get(plugin_id)
+        meta = plugin.target_metadata()
+        if meta.standard != standard or meta.specification != specification:
+            continue
+        for version in meta.supported_versions:
+            options.append(
+                VersionOption(
+                    version=version,
+                    standard=standard,
+                    specification=specification,
+                )
+            )
+    return tuple(options)
+
+
+def resource_group_options(
+    *,
+    standard: str,
+    specification: str,
+    version: str,
+) -> tuple[ResourceGroupOption, ...]:
+    """Return resource-group options for the guided staged UI selection step.
+
+    Resolves the plugin for the given coordinates and returns one option per
+    resource group declared by the plugin's target metadata.  Returns an empty
+    tuple for plugins that do not use resource groups (e.g. DCR).
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+        version: Specification version string (e.g. ``"v4.0.1"``).
+
+    Returns:
+        Ordered tuple of :class:`ResourceGroupOption` instances, or an empty
+        tuple when the specification does not use resource groups or when no
+        plugin matches.
+    """
+    target = TestTargetConfig(
+        standard=standard,  # type: ignore[arg-type]
+        specification=specification,  # type: ignore[arg-type]
+        security_profile="fapi1-advanced",
+        specification_version=version,
+    )
+    try:
+        plugin = _PLUGIN_REGISTRY.resolve(target)
+    except Exception:  # noqa: BLE001 — registry miss returns empty options
+        return ()
+    meta = plugin.target_metadata()
+    if not meta.uses_resource_groups:
+        return ()
+    _rg_labels: dict[str, str] = {
+        "ais": "Accounts and Transactions (AIS)",
+        "pis": "Payments (PIS)",
+        "cbpii": "Confirmation of Funds (CBPII)",
+        "vrp": "Variable Recurring Payments (VRP)",
+    }
+    return tuple(
+        ResourceGroupOption(
+            id=rg,
+            display_label=_rg_labels.get(rg, rg.upper()),
+            standard=standard,
+            specification=specification,
+            version=version,
+        )
+        for rg in meta.resource_groups
+    )
+
+
+def endpoint_coverage_options(
+    *,
+    standard: str,
+    specification: str,
+    version: str,
+    resource_groups: tuple[str, ...],
+) -> tuple[EndpointCoverageOption, ...]:
+    """Return endpoint coverage options for the guided staged UI.
+
+    Loads the catalogue for the given target and returns one option per
+    endpoint entry, filtered to those whose ``resource_group`` is in the
+    requested ``resource_groups`` set.  When ``resource_groups`` is empty
+    all endpoints are returned.
+
+    Args:
+        standard: Standard identifier (e.g. ``"obl"``).
+        specification: Specification identifier (e.g. ``"read-write"``).
+        version: Specification version string (e.g. ``"v4.0.1"``).
+        resource_groups: Tuple of selected resource-group identifiers to
+            filter by.  An empty tuple returns all endpoints.
+
+    Returns:
+        Ordered tuple of :class:`EndpointCoverageOption` instances for the
+        matching endpoints, in catalogue order.
+    """
+    target = TestTargetConfig(
+        standard=standard,  # type: ignore[arg-type]
+        specification=specification,  # type: ignore[arg-type]
+        security_profile="fapi1-advanced",
+        specification_version=version,
+        resource_groups=resource_groups,
+    )
+    try:
+        plugin = _PLUGIN_REGISTRY.resolve(target)
+        catalogue = plugin.load_catalogue(target)
+    except Exception:  # noqa: BLE001 — registry miss or I/O error → empty
+        return ()
+
+    rg_filter: frozenset[str] = frozenset(resource_groups) if resource_groups else frozenset()
+    return tuple(
+        EndpointCoverageOption(
+            endpoint_id=entry.endpoint_id,
+            display_label=entry.display_label,
+            method=entry.method,
+            path=entry.path,
+            resource_group=entry.resource_group,
+            requirement=entry.requirement,
+        )
+        for entry in catalogue.endpoints
+        if not rg_filter or entry.resource_group in rg_filter
+    )
+
+
+def staged_catalogue_data() -> JsonObject:
+    """Return catalogue metadata consumed by the staged endpoint-first UI.
+
+    The staged browser journey is deliberately backed by the same plugin
+    catalogues used by catalogue-native planning.  This payload gives the
+    client-side state machine enough reviewed metadata to render endpoint or
+    operation coverage, catalogue-driven field prompts, readiness implications,
+    applicable test previews, and a valid RunPlanV2 export with the live
+    catalogue hash.
+
+    Returns:
+        JSON-compatible mapping keyed by standard, specification, and version.
+    """
+    result: JsonObject = {}
+    for std in standard_options():
+        specs_payload: JsonObject = {}
+        for spec in specification_options(standard=std.id):
+            versions_payload: JsonObject = {}
+            for version in version_options(standard=std.id, specification=spec.id):
+                target = TestTargetConfig(
+                    standard=cast(Standard, std.id),
+                    specification=cast(Specification, spec.id),
+                    security_profile="fapi1-advanced",
+                    specification_version=version.version,
+                )
+                plugin = _PLUGIN_REGISTRY.resolve(target)
+                catalogue = plugin.load_catalogue(target)
+                versions_payload[version.version] = {
+                    "pluginId": plugin.plugin_id,
+                    "usesResourceGroups": bool(catalogue.resource_groups),
+                    "catalogueHash": catalogue.identity.content_hash,
+                    "resourceGroups": [
+                        {
+                            "id": group.resource_group,
+                            "displayLabel": group.display_label,
+                            "requirement": group.requirement,
+                        }
+                        for group in catalogue.resource_groups
+                    ],
+                    "endpoints": [
+                        {
+                            "endpointId": endpoint.endpoint_id,
+                            "operation": endpoint.operation,
+                            "displayLabel": endpoint.display_label,
+                            "method": endpoint.method,
+                            "path": endpoint.path,
+                            "resourceGroup": endpoint.resource_group,
+                            "requirement": endpoint.requirement,
+                        }
+                        for endpoint in catalogue.endpoints
+                    ],
+                    "fieldSchemas": [
+                        _field_schema_payload(field_schema)
+                        for field_schema in catalogue.field_schemas
+                        if _is_runtime_mapped_field(
+                            specification=target.specification,
+                            field_schema=field_schema,
+                        )
+                    ],
+                    "readinessPolicy": _readiness_policy_payload(catalogue.readiness_policy),
+                    "executableTests": [_executable_test_payload(test) for test in catalogue.executable_tests],
+                }
+            specs_payload[spec.id] = versions_payload
+        result[std.id] = specs_payload
+    return result
+
+
+def _is_runtime_mapped_field(*, specification: str, field_schema: CatalogueFieldSchema) -> bool:
+    """Return whether a catalogue field is saved into the runtime config.
+
+    Args:
+        specification: Target specification identifier owning the catalogue.
+        field_schema: Catalogue field metadata being considered for browser
+            prompting.
+
+    Returns:
+        ``True`` when the field has an explicit saved-config/runtime mapping.
+    """
+    return field_schema.field_id in _RUNTIME_MAPPED_FIELD_IDS.get(specification, frozenset())
+
+
+def _field_schema_payload(field_schema: CatalogueFieldSchema) -> JsonObject:
+    """Serialise one catalogue field schema for the staged UI.
+
+    Args:
+        field_schema: Parsed catalogue field metadata.
+
+    Returns:
+        JSON-compatible field schema payload.
+    """
+    return {
+        "fieldId": field_schema.field_id,
+        "displayLabel": field_schema.display_label,
+        "scope": field_schema.scope,
+        "valueType": field_schema.value_type,
+        "required": field_schema.required,
+        "sensitive": field_schema.sensitive,
+    }
+
+
+def _readiness_policy_payload(readiness_policy: CatalogueReadinessPolicy | None) -> JsonObject | None:
+    """Serialise catalogue readiness policy metadata for browser preview.
+
+    Args:
+        readiness_policy: Parsed catalogue readiness policy, or ``None``.
+
+    Returns:
+        JSON-compatible readiness policy payload, or ``None``.
+    """
+    if readiness_policy is None:
+        return None
+    return {
+        "policyId": readiness_policy.policy_id,
+        "certificationStatus": readiness_policy.certification_status,
+        "omittedMandatoryOutcome": readiness_policy.omitted_mandatory_outcome,
+        "failedSelectedOutcome": readiness_policy.failed_selected_outcome,
+    }
+
+
+def _executable_test_payload(test: CatalogueExecutableTest) -> JsonObject:
+    """Serialise one executable catalogue test for staged UI previews.
+
+    Args:
+        test: Parsed executable test definition.
+
+    Returns:
+        JSON-compatible executable test payload.
+    """
+    return {
+        "testId": test.test_id,
+        "displayLabel": test.display_label,
+        "endpointId": test.endpoint_id,
+        "resourceGroup": test.resource_group,
+    }
+
+
+def staged_ui_context() -> dict[str, object]:
+    """Build the base template context for the staged plan-builder UI.
+
+    Returns the initial stage data needed to render the first step of the
+    staged journey (standard selection) along with options for all stages so
+    the client-side state machine can populate subsequent steps.
+
+    Returns:
+        Template context mapping with ``standard_options``,
+        ``specification_options_by_standard``, and plugin metadata.
+    """
+    stds = standard_options()
+    all_specs: dict[str, list[dict[str, object]]] = {}
+    all_versions: dict[str, dict[str, list[dict[str, object]]]] = {}
+    all_rgs: dict[str, dict[str, dict[str, list[dict[str, object]]]]] = {}
+
+    for std in stds:
+        specs = specification_options(standard=std.id)
+        all_specs[std.id] = [{"id": s.id, "displayLabel": s.display_label} for s in specs]
+        all_versions[std.id] = {}
+        all_rgs[std.id] = {}
+        for spec in specs:
+            versions = version_options(standard=std.id, specification=spec.id)
+            all_versions[std.id][spec.id] = [{"version": v.version} for v in versions]
+            all_rgs[std.id][spec.id] = {}
+            for ver in versions:
+                rgs = resource_group_options(
+                    standard=std.id,
+                    specification=spec.id,
+                    version=ver.version,
+                )
+                all_rgs[std.id][spec.id][ver.version] = [{"id": rg.id, "displayLabel": rg.display_label} for rg in rgs]
+
+    return {
+        "staged_standard_options": stds,
+        "staged_specification_options": json.dumps(all_specs),
+        "staged_version_options": json.dumps(all_versions),
+        "staged_resource_group_options": json.dumps(all_rgs),
+        "staged_catalogue_data": json.dumps(staged_catalogue_data()),
+    }

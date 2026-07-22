@@ -1,13 +1,11 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0.1",
-        "api": "ais",
-        "profile": "fapi1-advanced",
-        "suite": "ais-certification-baseline"
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "specificationVersion": "v4.0.1",
+        "resourceGroups": ["ais"]
     },
     "oauth": {
         "clientId": "your-client-id-here",
@@ -15,16 +13,12 @@
         "resourceBaseUrl": "https://resource.example.com"
     },
     "fapiSigning": {
-        "certificatePathRoot": "./certs",
-        "signingCertificatePath": "dummy-signing.crt",
-        "signingPrivateKeyPath": "dummy-signing.key",
+        "signingCertificatePath": "/path/to/dummy-signing.crt",
+        "signingPrivateKeyPath": "/path/to/dummy-signing.key",
         "kid": "your-signing-kid-here",
         "clientAssertionIssuer": "your-client-id-here",
         "clientAssertionSubject": "your-client-id-here",
         "tokenEndpointAuthMethod": "private_key_jwt"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"

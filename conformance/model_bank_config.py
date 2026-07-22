@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import os
 import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
@@ -16,7 +17,10 @@ from conformance.approved_releases import (
     ApprovedReleasePolicyError,
     load_approved_release_policy,
 )
+from conformance.dcr.credentials import DcrCredentialPaths
+from conformance.dcr.transport import DcrTokenEndpointAuthMethod, DcrTransportConfig, tls_skip_verify_error
 from conformance.json_types import JsonValue
+from conformance.target_config import TestTargetConfig, TestTargetConfigError, parse_test_target_config
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
@@ -31,123 +35,11 @@ FollowUpMode = Literal["jwks", "discovery_only"]
 ``"discovery_only"`` stops after the discovery document itself.
 """
 
-SuiteStandard = Literal["ob-read-write", "cvrp"]
-"""Supported Open Banking standards that can be selected from config."""
-
-SuiteSpecVersion = Literal["v3.1.11", "v4.0", "v4.0.1"]
-"""Supported specification versions for config-selected suite resolution."""
-
-SuiteApiFamily = Literal["ais", "pis", "cbpii", "vrp", "cvrp"]
-"""Supported API families for config-selected suite resolution."""
-
-SuiteProfile = Literal["fapi1-advanced"]
-"""Supported security profiles for config-selected suite resolution."""
-
 TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 """Supported FAPI token-endpoint client authentication modes."""
 
-SuiteName = Literal[
-    "discovery-jwks",
-    "psu-auth-starter",
-    "pis-domestic-payment-starter",
-    "ais-certification-slice",
-    "ais-certification-baseline",
-    "ais-fcs-legacy-benchmark",
-    "pis-fcs-legacy-benchmark",
-]
-"""Supported versioned conformance suite identifiers."""
-
-_SUPPORTED_SUITE_STANDARDS = ("ob-read-write", "cvrp")
-"""Standards accepted by the normalized suite-selection contract."""
-
-_SUPPORTED_SUITE_SPEC_VERSIONS = ("v3.1.11", "v4.0", "v4.0.1")
-"""Specification versions accepted by the normalized suite-selection contract."""
-
-_SUPPORTED_SUITE_API_FAMILIES = ("ais", "pis", "cbpii", "vrp", "cvrp")
-"""API families accepted by the normalized suite-selection contract."""
-
-_SUPPORTED_SUITE_PROFILES = ("fapi1-advanced",)
-"""Security profiles accepted by the normalized suite-selection contract."""
-
-_SUPPORTED_SUITE_NAMES = (
-    "discovery-jwks",
-    "psu-auth-starter",
-    "pis-domestic-payment-starter",
-    "ais-certification-slice",
-    "ais-certification-baseline",
-    "ais-fcs-legacy-benchmark",
-    "pis-fcs-legacy-benchmark",
-)
-"""Suite names accepted by the normalized suite-selection contract."""
-
-_LEGACY_SUITE_API_BY_SUITE = {
-    "discovery-jwks": "ais",
-    "psu-auth-starter": "ais",
-    "ais-certification-slice": "ais",
-    "ais-certification-baseline": "ais",
-    "ais-fcs-legacy-benchmark": "ais",
-    "pis-fcs-legacy-benchmark": "pis",
-}
-"""API-family defaults for configs created before ``testSuite.api`` existed."""
-
-_SUPPORTED_SUITE_SELECTIONS = {
-    ("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "discovery-jwks"),
-    ("ob-read-write", "v3.1.11", "fapi1-advanced", "ais", "psu-auth-starter"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "discovery-jwks"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "psu-auth-starter"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-slice"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-certification-baseline"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "ais", "ais-fcs-legacy-benchmark"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "discovery-jwks"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-domestic-payment-starter"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "pis-fcs-legacy-benchmark"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "pis", "psu-auth-starter"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "discovery-jwks"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "cbpii", "psu-auth-starter"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "discovery-jwks"),
-    ("ob-read-write", "v4.0", "fapi1-advanced", "vrp", "psu-auth-starter"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "discovery-jwks"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "psu-auth-starter"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-slice"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "ais", "ais-certification-baseline"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "discovery-jwks"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "pis", "psu-auth-starter"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "discovery-jwks"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "cbpii", "psu-auth-starter"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "discovery-jwks"),
-    ("ob-read-write", "v4.0.1", "fapi1-advanced", "vrp", "psu-auth-starter"),
-}
-"""Currently runnable normalized suite combinations backed by bundled manifests."""
-
-_PSU_AUTH_STARTER_PLACEHOLDER_INTENT_IDS = {
-    "replace-with-existing-account-access-consent-id",
-    "your-existing-account-access-consent-id",
-}
-"""Example-only consent ids that must not be sent to ASPSPs in starter runs."""
-
 _TEST_VALUES_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 """Pattern for valid test-value key names accepted in ``testValues.overrides``."""
-
-
-@dataclass(frozen=True)
-class SuiteSelection:
-    """Versioned conformance suite selected by participant configuration.
-
-    Attributes:
-        standard: Open Banking standard family to test.
-        spec_version: Standards specification version to test.
-        profile: Security profile that scopes the suite.
-        suite: Versioned smoke/conformance suite identifier.
-        api: Open Banking API family selected for the suite. Legacy configs
-            that omit ``testSuite.api`` default to ``"ais"`` for the existing
-            bundled suites.
-    """
-
-    standard: SuiteStandard
-    spec_version: SuiteSpecVersion
-    profile: SuiteProfile
-    suite: SuiteName
-    api: SuiteApiFamily = "ais"
 
 
 @dataclass(frozen=True)
@@ -189,7 +81,8 @@ class TlsConfig:
     """Transport TLS file paths for outbound model-bank requests.
 
     Attributes:
-        ca_bundle_path: Optional CA bundle used to verify the model bank.
+        ca_bundle_path: Optional participant-supplied CA bundle appended to the
+            default system roots and bundled Open Banking CA roots.
         client_certificate_path: Optional client certificate for mTLS.
         client_private_key_path: Optional private key paired with the client certificate.
     """
@@ -204,8 +97,8 @@ class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
 
     Attributes:
-        certificate_path_root: Root directory under which signing certificate
-            and private-key paths must resolve.
+        certificate_path_root: Deprecated internal compatibility root derived
+            from the exact signing certificate and private-key paths.
         signing_certificate_path: X.509 certificate path used for PS256 JOSE
             signing operations such as request objects and private-key JWT
             client assertions.
@@ -286,11 +179,29 @@ class TestDataConfig:
 
 
 @dataclass(frozen=True)
+class DcrConfig:
+    """DCR-specific credential and transport configuration.
+
+    Packages validated DCR credential file paths together with mTLS and
+    token-endpoint transport options.  Both sub-objects are validated by
+    :func:`_parse_dcr_config` before this dataclass is constructed.
+
+    Attributes:
+        credential_paths: Validated file-backed DCR credential paths.
+        transport: mTLS transport and token-endpoint auth options.
+    """
+
+    credential_paths: DcrCredentialPaths
+    transport: DcrTransportConfig
+
+
+@dataclass(frozen=True)
 class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
     Attributes:
-        environment: Human-readable environment name written to the result file.
+        environment: Optional legacy human-readable environment name. Targeted
+            participant configs no longer require or export it.
         discovery_url: HTTPS OpenID Provider discovery document URL.
         timeout_seconds: Per-request timeout for model-bank HTTP calls.
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
@@ -300,9 +211,14 @@ class ModelBankConfig:
             written. Defaults to ``out/execution-log.ndjson`` resolved under
             the output base directory (typically the process CWD),
             independently of ``result_output_path``.
-        test_suite: Optional versioned conformance suite selected by
-            participant configuration. When absent, the config remains a
-            model-bank smoke-check config.
+        test_target: Optional target-oriented conformance selection describing
+            what the participant intends to test (standard, specification,
+            security profile, version, and resource groups).  Specified via the
+            ``testTarget`` key in participant config JSON.  ``None`` when the
+            config omits ``testTarget``.
+        dcr: Optional DCR credential and transport configuration.  Required
+            for Dynamic Client Registration runs; ``None`` for Read/Write and
+            smoke-check runs.
         approved_release_policy: Optional approved-release policy used for
             participant-side report eligibility self-assessment. When absent,
             generated reports mark the approved-release criterion as not
@@ -316,7 +232,7 @@ class ModelBankConfig:
         fapi_signing: Optional FAPI signing and client-auth configuration kept
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
-            certificate root.
+            exact absolute credential paths.
         test_values: Optional participant test-value profile selection and key
             overrides. When absent, the manifest's default profile is used with
             no overrides.
@@ -328,14 +244,15 @@ class ModelBankConfig:
             write requests. When absent, no financial-id header is added.
     """
 
-    environment: str
+    environment: str | None
     discovery_url: str
     timeout_seconds: float = 10.0
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
     result_output_path: Path = Path("out/test-results.json")
     execution_log_path: Path = Path("out/execution-log.ndjson")
-    test_suite: SuiteSelection | None = None
+    test_target: TestTargetConfig | None = None
+    dcr: DcrConfig | None = None
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
@@ -406,7 +323,8 @@ def parse_model_bank_config(
             "fapiSigning",
             "resultOutputPath",
             "executionLogPath",
-            "testSuite",
+            "testTarget",
+            "dcr",
             "approvedReleasePolicyPath",
             "oauth",
             "testValues",
@@ -416,11 +334,11 @@ def parse_model_bank_config(
         location="config",
     )
 
-    environment = _required_string(raw_config, "environment")
+    environment = _optional_string_at(raw_config, "environment", location="config")
     discovery_url = _required_https_url(raw_config, "discoveryUrl")
     timeout_seconds = _optional_positive_number(raw_config, "timeoutSeconds", default=10.0)
     follow_up_mode = _parse_follow_up(raw_config)
-    tls = _parse_tls_config(raw_config, base_dir=base_dir)
+    tls = _parse_tls_config(raw_config)
     result_output_path = _optional_path(
         raw_config,
         "resultOutputPath",
@@ -433,10 +351,10 @@ def parse_model_bank_config(
         base_dir=output_base_dir or Path.cwd(),
         default=Path("out/execution-log.ndjson"),
     )
-    test_suite = _parse_test_suite_selection(raw_config)
+    test_target = _parse_test_target_from_config(raw_config)
+    dcr = _parse_dcr_config(raw_config, base_dir=base_dir)
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
-    _validate_psu_auth_starter_oauth(test_suite, oauth)
     fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
     test_values = _parse_test_values_config(raw_config)
     test_data = _parse_test_data_config(raw_config)
@@ -450,7 +368,8 @@ def parse_model_bank_config(
         tls=tls,
         result_output_path=result_output_path,
         execution_log_path=execution_log_path,
-        test_suite=test_suite,
+        test_target=test_target,
+        dcr=dcr,
         approved_release_policy=approved_release_policy,
         oauth=oauth,
         fapi_signing=fapi_signing,
@@ -501,93 +420,148 @@ def _optional_approved_release_policy(raw_config: dict[str, JsonValue], *, root:
         raise ConfigError(f"Invalid approved-release policy: {error}") from error
 
 
-def _parse_test_suite_selection(raw_config: dict[str, JsonValue]) -> SuiteSelection | None:
-    """Parse the optional ``testSuite`` section of a participant config.
+def _parse_test_target_from_config(raw_config: dict[str, JsonValue]) -> TestTargetConfig | None:
+    """Parse the optional ``testTarget`` section of a participant config.
+
+    Delegates to :func:`~conformance.target_config.parse_test_target_config` for
+    structural validation of the target coordinates.
 
     Args:
-        raw_config: Top-level raw configuration dictionary from the JSON
-            config file.
+        raw_config: Top-level raw configuration dictionary.
 
     Returns:
-        The validated suite selection, or ``None`` when the config does not
-        request catalog-driven suite resolution.
+        The validated :class:`~conformance.target_config.TestTargetConfig`, or
+        ``None`` when the config omits ``testTarget``.
 
     Raises:
-        ConfigError: If ``testSuite`` is not a JSON object, contains unknown
-            keys, omits required fields, or names an unsupported standard,
-            specification version, API family, profile, or suite.
+        ConfigError: If ``testTarget`` is present but structurally invalid.
     """
-    raw_test_suite = raw_config.get("testSuite")
-    if raw_test_suite is None:
+    raw_target = raw_config.get("testTarget")
+    if raw_target is None:
         return None
-    if not isinstance(raw_test_suite, dict):
-        raise ConfigError("testSuite must be a JSON object")
+    try:
+        return parse_test_target_config(raw_target)
+    except TestTargetConfigError as error:
+        raise ConfigError(f"testTarget is invalid: {error}") from error
+
+
+def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> DcrConfig | None:
+    """Parse the optional ``dcr`` section of a participant config.
+
+    Validates credential file paths as exact absolute paths.  Constructs
+    :class:`~conformance.dcr.credentials.DcrCredentialPaths` and
+    :class:`~conformance.dcr.transport.DcrTransportConfig` and bundles them
+    into a :class:`DcrConfig`.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary.
+        base_dir: Directory of the config file.  Kept for API symmetry; DCR
+            credential paths must be absolute and are not resolved relative to
+            it.
+
+    Returns:
+        A validated :class:`DcrConfig`, or ``None`` when the config omits the
+        ``dcr`` section.
+
+    Raises:
+        ConfigError: If ``dcr`` is present but structurally invalid, contains
+            unknown keys, omits required credential paths, supplies relative
+            credential paths, or names an unsupported ``tokenEndpointAuthMethod``.
+    """
+    raw_dcr = raw_config.get("dcr")
+    if raw_dcr is None:
+        return None
+    if not isinstance(raw_dcr, dict):
+        raise ConfigError("dcr must be a JSON object")
 
     _reject_unknown_keys(
-        raw_test_suite,
-        allowed_keys={"standard", "specVersion", "api", "profile", "suite"},
-        location="testSuite",
+        raw_dcr,
+        allowed_keys={
+            "ssaPath",
+            "signingPrivateKeyPath",
+            "signingCertificatePath",
+            "transportCertificatePath",
+            "transportPrivateKeyPath",
+            "caBundlePath",
+            "tokenEndpointAuthMethod",
+            "disableKeepAlives",
+            "tlsSkipVerify",
+            "timeoutSeconds",
+        },
+        location="dcr",
     )
 
-    standard = _required_string_at(raw_test_suite, "standard", location="testSuite")
-    spec_version = _required_string_at(raw_test_suite, "specVersion", location="testSuite")
-    profile = _required_string_at(raw_test_suite, "profile", location="testSuite")
-    suite = _required_string_at(raw_test_suite, "suite", location="testSuite")
+    ssa_path = _optional_absolute_path(raw_dcr, "ssaPath")
+    signing_key_path = _optional_absolute_path(raw_dcr, "signingPrivateKeyPath")
+    signing_cert_path = _optional_absolute_path(raw_dcr, "signingCertificatePath")
+    transport_cert_path = _optional_absolute_path(raw_dcr, "transportCertificatePath")
+    transport_key_path = _optional_absolute_path(raw_dcr, "transportPrivateKeyPath")
+    ca_bundle_path = _optional_absolute_path(raw_dcr, "caBundlePath")
 
-    if standard not in _SUPPORTED_SUITE_STANDARDS:
-        raise ConfigError("testSuite.standard must be one of: ob-read-write, cvrp")
-    if spec_version not in _SUPPORTED_SUITE_SPEC_VERSIONS:
-        raise ConfigError("testSuite.specVersion must be one of: v3.1.11, v4.0, v4.0.1")
-    if profile not in _SUPPORTED_SUITE_PROFILES:
-        raise ConfigError("testSuite.profile must be one of: fapi1-advanced")
-    if suite not in _SUPPORTED_SUITE_NAMES:
-        raise ConfigError(
-            "testSuite.suite must be one of: discovery-jwks, psu-auth-starter, pis-domestic-payment-starter, "
-            "ais-certification-slice, ais-certification-baseline, ais-fcs-legacy-benchmark, "
-            "pis-fcs-legacy-benchmark"
-        )
-    api = _parse_test_suite_api(raw_test_suite, suite=suite)
-    if standard == "cvrp" and api != "cvrp":
-        raise ConfigError("testSuite.api must be cvrp when testSuite.standard is cvrp")
-    if standard == "ob-read-write" and api == "cvrp":
-        raise ConfigError("testSuite.api must be one of: ais, pis, cbpii, vrp for ob-read-write")
-    if (standard, spec_version, profile, api, suite) not in _SUPPORTED_SUITE_SELECTIONS:
-        raise ConfigError(
-            "testSuite combination is not supported: "
-            f"standard={standard}, specVersion={spec_version}, api={api}, profile={profile}, suite={suite}"
-        )
+    missing_paths: list[str] = []
+    if ssa_path is None:
+        missing_paths.append("ssaPath")
+    if signing_key_path is None:
+        missing_paths.append("signingPrivateKeyPath")
+    if signing_cert_path is None:
+        missing_paths.append("signingCertificatePath")
+    if transport_cert_path is None:
+        missing_paths.append("transportCertificatePath")
+    if transport_key_path is None:
+        missing_paths.append("transportPrivateKeyPath")
+    if missing_paths:
+        joined = ", ".join(missing_paths)
+        raise ConfigError(f"dcr requires the following paths: {joined}")
+    # mypy narrowing: the guard above raises when any required path is None.
+    if (
+        ssa_path is None
+        or signing_key_path is None
+        or signing_cert_path is None
+        or transport_cert_path is None
+        or transport_key_path is None
+    ):
+        raise ConfigError("dcr required paths must not be null")  # pragma: no cover
 
-    return SuiteSelection(
-        standard=cast(SuiteStandard, standard),
-        spec_version=cast(SuiteSpecVersion, spec_version),
-        profile=cast(SuiteProfile, profile),
-        suite=cast(SuiteName, suite),
-        api=cast(SuiteApiFamily, api),
+    raw_auth = raw_dcr.get("tokenEndpointAuthMethod")
+    if raw_auth is None:
+        auth_method: DcrTokenEndpointAuthMethod = "tls_client_auth"
+    elif not isinstance(raw_auth, str) or raw_auth not in {"tls_client_auth", "private_key_jwt"}:
+        raise ConfigError("dcr.tokenEndpointAuthMethod must be one of: tls_client_auth, private_key_jwt")
+    else:
+        auth_method = cast(DcrTokenEndpointAuthMethod, raw_auth)
+
+    disable_keep_alives = _optional_bool(raw_dcr, "disableKeepAlives", default=False, location="dcr")
+    tls_skip_verify = _optional_bool(raw_dcr, "tlsSkipVerify", default=False, location="dcr")
+    timeout_seconds = _optional_positive_number(raw_dcr, "timeoutSeconds", default=30.0)
+
+    if tls_skip_verify:
+        raise ConfigError(tls_skip_verify_error())
+
+    credential_paths = DcrCredentialPaths(
+        credential_path_root=_credential_compatibility_root(
+            ssa_path,
+            signing_key_path,
+            signing_cert_path,
+            transport_cert_path,
+            transport_key_path,
+            ca_bundle_path,
+            fallback=base_dir,
+        ),
+        ssa_path=ssa_path,
+        signing_private_key_path=signing_key_path,
+        signing_certificate_path=signing_cert_path,
+        transport_certificate_path=transport_cert_path,
+        transport_private_key_path=transport_key_path,
+        ca_bundle_path=ca_bundle_path,
     )
-
-
-def _parse_test_suite_api(raw_test_suite: dict[str, JsonValue], *, suite: str) -> str:
-    """Parse or infer the API family for a suite selection.
-
-    Args:
-        raw_test_suite: Raw ``testSuite`` object from participant config.
-        suite: Already-validated suite name used for legacy API inference.
-
-    Returns:
-        Parsed or inferred API family string.
-
-    Raises:
-        ConfigError: If an explicit API family is not a supported value.
-    """
-    raw_api = raw_test_suite.get("api")
-    if raw_api is None:
-        return _LEGACY_SUITE_API_BY_SUITE[suite]
-    if not isinstance(raw_api, str) or not raw_api.strip():
-        raise ConfigError("testSuite.api must be a non-empty string")
-    api = raw_api.strip().lower()
-    if api not in _SUPPORTED_SUITE_API_FAMILIES:
-        raise ConfigError("testSuite.api must be one of: ais, pis, cbpii, vrp, cvrp")
-    return api
+    transport = DcrTransportConfig(
+        token_endpoint_auth_method=auth_method,
+        disable_keep_alives=disable_keep_alives,
+        tls_skip_verify=tls_skip_verify,
+        connection_timeout_seconds=timeout_seconds,
+        read_timeout_seconds=timeout_seconds,
+    )
+    return DcrConfig(credential_paths=credential_paths, transport=transport)
 
 
 def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
@@ -764,31 +738,6 @@ class OpenBankingConfig:
     financial_id: str
 
 
-def _validate_psu_auth_starter_oauth(test_suite: SuiteSelection | None, oauth: OAuthConfig | None) -> None:
-    """Reject example-only consent ids for PSU auth starter suite runs.
-
-    Args:
-        test_suite: Parsed suite selection, or ``None`` for legacy smoke-check
-            configs.
-        oauth: Parsed OAuth participant config, or ``None`` when omitted.
-
-    Raises:
-        ConfigError: If the selected suite is ``psu-auth-starter`` and the
-            configured ``oauth.openBankingIntentId`` is one of the published
-            placeholder values from example/local starter configs.
-    """
-    if test_suite is None or test_suite.suite != "psu-auth-starter" or oauth is None:
-        return
-    if oauth.open_banking_intent_id is None:
-        return
-    if oauth.open_banking_intent_id.lower() not in _PSU_AUTH_STARTER_PLACEHOLDER_INTENT_IDS:
-        return
-    raise ConfigError(
-        "oauth.openBankingIntentId must be a real pre-existing account-access consent id for "
-        "psu-auth-starter; create consent first or run ais-certification-baseline"
-    )
-
-
 def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> FapiSigningConfig | None:
     """Parse the optional ``fapiSigning`` section of a participant config.
 
@@ -799,8 +748,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Args:
         raw_config: Top-level raw configuration dictionary from the JSON
             config file or API request.
-        base_dir: Directory of the config file, used as the default
-            ``certificatePathRoot`` for signing material.
+        base_dir: Directory of the config file. Kept for API symmetry; signing
+            credential paths must be absolute and are not resolved relative to
+            it.
 
     Returns:
         Parsed ``FapiSigningConfig``, or ``None`` when the config omits the
@@ -809,7 +759,7 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Raises:
         ConfigError: If ``fapiSigning`` is not a JSON object, contains unknown
             keys, omits required values, specifies an unsupported token-endpoint
-            auth method, or points to paths that escape ``certificatePathRoot``.
+            auth method, or supplies relative signing credential paths.
     """
     raw_fapi_signing = raw_config.get("fapiSigning")
     if raw_fapi_signing is None:
@@ -820,7 +770,6 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     _reject_unknown_keys(
         raw_fapi_signing,
         allowed_keys={
-            "certificatePathRoot",
             "signingCertificatePath",
             "signingPrivateKeyPath",
             "kid",
@@ -833,22 +782,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         location="fapiSigning",
     )
 
-    certificate_root = _optional_path(
-        raw_fapi_signing,
-        "certificatePathRoot",
-        base_dir=base_dir,
-        default=base_dir,
-    )
-    signing_certificate_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingCertificatePath",
-        root=certificate_root,
-    )
-    signing_private_key_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingPrivateKeyPath",
-        root=certificate_root,
-    )
+    signing_certificate_path = _optional_absolute_path(raw_fapi_signing, "signingCertificatePath")
+    signing_private_key_path = _optional_absolute_path(raw_fapi_signing, "signingPrivateKeyPath")
     if signing_certificate_path is None or signing_private_key_path is None:
         raise ConfigError(
             "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
@@ -871,7 +806,11 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         raise ConfigError("fapiSigning.signatureIssuer and fapiSigning.signatureTrustAnchor must be supplied together")
 
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
+        certificate_path_root=_credential_compatibility_root(
+            signing_certificate_path,
+            signing_private_key_path,
+            fallback=base_dir,
+        ),
         signing_certificate_path=signing_certificate_path,
         signing_private_key_path=signing_private_key_path,
         key_id=key_id,
@@ -952,26 +891,23 @@ def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
     raise ConfigError("followUp.mode must be one of: jwks, discovery_only")
 
 
-def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> TlsConfig:
+def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
     """Parse the optional ``tls`` section of a model bank config dict.
 
     If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
-    returned.  Relative certificate paths are resolved against ``base_dir``.
+    returned. Certificate paths must be exact absolute file paths.
     ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be supplied
     together or not at all.
 
     Args:
         raw_config: Top-level raw configuration dictionary.
-        base_dir: Directory of the config file, used as the root for resolving
-            relative certificate paths.
 
     Returns:
         A populated ``TlsConfig`` dataclass.
 
     Raises:
         ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
-            specifies paths that escape ``certificatePathRoot``, specifies
-            paths that do not exist, or supplies only one of the client
+            supplies relative paths, specifies paths that do not exist, or supplies only one of the client
             certificate / private key pair.
     """
     raw_tls = raw_config.get("tls")
@@ -982,14 +918,13 @@ def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Tl
 
     _reject_unknown_keys(
         raw_tls,
-        allowed_keys={"certificatePathRoot", "caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
+        allowed_keys={"caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
         location="tls",
     )
 
-    certificate_root = _optional_path(raw_tls, "certificatePathRoot", base_dir=base_dir, default=base_dir)
-    ca_bundle_path = _optional_existing_child_path(raw_tls, "caBundlePath", root=certificate_root)
-    client_certificate_path = _optional_existing_child_path(raw_tls, "clientCertificatePath", root=certificate_root)
-    client_private_key_path = _optional_existing_child_path(raw_tls, "clientPrivateKeyPath", root=certificate_root)
+    ca_bundle_path = _optional_existing_absolute_file_path(raw_tls, "caBundlePath")
+    client_certificate_path = _optional_existing_absolute_file_path(raw_tls, "clientCertificatePath")
+    client_private_key_path = _optional_existing_absolute_file_path(raw_tls, "clientPrivateKeyPath")
 
     if (client_certificate_path is None) != (client_private_key_path is None):
         raise ConfigError("clientCertificatePath and clientPrivateKeyPath must be supplied together")
@@ -1141,6 +1076,29 @@ def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, def
     return float(value)
 
 
+def _optional_bool(raw_config: dict[str, JsonValue], key: str, *, default: bool, location: str) -> bool:
+    """Extract an optional boolean value from a raw config dict.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value must be a boolean.
+        default: Value to return when the key is absent.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        The boolean value or the supplied default.
+
+    Raises:
+        ConfigError: If the key is present but the value is not a boolean.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ConfigError(f"{location}.{key} must be a boolean when present")
+    return value
+
+
 def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path, default: Path) -> Path:
     """Extract an optional filesystem path, resolving relative paths safely.
 
@@ -1180,26 +1138,19 @@ def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path
     return base_relative_path
 
 
-def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root`` and point to an existing file.
-
-    Enforces a path-traversal guard: the resolved path must be ``root`` itself
-    or a descendant of ``root``.  Both absolute and relative path strings are
-    accepted; relative paths are resolved against ``root``.
+def _optional_absolute_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional exact absolute path without checking file contents.
 
     Args:
         raw_config: Raw configuration dictionary to read from.
         key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside (the
-            ``certificatePathRoot``).
 
     Returns:
         Absolute resolved ``Path`` when the key is present, or ``None``.
 
     Raises:
         ConfigError: If the key is present but the value is not a non-empty
-            string, the resolved path escapes ``root``, or the path does not
-            point to an existing file.
+            string or is not an absolute path.
     """
     value = raw_config.get(key)
     if value is None:
@@ -1208,49 +1159,48 @@ def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *,
         raise ConfigError(f"{key} must be a non-empty string when supplied")
 
     raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
+    if not raw_path.is_absolute():
+        raise ConfigError(f"{key} must be an absolute file path")
+    return raw_path.resolve()
 
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
+
+def _optional_existing_absolute_file_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional exact absolute path that must point to an existing file.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+
+    Returns:
+        Absolute resolved ``Path`` when the key is present, or ``None``.
+
+    Raises:
+        ConfigError: If the key is present but invalid, relative, or not an
+            existing file.
+    """
+    resolved_path = _optional_absolute_path(raw_config, key)
+    if resolved_path is None:
+        return None
     if not resolved_path.is_file():
         raise ConfigError(f"{key} must point to an existing file")
     return resolved_path
 
 
-def _optional_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root``.
-
-    Unlike :func:`_optional_existing_child_path`, this helper does not touch
-    the filesystem. It is used for config sections whose file existence and PEM
-    validity must be deferred until execution time so config parsing can remain
-    placeholder-safe without eagerly loading signing material.
+def _credential_compatibility_root(*paths: Path | None, fallback: Path) -> Path:
+    """Derive an internal compatibility root from exact credential paths.
 
     Args:
-        raw_config: Raw configuration dictionary to read from.
-        key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside.
+        *paths: Optional absolute credential paths supplied by the participant.
+        fallback: Directory used when no paths are present.
 
     Returns:
-        Absolute resolved ``Path`` when the key is present, or ``None``.
-
-    Raises:
-        ConfigError: If the key is present but the value is not a non-empty
-            string or the resolved path escapes ``root``.
+        Common parent directory for the supplied paths, or ``fallback`` when no
+        credential paths are available.
     """
-    value = raw_config.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{key} must be a non-empty string when supplied")
-
-    raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
-
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
-    return resolved_path
+    parent_paths = [path.resolve().parent for path in paths if path is not None]
+    if not parent_paths:
+        return fallback.resolve()
+    return Path(os.path.commonpath([str(parent) for parent in parent_paths])).resolve()
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:

@@ -9,13 +9,16 @@ from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Literal
 
+from conformance.catalogue import Catalogue, CatalogueReadinessPolicy
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
+from conformance.run_plan_v2 import RunPlanV2, RunPlanV2TargetCoordinates
 from conformance.suite_catalog import SuiteMetadata
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
+    from conformance.catalogue_execution import CompiledCatalogueRun
     from conformance.test_plan import TestPlan
 
 CheckStatus = Literal["passed", "failed", "warn", "skipped"]
@@ -27,6 +30,440 @@ Matches the four-state PRD outcome model: PASS, FAIL, WARN, SKIPPED.
 that does not block certification). ``skipped`` is emitted when a v1
 step cannot run because a prerequisite step produced no response.
 """
+
+ReadinessOutcome = Literal["ready", "incomplete", "non-certifying", "failed"]
+"""Aggregate endpoint-first readiness outcome labels for schema-v2 reports."""
+
+ResourceGroupReadinessOutcome = Literal["ready", "incomplete", "failed"]
+"""Per-resource-group readiness outcome labels for schema-v2 reports."""
+
+
+@dataclass(frozen=True)
+class SelectedCoverageSummary:
+    """Participant-selected endpoint coverage summary for a readiness report.
+
+    Attributes:
+        selected_resource_groups: Ordered resource-group ids included in the run.
+        selected_endpoint_count: Number of selected endpoints in scope.
+        mandatory_endpoint_count: Number of mandatory in-scope endpoints.
+        omitted_mandatory_endpoint_count: Number of in-scope mandatory endpoints
+            that were not selected.
+        coverage_complete: Whether no in-scope mandatory endpoints were omitted.
+    """
+
+    selected_resource_groups: tuple[str, ...]
+    selected_endpoint_count: int
+    mandatory_endpoint_count: int
+    omitted_mandatory_endpoint_count: int
+    coverage_complete: bool
+
+
+@dataclass(frozen=True)
+class ResourceGroupReadiness:
+    """Readiness roll-up for one resource group in an endpoint-first run.
+
+    Attributes:
+        resource_group: Resource-group identifier.
+        readiness_outcome: Group readiness outcome.
+        omitted_mandatory_endpoints: Mandatory endpoint ids omitted from
+            selected coverage.
+        selected_test_count: Number of selected tests mapped to the group.
+        passed_count: Number of selected tests that passed.
+        failed_count: Number of selected tests that failed.
+        skipped_count: Number of selected tests skipped due to failed runtime
+            prerequisites.
+        certification_status: Catalogue-policy certification status for this
+            resource group after readiness evaluation.
+        certification_eligible: Whether this group is cert-eligible.
+    """
+
+    resource_group: str
+    readiness_outcome: ResourceGroupReadinessOutcome
+    omitted_mandatory_endpoints: tuple[str, ...]
+    selected_test_count: int
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+    certification_status: str
+    certification_eligible: bool
+
+
+@dataclass(frozen=True)
+class DcrReadinessStatus:
+    """Readiness status block for DCR runs.
+
+    Attributes:
+        certifying: Always ``False`` until a formal policy is introduced.
+        certifying_blocked_reason: Stable reason string for non-certifying DCR.
+        passed_count: Number of selected DCR tests that passed.
+        failed_count: Number of selected DCR tests that failed.
+        skipped_count: Number of selected DCR tests skipped due to failed
+            runtime prerequisites.
+    """
+
+    certifying: bool
+    certifying_blocked_reason: str
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+
+
+@dataclass(frozen=True)
+class RunReadinessReport:
+    """Endpoint-first readiness report emitted for schema-v2 style runs.
+
+    Attributes:
+        schema_version: Wire schema version, currently ``"2"``.
+        target_coordinates: Frozen run target identity coordinates.
+        catalogue_hash: Target catalogue content hash for drift detection.
+        selected_coverage_summary: Coverage summary for selected endpoints.
+        overall_outcome: Aggregate readiness outcome.
+        resource_group_sections: Per-resource-group readiness sections.
+        dcr_status: Optional DCR readiness block.
+        readiness_policy: Optional catalogue-owned readiness policy metadata
+            used to derive readiness/certification decisions.
+        run_id: Run identifier.
+        generated_at: UTC timestamp when the readiness report was generated.
+    """
+
+    schema_version: Literal["2"]
+    target_coordinates: RunPlanV2TargetCoordinates
+    catalogue_hash: str
+    selected_coverage_summary: SelectedCoverageSummary
+    overall_outcome: ReadinessOutcome
+    resource_group_sections: tuple[ResourceGroupReadiness, ...]
+    dcr_status: DcrReadinessStatus | None
+    readiness_policy: CatalogueReadinessPolicy | None
+    run_id: str
+    generated_at: datetime
+
+
+@dataclass(frozen=True)
+class ResourceGroupExecutionSummary:
+    """Execution status counters used to derive resource-group readiness.
+
+    Attributes:
+        selected_test_count: Number of selected tests in the resource group.
+        passed_count: Number of selected tests that passed.
+        failed_count: Number of selected tests that failed.
+        skipped_count: Number of selected tests skipped due to failed runtime
+            prerequisites.
+    """
+
+    selected_test_count: int
+    passed_count: int
+    failed_count: int
+    skipped_count: int
+
+
+def summarise_selected_coverage(catalogue: Catalogue, run_plan: RunPlanV2) -> SelectedCoverageSummary:
+    """Build a selected-coverage summary from a catalogue and RunPlanV2.
+
+    Args:
+        catalogue: Validated endpoint catalogue for the target.
+        run_plan: Endpoint-first run plan with endpoint selections.
+
+    Returns:
+        Selected coverage summary describing selected endpoints, in-scope
+        mandatory endpoint totals, and mandatory omissions.
+    """
+    selected_endpoint_ids = {selection.endpoint_id for selection in run_plan.endpoint_selections if selection.selected}
+    selected_resource_groups = _resolve_selected_resource_groups(catalogue, run_plan)
+    mandatory_in_scope = _mandatory_endpoint_ids_in_scope(catalogue, selected_resource_groups)
+    omitted = tuple(
+        sorted(endpoint_id for endpoint_id in mandatory_in_scope if endpoint_id not in selected_endpoint_ids)
+    )
+    return SelectedCoverageSummary(
+        selected_resource_groups=selected_resource_groups,
+        selected_endpoint_count=len(selected_endpoint_ids),
+        mandatory_endpoint_count=len(mandatory_in_scope),
+        omitted_mandatory_endpoint_count=len(omitted),
+        coverage_complete=len(omitted) == 0,
+    )
+
+
+def omitted_mandatory_endpoint_ids_by_resource_group(
+    catalogue: Catalogue,
+    run_plan: RunPlanV2,
+) -> dict[str, tuple[str, ...]]:
+    """Return omitted mandatory endpoint ids keyed by selected resource group.
+
+    Args:
+        catalogue: Validated endpoint catalogue for the target.
+        run_plan: Endpoint-first run plan with endpoint selections.
+
+    Returns:
+        Mapping of selected resource-group ids to sorted tuples of mandatory
+        endpoint ids omitted from selected coverage.
+    """
+    selected_endpoint_ids = {selection.endpoint_id for selection in run_plan.endpoint_selections if selection.selected}
+    resource_groups = _resolve_selected_resource_groups(catalogue, run_plan)
+    grouped: dict[str, list[str]] = {group: [] for group in resource_groups}
+    for endpoint in catalogue.endpoints:
+        if endpoint.resource_group is None or endpoint.resource_group not in grouped:
+            continue
+        if endpoint.requirement != "mandatory":
+            continue
+        if endpoint.endpoint_id not in selected_endpoint_ids:
+            grouped[endpoint.resource_group].append(endpoint.endpoint_id)
+    return {group: tuple(sorted(ids)) for group, ids in grouped.items()}
+
+
+def build_resource_group_readiness_sections(
+    *,
+    catalogue: Catalogue,
+    run_plan: RunPlanV2,
+    execution_summary_by_resource_group: Mapping[str, ResourceGroupExecutionSummary],
+) -> tuple[ResourceGroupReadiness, ...]:
+    """Build per-resource-group readiness sections for a RunPlanV2 execution.
+
+    Args:
+        catalogue: Validated endpoint catalogue for the target.
+        run_plan: Endpoint-first run plan with endpoint selections.
+        execution_summary_by_resource_group: Selected-test execution counters
+            keyed by resource-group id.
+
+    Returns:
+        Ordered readiness sections for selected resource groups.
+    """
+    omitted_by_group = omitted_mandatory_endpoint_ids_by_resource_group(catalogue, run_plan)
+    sections: list[ResourceGroupReadiness] = []
+    for resource_group in _resolve_selected_resource_groups(catalogue, run_plan):
+        summary = execution_summary_by_resource_group.get(resource_group, ResourceGroupExecutionSummary(0, 0, 0, 0))
+        omitted = omitted_by_group.get(resource_group, ())
+        readiness_outcome = _resource_group_readiness_outcome(
+            failed_count=summary.failed_count,
+            omitted_mandatory_endpoints=omitted,
+        )
+        sections.append(
+            ResourceGroupReadiness(
+                resource_group=resource_group,
+                readiness_outcome=readiness_outcome,
+                omitted_mandatory_endpoints=omitted,
+                selected_test_count=summary.selected_test_count,
+                passed_count=summary.passed_count,
+                failed_count=summary.failed_count,
+                skipped_count=summary.skipped_count,
+                certification_status=_resource_group_certification_status(
+                    readiness_policy=catalogue.readiness_policy,
+                    readiness_outcome=readiness_outcome,
+                    failed_count=summary.failed_count,
+                    skipped_count=summary.skipped_count,
+                    omitted_mandatory_endpoints=omitted,
+                ),
+                certification_eligible=(
+                    catalogue.readiness_policy is not None
+                    and catalogue.readiness_policy.certification_status == "certifying"
+                    and readiness_outcome == "ready"
+                    and summary.failed_count == 0
+                    and summary.skipped_count == 0
+                ),
+            )
+        )
+    return tuple(sections)
+
+
+def determine_readiness_outcome(
+    *,
+    selected_coverage_summary: SelectedCoverageSummary,
+    resource_group_sections: tuple[ResourceGroupReadiness, ...],
+    dcr_status: DcrReadinessStatus | None,
+) -> ReadinessOutcome:
+    """Determine aggregate readiness outcome from report subcomponents.
+
+    Args:
+        selected_coverage_summary: Selected coverage summary block.
+        resource_group_sections: Per-resource-group readiness sections.
+        dcr_status: Optional DCR readiness status block.
+
+    Returns:
+        Aggregate readiness outcome label.
+    """
+    if dcr_status is not None:
+        return "non-certifying"
+    if any(section.failed_count > 0 for section in resource_group_sections):
+        return "failed"
+    if not selected_coverage_summary.coverage_complete or any(
+        section.readiness_outcome == "incomplete" for section in resource_group_sections
+    ):
+        return "incomplete"
+    if resource_group_sections and all(section.certification_eligible for section in resource_group_sections):
+        return "ready"
+    return "failed"
+
+
+def build_dcr_readiness_status(*, passed_count: int, failed_count: int, skipped_count: int) -> DcrReadinessStatus:
+    """Build the fixed non-certifying DCR readiness block.
+
+    Args:
+        passed_count: Number of selected DCR tests that passed.
+        failed_count: Number of selected DCR tests that failed.
+        skipped_count: Number of selected DCR tests skipped due to failed
+            runtime prerequisites.
+
+    Returns:
+        DCR readiness status block with fixed non-certifying policy fields.
+    """
+    return DcrReadinessStatus(
+        certifying=False,
+        certifying_blocked_reason="No DCR certification policy exists for this tool",
+        passed_count=passed_count,
+        failed_count=failed_count,
+        skipped_count=skipped_count,
+    )
+
+
+def build_readiness_report_from_compiled_run(
+    compiled_run: CompiledCatalogueRun,
+    *,
+    run_id: str,
+    generated_at: datetime,
+    execution_summary_by_resource_group: Mapping[str, ResourceGroupExecutionSummary] | None = None,
+    dcr_status: DcrReadinessStatus | None = None,
+) -> RunReadinessReport:
+    """Build a readiness report from compiled catalogue coverage and outcomes.
+
+    Args:
+        compiled_run: Catalogue-native graph compiled from the participant's
+            target and coverage selections.
+        run_id: Run identifier to persist in the report.
+        generated_at: UTC timestamp for report generation.
+        execution_summary_by_resource_group: Per-resource-group execution
+            counters. Missing groups default to zero counters.
+        dcr_status: Optional DCR readiness status for DCR runs.
+
+    Returns:
+        Endpoint-first readiness report derived from catalogue policy metadata.
+    """
+    selected_coverage_summary = SelectedCoverageSummary(
+        selected_resource_groups=compiled_run.selected_resource_groups,
+        selected_endpoint_count=len(compiled_run.selected_endpoint_ids),
+        mandatory_endpoint_count=len(compiled_run.mandatory_endpoint_ids),
+        omitted_mandatory_endpoint_count=len(compiled_run.omitted_mandatory_endpoint_ids),
+        coverage_complete=not compiled_run.omitted_mandatory_endpoint_ids,
+    )
+    resource_group_sections = _resource_group_sections_from_compiled_run(
+        compiled_run,
+        execution_summary_by_resource_group=execution_summary_by_resource_group or {},
+    )
+    return RunReadinessReport(
+        schema_version="2",
+        target_coordinates=RunPlanV2TargetCoordinates(
+            standard=compiled_run.catalogue_identity.standard or compiled_run.target.standard,
+            specification=compiled_run.catalogue_identity.specification,
+            security_profile=compiled_run.catalogue_identity.security_profile or compiled_run.target.security_profile,
+            specification_version=compiled_run.catalogue_identity.specification_version,
+            catalogue_hash=compiled_run.catalogue_identity.content_hash,
+        ),
+        catalogue_hash=compiled_run.catalogue_identity.content_hash,
+        selected_coverage_summary=selected_coverage_summary,
+        overall_outcome=determine_readiness_outcome(
+            selected_coverage_summary=selected_coverage_summary,
+            resource_group_sections=resource_group_sections,
+            dcr_status=dcr_status,
+        ),
+        resource_group_sections=resource_group_sections,
+        dcr_status=dcr_status,
+        readiness_policy=compiled_run.readiness_policy,
+        run_id=run_id,
+        generated_at=generated_at,
+    )
+
+
+def serialise_readiness_report(report: RunReadinessReport) -> dict[str, JsonValue]:
+    """Serialise a readiness report into a JSON-compatible dictionary.
+
+    Args:
+        report: Readiness report to serialise.
+
+    Returns:
+        CamelCase JSON dictionary suitable for writing to result files.
+    """
+    data: dict[str, JsonValue] = {
+        "schemaVersion": report.schema_version,
+        "targetCoordinates": {
+            "standard": report.target_coordinates.standard,
+            "specification": report.target_coordinates.specification,
+            "securityProfile": report.target_coordinates.security_profile,
+            "specificationVersion": report.target_coordinates.specification_version,
+            "catalogueHash": report.target_coordinates.catalogue_hash,
+        },
+        "catalogueHash": report.catalogue_hash,
+        "selectedCoverageSummary": {
+            "selectedResourceGroups": list(report.selected_coverage_summary.selected_resource_groups),
+            "selectedEndpointCount": report.selected_coverage_summary.selected_endpoint_count,
+            "mandatoryEndpointCount": report.selected_coverage_summary.mandatory_endpoint_count,
+            "omittedMandatoryEndpointCount": report.selected_coverage_summary.omitted_mandatory_endpoint_count,
+            "coverageComplete": report.selected_coverage_summary.coverage_complete,
+        },
+        "overallOutcome": report.overall_outcome,
+        "resourceGroupSections": [
+            {
+                "resourceGroup": section.resource_group,
+                "readinessOutcome": section.readiness_outcome,
+                "omittedMandatoryEndpoints": list(section.omitted_mandatory_endpoints),
+                "selectedTestCount": section.selected_test_count,
+                "passedCount": section.passed_count,
+                "failedCount": section.failed_count,
+                "skippedCount": section.skipped_count,
+                "certificationStatus": section.certification_status,
+                "certificationEligible": section.certification_eligible,
+            }
+            for section in report.resource_group_sections
+        ],
+        "runId": report.run_id,
+        "generatedAt": report.generated_at.isoformat(),
+    }
+    if report.dcr_status is not None:
+        data["dcrStatus"] = {
+            "certifying": report.dcr_status.certifying,
+            "certifyingBlockedReason": report.dcr_status.certifying_blocked_reason,
+            "passedCount": report.dcr_status.passed_count,
+            "failedCount": report.dcr_status.failed_count,
+            "skippedCount": report.dcr_status.skipped_count,
+        }
+    if report.readiness_policy is not None:
+        data["readinessPolicy"] = _serialise_catalogue_readiness_policy(report.readiness_policy)
+    return data
+
+
+def parse_readiness_report(data: JsonValue) -> RunReadinessReport:
+    """Parse a JSON readiness-report object into a typed dataclass instance.
+
+    Args:
+        data: Raw JSON value loaded from a result file.
+
+    Returns:
+        Parsed readiness report dataclass.
+
+    Raises:
+        ValueError: If the payload is missing required fields or has invalid
+            field types.
+    """
+    if not isinstance(data, dict):
+        raise ValueError("Readiness report must be a JSON object")
+    schema_version = _readiness_require_literal(data, "schemaVersion", "2")
+    target_coordinates = _parse_readiness_target_coordinates(data)
+    selected_coverage_summary = _parse_selected_coverage_summary(data)
+    overall_outcome = _parse_readiness_outcome(data.get("overallOutcome"))
+    resource_group_sections = _parse_resource_group_sections(data)
+    dcr_status = _parse_dcr_status(data.get("dcrStatus"))
+    readiness_policy = _parse_report_readiness_policy(data.get("readinessPolicy"))
+    catalogue_hash = _readiness_require_string(data, "catalogueHash")
+    run_id = _readiness_require_string(data, "runId")
+    generated_at = _readiness_require_datetime(data, "generatedAt")
+    return RunReadinessReport(
+        schema_version=schema_version,
+        target_coordinates=target_coordinates,
+        catalogue_hash=catalogue_hash,
+        selected_coverage_summary=selected_coverage_summary,
+        overall_outcome=overall_outcome,
+        resource_group_sections=resource_group_sections,
+        dcr_status=dcr_status,
+        readiness_policy=readiness_policy,
+        run_id=run_id,
+        generated_at=generated_at,
+    )
 
 
 @dataclass(frozen=True)
@@ -94,7 +531,7 @@ class SmokeCheckResult:
     """Complete result for a model-bank smoke-check execution.
 
     Attributes:
-        environment: Environment name copied from the input config.
+        environment: Optional legacy environment name copied from the input config.
         status: Aggregate pass/fail outcome across all steps.
         started_at: UTC timestamp when execution started.
         finished_at: UTC timestamp when execution finished.
@@ -136,9 +573,11 @@ class SmokeCheckResult:
         custom_test_value_impact: Optional persisted impact-evidence block that
             maps participant override keys to executed and non-executed manifest
             field references.
+        readiness_report: Optional endpoint-first readiness report for schema-v2
+            runs.
     """
 
-    environment: str
+    environment: str | None
     status: CheckStatus
     started_at: datetime
     finished_at: datetime
@@ -153,6 +592,7 @@ class SmokeCheckResult:
     test_value_profile_evidence: Mapping[str, JsonValue] | None = None
     custom_test_values_active: bool = False
     custom_test_value_impact: Mapping[str, JsonValue] | None = None
+    readiness_report: RunReadinessReport | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -164,7 +604,6 @@ class SmokeCheckResult:
         body: JsonObject = {
             "metadata": {"reportVersion": REPORT_METADATA_VERSION},
             "tool": {"version": tool_version},
-            "environment": self.environment,
             "status": self.status,
             "startedAt": self.started_at.isoformat(),
             "finishedAt": self.finished_at.isoformat(),
@@ -186,6 +625,8 @@ class SmokeCheckResult:
             ),
             "steps": [step.to_json_object() for step in self.steps],
         }
+        if self.environment is not None:
+            body["environment"] = self.environment
         if self.suite_metadata is not None:
             body["suite"] = self.suite_metadata.to_json_object()
         if self.plan_summary is not None:
@@ -198,11 +639,13 @@ class SmokeCheckResult:
             body["testValueProfile"] = deepcopy(dict(self.test_value_profile_evidence))
         if self.custom_test_value_impact is not None:
             body["customTestValueImpact"] = deepcopy(dict(self.custom_test_value_impact))
+        if self.readiness_report is not None:
+            body["readinessReport"] = serialise_readiness_report(self.readiness_report)
         return body
 
 
 def build_smoke_check_result(
-    environment: str,
+    environment: str | None,
     steps: list[StepResult],
     *,
     started_at: datetime,
@@ -215,11 +658,12 @@ def build_smoke_check_result(
     test_value_profile_evidence: Mapping[str, JsonValue] | None = None,
     custom_test_values_active: bool = False,
     custom_test_value_impact: Mapping[str, JsonValue] | None = None,
+    readiness_report: RunReadinessReport | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
     Args:
-        environment: Environment name copied from the input config.
+        environment: Optional legacy environment name copied from the input config.
         steps: Ordered mutable list of step outcomes collected by the runner.
         started_at: UTC timestamp captured before execution began.
         plan: Optional :class:`TestPlan` that drove this run. When supplied,
@@ -253,6 +697,8 @@ def build_smoke_check_result(
         custom_test_value_impact: Optional persisted impact-evidence block that
             maps participant override keys to executed and non-executed manifest
             field references.
+        readiness_report: Optional endpoint-first readiness report for schema-v2
+            runs.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -284,6 +730,441 @@ def build_smoke_check_result(
         test_value_profile_evidence=test_value_profile_evidence,
         custom_test_values_active=custom_test_values_active,
         custom_test_value_impact=custom_test_value_impact,
+        readiness_report=readiness_report,
+    )
+
+
+def _resolve_selected_resource_groups(catalogue: Catalogue, run_plan: RunPlanV2) -> tuple[str, ...]:
+    """Resolve selected resource groups for readiness calculations.
+
+    Args:
+        catalogue: Validated endpoint catalogue for the run target.
+        run_plan: Endpoint-first run plan with optional resource-group picks.
+
+    Returns:
+        Ordered selected resource-group ids.
+    """
+    if run_plan.resource_groups:
+        return run_plan.resource_groups
+    selected_endpoint_ids = {selection.endpoint_id for selection in run_plan.endpoint_selections if selection.selected}
+    groups: list[str] = []
+    for endpoint in catalogue.endpoints:
+        if endpoint.endpoint_id not in selected_endpoint_ids:
+            continue
+        if endpoint.resource_group is None:
+            continue
+        if endpoint.resource_group in groups:
+            continue
+        groups.append(endpoint.resource_group)
+    return tuple(groups)
+
+
+def _mandatory_endpoint_ids_in_scope(catalogue: Catalogue, selected_resource_groups: tuple[str, ...]) -> set[str]:
+    """Collect mandatory endpoint ids within selected readiness scope.
+
+    Args:
+        catalogue: Validated endpoint catalogue for the run target.
+        selected_resource_groups: Ordered selected resource-group ids.
+
+    Returns:
+        Set of mandatory endpoint ids in scope.
+    """
+    mandatory: set[str] = set()
+    has_resource_groups = any(endpoint.resource_group is not None for endpoint in catalogue.endpoints)
+    for endpoint in catalogue.endpoints:
+        if endpoint.requirement != "mandatory":
+            continue
+        if has_resource_groups:
+            if endpoint.resource_group is None:
+                continue
+            if endpoint.resource_group not in selected_resource_groups:
+                continue
+        mandatory.add(endpoint.endpoint_id)
+    return mandatory
+
+
+def _resource_group_readiness_outcome(
+    *,
+    failed_count: int,
+    omitted_mandatory_endpoints: tuple[str, ...],
+) -> ResourceGroupReadinessOutcome:
+    """Determine one resource group's readiness outcome.
+
+    Args:
+        failed_count: Number of selected tests in the group that failed.
+        omitted_mandatory_endpoints: Mandatory endpoint ids omitted from
+            selected coverage.
+
+    Returns:
+        Resource-group readiness outcome label.
+    """
+    if failed_count > 0:
+        return "failed"
+    if omitted_mandatory_endpoints:
+        return "incomplete"
+    return "ready"
+
+
+def _resource_group_sections_from_compiled_run(
+    compiled_run: CompiledCatalogueRun,
+    *,
+    execution_summary_by_resource_group: Mapping[str, ResourceGroupExecutionSummary],
+) -> tuple[ResourceGroupReadiness, ...]:
+    """Build resource-group report sections from compiled coverage.
+
+    Args:
+        compiled_run: Catalogue graph whose selected resource groups and
+            mandatory omissions define readiness scope.
+        execution_summary_by_resource_group: Selected-test execution counters
+            keyed by resource-group ID.
+
+    Returns:
+        Ordered resource-group readiness sections.
+    """
+    sections: list[ResourceGroupReadiness] = []
+    for resource_group in compiled_run.selected_resource_groups:
+        summary = execution_summary_by_resource_group.get(resource_group, ResourceGroupExecutionSummary(0, 0, 0, 0))
+        omitted = compiled_run.omitted_mandatory_endpoint_ids_by_resource_group.get(resource_group, ())
+        readiness_outcome = _resource_group_readiness_outcome(
+            failed_count=summary.failed_count,
+            omitted_mandatory_endpoints=omitted,
+        )
+        certification_status = _resource_group_certification_status(
+            readiness_policy=compiled_run.readiness_policy,
+            readiness_outcome=readiness_outcome,
+            failed_count=summary.failed_count,
+            skipped_count=summary.skipped_count,
+            omitted_mandatory_endpoints=omitted,
+        )
+        sections.append(
+            ResourceGroupReadiness(
+                resource_group=resource_group,
+                readiness_outcome=readiness_outcome,
+                omitted_mandatory_endpoints=omitted,
+                selected_test_count=summary.selected_test_count,
+                passed_count=summary.passed_count,
+                failed_count=summary.failed_count,
+                skipped_count=summary.skipped_count,
+                certification_status=certification_status,
+                certification_eligible=(
+                    readiness_outcome == "ready"
+                    and certification_status == "certifying"
+                    and summary.failed_count == 0
+                    and summary.skipped_count == 0
+                ),
+            )
+        )
+    return tuple(sections)
+
+
+def _resource_group_certification_status(
+    *,
+    readiness_policy: CatalogueReadinessPolicy | None,
+    readiness_outcome: ResourceGroupReadinessOutcome,
+    failed_count: int,
+    skipped_count: int,
+    omitted_mandatory_endpoints: tuple[str, ...],
+) -> str:
+    """Derive resource-group certification status from catalogue policy.
+
+    Args:
+        readiness_policy: Catalogue-owned policy metadata, when available.
+        readiness_outcome: Computed resource-group readiness outcome.
+        failed_count: Number of selected tests that failed.
+        skipped_count: Number of selected tests skipped by failed prerequisites.
+        omitted_mandatory_endpoints: Mandatory endpoint IDs omitted from
+            selected coverage.
+
+    Returns:
+        Stable certification status string for the resource group.
+    """
+    if readiness_policy is None:
+        return "unknown"
+    if readiness_policy.certification_status != "certifying":
+        return readiness_policy.certification_status
+    if failed_count > 0 or skipped_count > 0 or readiness_outcome == "failed":
+        return readiness_policy.failed_selected_outcome
+    if omitted_mandatory_endpoints:
+        return readiness_policy.omitted_mandatory_outcome
+    return readiness_policy.certification_status
+
+
+def _serialise_catalogue_readiness_policy(policy: CatalogueReadinessPolicy) -> JsonObject:
+    """Serialise catalogue readiness policy metadata.
+
+    Args:
+        policy: Parsed catalogue-owned readiness policy.
+
+    Returns:
+        JSON object for embedding in readiness reports.
+    """
+    return {
+        "policyId": policy.policy_id,
+        "certificationStatus": policy.certification_status,
+        "omittedMandatoryOutcome": policy.omitted_mandatory_outcome,
+        "failedSelectedOutcome": policy.failed_selected_outcome,
+    }
+
+
+def _readiness_require_string(obj: Mapping[str, JsonValue], key: str) -> str:
+    """Read one required non-empty string field from readiness JSON.
+
+    Args:
+        obj: Source JSON object.
+        key: Field name to read.
+
+    Returns:
+        Parsed non-empty string value.
+
+    Raises:
+        ValueError: If the field is missing or not a non-empty string.
+    """
+    value = obj.get(key)
+    if not isinstance(value, str) or not value:
+        raise ValueError(f"Readiness report field {key!r} must be a non-empty string")
+    return value
+
+
+def _readiness_require_int(obj: Mapping[str, JsonValue], key: str) -> int:
+    """Read one required integer field from readiness JSON.
+
+    Args:
+        obj: Source JSON object.
+        key: Field name to read.
+
+    Returns:
+        Parsed integer value.
+
+    Raises:
+        ValueError: If the field is missing or not an integer.
+    """
+    value = obj.get(key)
+    if not isinstance(value, int):
+        raise ValueError(f"Readiness report field {key!r} must be an integer")
+    return value
+
+
+def _readiness_require_bool(obj: Mapping[str, JsonValue], key: str) -> bool:
+    """Read one required boolean field from readiness JSON.
+
+    Args:
+        obj: Source JSON object.
+        key: Field name to read.
+
+    Returns:
+        Parsed boolean value.
+
+    Raises:
+        ValueError: If the field is missing or not a boolean.
+    """
+    value = obj.get(key)
+    if not isinstance(value, bool):
+        raise ValueError(f"Readiness report field {key!r} must be a boolean")
+    return value
+
+
+def _readiness_require_literal(obj: Mapping[str, JsonValue], key: str, expected: str) -> Literal["2"]:
+    """Read one required literal field from readiness JSON.
+
+    Args:
+        obj: Source JSON object.
+        key: Field name to read.
+        expected: Required literal value.
+
+    Returns:
+        The expected value when present.
+
+    Raises:
+        ValueError: If the field is missing or does not equal ``expected``.
+    """
+    value = _readiness_require_string(obj, key)
+    if value != expected:
+        raise ValueError(f"Readiness report field {key!r} must be {expected!r}")
+    return "2"
+
+
+def _readiness_require_datetime(obj: Mapping[str, JsonValue], key: str) -> datetime:
+    """Read one required ISO-8601 datetime field from readiness JSON.
+
+    Args:
+        obj: Source JSON object.
+        key: Field name to read.
+
+    Returns:
+        Parsed UTC-aware datetime value.
+
+    Raises:
+        ValueError: If the field is missing or is not a valid ISO datetime.
+    """
+    raw_value = _readiness_require_string(obj, key)
+    try:
+        parsed = datetime.fromisoformat(raw_value)
+    except ValueError as exc:
+        raise ValueError(f"Readiness report field {key!r} must be a valid ISO datetime") from exc
+    if parsed.tzinfo is None:
+        return parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
+
+
+def _parse_readiness_target_coordinates(data: Mapping[str, JsonValue]) -> RunPlanV2TargetCoordinates:
+    """Parse target coordinates from readiness JSON.
+
+    Args:
+        data: Readiness JSON object.
+
+    Returns:
+        Parsed run target coordinates.
+
+    Raises:
+        ValueError: If ``targetCoordinates`` is missing or invalid.
+    """
+    raw_target = data.get("targetCoordinates")
+    if not isinstance(raw_target, dict):
+        raise ValueError("Readiness report field 'targetCoordinates' must be a JSON object")
+    return RunPlanV2TargetCoordinates(
+        standard=_readiness_require_string(raw_target, "standard"),
+        specification=_readiness_require_string(raw_target, "specification"),
+        security_profile=_readiness_require_string(raw_target, "securityProfile"),
+        specification_version=_readiness_require_string(raw_target, "specificationVersion"),
+        catalogue_hash=_readiness_require_string(raw_target, "catalogueHash"),
+    )
+
+
+def _parse_selected_coverage_summary(data: Mapping[str, JsonValue]) -> SelectedCoverageSummary:
+    """Parse selected coverage summary from readiness JSON.
+
+    Args:
+        data: Readiness JSON object.
+
+    Returns:
+        Parsed selected coverage summary.
+
+    Raises:
+        ValueError: If ``selectedCoverageSummary`` is missing or invalid.
+    """
+    raw_summary = data.get("selectedCoverageSummary")
+    if not isinstance(raw_summary, dict):
+        raise ValueError("Readiness report field 'selectedCoverageSummary' must be a JSON object")
+    raw_groups = raw_summary.get("selectedResourceGroups")
+    if not isinstance(raw_groups, list) or not all(isinstance(item, str) for item in raw_groups):
+        raise ValueError("Readiness report field 'selectedResourceGroups' must be a list of strings")
+    selected_groups: tuple[str, ...] = tuple(item for item in raw_groups if isinstance(item, str))
+    return SelectedCoverageSummary(
+        selected_resource_groups=selected_groups,
+        selected_endpoint_count=_readiness_require_int(raw_summary, "selectedEndpointCount"),
+        mandatory_endpoint_count=_readiness_require_int(raw_summary, "mandatoryEndpointCount"),
+        omitted_mandatory_endpoint_count=_readiness_require_int(raw_summary, "omittedMandatoryEndpointCount"),
+        coverage_complete=_readiness_require_bool(raw_summary, "coverageComplete"),
+    )
+
+
+def _parse_readiness_outcome(raw_outcome: JsonValue) -> ReadinessOutcome:
+    """Parse aggregate readiness outcome from readiness JSON.
+
+    Args:
+        raw_outcome: Raw outcome JSON value.
+
+    Returns:
+        Parsed readiness outcome.
+
+    Raises:
+        ValueError: If the outcome is missing or not a valid value.
+    """
+    valid_outcomes: tuple[ReadinessOutcome, ...] = ("ready", "incomplete", "non-certifying", "failed")
+    if isinstance(raw_outcome, str) and raw_outcome in valid_outcomes:
+        return raw_outcome
+    raise ValueError(f"Readiness report field 'overallOutcome' must be one of {list(valid_outcomes)}")
+
+
+def _parse_resource_group_sections(data: Mapping[str, JsonValue]) -> tuple[ResourceGroupReadiness, ...]:
+    """Parse resource-group readiness sections from readiness JSON.
+
+    Args:
+        data: Readiness JSON object.
+
+    Returns:
+        Parsed tuple of resource-group readiness sections.
+
+    Raises:
+        ValueError: If ``resourceGroupSections`` is missing or invalid.
+    """
+    raw_sections = data.get("resourceGroupSections")
+    if not isinstance(raw_sections, list):
+        raise ValueError("Readiness report field 'resourceGroupSections' must be a JSON array")
+    sections: list[ResourceGroupReadiness] = []
+    valid_outcomes: tuple[ResourceGroupReadinessOutcome, ...] = ("ready", "incomplete", "failed")
+    for raw_section in raw_sections:
+        if not isinstance(raw_section, dict):
+            raise ValueError("Each readiness resource-group section must be a JSON object")
+        raw_outcome = raw_section.get("readinessOutcome")
+        if not isinstance(raw_outcome, str) or raw_outcome not in valid_outcomes:
+            raise ValueError(f"Resource-group readiness outcome must be one of {list(valid_outcomes)}")
+        raw_omitted = raw_section.get("omittedMandatoryEndpoints")
+        if not isinstance(raw_omitted, list) or not all(isinstance(item, str) for item in raw_omitted):
+            raise ValueError("Field 'omittedMandatoryEndpoints' must be a list of strings")
+        omitted_endpoints: tuple[str, ...] = tuple(item for item in raw_omitted if isinstance(item, str))
+        sections.append(
+            ResourceGroupReadiness(
+                resource_group=_readiness_require_string(raw_section, "resourceGroup"),
+                readiness_outcome=raw_outcome,
+                omitted_mandatory_endpoints=omitted_endpoints,
+                selected_test_count=_readiness_require_int(raw_section, "selectedTestCount"),
+                passed_count=_readiness_require_int(raw_section, "passedCount"),
+                failed_count=_readiness_require_int(raw_section, "failedCount"),
+                skipped_count=_readiness_require_int(raw_section, "skippedCount"),
+                certification_status=_readiness_require_string(raw_section, "certificationStatus"),
+                certification_eligible=_readiness_require_bool(raw_section, "certificationEligible"),
+            )
+        )
+    return tuple(sections)
+
+
+def _parse_report_readiness_policy(raw_data: JsonValue) -> CatalogueReadinessPolicy | None:
+    """Parse optional catalogue readiness policy metadata from report JSON.
+
+    Args:
+        raw_data: Raw ``readinessPolicy`` JSON value.
+
+    Returns:
+        Parsed catalogue readiness policy, or ``None`` when absent.
+
+    Raises:
+        ValueError: If the supplied policy object is invalid.
+    """
+    if raw_data is None:
+        return None
+    if not isinstance(raw_data, dict):
+        raise ValueError("Readiness report field 'readinessPolicy' must be a JSON object when present")
+    return CatalogueReadinessPolicy(
+        policy_id=_readiness_require_string(raw_data, "policyId"),
+        certification_status=_readiness_require_string(raw_data, "certificationStatus"),
+        omitted_mandatory_outcome=_readiness_require_string(raw_data, "omittedMandatoryOutcome"),
+        failed_selected_outcome=_readiness_require_string(raw_data, "failedSelectedOutcome"),
+    )
+
+
+def _parse_dcr_status(raw_data: JsonValue) -> DcrReadinessStatus | None:
+    """Parse optional DCR readiness status from readiness JSON.
+
+    Args:
+        raw_data: Raw ``dcrStatus`` JSON value.
+
+    Returns:
+        Parsed DCR readiness status, or ``None`` when absent.
+
+    Raises:
+        ValueError: If the supplied DCR status object is invalid.
+    """
+    if raw_data is None:
+        return None
+    if not isinstance(raw_data, dict):
+        raise ValueError("Readiness report field 'dcrStatus' must be a JSON object when present")
+    return DcrReadinessStatus(
+        certifying=_readiness_require_bool(raw_data, "certifying"),
+        certifying_blocked_reason=_readiness_require_string(raw_data, "certifyingBlockedReason"),
+        passed_count=_readiness_require_int(raw_data, "passedCount"),
+        failed_count=_readiness_require_int(raw_data, "failedCount"),
+        skipped_count=_readiness_require_int(raw_data, "skippedCount"),
     )
 
 

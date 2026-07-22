@@ -61,25 +61,23 @@ def load_signing_credentials(signing_config: FapiSigningConfig) -> SigningCreden
     """Load and validate signing credential files for runtime JOSE use.
 
     Args:
-        signing_config: Non-secret FAPI signing config containing the trusted
-            certificate root plus resolved certificate and private-key paths.
+        signing_config: Non-secret FAPI signing config containing resolved
+            exact certificate and private-key paths.
 
     Returns:
         In-memory PEM bytes for the signing certificate and private key.
 
     Raises:
-        SigningCredentialError: If a configured path escapes the certificate
-            root, a file cannot be read, the PEM content is malformed, or the
+        SigningCredentialError: If a configured path is not absolute, a file
+            cannot be read, the PEM content is malformed, or the
             certificate/public key does not match the configured private key.
     """
-    certificate_path = _validate_child_path(
+    certificate_path = _validate_exact_path(
         signing_config.signing_certificate_path,
-        root=signing_config.certificate_path_root,
         label="fapiSigning.signingCertificatePath",
     )
-    private_key_path = _validate_child_path(
+    private_key_path = _validate_exact_path(
         signing_config.signing_private_key_path,
-        root=signing_config.certificate_path_root,
         label="fapiSigning.signingPrivateKeyPath",
     )
 
@@ -100,24 +98,22 @@ def load_signing_credentials(signing_config: FapiSigningConfig) -> SigningCreden
     )
 
 
-def _validate_child_path(path: Path, *, root: Path, label: str) -> Path:
-    """Re-check that a resolved credential path remains under the trusted root.
+def _validate_exact_path(path: Path, *, label: str) -> Path:
+    """Re-check that a credential path is exact and absolute.
 
     Args:
-        path: Resolved credential path to validate.
-        root: Trusted certificate root configured for the participant.
+        path: Credential path to validate.
         label: Human-readable config field name for error reporting.
 
     Returns:
         The resolved credential path.
 
     Raises:
-        SigningCredentialError: If ``path`` escapes ``root`` after resolution.
+        SigningCredentialError: If ``path`` is relative.
     """
     resolved_path = path.resolve()
-    resolved_root = root.resolve()
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise SigningCredentialError(f"{label} must resolve inside certificatePathRoot")
+    if not path.is_absolute():
+        raise SigningCredentialError(f"{label} must be an absolute file path")
     return resolved_path
 
 

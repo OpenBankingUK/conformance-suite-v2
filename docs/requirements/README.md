@@ -25,6 +25,9 @@ All bundled suites remain `certificationCoverage: partial`. The first planned ce
 | `agent-slice-template.md` | Standard shape for turning a requirement into an AI-agent-ready implementation task. |
 | `decisions.md` | Decision log and open decision register. |
 | `prior-fcs-parity.md` | Method for turning previous FCS scripts into a v2 parity ledger. |
+| `suite-coverage/migration-parity-baseline.json` | Phase-1 crosswalk for current bundled suite IDs and previous FCS IDs. |
+| `suite-coverage/migration-parity-baseline.md` | Reviewer-facing table for the phase-1 crosswalk. |
+| `conformance/plugins/read_write/catalogues/v3_1_11/catalogue.json`, `conformance/plugins/read_write/catalogues/v4_0_0/catalogue.json`, `conformance/plugins/read_write/catalogues/v4_0_1/catalogue.json` | Phase-2/3 schema v2 Read/Write catalogues with resource groups, executable test metadata, field schemas, readiness policy, masking metadata, and source coverage references. |
 | `visual-plan-builder.md` | Product/design notes for tree-style test selection and guided config UX. |
 | `guided-config-builder.md` | Product/design notes for reducing raw JSON through presets, capability metadata, and structured auth choices. |
 | `custom-test-values.md` | Product/design notes for certification vs exploratory test values. |

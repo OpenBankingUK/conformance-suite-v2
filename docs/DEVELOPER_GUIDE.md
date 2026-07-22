@@ -205,7 +205,6 @@ Participant configuration can select a bundled manifest catalog entry through an
 
 ```json
 {
-  "environment": "ozone-model-bank",
   "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
   "timeoutSeconds": 10,
   "approvedReleasePolicyPath": "approved-fcs-releases-example.json",
@@ -214,9 +213,6 @@ Participant configuration can select a bundled manifest catalog entry through an
     "specVersion": "v4.0",
     "profile": "fapi1-advanced",
     "suite": "discovery-jwks"
-  },
-  "tls": {
-    "certificatePathRoot": "./certs"
   },
   "resultOutputPath": "./out/test-results.json",
   "executionLogPath": "./out/execution-log.ndjson"
@@ -275,9 +271,8 @@ The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE
 ```jsonc
 {
   "fapiSigning": {
-    "certificatePathRoot": "./certs",
-    "signingCertificatePath": "dummy-signing.crt",
-    "signingPrivateKeyPath": "dummy-signing.key", // pragma: allowlist secret
+    "signingCertificatePath": "/path/to/dummy-signing.crt",
+    "signingPrivateKeyPath": "/path/to/dummy-signing.key", // pragma: allowlist secret
     "kid": "your-signing-kid-here",
     "clientAssertionIssuer": "your-client-id-here",
     "clientAssertionSubject": "your-client-id-here",
@@ -286,7 +281,7 @@ The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE
 }
 ```
 
-`certificatePathRoot` is a separate trust boundary from `tls.certificatePathRoot` and is revalidated at both config-parse time and runtime credential loading. Signing certificate and key bytes stay on disk until execution time, must remain under the configured root, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
+Signing certificate and key bytes stay on disk until execution time, must be supplied as exact absolute file paths, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
 
 The baseline manifest uses this block in three places: PSU authorisation can generate a PS256 request object from `{"source": "fapi-signing"}`, token exchange can apply `tokenEndpointAuthPolicy: {"source": "fapi-signing"}` to emit either `private_key_jwt` form fields or `tls_client_auth` pre-dispatch validation, and account-access consent creation signs the exact JSON payload into a detached `x-jws-signature` header. The preserved AIS slice remains the older proof flow and does not opt into these directives.
 
@@ -477,7 +472,7 @@ Run the local Django server and open `http://localhost:8443/plan/`:
 make dev
 ```
 
-The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. The guided-flow selector can populate known model-bank environment and discovery values while still leaving those fields editable for custom endpoints. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification. The preview also shows auth-bundle inventory plus capability blockers and warnings before launch.
+The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. The guided-flow selector can populate known model-bank discovery values while still leaving those fields editable for custom endpoints. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification. The preview also shows auth-bundle inventory plus capability blockers and warnings before launch.
 
 Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and browser-accessible links to masked JSON/NDJSON outputs. The loopback-guarded REST API still exposes the same masked result and log for automation. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
 
@@ -498,6 +493,8 @@ Manual `psu-authorization` steps can be previewed and launched from the browser 
 `certificationEligibility` gains two related fields: `mandatoryDeselected` (count) and `mandatoryDeselectedStepIds` (ordered list). Whenever `mandatoryDeselected > 0` the run is **not eligible** and the dedicated reason `"Mandatory steps were deselected from the plan"` takes precedence over every other failure reason — a mandatory step that never ran cannot demonstrate coverage, regardless of why.
 
 When present, result JSON also carries top-level `authMetadata` and `environmentCapabilities` blocks. `authMetadata` echoes the non-secret bundle inventory and selected-step requirements used for the run; `environmentCapabilities` records the evaluated environment support decisions. Those blocks are used by the validator for complete-suite evidence checks and remain omitted when a run has no auth or capability evidence to report.
+
+Target-driven CLI/API Read/Write and DCR runs also emit a top-level `readinessReport` block. It is derived from the compiled schema-v2 catalogue rather than hard-coded result logic, and includes the target coordinates, catalogue hash, selected coverage summary, omitted mandatory endpoint/operation coverage, catalogue `readinessPolicy`, per-resource-group readiness and certification status, and DCR's fixed non-certifying status until a formal DCR certification policy exists. Unselected endpoints/operations are omitted from execution results; `skipped` remains reserved for selected tests blocked by failed runtime prerequisites.
 
 ## PSU Authorization Callback Coordination
 

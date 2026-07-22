@@ -50,11 +50,12 @@ def _minimal_config(*, include_suite: bool) -> ModelBankConfig:
         },
     }
     if include_suite:
-        raw_config["testSuite"] = {
-            "standard": "ob-read-write",
-            "specVersion": "v4.0.1",
-            "profile": "fapi1-advanced",
-            "suite": "ais-certification-baseline",
+        raw_config["testTarget"] = {
+            "standard": "obl",
+            "specification": "read-write",
+            "securityProfile": "fapi1-advanced",
+            "specificationVersion": "v4.0.1",
+            "resourceGroups": ["ais"],
         }
     return parse_model_bank_config(raw_config, base_dir=Path.cwd())
 

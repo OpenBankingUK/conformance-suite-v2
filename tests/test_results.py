@@ -4,9 +4,7 @@ from typing import cast
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.model_bank_config import SuiteSelection
-from conformance.results import CheckStatus, StepResult
-from conformance.suite_catalog import resolve_suite
+from conformance.results import StepResult
 
 
 @pytest.mark.unit
@@ -405,137 +403,6 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     assert "No mandatory steps declared" not in reasons
 
 
-@pytest.mark.unit
-def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps() -> None:
-    """Bundled AIS slice keeps mandatory accounting stable for result evidence."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-slice",
-        )
-    )
-    status_by_step: dict[str, CheckStatus] = {
-        "openid-discovery": "passed",
-        "jwks-fetch": "warn",
-        "client-credentials-token": "passed",
-        "account-access-consent": "passed",
-        "psu-authorization": "passed",
-        "token-exchange": "passed",
-        "accounts-list": "passed",
-        "account-balances": "failed",
-        "account-transactions": "skipped",
-    }
-    steps = [
-        StepResult(
-            name=step.id,
-            status=status_by_step[step.id],
-            message=step.id,
-            mandatory=step.mandatory,
-        )
-        for step in resolved.manifest.steps
-    ]
-
-    block = build_smoke_check_result(
-        "env",
-        steps,
-        started_at=datetime.now(UTC),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
-    ).to_json_object()["certificationEligibility"]
-
-    assert isinstance(block, dict)
-    assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 9
-    assert block["mandatoryPassed"] == 6
-    assert block["mandatoryWarn"] == 1
-    assert block["mandatoryFailed"] == 1
-    assert block["mandatorySkipped"] == 1
-    reasons = block["reasons"]
-    assert isinstance(reasons, list)
-    assert "1 mandatory step(s) failed" in reasons
-    assert "1 mandatory step(s) skipped due to earlier failures" in reasons
-    assert "Manifest is not marked as complete certification coverage" in reasons
-    assert "Approved-release policy was not supplied" in reasons
-
-
-@pytest.mark.unit
-def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Passing baseline mandatory steps still cannot certify while coverage is partial."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
-
-    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-baseline",
-        )
-    )
-    mandatory_step_ids = [step.id for step in resolved.manifest.steps if step.mandatory]
-    assert mandatory_step_ids == [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "accounts-list",
-        "account-detail",
-        "account-balances",
-        "account-access-consent-transactions-basic",
-        "psu-authorization-transactions-basic",
-        "token-exchange-transactions-basic",
-        "account-transactions-basic",
-        "account-transactions",
-        "transactions-list",
-    ]
-    optional_step_ids = [step.id for step in resolved.manifest.steps if not step.mandatory]
-    assert "transactions-list-basic" in optional_step_ids
-    steps = [
-        StepResult(name=step.id, status="passed", message=step.id, mandatory=step.mandatory)
-        for step in resolved.manifest.steps
-        if step.mandatory
-    ]
-
-    rendered = build_smoke_check_result(
-        "env",
-        steps,
-        started_at=datetime.now(UTC),
-        approved_release_policy=_approved_policy("1.0.0"),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
-    ).to_json_object()
-
-    block = rendered["certificationEligibility"]
-    assert isinstance(block, dict)
-    assert block["eligible"] is False
-    assert block["mandatoryTotal"] == 15
-    assert block["mandatoryPassed"] == 15
-    assert block["reason"] == "Manifest is not marked as complete certification coverage"
-    assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "ais-certification-baseline",
-    }
-
-
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
     """Build an approved-release policy for result tests.
 
@@ -599,62 +466,6 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
         started_at=started,
     ).to_json_object()
     assert "plan" not in rendered
-
-
-@pytest.mark.unit
-def test_suite_metadata_absent_when_not_supplied() -> None:
-    """Smoke checks and explicit manifest runs omit the suite metadata block."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-
-    started = datetime.now(UTC)
-    rendered = build_smoke_check_result(
-        "env",
-        [StepResult(name="x", status="passed", message="ok")],
-        started_at=started,
-    ).to_json_object()
-
-    assert "suite" not in rendered
-
-
-@pytest.mark.unit
-def test_suite_metadata_serialized_when_supplied() -> None:
-    """Config-resolved suite runs expose safe catalog metadata in results."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-    from conformance.suite_catalog import SuiteMetadata
-
-    started = datetime.now(UTC)
-    metadata = SuiteMetadata(
-        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        api="ais",
-        suite="discovery-jwks",
-        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        description="Smoke-level discovery and JWKS checks.",
-    )
-
-    rendered = build_smoke_check_result(
-        "env",
-        [StepResult(name="x", status="passed", message="ok")],
-        started_at=started,
-        suite_metadata=metadata,
-    ).to_json_object()
-
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "discovery-jwks",
-    }
 
 
 @pytest.mark.unit
@@ -976,3 +787,307 @@ def test_eligibility_smoke_suite_manifests_are_partial(monkeypatch: pytest.Monke
         assert isinstance(block, dict)
         assert block["eligible"] is False, f"Smoke suite manifest {manifest_file.name} must not yield eligible=True"
         assert "Manifest is not marked as complete certification coverage" in cast(list[str], block["reasons"])
+
+
+@pytest.mark.unit
+def test_readiness_report_serialise_parse_round_trip() -> None:
+    """Readiness report serialise/parse round-trip preserves all fields."""
+    from datetime import UTC, datetime
+
+    from conformance.catalogue import CatalogueReadinessPolicy
+    from conformance.results import (
+        DcrReadinessStatus,
+        ResourceGroupReadiness,
+        RunReadinessReport,
+        SelectedCoverageSummary,
+        parse_readiness_report,
+        serialise_readiness_report,
+    )
+    from conformance.run_plan_v2 import RunPlanV2TargetCoordinates
+
+    report = RunReadinessReport(
+        schema_version="2",
+        target_coordinates=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:catalogue",
+        ),
+        catalogue_hash="sha256:catalogue",
+        selected_coverage_summary=SelectedCoverageSummary(
+            selected_resource_groups=("ais",),
+            selected_endpoint_count=4,
+            mandatory_endpoint_count=3,
+            omitted_mandatory_endpoint_count=1,
+            coverage_complete=False,
+        ),
+        overall_outcome="failed",
+        resource_group_sections=(
+            ResourceGroupReadiness(
+                resource_group="ais",
+                readiness_outcome="failed",
+                omitted_mandatory_endpoints=("accounts-detail",),
+                selected_test_count=5,
+                passed_count=3,
+                failed_count=1,
+                skipped_count=1,
+                certification_status="not-ready",
+                certification_eligible=False,
+            ),
+        ),
+        dcr_status=DcrReadinessStatus(
+            certifying=False,
+            certifying_blocked_reason="No DCR certification policy exists for this tool",
+            passed_count=1,
+            failed_count=0,
+            skipped_count=0,
+        ),
+        readiness_policy=CatalogueReadinessPolicy(
+            policy_id="read-write-resource-group-readiness-v1",
+            certification_status="certifying",
+            omitted_mandatory_outcome="not-ready",
+            failed_selected_outcome="not-ready",
+        ),
+        run_id="run-123",
+        generated_at=datetime(2026, 1, 2, 3, 4, 5, tzinfo=UTC),
+    )
+
+    serialised = serialise_readiness_report(report)
+    reparsed = parse_readiness_report(serialised)
+
+    assert reparsed == report
+
+
+@pytest.mark.unit
+def test_determine_readiness_outcome_variants() -> None:
+    """Readiness outcome logic covers ready/incomplete/non-certifying/failed."""
+    from conformance.results import (
+        ResourceGroupReadiness,
+        SelectedCoverageSummary,
+        build_dcr_readiness_status,
+        determine_readiness_outcome,
+    )
+
+    ready_summary = SelectedCoverageSummary(
+        selected_resource_groups=("ais",),
+        selected_endpoint_count=2,
+        mandatory_endpoint_count=2,
+        omitted_mandatory_endpoint_count=0,
+        coverage_complete=True,
+    )
+    ready_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="ready",
+        omitted_mandatory_endpoints=(),
+        selected_test_count=2,
+        passed_count=2,
+        failed_count=0,
+        skipped_count=0,
+        certification_status="certifying",
+        certification_eligible=True,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(ready_section,),
+            dcr_status=None,
+        )
+        == "ready"
+    )
+
+    incomplete_summary = SelectedCoverageSummary(
+        selected_resource_groups=("ais",),
+        selected_endpoint_count=1,
+        mandatory_endpoint_count=2,
+        omitted_mandatory_endpoint_count=1,
+        coverage_complete=False,
+    )
+    incomplete_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="incomplete",
+        omitted_mandatory_endpoints=("accounts-detail",),
+        selected_test_count=1,
+        passed_count=1,
+        failed_count=0,
+        skipped_count=0,
+        certification_status="not-ready",
+        certification_eligible=False,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=incomplete_summary,
+            resource_group_sections=(incomplete_section,),
+            dcr_status=None,
+        )
+        == "incomplete"
+    )
+
+    failed_section = ResourceGroupReadiness(
+        resource_group="ais",
+        readiness_outcome="failed",
+        omitted_mandatory_endpoints=(),
+        selected_test_count=2,
+        passed_count=1,
+        failed_count=1,
+        skipped_count=0,
+        certification_status="not-ready",
+        certification_eligible=False,
+    )
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(failed_section,),
+            dcr_status=None,
+        )
+        == "failed"
+    )
+
+    dcr_status = build_dcr_readiness_status(passed_count=1, failed_count=0, skipped_count=0)
+    assert (
+        determine_readiness_outcome(
+            selected_coverage_summary=ready_summary,
+            resource_group_sections=(),
+            dcr_status=dcr_status,
+        )
+        == "non-certifying"
+    )
+
+
+@pytest.mark.unit
+def test_omitted_mandatory_endpoint_detection_uses_selected_resource_groups() -> None:
+    """Readiness omission detection returns omitted mandatory endpoints by group."""
+    from conformance.catalogue import Catalogue, CatalogueIdentity, EndpointCatalogueEntry
+    from conformance.results import omitted_mandatory_endpoint_ids_by_resource_group
+    from conformance.run_plan_v2 import EndpointSelection, RunPlanV2, RunPlanV2TargetCoordinates
+
+    catalogue = Catalogue(
+        identity=CatalogueIdentity(
+            plugin_id="read-write",
+            specification="read-write",
+            specification_version="v4.0.1",
+            content_hash="sha256:catalogue",
+        ),
+        endpoints=(
+            EndpointCatalogueEntry(
+                endpoint_id="accounts-list",
+                operation="GET",
+                path="/accounts",
+                method="GET",
+                resource_group="ais",
+                requirement="mandatory",
+                display_label="Accounts list",
+            ),
+            EndpointCatalogueEntry(
+                endpoint_id="account-balances",
+                operation="GET",
+                path="/accounts/{AccountId}/balances",
+                method="GET",
+                resource_group="ais",
+                requirement="mandatory",
+                display_label="Account balances",
+            ),
+            EndpointCatalogueEntry(
+                endpoint_id="domestic-payments",
+                operation="POST",
+                path="/domestic-payments",
+                method="POST",
+                resource_group="pis",
+                requirement="mandatory",
+                display_label="Domestic payments",
+            ),
+        ),
+    )
+    run_plan = RunPlanV2(
+        schema_version="2",
+        target=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:catalogue",
+        ),
+        resource_groups=("ais",),
+        endpoint_selections=(
+            EndpointSelection(
+                endpoint_id="accounts-list",
+                operation="GET",
+                selected=True,
+                field_values={},
+            ),
+            EndpointSelection(
+                endpoint_id="account-balances",
+                operation="GET",
+                selected=False,
+                field_values={},
+            ),
+        ),
+    )
+
+    omitted = omitted_mandatory_endpoint_ids_by_resource_group(catalogue, run_plan)
+
+    assert omitted == {"ais": ("account-balances",)}
+
+
+@pytest.mark.unit
+def test_build_readiness_report_from_compiled_run_uses_catalogue_policy() -> None:
+    """Compiled catalogue coverage drives readiness and certification status."""
+    from datetime import UTC, datetime
+
+    from conformance.plan_executor import compile_catalogue_graph_for_plan
+    from conformance.results import (
+        ResourceGroupExecutionSummary,
+        build_readiness_report_from_compiled_run,
+        serialise_readiness_report,
+    )
+    from conformance.run_plan_v2 import EndpointSelection, RunPlanV2, RunPlanV2TargetCoordinates
+
+    plan = RunPlanV2(
+        schema_version="2",
+        target=RunPlanV2TargetCoordinates(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0.1",
+            catalogue_hash="sha256:unknown",
+        ),
+        resource_groups=("ais",),
+        endpoint_selections=(
+            EndpointSelection(
+                endpoint_id="ais.accounts.get-accounts",
+                operation="GET",
+                selected=True,
+                field_values={},
+            ),
+        ),
+    )
+    compiled = compile_catalogue_graph_for_plan(plan)
+
+    report = build_readiness_report_from_compiled_run(
+        compiled,
+        run_id="run-456",
+        generated_at=datetime(2026, 1, 2, tzinfo=UTC),
+        execution_summary_by_resource_group={
+            "ais": ResourceGroupExecutionSummary(
+                selected_test_count=1,
+                passed_count=1,
+                failed_count=0,
+                skipped_count=0,
+            )
+        },
+    )
+    serialised = serialise_readiness_report(report)
+
+    assert serialised["overallOutcome"] == "incomplete"
+    assert serialised["catalogueHash"] == compiled.catalogue_identity.content_hash
+    policy = serialised["readinessPolicy"]
+    assert isinstance(policy, dict)
+    assert policy["policyId"] == "read-write-resource-group-readiness-v1"
+    sections = serialised["resourceGroupSections"]
+    assert isinstance(sections, list)
+    first_section = cast(dict[str, object], sections[0])
+    assert first_section["certificationStatus"] == "not-ready"
+    assert first_section["certificationEligible"] is False
+    omitted = first_section["omittedMandatoryEndpoints"]
+    assert isinstance(omitted, list)
+    assert "ais.account-access-consents.create" in omitted

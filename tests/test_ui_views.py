@@ -14,19 +14,40 @@ from typing import cast
 from unittest.mock import Mock, patch
 from urllib.parse import parse_qs, urlsplit
 
-import httpx
 import pytest
 from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunConflictError, RunPlanStep, run_store
 from conformance.api.ui_views import _run_context
+from conformance.http import JsonHttpClientError, JsonHttpResponse
 from conformance.json_types import JsonValue
 from tests.test_executor import _executor_signing_config
 
 VALID_CONFIG: dict[str, JsonValue] = {
     "environment": "test-env",
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+}
+
+TARGET_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "securityProfile": "fapi1-advanced",
+        "specificationVersion": "v4.0.1",
+        "resourceGroups": ["ais"],
+    },
+}
+
+DCR_TARGET_CONFIG: dict[str, JsonValue] = {
+    **VALID_CONFIG,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "dynamic-client-registration",
+        "securityProfile": "fapi1-advanced",
+        "specificationVersion": "3.3",
+    },
 }
 
 SUITE_CONFIG: dict[str, JsonValue] = {
@@ -297,7 +318,6 @@ def _ais_baseline_suite_form_data(
     config = {
         **AIS_BASELINE_CONFIG,
         "fapiSigning": {
-            "certificatePathRoot": str(signing_config.certificate_path_root),
             "signingCertificatePath": str(signing_config.signing_certificate_path),
             "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
             "kid": signing_config.key_id,
@@ -426,16 +446,142 @@ class TestPlanBuilderUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "Test plan builder" in content
-        assert "Guided flow" in content
-        assert "Model bank example" in content
-        assert "Ozone OBIE pre-production" in content
-        assert "Custom environment" in content
-        assert "Specification version" in content
-        assert "API family" in content
+        assert "Endpoint-first test-plan builder" in content
+        assert "Field Values" in content
+        assert "Derived RunPlanV2 JSON" not in content
+        assert "Load or edit saved config JSON" in content
+        assert "Deselect all" in content
+        assert "Select mandatory" in content
+        assert "Select all" in content
+        assert "Advanced testData.values" in content
+        assert "Save config JSON" in content
+        assert "Preview discovery" in content
+        assert "Launch run" in content
+        assert "Show all" in content
+        assert "Specification Version" in content
         assert "Config JSON" in content
-        assert "Manifest JSON" in content
+        assert "Manifest JSON" not in content
+        assert "RunPlanV2" not in content
+        assert "testPlan" in content
         assert 'href="/health/"' in content
         assert "hx-post" not in content
+
+    def test_plan_builder_get_exposes_staged_import_export_hooks(self) -> None:
+        """GET /plan/ renders staged import, endpoint bulk, and export hooks."""
+        response = Client().get("/plan/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        expected_hooks = [
+            "data-staged-import-apply",
+            'data-endpoint-bulk-action="deselect-all"',
+            'data-endpoint-bulk-action="select-mandatory"',
+            'data-endpoint-bulk-action="select-all"',
+            "data-add-test-data-value",
+            "data-staged-config-download",
+            "data-discovery-preview",
+            "data-staged-launch-run",
+            "data-toggle-applicable-tests",
+        ]
+        for hook in expected_hooks:
+            assert hook in content
+
+    @patch("conformance.api.ui_views.get_json")
+    @patch("conformance.api.ui_views.build_json_http_client")
+    def test_discovery_preview_returns_curated_non_secret_metadata(
+        self,
+        mock_build_client: Mock,
+        mock_get_json: Mock,
+    ) -> None:
+        """Discovery preview fetches server-side and returns only curated fields."""
+        mock_client = Mock()
+        mock_build_client.return_value = mock_client
+        mock_get_json.return_value = JsonHttpResponse(
+            url="https://auth.example.com/.well-known/openid-configuration",
+            status_code=200,
+            body={
+                "issuer": "https://auth.example.com",
+                "authorization_endpoint": "https://auth.example.com/authorize",
+                "token_endpoint": "https://auth.example.com/token",
+                "jwks_uri": "https://auth.example.com/jwks",
+                "registration_endpoint": "https://auth.example.com/register",
+                "grant_types_supported": ["authorization_code", "client_credentials", 42],
+                "response_types_supported": ["code"],
+                "token_endpoint_auth_methods_supported": ["tls_client_auth", "private_key_jwt"],
+                "client_secret": "must-not-be-returned",  # pragma: allowlist secret
+            },
+        )
+
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 200
+        data = response.json()["discovery"]
+        assert data == {
+            "issuer": "https://auth.example.com",
+            "authorizationEndpoint": "https://auth.example.com/authorize",
+            "tokenEndpoint": "https://auth.example.com/token",
+            "jwksUri": "https://auth.example.com/jwks",
+            "registrationEndpoint": "https://auth.example.com/register",
+            "grantTypesSupported": ["authorization_code", "client_credentials"],
+            "responseTypesSupported": ["code"],
+            "tokenEndpointAuthMethodsSupported": ["tls_client_auth", "private_key_jwt"],
+        }
+        mock_build_client.assert_called_once_with(timeout_seconds=5.0)
+        mock_get_json.assert_called_once_with(mock_client, "https://auth.example.com/.well-known/openid-configuration")
+        mock_client.close.assert_called_once_with()
+
+    @patch("conformance.api.ui_views.get_json")
+    def test_discovery_preview_rejects_non_https_url_before_fetch(self, mock_get_json: Mock) -> None:
+        """Discovery preview requires HTTPS and does not fetch invalid URLs."""
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "http://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "HTTPS" in response.json()["error"]
+        mock_get_json.assert_not_called()
+
+    def test_staged_template_scopes_discovery_prefill_to_current_specification(self) -> None:
+        """Discovery prefill only writes runtime fields relevant to the selected specification."""
+        template_path = Path("conformance/api/templates/conformance/plan_builder.html")
+        template = template_path.read_text(encoding="utf-8")
+
+        assert "const isDcrTarget = state.specification === 'dynamic-client-registration';" in template
+        assert "if (!isDcrTarget) prefillEmptyField('oauth.authorizationBaseUrl'" in template
+        assert re.search(
+            r"if \(isDcrTarget\) \{\s+prefillEmptyField\('dcr\.tokenEndpointAuthMethod', preferredMethod\);"
+            r"\s+\} else \{\s+prefillEmptyField\('fapiSigning\.tokenEndpointAuthMethod', preferredMethod\);",
+            template,
+        )
+        assert "validateDcrSectionMatchesTarget(importedConfig);" in template
+
+    @patch("conformance.api.ui_views.get_json")
+    @patch("conformance.api.ui_views.build_json_http_client")
+    def test_discovery_preview_surfaces_fetch_errors(
+        self,
+        mock_build_client: Mock,
+        mock_get_json: Mock,
+    ) -> None:
+        """Discovery preview returns an inline error when the server-side fetch fails."""
+        mock_client = Mock()
+        mock_build_client.return_value = mock_client
+        mock_get_json.side_effect = JsonHttpClientError("Request failed")
+
+        response = Client().post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 502
+        assert "Discovery fetch failed" in response.json()["error"]
+        mock_client.close.assert_called_once_with()
 
     def test_preview_post_renders_step_selection_table(self) -> None:
         """POST /plan/preview/ renders selectable step rows in the tree UI."""
@@ -488,7 +634,12 @@ class TestPlanBuilderUi:
         assert 'data-plan-step-checkbox data-step-id="optional" data-step-mandatory="false"' in content
 
     def test_preview_post_renders_chevron_and_separated_controls(self) -> None:
-        """Preview renders chevrons, node wrappers, and header controls without details tags."""
+        """Preview renders chevrons, node wrappers, and header controls.
+
+        The plan tree nodes must not use ``<details>``/``<summary>`` elements;
+        the page-level Advanced section may use them for the collapsible import
+        panel, which is expected and intentional.
+        """
         manifest = _v1_manifest(
             [
                 _http_step("mandatory", mandatory=True, phase="setup", group="bootstrap"),
@@ -503,8 +654,9 @@ class TestPlanBuilderUi:
         assert "data-plan-tree-chevron" in content
         assert "data-plan-tree-node" in content
         assert "data-node-count" in content
-        assert "<details" not in content
-        assert "<summary" not in content
+        # The plan-tree nodes must NOT use <details>/<summary>; the page-level
+        # Advanced / Import JSON collapsible section does use <details> intentionally.
+        assert 'class="tv-step"' not in content
         assert "tree-group-header" in content
         assert "aria-expanded" in content
         assert "tree-header-content" in content
@@ -519,18 +671,6 @@ class TestPlanBuilderUi:
         assert "[hidden]" in content
         # JS uses node-local targeting
         assert "closest('[data-plan-tree-node]')" in content
-
-    def test_preview_post_tree_renders_node_count_badges_for_catalog_suite(self) -> None:
-        """Preview renders node count badges and chevrons for catalog-resolved suites."""
-        response = Client().post(
-            "/plan/preview/",
-            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "data-node-count" in content
-        assert "data-plan-tree-chevron" in content
 
     def test_preview_post_tree_layout_has_left_aligned_header_content_wrapper(self) -> None:
         """Preview renders tree-header-content wrapper div for left-aligned chevron and label."""
@@ -654,103 +794,6 @@ class TestPlanBuilderUi:
                 '<div class="message warning" data-plan-certification-message>Certification selection ineligible</div>'
             ) in content
 
-    def test_preview_post_resolves_config_only_suite(self) -> None:
-        """POST /plan/preview/ can render a config-selected suite with blank manifest."""
-        response = Client().post(
-            "/plan/preview/",
-            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite" in content
-        assert "openid-discovery" in content
-        assert "jwks-fetch" in content
-        assert "ob-read-write" in content
-
-    def test_preview_post_explicit_manifest_overrides_config_suite(self) -> None:
-        """Pasted manifests override config suite selection in the browser preview."""
-        manifest = _v1_manifest([_http_step("explicit")])
-        response = Client().post(
-            "/plan/preview/",
-            data={
-                "config_json": json.dumps(SUITE_CONFIG),
-                "manifest_json": json.dumps(manifest),
-                "selection_mode": "select",
-                "selected_step_ids": ["explicit"],
-            },
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "UI manifest" in content
-        assert "explicit" in content
-        assert "openid-discovery" not in content
-
-    def test_preview_post_resolves_ais_config_only_suite(self) -> None:
-        """POST /plan/preview/ can render the config-selected AIS suite with blank manifest."""
-        response = Client().post(
-            "/plan/preview/",
-            data=_ais_slice_suite_form_data(
-                selected_step_ids=[
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-balances",
-                    "account-transactions",
-                ]
-            ),
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice" in content
-        assert "account-access-consent" in content
-        assert "accounts-list" in content
-        assert "account-balances" in content
-        assert "account-transactions" in content
-
-    def test_preview_post_resolves_guided_suite_selection(self) -> None:
-        """POST /plan/preview/ can build config from guided selector fields."""
-        response = Client().post(
-            "/plan/preview/",
-            data={
-                "config_json": "",
-                "manifest_json": "",
-                "guided_environment": "guided-ui-env",
-                "guided_discovery_url": "https://example.com/.well-known/openid-configuration",
-                "guided_spec_version": "v4.0.1",
-                "guided_api": "ais",
-                "guided_suite": "ais-certification-slice",
-                "guided_client_id": "guided-client-id",
-                "guided_redirect_uri": "https://conformance.example.com/callback",
-                "guided_resource_base_url": "https://resource.example.com",
-                "selection_mode": "select",
-                "selected_step_ids": [
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-balances",
-                    "account-transactions",
-                ],
-            },
-        )
-
-        assert response.status_code == 200
-        content = html.unescape(response.content.decode("utf-8"))
-        assert "Open Banking Read/Write v4.0.1 FAPI 1 Advanced AIS certification slice" in content
-        assert "Generated config" in content
-        assert '"specVersion": "v4.0.1"' in content
-        assert "guided-ui-env" in content
-
     def test_preview_post_returns_400_for_invalid_manifest(self) -> None:
         """Invalid manifest submissions render form errors with HTTP 400."""
         response = Client().post(
@@ -760,19 +803,6 @@ class TestPlanBuilderUi:
 
         assert response.status_code == 400
         assert "Manifest validation failed" in response.content.decode("utf-8")
-
-    def test_preview_post_returns_400_for_invalid_suite_resolution(self) -> None:
-        """Suite catalog errors render form errors with HTTP 400."""
-        from conformance.suite_catalog import SuiteCatalogError
-
-        with patch("conformance.api.plan_builder.resolve_suite", side_effect=SuiteCatalogError("missing suite")):
-            response = Client().post(
-                "/plan/preview/",
-                data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
-            )
-
-        assert response.status_code == 400
-        assert "Suite resolution failed" in response.content.decode("utf-8")
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_run_and_redirects_to_detail(self, mock_start_run: Mock) -> None:
@@ -789,6 +819,115 @@ class TestPlanBuilderUi:
         assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         assert mock_start_run.call_args.kwargs["launch_test_data_values"] == {}
         assert plan.selected_step_ids() == ["mandatory"]
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_staged_launch_post_routes_read_write_config_to_lifecycle(self, mock_start_run: Mock) -> None:
+        """Staged launch posts enhanced config JSON through target-derived Read/Write routing."""
+        mock_start_run.return_value = {"id": "staged-run", "status": "pending"}
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        assert response.json() == {
+            "runId": "staged-run",
+            "status": "pending",
+            "redirectUrl": "/runs/staged-run/",
+        }
+        assert mock_start_run.call_count == 1
+        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        assert mock_start_run.call_args.kwargs["compiled_run"] is not None
+
+    def test_staged_launch_post_blocks_test_plan_catalogue_hash_drift(self) -> None:
+        """Staged browser launch refuses stale saved testPlan catalogue hashes."""
+        config: dict[str, JsonValue] = {
+            **VALID_CONFIG,
+            "testPlan": {
+                "target": {
+                    "standard": "obl",
+                    "specification": "read-write",
+                    "securityProfile": "fapi1-advanced",
+                    "specificationVersion": "v4.0.1",
+                    "catalogueHash": "sha256:definitely-not-the-live-hash",
+                },
+                "resourceGroups": ["ais"],
+            },
+        }
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(config),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "Catalogue drift detected" in response.json()["error"]
+
+    def test_staged_launch_post_rejects_dcr_section_for_read_write_target(self) -> None:
+        """Staged launch reports DCR sections as invalid for Read/Write test plans."""
+        config: dict[str, JsonValue] = {
+            **TARGET_CONFIG,
+            "dcr": {"tokenEndpointAuthMethod": "tls_client_auth"},
+        }
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(config),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        error = response.json()["error"]
+        assert "top-level 'dcr' section" in error
+        assert "read-write" in error
+
+    @patch("conformance.api.ui_views.start_dcr_run")
+    def test_staged_launch_post_routes_dcr_config_to_dcr_lifecycle(self, mock_start_dcr_run: Mock) -> None:
+        """Staged launch dispatches DCR targets to the DCR run lifecycle."""
+        mock_start_dcr_run.return_value = {"id": "dcr-run", "status": "pending"}
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(DCR_TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 201
+        assert response.json()["redirectUrl"] == "/runs/dcr-run/"
+        assert mock_start_dcr_run.call_count == 1
+        assert mock_start_dcr_run.call_args.kwargs["compiled_run"] is not None
+
+    def test_staged_launch_post_returns_inline_validation_errors(self) -> None:
+        """Staged launch returns JSON validation errors for incomplete configs."""
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps({"environment": "test-env"}),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 400
+        assert "Config validation failed" in response.json()["error"]
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_staged_launch_post_returns_active_run_conflict(self, mock_start_run: Mock) -> None:
+        """Staged launch surfaces active-run conflicts as inline JSON."""
+        mock_start_run.side_effect = RunConflictError("active-run")
+
+        response = Client().post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+
+        assert response.status_code == 409
+        assert response.json() == {
+            "error": "A run is already active",
+            "activeRunId": "active-run",
+            "activeRunUrl": "/runs/active-run/",
+        }
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_passes_preview_test_data_values_to_lifecycle(self, mock_start_run: Mock) -> None:
@@ -832,185 +971,6 @@ class TestPlanBuilderUi:
         }
 
     @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_starts_config_resolved_suite(self, mock_start_run: Mock) -> None:
-        """Launch can start a config-only suite preview through shared lifecycle code.
-
-        Args:
-            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
-        """
-        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
-
-        response = Client().post(
-            "/plan/launch/",
-            data=_suite_plan_form_data(selected_step_ids=["openid-discovery"]),
-        )
-
-        assert response.status_code == 302
-        assert response["Location"] == "/runs/run-123/"
-        assert mock_start_run.call_count == 1
-        manifest = mock_start_run.call_args.kwargs["manifest"]
-        plan = mock_start_run.call_args.kwargs["plan"]
-        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
-        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
-        assert plan.selected_step_ids() == ["openid-discovery"]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_starts_psu_auth_starter_config_resolved_suite(self, mock_start_run: Mock) -> None:
-        """Launch can start a ``psu-auth-starter`` suite resolved from config.
-
-        Args:
-            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
-        """
-        mock_start_run.return_value = {
-            "id": "run-psu-starter",
-            "status": "pending",
-            "createdAt": "2026-06-03T12:00:00+00:00",
-        }
-
-        response = Client().post(
-            "/plan/launch/",
-            data=_psu_auth_starter_suite_form_data(
-                selected_step_ids=["openid-discovery", "jwks-fetch", "psu-authorization"]
-            ),
-        )
-
-        assert response.status_code == 302
-        assert response["Location"] == "/runs/run-psu-starter/"
-        assert mock_start_run.call_count == 1
-        manifest = mock_start_run.call_args.kwargs["manifest"]
-        plan = mock_start_run.call_args.kwargs["plan"]
-        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
-        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
-        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_starts_ais_slice_config_resolved_suite(self, mock_start_run: Mock) -> None:
-        """Launch can start the config-selected AIS suite through shared lifecycle code.
-
-        Args:
-            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
-        """
-        mock_start_run.return_value = {
-            "id": "run-ais-slice",
-            "status": "pending",
-            "createdAt": "2026-06-03T12:00:00+00:00",
-        }
-
-        response = Client().post(
-            "/plan/launch/",
-            data=_ais_slice_suite_form_data(
-                selected_step_ids=[
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-balances",
-                    "account-transactions",
-                ]
-            ),
-        )
-
-        assert response.status_code == 302
-        assert response["Location"] == "/runs/run-ais-slice/"
-        assert mock_start_run.call_count == 1
-        manifest = mock_start_run.call_args.kwargs["manifest"]
-        plan = mock_start_run.call_args.kwargs["plan"]
-        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
-        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
-        assert plan.selected_step_ids() == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-balances",
-            "account-transactions",
-        ]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_starts_ais_baseline_config_resolved_suite(
-        self,
-        mock_start_run: Mock,
-        tmp_path: Path,
-    ) -> None:
-        """Launch passes validated FAPI signing config into the AIS baseline run.
-
-        Args:
-            mock_start_run: Patched lifecycle starter used to inspect launch inputs.
-            tmp_path: Temporary directory used to materialise signing PEM files.
-        """
-        mock_start_run.return_value = {
-            "id": "run-ais-baseline",
-            "status": "pending",
-            "createdAt": "2026-06-03T12:00:00+00:00",
-        }
-
-        response = Client().post(
-            "/plan/launch/",
-            data=_ais_baseline_suite_form_data(
-                tmp_path,
-                selected_step_ids=[
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-detail",
-                    "account-balances",
-                    "account-access-consent-transactions-basic",
-                    "psu-authorization-transactions-basic",
-                    "token-exchange-transactions-basic",
-                    "account-transactions-basic",
-                    "account-transactions",
-                    "transactions-list",
-                ],
-            ),
-        )
-
-        assert response.status_code == 302
-        assert response["Location"] == "/runs/run-ais-baseline/"
-        assert mock_start_run.call_count == 1
-        config = mock_start_run.call_args.kwargs["config"]
-        manifest = mock_start_run.call_args.kwargs["manifest"]
-        plan = mock_start_run.call_args.kwargs["plan"]
-        suite_metadata = mock_start_run.call_args.kwargs["suite_metadata"]
-        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
-        assert config.fapi_signing is not None
-        assert config.fapi_signing.key_id == "executor-signing-key"
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
-        assert plan.selected_step_ids() == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-detail",
-            "account-balances",
-            "account-access-consent-transactions-basic",
-            "psu-authorization-transactions-basic",
-            "token-exchange-transactions-basic",
-            "account-transactions-basic",
-            "account-transactions",
-            "transactions-list",
-        ]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
-
-    @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_manual_psu_manifest(self, mock_start_run: Mock) -> None:
         """Manual PSU manifests can be launched with browser PSU prompts enabled."""
         mock_start_run.return_value = {"id": "run-psu", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
@@ -1047,6 +1007,20 @@ class TestPlanBuilderUi:
 
         assert rejected.status_code == 403
 
+        discovery_rejected = client.post(
+            "/plan/discovery-preview/",
+            data=json.dumps({"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"}),
+            content_type="application/json",
+        )
+        assert discovery_rejected.status_code == 403
+
+        staged_launch_rejected = client.post(
+            "/plan/staged/launch/",
+            data=json.dumps(TARGET_CONFIG),
+            content_type="application/json",
+        )
+        assert staged_launch_rejected.status_code == 403
+
         get_response = client.get("/plan/")
         csrf_token = get_response.cookies["csrftoken"].value
         accepted = client.post(
@@ -1054,6 +1028,42 @@ class TestPlanBuilderUi:
             data={**_plan_form_data(manifest, selected_step_ids=["standard"]), "csrfmiddlewaretoken": csrf_token},
         )
         assert accepted.status_code == 200
+
+        with (
+            patch("conformance.api.ui_views.get_json") as mock_get_json,
+            patch(
+                "conformance.api.ui_views.build_json_http_client",
+            ) as mock_build_client,
+        ):
+            mock_client = Mock()
+            mock_build_client.return_value = mock_client
+            mock_get_json.return_value = JsonHttpResponse(
+                url="https://auth.example.com/.well-known/openid-configuration",
+                status_code=200,
+                body={"issuer": "https://auth.example.com"},
+            )
+            discovery_accepted = client.post(
+                "/plan/discovery-preview/",
+                data=json.dumps(
+                    {
+                        "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                        "csrfmiddlewaretoken": csrf_token,
+                    }
+                ),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+            )
+        assert discovery_accepted.status_code == 200
+
+        with patch("conformance.api.ui_views.start_run") as mock_staged_start_run:
+            mock_staged_start_run.return_value = {"id": "csrf-run", "status": "pending"}
+            staged_launch_accepted = client.post(
+                "/plan/staged/launch/",
+                data=json.dumps(TARGET_CONFIG),
+                content_type="application/json",
+                HTTP_X_CSRFTOKEN=csrf_token,
+            )
+        assert staged_launch_accepted.status_code == 201
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_is_csrf_protected(self, mock_start_run: Mock) -> None:
@@ -1103,559 +1113,6 @@ class TestPlanBuilderUi:
 @pytest.mark.integration
 class TestRunDetailUi:
     """Browser coverage for run detail and partial views."""
-
-    def test_browser_launch_ais_baseline_flow_masks_fapi_artifacts(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-        tmp_path: Path,
-    ) -> None:
-        """Browser AIS baseline runs sign PSU/token exchanges and mask durable artifacts.
-
-        Args:
-            monkeypatch: Pytest fixture used to inject a mock HTTP client.
-            tmp_path: Temporary directory used to materialise signing PEM files.
-        """
-        captured_requests: list[httpx.Request] = []
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            """Return deterministic HTTP responses for each AIS baseline step.
-
-            Args:
-                request: HTTP request issued by the conformance runner.
-
-            Returns:
-                Mock HTTP response for the requested endpoint.
-
-            Raises:
-                AssertionError: If the browser flow issues an unexpected request.
-            """
-            captured_requests.append(request)
-            url = str(request.url)
-            json_headers = {"Content-Type": "application/json"}
-            if url == "https://example.com/.well-known/openid-configuration":
-                return httpx.Response(
-                    200,
-                    json={
-                        "issuer": "https://example.com",
-                        "authorization_endpoint": "https://example.com/authorize",
-                        "token_endpoint": "https://example.com/token",
-                        "jwks_uri": "https://example.com/jwks",
-                        "response_types_supported": ["code id_token"],
-                    },
-                    headers=json_headers,
-                )
-            if url == "https://example.com/jwks":
-                return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "test-key"}]}, headers=json_headers)
-            if url == "https://example.com/token":
-                body = request.content.decode("ascii")
-                if "grant_type=client_credentials" in body:
-                    return httpx.Response(
-                        200,
-                        json={
-                            "access_token": "browser-baseline-access-token",
-                            "token_type": "Bearer",
-                            "expires_in": 300,
-                        },
-                        headers=json_headers,
-                    )
-                if "code=browser-baseline-basic-auth-code" in body:
-                    return httpx.Response(
-                        200,
-                        json={
-                            "access_token": "browser-baseline-basic-access-token",
-                            "id_token": "browser-baseline-basic-id-token",
-                            "token_type": "Bearer",
-                            "expires_in": 300,
-                        },
-                        headers=json_headers,
-                    )
-                return httpx.Response(
-                    200,
-                    json={
-                        "access_token": "browser-baseline-access-token",
-                        "id_token": "browser-baseline-id-token",
-                        "token_type": "Bearer",
-                        "expires_in": 300,
-                    },
-                    headers=json_headers,
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-                request_body = request.content.decode("utf-8")
-                if "ReadTransactionsBasic" in request_body:
-                    return httpx.Response(
-                        201,
-                        json={
-                            "Data": {
-                                "ConsentId": "consent-basic-123",
-                                "Permissions": [
-                                    "ReadAccountsBasic",
-                                    "ReadTransactionsBasic",
-                                    "ReadTransactionsDebits",
-                                    "ReadTransactionsCredits",
-                                ],
-                            },
-                            "Risk": {},
-                        },
-                        headers={**json_headers, "x-fapi-interaction-id": "consent-basic-123"},
-                    )
-                return httpx.Response(
-                    201,
-                    json={"Data": {"ConsentId": "consent-123", "Permissions": ["ReadTransactionsDetail"]}, "Risk": {}},
-                    headers={**json_headers, "x-fapi-interaction-id": "consent-123"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-                return httpx.Response(
-                    200,
-                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
-                    headers={**json_headers, "x-fapi-interaction-id": "accounts-123"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123":
-                return httpx.Response(
-                    200,
-                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
-                    headers={**json_headers, "x-fapi-interaction-id": "account-123"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances":
-                return httpx.Response(
-                    200,
-                    json={
-                        "Data": {
-                            "Balance": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "Type": "CLAV",
-                                    "DateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "10.00", "Currency": "GBP"},
-                                    "CreditDebitIndicator": "Credit",
-                                }
-                            ]
-                        }
-                    },
-                    headers={**json_headers, "x-fapi-interaction-id": "balances-123"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
-                authorization_header = request.headers["Authorization"]
-                if authorization_header == "Bearer browser-baseline-basic-access-token":
-                    return httpx.Response(
-                        200,
-                        json={
-                            "Data": {
-                                "Transaction": [
-                                    {
-                                        "AccountId": "acct-123",
-                                        "CreditDebitIndicator": "Debit",
-                                        "Status": "BOOK",
-                                        "BookingDateTime": "2024-01-01T00:00:00+00:00",
-                                        "Amount": {"Amount": "3.14", "Currency": "GBP"},
-                                    }
-                                ]
-                            }
-                        },
-                        headers={**json_headers, "x-fapi-interaction-id": "account-transactions-basic-123"},
-                    )
-                return httpx.Response(
-                    200,
-                    json={
-                        "Data": {
-                            "Transaction": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "CreditDebitIndicator": "Debit",
-                                    "Status": "BOOK",
-                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "3.14", "Currency": "GBP"},
-                                }
-                            ]
-                        }
-                    },
-                    headers={**json_headers, "x-fapi-interaction-id": "account-transactions-123"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/transactions":
-                return httpx.Response(
-                    200,
-                    json={
-                        "Data": {
-                            "Transaction": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "CreditDebitIndicator": "Credit",
-                                    "Status": "BOOK",
-                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "1.00", "Currency": "GBP"},
-                                }
-                            ]
-                        }
-                    },
-                    headers={**json_headers, "x-fapi-interaction-id": "transactions-123"},
-                )
-            raise AssertionError(f"Unexpected request URL: {url}")
-
-        def fake_build_json_http_client(**_kwargs: object) -> httpx.Client:
-            """Build a mock HTTP client for the browser-launched AIS baseline run.
-
-            Args:
-                **_kwargs: Ignored production HTTP client settings.
-
-            Returns:
-                HTTPX client backed by the mock transport.
-            """
-            return httpx.Client(transport=httpx.MockTransport(handler))
-
-        monkeypatch.setattr("conformance.api.run_lifecycle.build_json_http_client", fake_build_json_http_client)
-
-        client = Client()
-        launch_response = client.post(
-            "/plan/launch/",
-            data=_ais_baseline_suite_form_data(
-                tmp_path,
-                selected_step_ids=[
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-detail",
-                    "account-balances",
-                    "account-access-consent-transactions-basic",
-                    "psu-authorization-transactions-basic",
-                    "token-exchange-transactions-basic",
-                    "account-transactions-basic",
-                    "account-transactions",
-                    "transactions-list",
-                ],
-            ),
-        )
-
-        assert launch_response.status_code == 302
-        run_id = _run_id_from_redirect(launch_response["Location"])
-        authorisation_url = _wait_for_participant_action(run_id)
-        raw_request_object = _query_parameter(authorisation_url, "request")
-        state = _registered_auth_state(run_id)
-        callback_response = client.get("/callback/", {"state": state, "code": "browser-baseline-auth-code"})
-
-        assert callback_response.status_code == 200
-        second_authorisation_url = _wait_for_participant_action(run_id)
-        second_raw_request_object = _query_parameter(second_authorisation_url, "request")
-        second_state: str | None = None
-        deadline = time.monotonic() + 5
-        while time.monotonic() < deadline:
-            second_state = next(
-                (
-                    session.state
-                    for session in auth_session_store.for_run(run_id)
-                    if session.status == "awaiting" and session.state != state
-                ),
-                None,
-            )
-            if second_state is not None:
-                break
-            time.sleep(0.05)
-        assert second_state is not None
-        callback_response = client.get(
-            "/callback/",
-            {"state": second_state, "code": "browser-baseline-basic-auth-code"},
-        )
-        assert callback_response.status_code == 200
-        _wait_for_terminal_run(run_id)
-
-        result_response = client.get(f"/runs/{run_id}/result.json")
-        log_response = client.get(f"/runs/{run_id}/log.json")
-
-        assert result_response.status_code == 200
-        assert log_response.status_code == 200
-
-        result_body = result_response.json()
-        detail_token_form_fields = parse_qs(captured_requests[4].content.decode("ascii"), keep_blank_values=True)
-        basic_token_form_fields = parse_qs(captured_requests[9].content.decode("ascii"), keep_blank_values=True)
-        raw_client_assertion = detail_token_form_fields["client_assertion"][0]
-        raw_basic_client_assertion = basic_token_form_fields["client_assertion"][0]
-        resource_authorization_headers = [
-            request.headers["Authorization"]
-            for request in captured_requests
-            if str(request.url).startswith("https://resource.example.com")
-        ]
-        result_json = json.dumps(result_body, sort_keys=True)
-        log_json = log_response.content.decode("utf-8")
-
-        assert result_body["status"] == "passed"
-        assert result_body["summary"] == {"total": 15, "passed": 15, "failed": 0, "warn": 0, "skipped": 0}
-        assert result_body["plan"] == {
-            "totalSteps": 33,
-            "selectedSteps": 15,
-            "deselectedSteps": 18,
-            "mandatorySelected": 15,
-            "mandatoryDeselected": 0,
-            "conditionalSelected": 0,
-            "conditionalDeselectedMissingValues": 0,
-        }
-        assert result_body["suite"] == {
-            "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
-            "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
-            "standard": "ob-read-write",
-            "specVersion": "v4.0",
-            "profile": "fapi1-advanced",
-            "api": "ais",
-            "suite": "ais-certification-baseline",
-        }
-        assert result_body["certificationEligibility"]["reason"] == (
-            "Manifest is not marked as complete certification coverage"
-        )
-        assert [(request.method, str(request.url)) for request in captured_requests] == [
-            ("GET", "https://example.com/.well-known/openid-configuration"),
-            ("GET", "https://example.com/jwks"),
-            ("POST", "https://example.com/token"),
-            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
-            ("POST", "https://example.com/token"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
-            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
-            ("POST", "https://example.com/token"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
-        ]
-        consent_token_form_fields = parse_qs(captured_requests[2].content.decode("ascii"), keep_blank_values=True)
-        assert consent_token_form_fields["grant_type"] == ["client_credentials"]
-        assert consent_token_form_fields["client_id"] == ["test-client-id"]
-        assert detail_token_form_fields["grant_type"] == ["authorization_code"]
-        assert detail_token_form_fields["code"] == ["browser-baseline-auth-code"]
-        assert detail_token_form_fields["client_id"] == ["test-client-id"]
-        assert detail_token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
-        assert detail_token_form_fields["client_assertion_type"] == [
-            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-        ]
-        assert basic_token_form_fields["grant_type"] == ["authorization_code"]
-        assert basic_token_form_fields["code"] == ["browser-baseline-basic-auth-code"]
-        assert basic_token_form_fields["client_id"] == ["test-client-id"]
-        assert basic_token_form_fields["redirect_uri"] == ["https://conformance.example.com/callback"]
-        assert basic_token_form_fields["client_assertion_type"] == [
-            "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-        ]
-        assert raw_client_assertion
-        assert raw_basic_client_assertion
-        assert raw_request_object
-        assert second_raw_request_object
-        assert captured_requests[3].headers["Authorization"] == "Bearer browser-baseline-access-token"
-        assert captured_requests[8].headers["Authorization"] == "Bearer browser-baseline-access-token"
-        assert resource_authorization_headers == [
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-basic-access-token",
-            "Bearer browser-baseline-access-token",
-            "Bearer browser-baseline-access-token",
-        ]
-
-        assert "browser-baseline-auth-code" not in result_json
-        assert "browser-baseline-basic-auth-code" not in result_json
-        assert "browser-baseline-access-token" not in result_json
-        assert "browser-baseline-id-token" not in result_json
-        assert "browser-baseline-basic-access-token" not in result_json
-        assert "browser-baseline-basic-id-token" not in result_json
-        assert raw_request_object not in result_json
-        assert second_raw_request_object not in result_json
-        assert raw_client_assertion not in result_json
-        assert raw_basic_client_assertion not in result_json
-        assert "signingCertificatePath" not in result_json
-        assert "signingPrivateKeyPath" not in result_json
-        assert "request=***" in result_json
-
-        assert "browser-baseline-auth-code" not in log_json
-        assert "browser-baseline-basic-auth-code" not in log_json
-        assert "browser-baseline-access-token" not in log_json
-        assert "browser-baseline-id-token" not in log_json
-        assert "browser-baseline-basic-access-token" not in log_json
-        assert "browser-baseline-basic-id-token" not in log_json
-        assert raw_request_object not in log_json
-        assert second_raw_request_object not in log_json
-        assert raw_client_assertion not in log_json
-        assert raw_basic_client_assertion not in log_json
-        assert '"code": "***"' in log_json
-        assert '"client_assertion": "***"' in log_json
-        assert '"request_object": "***"' in log_json
-        assert '"Authorization": "***"' in log_json
-        assert "signingCertificatePath" not in log_json
-        assert "signingPrivateKeyPath" not in log_json
-
-    def test_browser_launch_ais_suite_flow_runs_to_completion_with_mocked_http(
-        self,
-        monkeypatch: pytest.MonkeyPatch,
-    ) -> None:
-        """Browser launch can run the full AIS suite flow with mocked HTTP and callback capture.
-
-        Args:
-            monkeypatch: Pytest fixture used to inject a mock HTTP client.
-        """
-        import httpx
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            """Return deterministic HTTP responses for each AIS suite step.
-
-            Args:
-                request: HTTP request issued by the conformance runner.
-
-            Returns:
-                Mock HTTP response for the requested endpoint.
-            """
-            url = str(request.url)
-            if url == "https://example.com/.well-known/openid-configuration":
-                return httpx.Response(
-                    200,
-                    json={
-                        "issuer": "https://example.com",
-                        "authorization_endpoint": "https://example.com/authorize",
-                        "token_endpoint": "https://example.com/token",
-                        "jwks_uri": "https://example.com/jwks",
-                        "response_types_supported": ["code id_token"],
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://example.com/jwks":
-                return httpx.Response(
-                    200,
-                    json={"keys": [{"kty": "RSA", "kid": "test-key"}]},
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://example.com/token":
-                body = request.content.decode("ascii")
-                if "grant_type=client_credentials" in body:
-                    return httpx.Response(
-                        200,
-                        json={"access_token": "ais-access-token", "token_type": "Bearer", "expires_in": 300},
-                        headers={"Content-Type": "application/json"},
-                    )
-                return httpx.Response(
-                    200,
-                    json={"access_token": "ais-access-token", "token_type": "Bearer", "expires_in": 300},
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-                return httpx.Response(
-                    201,
-                    json={"Data": {"ConsentId": "consent-123"}, "Risk": {}},
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-                return httpx.Response(
-                    200,
-                    json={"Data": {"Account": [{"AccountId": "account-123", "Status": "Enabled"}]}},
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/balances":
-                return httpx.Response(
-                    200,
-                    json={
-                        "Data": {
-                            "Balance": [
-                                {
-                                    "Type": "ClosingAvailable",
-                                    "Amount": {"Amount": "123.45", "Currency": "GBP"},
-                                    "CreditDebitIndicator": "Credit",
-                                }
-                            ]
-                        }
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions":
-                return httpx.Response(
-                    200,
-                    json={
-                        "Data": {
-                            "Transaction": [
-                                {
-                                    "TransactionId": "txn-123",
-                                    "Amount": {"Amount": "123.45", "Currency": "GBP"},
-                                }
-                            ]
-                        }
-                    },
-                    headers={"Content-Type": "application/json"},
-                )
-            raise AssertionError(f"Unexpected request URL: {url}")
-
-        def fake_build_json_http_client(**_kwargs: object) -> httpx.Client:
-            """Build a mock HTTP client for the browser-launched AIS run.
-
-            Args:
-                **_kwargs: Ignored production HTTP client settings.
-
-            Returns:
-                HTTPX client backed by the mock transport.
-            """
-            return httpx.Client(transport=httpx.MockTransport(handler))
-
-        monkeypatch.setattr("conformance.api.run_lifecycle.build_json_http_client", fake_build_json_http_client)
-
-        client = Client()
-        launch_response = client.post(
-            "/plan/launch/",
-            data=_ais_slice_suite_form_data(
-                selected_step_ids=[
-                    "openid-discovery",
-                    "jwks-fetch",
-                    "client-credentials-token",
-                    "account-access-consent",
-                    "psu-authorization",
-                    "token-exchange",
-                    "accounts-list",
-                    "account-balances",
-                    "account-transactions",
-                ]
-            ),
-        )
-
-        assert launch_response.status_code == 302
-        run_id = _run_id_from_redirect(launch_response["Location"])
-        _wait_for_participant_action(run_id)
-        state = _registered_auth_state(run_id)
-        callback_response = client.get("/callback/", {"state": state, "code": "ais-auth-code-123"})
-
-        assert callback_response.status_code == 200
-        _wait_for_terminal_run(run_id)
-
-        detail_response = client.get(f"/runs/{run_id}/")
-        result_response = client.get(f"/runs/{run_id}/result.json")
-
-        assert detail_response.status_code == 200
-        assert result_response.status_code == 200
-        result_body = result_response.json()
-        assert result_body["status"] == "passed"
-        assert result_body["plan"] == {
-            "totalSteps": 9,
-            "selectedSteps": 9,
-            "deselectedSteps": 0,
-            "mandatorySelected": 9,
-            "mandatoryDeselected": 0,
-            "conditionalSelected": 0,
-            "conditionalDeselectedMissingValues": 0,
-        }
-        assert [step["name"] for step in result_body["steps"]] == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-balances",
-            "account-transactions",
-        ]
-
-    def test_launch_post_ais_suite_rejects_unknown_selected_step(self) -> None:
-        """Browser launch rejects unknown step ids for the config-selected AIS suite."""
-        response = Client().post(
-            "/plan/launch/",
-            data=_ais_slice_suite_form_data(selected_step_ids=["ghost-step"]),
-        )
-
-        assert response.status_code == 400
-        assert "Unknown step id(s) in selection: ghost-step" in response.content.decode("utf-8")
 
     def test_browser_launch_manual_psu_flow_renders_callback_and_clears_action(self) -> None:
         """Browser launch renders manual PSU action until callback completion."""
@@ -2303,11 +1760,11 @@ class TestRunDetailUi:
         content = response.content.decode("utf-8")
         assert "passed" in content
         assert "eligible" in content
-        assert "Plan selected" in content
+        assert "Coverage selected" in content
         assert "Warn" in content
         assert "Skipped" in content
         assert "Issues" in content
-        assert "Mandatory selected" in content
+        assert "Mandatory covered" in content
         assert f"/runs/{record.run_id}/result.json" in content
         assert 'hx-trigger="load"' in content
         assert "every 2s" not in content
@@ -2369,6 +1826,62 @@ class TestRunDetailUi:
         assert response.status_code == 200
         content = response.content.decode("utf-8")
         assert "ineligible: 1 mandatory step(s) failed" in content
+
+    def test_result_partial_renders_readiness_report_sections(self) -> None:
+        """The result partial renders endpoint-first readiness sections when present."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_completed(
+            record.run_id,
+            result={
+                "status": "passed",
+                "summary": {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0},
+                "readinessReport": {
+                    "schemaVersion": "2",
+                    "targetCoordinates": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:catalogue",
+                    },
+                    "catalogueHash": "sha256:catalogue",
+                    "selectedCoverageSummary": {
+                        "selectedResourceGroups": ["ais"],
+                        "selectedEndpointCount": 1,
+                        "mandatoryEndpointCount": 2,
+                        "omittedMandatoryEndpointCount": 1,
+                        "coverageComplete": False,
+                    },
+                    "overallOutcome": "incomplete",
+                    "resourceGroupSections": [
+                        {
+                            "resourceGroup": "ais",
+                            "readinessOutcome": "incomplete",
+                            "omittedMandatoryEndpoints": ["account-balances"],
+                            "selectedTestCount": 2,
+                            "passedCount": 2,
+                            "failedCount": 0,
+                            "skippedCount": 0,
+                            "certificationStatus": "not-ready",
+                            "certificationEligible": False,
+                        }
+                    ],
+                    "runId": record.run_id,
+                    "generatedAt": "2026-01-01T00:00:00+00:00",
+                },
+            },
+        )
+
+        response = Client().get(f"/runs/{record.run_id}/result/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Coverage readiness" in content
+        assert "incomplete" in content
+        assert "not-ready" in content
+        assert "Incomplete coverage:" in content
+        assert "account-balances" in content
 
     def test_result_partial_renders_custom_test_value_impact_panel(self) -> None:
         """Result partial renders persisted custom-test-value impact evidence."""

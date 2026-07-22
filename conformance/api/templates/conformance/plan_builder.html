@@ -18,660 +18,156 @@
             --warning: #a15c07;
             --success: #1f7a4d;
         }
-
-        * {
-            box-sizing: border-box;
-        }
-
-        body {
-            margin: 0;
-            background: var(--bg);
-            color: var(--text);
-            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            line-height: 1.5;
-        }
-
-        main {
-            width: min(1180px, calc(100% - 32px));
-            margin: 0 auto;
-            padding: 24px 0 40px;
-        }
-
-        header {
-            display: flex;
-            align-items: end;
-            justify-content: space-between;
-            gap: 16px;
-            margin-bottom: 18px;
-        }
-
-        h1,
-        h2 {
-            margin: 0;
-            line-height: 1.2;
-        }
-
-        h1 {
-            font-size: 1.75rem;
-        }
-
-        h2 {
-            font-size: 1.15rem;
-        }
-
-        .panel {
-            background: var(--panel);
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 16px;
-        }
-
-        .grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 16px;
-        }
-
-        label {
-            display: block;
-            font-weight: 650;
-            margin-bottom: 8px;
-        }
-
-        textarea {
-            width: 100%;
-            min-height: 280px;
-            resize: vertical;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 12px;
-            font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            color: var(--text);
-            background: #fbfcfe;
-        }
-
-        input,
-        select {
-            width: 100%;
-            min-height: 42px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px 12px;
-            font: inherit;
-            color: var(--text);
-            background: #fbfcfe;
-        }
-
-        fieldset {
-            margin: 0;
-            padding: 0;
-            border: 0;
-        }
-
-        .guide-layout {
-            display: grid;
-            grid-template-columns: 1.25fr 1fr;
-            gap: 16px;
-            margin-bottom: 16px;
-        }
-
-        .field-grid {
-            display: grid;
-            grid-template-columns: repeat(2, minmax(0, 1fr));
-            gap: 12px;
-        }
-
-        .field-grid.full {
-            grid-template-columns: 1fr;
-        }
-
-        .field-row {
-            margin-top: 12px;
-        }
-
-        .helper {
-            margin-top: 6px;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .guide-card {
-            border: 1px solid var(--border);
-            border-radius: 8px;
-            padding: 14px;
-            background: #fbfcfe;
-        }
-
-        .guide-card h3 {
-            margin: 0 0 8px;
-            font-size: 1rem;
-        }
-
-        .guide-card p {
-            margin: 0;
-        }
-
-        .guide-card + .guide-card {
-            margin-top: 12px;
-        }
-
-        .field-panel[hidden] {
-            display: none;
-        }
-
-        .visually-hidden {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            white-space: nowrap;
-            border: 0;
-        }
-
-        .actions,
-        .counts {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 10px;
-        }
-
-        .actions {
-            justify-content: flex-end;
-            margin-top: 14px;
-        }
-
-        .preview-actions {
-            justify-content: flex-start;
-        }
-
-        button,
-        .button {
-            min-height: 38px;
-            border: 1px solid var(--accent);
-            border-radius: 6px;
-            padding: 8px 14px;
-            background: var(--accent);
-            color: #ffffff;
-            font: inherit;
-            font-weight: 650;
-            text-decoration: none;
-            cursor: pointer;
-        }
-
-        button.secondary {
-            background: #ffffff;
-            color: var(--accent);
-        }
-
-        button:disabled {
-            border-color: var(--border);
-            background: #e4e7ec;
-            color: var(--muted);
-            cursor: not-allowed;
-        }
-
-        .message,
-        .errorlist {
-            border-radius: 6px;
-            padding: 10px 12px;
-            margin: 0 0 12px;
-        }
-
-        .message.error,
-        .errorlist {
-            border: 1px solid #fecdca;
-            background: #fffbfa;
-            color: var(--danger);
-        }
-
-        .message.warning {
-            border: 1px solid #fedf89;
-            background: #fffcf5;
-            color: var(--warning);
-        }
-
-        .message.success {
-            border: 1px solid #abefc6;
-            background: #f6fef9;
-            color: var(--success);
-        }
-
-        .errorlist {
-            list-style: none;
-        }
-
-        .count {
-            min-width: 104px;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 8px 10px;
-            background: #fbfcfe;
-        }
-
-        .count strong {
-            display: block;
-            font-size: 1.1rem;
-        }
-
-        .count span,
-        .muted {
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .table-wrap {
-            overflow-x: auto;
-            margin-top: 12px;
-        }
-
-        table {
-            width: 100%;
-            min-width: 760px;
-            border-collapse: collapse;
-        }
-
-        th,
-        td {
-            border-bottom: 1px solid var(--border);
-            padding: 10px;
-            text-align: left;
-            vertical-align: middle;
-        }
-
-        th {
-            color: var(--muted);
-            font-size: 0.84rem;
-            font-weight: 700;
-            text-transform: uppercase;
-        }
-
-        .step-id {
-            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            font-size: 0.86rem;
-        }
-
-        .badge {
-            display: inline-flex;
-            align-items: center;
-            min-height: 24px;
-            border-radius: 999px;
-            border: 1px solid var(--border);
-            padding: 2px 8px;
-            font-size: 0.82rem;
-            font-weight: 650;
-            color: var(--muted);
-            white-space: nowrap;
-        }
-
-        .badge.required {
-            border-color: #fecdd3;
-            color: var(--danger);
-            background: #fff1f2;
-        }
-
-        .badge.optional {
-            border-color: #bfdbfe;
-            color: #175cd3;
-            background: #eff6ff;
-        }
-
-        .badge.blocked {
-            border-color: #fedf89;
-            color: var(--warning);
-            background: #fffcf5;
-        }
-
-        .run-plan-preview {
-            margin: 12px 0;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            background: #fbfcfe;
-            padding: 10px 12px;
-        }
-
-        .run-plan-preview h3 {
-            margin: 0;
-            font-size: 1rem;
-        }
-
-        .run-plan-preview p {
-            margin: 10px 0;
-            color: var(--muted);
-            font-size: 0.9rem;
-        }
-
-        .run-plan-json {
-            margin: 0;
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px;
-            background: #ffffff;
-            font: 0.85rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-            white-space: pre-wrap;
-            word-break: break-word;
-        }
-
-        .run-plan-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            margin-bottom: 10px;
-        }
-
-        .exploratory-ack-row {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            margin: 10px 0 12px;
-        }
-
-        .exploratory-ack-row input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            min-height: 16px;
-            margin-top: 2px;
-            flex-shrink: 0;
-        }
-
-        .exploratory-ack-row label {
-            margin-bottom: 0;
-            font-weight: 500;
-        }
-
-        .run-plan-import {
-            min-height: 100px;
-        }
-
-        .test-values-grid {
-            display: grid;
-            gap: 10px;
-            margin-top: 12px;
-        }
-
-        .test-value-row {
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            padding: 10px;
-            background: #ffffff;
-        }
-
-        .test-value-meta {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            gap: 10px;
-            margin-top: 8px;
-            flex-wrap: wrap;
-        }
-
-        .test-value-reset {
-            min-height: 30px;
-            padding: 4px 10px;
-            font-size: 0.85rem;
-        }
-
-        .tv-step-list {
-            margin-top: 12px;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .tv-step {
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            background: #ffffff;
-        }
-
-        .tv-step-summary {
-            padding: 10px 12px;
-            cursor: pointer;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            list-style: none;
-            user-select: none;
-        }
-
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 24px 0 40px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.15rem; }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 16px; margin-bottom: 16px; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+        label { display: block; font-weight: 650; margin-bottom: 8px; }
+        textarea { width: 100%; min-height: 280px; resize: vertical; border: 1px solid var(--border); border-radius: 6px; padding: 12px; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: var(--text); background: #fbfcfe; }
+        input, select { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #fbfcfe; }
+        fieldset { margin: 0; padding: 0; border: 0; }
+        .field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .field-grid.full { grid-template-columns: 1fr; }
+        .field-row { margin-top: 12px; }
+        .helper { margin-top: 6px; color: var(--muted); font-size: 0.9rem; }
+        .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .actions { justify-content: flex-end; margin-top: 14px; }
+        .preview-actions { justify-content: flex-start; }
+        button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
+        button.secondary { background: #ffffff; color: var(--accent); }
+        button:disabled { border-color: var(--border); background: #e4e7ec; color: var(--muted); cursor: not-allowed; }
+        .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.error, .errorlist { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .message.success { border: 1px solid #abefc6; background: #f6fef9; color: var(--success); }
+        .errorlist { list-style: none; }
+        .count { min-width: 104px; border: 1px solid var(--border); border-radius: 6px; padding: 8px 10px; background: #fbfcfe; }
+        .count strong { display: block; font-size: 1.1rem; }
+        .count span, .muted { color: var(--muted); font-size: 0.9rem; }
+        .counts { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+        .table-wrap { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; min-width: 760px; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; vertical-align: middle; }
+        th { color: var(--muted); font-size: 0.84rem; font-weight: 700; text-transform: uppercase; }
+        .step-id { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86rem; }
+        .badge { display: inline-flex; align-items: center; min-height: 24px; border-radius: 999px; border: 1px solid var(--border); padding: 2px 8px; font-size: 0.82rem; font-weight: 650; color: var(--muted); white-space: nowrap; }
+        .badge.required { border-color: #fecdca; color: var(--danger); background: #fff1f2; }
+        .badge.conditional { border-color: #fedf89; color: var(--warning); background: #fffcf5; }
+        .badge.optional { border-color: #bfdbfe; color: #175cd3; background: #eff6ff; }
+        .badge.blocked { border-color: #fedf89; color: var(--warning); background: #fffcf5; }
+        .badge.fapi { border-color: #d1fae5; color: #065f46; background: #ecfdf5; }
+        .run-plan-preview { margin: 12px 0; border: 1px solid var(--border); border-radius: 6px; background: #fbfcfe; padding: 10px 12px; }
+        .run-plan-preview h3 { margin: 0; font-size: 1rem; }
+        .run-plan-preview p { margin: 10px 0; color: var(--muted); font-size: 0.9rem; }
+        .run-plan-json { margin: 0; border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: #ffffff; font: 0.85rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; word-break: break-word; }
+        .run-plan-actions { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+        .exploratory-ack-row { display: flex; align-items: flex-start; gap: 8px; margin: 10px 0 12px; }
+        .exploratory-ack-row input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; margin-top: 2px; flex-shrink: 0; }
+        .exploratory-ack-row label { margin-bottom: 0; font-weight: 500; }
+        .run-plan-import { min-height: 100px; }
+        .test-values-grid { display: grid; gap: 10px; margin-top: 12px; }
+        .test-value-row { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: #ffffff; }
+        .test-value-meta { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-top: 8px; flex-wrap: wrap; }
+        .test-value-reset { min-height: 30px; padding: 4px 10px; font-size: 0.85rem; }
+        .field-value-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+        .field-value-card { border: 1px solid var(--border); border-radius: 6px; padding: 10px; background: #ffffff; }
+        .field-value-card input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; margin-right: 8px; vertical-align: middle; }
+        .field-value-card .field-value-checkbox-label { display: flex; align-items: center; gap: 8px; margin-bottom: 0; font-weight: 500; }
+        .staged-import textarea { min-height: 140px; }
+        .staged-import .file-input { min-height: auto; padding: 8px 0; border: 0; background: transparent; }
+        .advanced-test-data-grid { display: grid; gap: 8px; margin-top: 10px; }
+        .advanced-test-data-row { display: grid; grid-template-columns: minmax(180px, 0.8fr) minmax(220px, 1fr) auto; gap: 8px; align-items: end; }
+        .advanced-test-data-row button { min-height: 42px; }
+        .preview-list { margin: 8px 0 0; padding-left: 18px; }
+        .preview-list li { margin: 4px 0; }
+        .tv-step-list { margin-top: 12px; display: flex; flex-direction: column; gap: 8px; }
+        .tv-step { border: 1px solid var(--border); border-radius: 6px; background: #ffffff; }
+        .tv-step-summary { padding: 10px 12px; cursor: pointer; display: flex; align-items: center; gap: 8px; font-weight: 600; list-style: none; user-select: none; }
         .tv-step-summary::-webkit-details-marker { display: none; }
-
-        .tv-step-id {
-            font-weight: 400;
-            font-size: 0.8rem;
-            color: var(--muted);
-        }
-
-        .tv-surface {
-            border-top: 1px solid var(--border);
-        }
-
-        .tv-surface-heading {
-            padding: 6px 12px;
-            font-size: 0.85rem;
-            font-weight: 600;
-            color: var(--muted);
-        }
-
-        .tv-rows {
-            padding: 6px 12px 10px;
-        }
-
-        .tv-row {
-            padding-left: calc(var(--tv-depth, 0) * 16px);
-        }
-
-        .tv-group {
-            padding-top: 4px;
-            padding-bottom: 2px;
-        }
-
-        .tv-path-segment {
-            font-size: 0.8rem;
-            font-weight: 600;
-            color: var(--muted);
-        }
-
-        .tv-leaf {
-            display: grid;
-            gap: 4px;
-            padding-top: 6px;
-            padding-bottom: 6px;
-        }
-
-        .tv-label {
-            font-size: 0.85rem;
-            font-weight: 500;
-        }
-
-        .tv-also-above {
-            font-size: 0.8rem;
-            font-style: italic;
-        }
-
-        .plan-tree {
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
-        .tree-group {
-            border: 1px solid var(--border);
-            border-radius: 6px;
-            background: var(--panel);
-        }
-
-        .tree-group-header {
-            display: flex;
-            align-items: center;
-            justify-content: flex-start;
-            gap: 8px;
-            padding: 8px 12px;
-            cursor: pointer;
-            user-select: none;
-            border-radius: 6px;
-        }
-
-        .tree-header-content {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            flex: 1;
-            min-width: 0;
-        }
-
+        .tv-step-id { font-weight: 400; font-size: 0.8rem; color: var(--muted); }
+        .tv-surface { border-top: 1px solid var(--border); }
+        .tv-surface-heading { padding: 6px 12px; font-size: 0.85rem; font-weight: 600; color: var(--muted); }
+        .tv-rows { padding: 6px 12px 10px; }
+        .tv-row { padding-left: calc(var(--tv-depth, 0) * 16px); }
+        .tv-group { padding-top: 4px; padding-bottom: 2px; }
+        .tv-path-segment { font-size: 0.8rem; font-weight: 600; color: var(--muted); }
+        .tv-leaf { display: grid; gap: 4px; padding-top: 6px; padding-bottom: 6px; }
+        .tv-label { font-size: 0.85rem; font-weight: 500; }
+        .tv-also-above { font-size: 0.8rem; font-style: italic; }
+        .plan-tree { display: flex; flex-direction: column; gap: 4px; }
+        .tree-group { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); }
+        .tree-group-header { display: flex; align-items: center; justify-content: flex-start; gap: 8px; padding: 8px 12px; cursor: pointer; user-select: none; border-radius: 6px; }
+        .tree-header-content { display: flex; align-items: center; gap: 8px; flex: 1; min-width: 0; }
         .tree-group-header:hover { background: var(--bg); }
-
-        .tree-group-header.tree-group-header--open {
-            border-bottom: 1px solid var(--border);
-            border-radius: 6px 6px 0 0;
-        }
-
-        .tree-chevron {
-            background: none;
-            border: none;
-            padding: 4px;
-            cursor: pointer;
-            color: var(--muted);
-            font-size: 1rem;
-            line-height: 1;
-            flex-shrink: 0;
-        }
-
-        .tree-chevron[aria-expanded="true"] span {
-            display: inline-block;
-            transform: rotate(90deg);
-        }
-
-        .tree-chevron:focus-visible {
-            outline: 2px solid var(--accent);
-            outline-offset: 2px;
-            border-radius: 4px;
-        }
-
-        .tree-parent-label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            font-weight: 600;
-            cursor: pointer;
-            margin: 0;
-            flex: 1;
-            min-width: 0;
-        }
-
-        .tree-group-name {
-            min-width: 0;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        .tree-parent-checkbox {
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-            cursor: pointer;
-        }
-
-        .tree-children {
-            padding: 8px 8px 8px 28px;
-            display: flex;
-            flex-direction: column;
-            gap: 4px;
-        }
-
+        .tree-group-header.tree-group-header--open { border-bottom: 1px solid var(--border); border-radius: 6px 6px 0 0; }
+        .tree-chevron { background: none; border: none; padding: 4px; cursor: pointer; color: var(--muted); font-size: 1rem; line-height: 1; flex-shrink: 0; }
+        .tree-chevron[aria-expanded="true"] span { display: inline-block; transform: rotate(90deg); }
+        .tree-chevron:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+        .tree-parent-label { display: flex; align-items: center; gap: 8px; font-weight: 600; cursor: pointer; margin: 0; flex: 1; min-width: 0; }
+        .tree-group-name { min-width: 0; overflow-wrap: break-word; word-break: break-word; }
+        .tree-parent-checkbox { width: 16px; height: 16px; flex-shrink: 0; cursor: pointer; }
+        .tree-children { padding: 8px 8px 8px 28px; display: flex; flex-direction: column; gap: 4px; }
         [hidden] { display: none !important; }
-
         .tree-group--depth-1 > .tree-group-header { background: #f9fafb; }
         .tree-group--depth-2 > .tree-group-header { background: #f3f4f6; }
-
-        .tree-leaf {
-            display: flex;
-            align-items: flex-start;
-            justify-content: flex-start;
-            gap: 12px;
-            padding: 6px 8px;
-            border-radius: 4px;
-            border: 1px solid transparent;
-        }
-
+        .tree-leaf { display: flex; align-items: flex-start; justify-content: flex-start; gap: 12px; padding: 6px 8px; border-radius: 4px; border: 1px solid transparent; }
         .tree-leaf:hover { background: var(--bg); }
         .tree-leaf[data-step-selected="true"] { border-color: var(--border); }
+        .tree-leaf-label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; flex: 1; min-width: 0; margin: 0; font-weight: normal; }
+        .tree-leaf-label input[type="checkbox"] { width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px; cursor: pointer; }
+        .tree-step-name { font-weight: 500; min-width: 0; overflow-wrap: break-word; word-break: break-word; }
+        .step-id { min-width: 0; overflow-wrap: break-word; word-break: break-word; color: var(--muted); font-size: 0.8em; }
+        .tree-leaf-meta { display: flex; gap: 4px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+        .tree-counts { display: flex; gap: 4px; align-items: center; flex-shrink: 0; }
 
-        .tree-leaf-label {
-            display: flex;
-            align-items: flex-start;
-            gap: 8px;
-            cursor: pointer;
-            flex: 1;
-            min-width: 0;
-            margin: 0;
-            font-weight: normal;
-        }
-
-        .tree-leaf-label input[type="checkbox"] {
-            width: 16px;
-            height: 16px;
-            flex-shrink: 0;
-            margin-top: 2px;
-            cursor: pointer;
-        }
-
-        .tree-step-name {
-            font-weight: 500;
-            min-width: 0;
-            overflow-wrap: break-word;
-            word-break: break-word;
-        }
-
-        .step-id {
-            min-width: 0;
-            overflow-wrap: break-word;
-            word-break: break-word;
-            color: var(--muted);
-            font-size: 0.8em;
-        }
-
-        .tree-leaf-meta {
-            display: flex;
-            gap: 4px;
-            flex-shrink: 0;
-            flex-wrap: wrap;
-            justify-content: flex-end;
-        }
-
-        .tree-counts {
-            display: flex;
-            gap: 4px;
-            align-items: center;
-            flex-shrink: 0;
-        }
+        /* ── Staged journey ───────────────────────────────────────── */
+        .staged-journey { display: flex; flex-direction: column; gap: 0; }
+        .stage-step { border: 1px solid var(--border); border-radius: 8px; background: var(--panel); margin-bottom: 10px; overflow: hidden; }
+        .stage-step.active { border-color: var(--accent); }
+        .stage-step.completed { border-color: #86efac; }
+        .stage-header { display: flex; align-items: center; gap: 12px; padding: 14px 16px; cursor: pointer; user-select: none; }
+        .stage-header:hover { background: var(--bg); }
+        .stage-number { width: 28px; height: 28px; border-radius: 50%; background: var(--border); color: var(--muted); font-size: 0.85rem; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+        .stage-step.active .stage-number { background: var(--accent); color: #fff; }
+        .stage-step.completed .stage-number { background: #22c55e; color: #fff; }
+        .stage-title { font-weight: 650; font-size: 1rem; flex: 1; }
+        .stage-summary { font-size: 0.88rem; color: var(--muted); }
+        .stage-body { padding: 0 16px 16px; border-top: 1px solid var(--border); }
+        .stage-body[hidden] { display: none; }
+        .stage-options { display: flex; flex-direction: column; gap: 8px; margin-top: 12px; }
+        .stage-option { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 6px; cursor: pointer; background: #fbfcfe; transition: border-color 0.1s; }
+        .stage-option:hover { border-color: var(--accent); }
+        .stage-option.selected { border-color: var(--accent); background: #eff6ff; }
+        .stage-option input[type="radio"], .stage-option input[type="checkbox"] { width: 16px; height: 16px; min-height: 16px; flex-shrink: 0; cursor: pointer; }
+        .stage-option-label { font-weight: 500; flex: 1; cursor: pointer; }
+        .stage-option-desc { font-size: 0.85rem; color: var(--muted); }
+        .stage-nav { display: flex; justify-content: space-between; align-items: center; margin-top: 14px; }
+        .endpoint-table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 0.9rem; }
+        .endpoint-table th, .endpoint-table td { border-bottom: 1px solid var(--border); padding: 8px 10px; text-align: left; vertical-align: middle; }
+        .endpoint-table th { color: var(--muted); font-size: 0.8rem; font-weight: 700; text-transform: uppercase; }
+        .endpoint-table tr:last-child td { border-bottom: 0; }
+        .method-badge { display: inline-block; padding: 1px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.78rem; font-weight: 700; }
+        .method-GET { background: #d1fae5; color: #065f46; }
+        .method-POST { background: #dbeafe; color: #1d4ed8; }
+        .method-DELETE { background: #fee2e2; color: #991b1b; }
+        .method-PUT { background: #fef3c7; color: #92400e; }
+        .method-PATCH { background: #f3e8ff; color: #6b21a8; }
+        details > summary { cursor: pointer; list-style: none; }
+        details > summary::-webkit-details-marker { display: none; }
+        details summary::before { content: "▶ "; font-size: 0.75rem; color: var(--muted); }
+        details[open] summary::before { content: "▼ "; }
+        details summary { font-weight: 650; padding: 10px 0; color: var(--muted); }
 
         @media (max-width: 820px) {
-            header,
-            .grid,
-            .guide-layout,
-            .field-grid {
-                display: block;
-            }
-
-            .grid > div + div {
-                margin-top: 14px;
-            }
-
-            .guide-layout > div + div,
-            .field-grid > div + div {
-                margin-top: 12px;
-            }
-
-            textarea {
-                min-height: 220px;
-            }
+            header, .grid, .field-grid { display: block; }
+            .grid > div + div, .field-grid > div + div { margin-top: 14px; }
+            .field-value-grid { grid-template-columns: 1fr; }
+            textarea { min-height: 220px; }
         }
     </style>
 </head>
@@ -680,468 +176,1429 @@
     <header>
         <div>
             <h1>Test plan builder</h1>
-            <div class="muted">v1 manifest selection</div>
         </div>
         <a class="button" href="{% url 'health' %}">Health</a>
     </header>
 
-    <form method="post" action="{% url 'plan-preview' %}">
-        {% csrf_token %}
-        {% if preview %}
-            <input type="hidden" name="selection_mode" value="select">
-        {% endif %}
+    {# ── STAGED JOURNEY (endpoint-first, plugin-aware) ───────────────────── #}
+    <section class="panel" aria-labelledby="staged-heading" id="staged-section">
+        <h2 id="staged-heading">New: Endpoint-first test-plan builder</h2>
+        <p class="helper" style="margin-bottom:12px">Select your standard, specification, version and endpoints. The saved config will include a testPlan generated from your selections.</p>
 
-        <section class="panel" aria-labelledby="input-heading">
-            <h2 id="input-heading">Inputs</h2>
-            {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
-            {% if launch_error %}
-                <div class="message error">
-                    {{ launch_error }}
-                    {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}">Open active run</a>{% endif %}
+        <details class="staged-import" id="staged-import-section">
+            <summary>Load or edit saved config JSON</summary>
+            <p class="helper">Paste or choose a participant config JSON with testTarget and, optionally, a top-level testPlan. Older standalone plan files must be rebuilt in the builder and exported as a saved config.</p>
+            <div class="field-grid full">
+                <div>
+                    <label for="staged-import-json">Saved config JSON</label>
+                    <textarea id="staged-import-json" spellcheck="false" placeholder="Paste saved config JSON"></textarea>
                 </div>
-            {% endif %}
+                <div>
+                    <label for="staged-import-file">Load JSON file</label>
+                    <input id="staged-import-file" class="file-input" type="file" accept="application/json,.json">
+                </div>
+            </div>
+            <div class="actions preview-actions">
+                <button type="button" class="secondary" data-staged-import-apply>Load into builder</button>
+                <span class="muted" data-staged-import-status></span>
+            </div>
+        </details>
 
-            <div class="guide-layout">
-                <section class="guide-card" aria-labelledby="guided-flow-heading">
-                    <h3 id="guided-flow-heading">Guided flow</h3>
-                    <p class="helper">Select a version, then an API family, then a bundled suite. The browser form will build the same config shape the JSON path already accepts.</p>
+        <div class="staged-journey" id="staged-journey" role="list">
 
-                    <fieldset class="field-row">
-                        <div class="field-grid">
-                            <div>
-                                <label for="{{ form.guided_spec_version.id_for_label }}">Specification version</label>
-                                {{ form.guided_spec_version.errors }}
-                                <select id="{{ form.guided_spec_version.id_for_label }}" name="guided_spec_version" data-guided-spec-version>
-                                    <option value="">Select version</option>
-                                    {% for version in guided_versions %}
-                                        <option value="{{ version }}" {% if form.guided_spec_version.value == version %}selected{% endif %}>{{ version }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_api.id_for_label }}">API family</label>
-                                {{ form.guided_api.errors }}
-                                <select id="{{ form.guided_api.id_for_label }}" name="guided_api" data-guided-api>
-                                    <option value="">Select API</option>
-                                    {% for option in guided_api_options %}
-                                        <option value="{{ option.api }}" data-spec-version="{{ option.spec_version }}" {% if form.guided_api.value == option.api and form.guided_spec_version.value == option.spec_version %}selected{% endif %}>{{ option.label }}</option>
-                                    {% endfor %}
-                                </select>
-                            </div>
-                        </div>
-
-                        <div class="field-row">
-                            <label for="{{ form.guided_suite.id_for_label }}">Bundled suite</label>
-                            {{ form.guided_suite.errors }}
-                            <select id="{{ form.guided_suite.id_for_label }}" name="guided_suite" data-guided-suite>
-                                <option value="">Select suite</option>
-                                {% for option in guided_suite_options %}
-                                    <option value="{{ option.suite }}"
-                                            data-standard="{{ option.standard }}"
-                                            data-spec-version="{{ option.spec_version }}"
-                                            data-profile="{{ option.profile }}"
-                                            data-api="{{ option.api }}"
-                                            data-description="{{ option.description }}"
-                                            data-prompts-oauth="{% if option.prompts_oauth %}true{% else %}false{% endif %}"
-                                            data-prompts-intent-id="{% if option.prompts_intent_id %}true{% else %}false{% endif %}"
-                                            data-prompts-resource-base-url="{% if option.prompts_resource_base_url %}true{% else %}false{% endif %}"
-                                            data-prompts-signing="{% if option.prompts_signing %}true{% else %}false{% endif %}"
-                                            {% if form.guided_suite.value == option.suite and form.guided_spec_version.value == option.spec_version and form.guided_api.value == option.api %}selected{% endif %}>{{ option.label }}</option>
-                                {% endfor %}
-                            </select>
-                            <div class="helper" data-guided-suite-description>
-                                {% if guided_selected_suite %}{{ guided_selected_suite.description }}{% else %}Pick a suite to see the scope and the relevant browser prompts.{% endif %}
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset class="field-row">
-                        <div class="field-row">
-                            <label for="{{ form.guided_model_bank.id_for_label }}">Model bank example</label>
-                            {{ form.guided_model_bank.errors }}
-                            <select id="{{ form.guided_model_bank.id_for_label }}" name="guided_model_bank" data-guided-model-bank>
-                                <option value="">Custom environment</option>
-                                {% for option in guided_model_bank_options %}
-                                    <option value="{{ option.value }}"
-                                            data-environment="{{ option.environment }}"
-                                            data-discovery-url="{{ option.discovery_url }}"
-                                            {% if form.guided_model_bank.value == option.value %}selected{% endif %}>{{ option.label }}</option>
-                                {% endfor %}
-                            </select>
-                            <div class="helper">Known model-bank environment and discovery values. Custom entries stay editable below.</div>
-                        </div>
-                        <div class="field-grid">
-                            <div>
-                                <label for="{{ form.guided_environment.id_for_label }}">Environment</label>
-                                {{ form.guided_environment.errors }}
-                                <input id="{{ form.guided_environment.id_for_label }}" name="guided_environment" type="text" value="{{ form.guided_environment.value|default_if_none:'' }}" autocomplete="off" data-guided-environment-input>
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_discovery_url.id_for_label }}">Discovery URL</label>
-                                {{ form.guided_discovery_url.errors }}
-                                <input id="{{ form.guided_discovery_url.id_for_label }}" name="guided_discovery_url" type="url" value="{{ form.guided_discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url" data-guided-discovery-url-input>
-                            </div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset class="field-panel field-row" data-guided-oauth-panel {% if not guided_selected_suite or not guided_selected_suite.prompts_oauth %}hidden{% endif %}>
-                        <div class="field-grid">
-                            <div>
-                                <label for="{{ form.guided_client_id.id_for_label }}">Client ID</label>
-                                {{ form.guided_client_id.errors }}
-                                <input id="{{ form.guided_client_id.id_for_label }}" name="guided_client_id" type="text" value="{{ form.guided_client_id.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_redirect_uri.id_for_label }}">Redirect URI</label>
-                                {{ form.guided_redirect_uri.errors }}
-                                <input id="{{ form.guided_redirect_uri.id_for_label }}" name="guided_redirect_uri" type="url" value="{{ form.guided_redirect_uri.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                            </div>
-                        </div>
-                        <div class="field-row">
-                            <label for="{{ form.guided_authorization_endpoint.id_for_label }}">Authorization endpoint override</label>
-                            {{ form.guided_authorization_endpoint.errors }}
-                            <input id="{{ form.guided_authorization_endpoint.id_for_label }}" name="guided_authorization_endpoint" type="url" value="{{ form.guided_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                            <div class="helper">Optional override for environments whose registered client still targets a legacy authorization endpoint.</div>
-                        </div>
-                    </fieldset>
-
-                    <fieldset class="field-panel field-row" data-guided-intent-panel {% if not guided_selected_suite or not guided_selected_suite.prompts_intent_id %}hidden{% endif %}>
-                        <label for="{{ form.guided_open_banking_intent_id.id_for_label }}">Intent ID</label>
-                        {{ form.guided_open_banking_intent_id.errors }}
-                        <input id="{{ form.guided_open_banking_intent_id.id_for_label }}" name="guided_open_banking_intent_id" type="text" value="{{ form.guided_open_banking_intent_id.value|default_if_none:'' }}" autocomplete="off">
-                        <div class="helper">Required for the starter suite request object when the ASPSP expects a pre-created intent or consent identifier.</div>
-                    </fieldset>
-
-                    <fieldset class="field-panel field-row" data-guided-resource-panel {% if not guided_selected_suite or not guided_selected_suite.prompts_resource_base_url %}hidden{% endif %}>
-                        <label for="{{ form.guided_resource_base_url.id_for_label }}">Resource base URL</label>
-                        {{ form.guided_resource_base_url.errors }}
-                        <input id="{{ form.guided_resource_base_url.id_for_label }}" name="guided_resource_base_url" type="url" value="{{ form.guided_resource_base_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                        <div class="helper">Root protected-resource URL without the <span class="step-id">/open-banking/...</span> path prefix.</div>
-                    </fieldset>
-
-                    <fieldset class="field-panel field-row" data-guided-signing-panel {% if not guided_selected_suite or not guided_selected_suite.prompts_signing %}hidden{% endif %}>
-                        <div class="field-grid">
-                            <div>
-                                <label for="{{ form.guided_signing_certificate_path_root.id_for_label }}">Certificate path root</label>
-                                {{ form.guided_signing_certificate_path_root.errors }}
-                                <input id="{{ form.guided_signing_certificate_path_root.id_for_label }}" name="guided_signing_certificate_path_root" type="text" value="{{ form.guided_signing_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_kid.id_for_label }}">Signing key ID</label>
-                                {{ form.guided_signing_kid.errors }}
-                                <input id="{{ form.guided_signing_kid.id_for_label }}" name="guided_signing_kid" type="text" value="{{ form.guided_signing_kid.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_certificate_path.id_for_label }}">Signing certificate path</label>
-                                {{ form.guided_signing_certificate_path.errors }}
-                                <input id="{{ form.guided_signing_certificate_path.id_for_label }}" name="guided_signing_certificate_path" type="text" value="{{ form.guided_signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_private_key_path.id_for_label }}">Signing private key path</label>
-                                {{ form.guided_signing_private_key_path.errors }}
-                                <input id="{{ form.guided_signing_private_key_path.id_for_label }}" name="guided_signing_private_key_path" type="text" value="{{ form.guided_signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_client_assertion_issuer.id_for_label }}">Client assertion issuer</label>
-                                {{ form.guided_signing_client_assertion_issuer.errors }}
-                                <input id="{{ form.guided_signing_client_assertion_issuer.id_for_label }}" name="guided_signing_client_assertion_issuer" type="text" value="{{ form.guided_signing_client_assertion_issuer.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_client_assertion_subject.id_for_label }}">Client assertion subject</label>
-                                {{ form.guided_signing_client_assertion_subject.errors }}
-                                <input id="{{ form.guided_signing_client_assertion_subject.id_for_label }}" name="guided_signing_client_assertion_subject" type="text" value="{{ form.guided_signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
-                            </div>
-                            <div>
-                                <label for="{{ form.guided_signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method</label>
-                                {{ form.guided_signing_token_endpoint_auth_method.errors }}
-                                <select id="{{ form.guided_signing_token_endpoint_auth_method.id_for_label }}" name="guided_signing_token_endpoint_auth_method">
-                                    <option value="">Select auth method</option>
-                                    <option value="private_key_jwt" {% if form.guided_signing_token_endpoint_auth_method.value == 'private_key_jwt' %}selected{% endif %}>private_key_jwt</option>
-                                    <option value="tls_client_auth" {% if form.guided_signing_token_endpoint_auth_method.value == 'tls_client_auth' %}selected{% endif %}>tls_client_auth</option>
-                                </select>
-                            </div>
-                        </div>
-                    </fieldset>
-                </section>
-
-                <aside>
-                    <section class="guide-card" aria-labelledby="json-mode-heading">
-                        <h3 id="json-mode-heading">JSON mode</h3>
-                        <p class="helper">Keep using pasted config and manifest JSON whenever you need a fully explicit authoring path. Guided fields and raw JSON can coexist; pasted config still wins.</p>
-                    </section>
-                    <section class="guide-card" aria-labelledby="generated-config-heading">
-                        <h3 id="generated-config-heading">Generated config</h3>
-                        {% if generated_config_json %}
-                            <textarea aria-label="Generated config JSON" spellcheck="false" readonly>{{ generated_config_json }}</textarea>
-                        {% else %}
-                            <p class="helper">Preview a guided selection to inspect the generated config JSON before launch.</p>
-                        {% endif %}
-                    </section>
-                </aside>
+            {# Stage 1: Standard #}
+            <div class="stage-step active" id="stage-1" role="listitem" aria-label="Stage 1: Select Standard">
+                <div class="stage-header" onclick="toggleStage(1)" role="button" aria-expanded="true" aria-controls="stage-1-body">
+                    <span class="stage-number" aria-hidden="true">1</span>
+                    <span class="stage-title">Standard</span>
+                    <span class="stage-summary" id="stage-1-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-1-body">
+                    <div class="stage-options" id="stage-1-options" role="radiogroup" aria-label="Select standard">
+                        {% for std in staged_standard_options %}
+                        <label class="stage-option selected" data-value="{{ std.id }}">
+                            <input type="radio" name="staged_standard" value="{{ std.id }}" checked>
+                            <span class="stage-option-label">{{ std.display_label }}</span>
+                        </label>
+                        {% endfor %}
+                    </div>
+                    <div class="stage-nav">
+                        <span></span>
+                        <button type="button" class="secondary" onclick="advanceStage(1)">Next →</button>
+                    </div>
+                </div>
             </div>
 
-            <div class="grid">
+            {# Stage 2: Specification #}
+            <div class="stage-step" id="stage-2" role="listitem" aria-label="Stage 2: Select Specification">
+                <div class="stage-header" onclick="toggleStage(2)" role="button" aria-expanded="false" aria-controls="stage-2-body">
+                    <span class="stage-number" aria-hidden="true">2</span>
+                    <span class="stage-title">Specification</span>
+                    <span class="stage-summary" id="stage-2-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-2-body" hidden>
+                    <div class="stage-options" id="stage-2-options" role="radiogroup" aria-label="Select specification">
+                        {# populated by JS #}
+                    </div>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(1)">← Back</button>
+                        <button type="button" class="secondary" id="stage-2-next" onclick="advanceStage(2)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 3: Security Profile (fixed) #}
+            <div class="stage-step" id="stage-3" role="listitem" aria-label="Stage 3: Security Profile">
+                <div class="stage-header" onclick="toggleStage(3)" role="button" aria-expanded="false" aria-controls="stage-3-body">
+                    <span class="stage-number" aria-hidden="true">3</span>
+                    <span class="stage-title">Security Profile</span>
+                    <span class="stage-summary" id="stage-3-summary"><span class="badge fapi">FAPI 1 Advanced</span></span>
+                </div>
+                <div class="stage-body" id="stage-3-body" hidden>
+                    <div class="stage-options">
+                        <div class="stage-option selected" style="cursor:default">
+                            <span class="stage-option-label">FAPI 1.0 Advanced</span>
+                            <span class="badge fapi">Required by Open Banking UK</span>
+                        </div>
+                    </div>
+                    <p class="helper">The FAPI 1.0 Advanced security profile is mandatory for all Open Banking UK conformance runs and is not user-selectable.</p>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(2)">← Back</button>
+                        <button type="button" class="secondary" onclick="advanceStage(3)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 4: Version #}
+            <div class="stage-step" id="stage-4" role="listitem" aria-label="Stage 4: Select Version">
+                <div class="stage-header" onclick="toggleStage(4)" role="button" aria-expanded="false" aria-controls="stage-4-body">
+                    <span class="stage-number" aria-hidden="true">4</span>
+                    <span class="stage-title">Specification Version</span>
+                    <span class="stage-summary" id="stage-4-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-4-body" hidden>
+                    <div class="stage-options" id="stage-4-options" role="radiogroup" aria-label="Select version">
+                        {# populated by JS #}
+                    </div>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(3)">← Back</button>
+                        <button type="button" class="secondary" id="stage-4-next" onclick="advanceStage(4)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 5: Resource Groups (Read/Write only) #}
+            <div class="stage-step" id="stage-5" role="listitem" aria-label="Stage 5: Select Resource Groups">
+                <div class="stage-header" onclick="toggleStage(5)" role="button" aria-expanded="false" aria-controls="stage-5-body">
+                    <span class="stage-number" aria-hidden="true">5</span>
+                    <span class="stage-title">Resource Groups</span>
+                    <span class="stage-summary" id="stage-5-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-5-body" hidden>
+                    <div class="stage-options" id="stage-5-options" role="group" aria-label="Select resource groups">
+                        {# populated by JS #}
+                    </div>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(4)">← Back</button>
+                        <button type="button" class="secondary" id="stage-5-next" onclick="advanceStage(5)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 6: Endpoint Coverage #}
+            <div class="stage-step" id="stage-6" role="listitem" aria-label="Stage 6: Endpoint Coverage">
+                <div class="stage-header" onclick="toggleStage(6)" role="button" aria-expanded="false" aria-controls="stage-6-body">
+                    <span class="stage-number" aria-hidden="true">6</span>
+                    <span class="stage-title">Endpoint Coverage</span>
+                    <span class="stage-summary" id="stage-6-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-6-body" hidden>
+                    <p class="helper">Required endpoints are pre-selected. Uncheck to exclude from the run entirely (unchecked endpoints will not be executed).</p>
+                    <div id="stage-6-mandatory-warning" class="message warning" hidden>One or more mandatory endpoints are deselected. This run will be incomplete.</div>
+                    <div class="actions preview-actions" aria-label="Endpoint bulk selection controls">
+                        <button type="button" class="secondary" data-endpoint-bulk-action="deselect-all">Deselect all</button>
+                        <button type="button" class="secondary" data-endpoint-bulk-action="select-mandatory">Select mandatory</button>
+                        <button type="button" class="secondary" data-endpoint-bulk-action="select-all">Select all</button>
+                    </div>
+                    <div id="stage-6-endpoints"></div>
+                    <div class="stage-nav" style="margin-top:16px">
+                        <button type="button" class="secondary" onclick="goToStage(5)">← Back</button>
+                        <button type="button" class="secondary" id="stage-6-next" onclick="advanceStage(6)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 7: Field Values #}
+            <div class="stage-step" id="stage-7" role="listitem" aria-label="Stage 7: Field Values">
+                <div class="stage-header" onclick="toggleStage(7)" role="button" aria-expanded="false" aria-controls="stage-7-body">
+                    <span class="stage-number" aria-hidden="true">7</span>
+                    <span class="stage-title">Field Values</span>
+                    <span class="stage-summary" id="stage-7-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-7-body" hidden>
+                    <p class="helper">These prompts come from the selected catalogue. Credential material remains path-only; enter exact absolute file paths, not certificate or key contents.</p>
+                    <div id="stage-7-required-warning" class="message warning" hidden>Required runtime fields are still blank. The saved config preview will omit blank values until they are supplied.</div>
+                    <div id="stage-7-base-fields"></div>
+                    <div id="stage-7-fields"></div>
+                    <div class="run-plan-preview" aria-labelledby="advanced-test-data-heading">
+                        <h3 id="advanced-test-data-heading">Advanced testData.values</h3>
+                        <p>Add non-secret suite test-data values for power-user imports. Keys must match the config contract: start with a letter and use letters, numbers, underscores, or hyphens.</p>
+                        <div id="advanced-test-data-values" class="advanced-test-data-grid"></div>
+                        <button type="button" class="secondary" data-add-test-data-value>Add testData value</button>
+                    </div>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(6)">← Back</button>
+                        <button type="button" class="secondary" onclick="advanceStage(7)">Next →</button>
+                    </div>
+                </div>
+            </div>
+
+            {# Stage 8: Preview #}
+            <div class="stage-step" id="stage-8" role="listitem" aria-label="Stage 8: Preview">
+                <div class="stage-header" onclick="toggleStage(8)" role="button" aria-expanded="false" aria-controls="stage-8-body">
+                    <span class="stage-number" aria-hidden="true">8</span>
+                    <span class="stage-title">Preview</span>
+                    <span class="stage-summary" id="stage-8-summary"></span>
+                </div>
+                <div class="stage-body" id="stage-8-body" hidden>
+                    <div id="stage-8-preview-content">
+                        <p class="helper">Complete the previous stages to see the derived plan.</p>
+                    </div>
+                    <div class="stage-nav">
+                        <button type="button" class="secondary" onclick="goToStage(7)">← Back</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </section>
+
+    {# ── Advanced: raw target config preview/launch ───────────────────────── #}
+    <details id="advanced-section">
+        <summary>Advanced / Import target config JSON</summary>
+
+        <form method="post" action="{% url 'plan-preview' %}" style="margin-top:8px">
+            {% csrf_token %}
+            {% if preview %}
+                <input type="hidden" name="selection_mode" value="select">
+            {% endif %}
+
+            <section class="panel" aria-labelledby="input-heading">
+                <h2 id="input-heading">Inputs</h2>
+                {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+                {% if form.manifest_json.errors %}{{ form.manifest_json.errors }}{% endif %}
+                {% if launch_error %}
+                    <div class="message error">
+                        {{ launch_error }}
+                        {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}">Open active run</a>{% endif %}
+                    </div>
+                {% endif %}
+
+                <section style="border:1px solid var(--border);border-radius:8px;padding:14px;background:#fbfcfe;margin-bottom:16px" aria-labelledby="json-mode-heading">
+                    <h3 id="json-mode-heading" style="margin:0 0 8px;font-size:1rem">Raw target config</h3>
+                    <p class="helper">Paste a participant config that uses <span class="step-id">testTarget</span> or the saved-config <span class="step-id">testPlan</span> section.</p>
+                </section>
+
+                <input type="hidden" name="manifest_json" value="">
                 <div>
                     <label for="{{ form.config_json.id_for_label }}">Config JSON</label>
                     {{ form.config_json.errors }}
                     <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
                 </div>
-                <div>
-                    <label for="{{ form.manifest_json.id_for_label }}">Manifest JSON</label>
-                    {{ form.manifest_json.errors }}
-                    <textarea id="{{ form.manifest_json.id_for_label }}" name="manifest_json" spellcheck="false">{{ form.manifest_json.value|default_if_none:"" }}</textarea>
-                </div>
-            </div>
 
-            <div class="actions">
-                <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}">Preview</button>
-                {% if preview %}
-                    <button type="submit" formaction="{% url 'plan-launch' %}" {% if not preview.launch_supported %}disabled{% endif %}>Launch run</button>
-                {% endif %}
-            </div>
-        </section>
-
-        {% if preview %}
-            <section class="panel" aria-labelledby="preview-heading" data-plan-preview>
-                <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
-                {% if preview.suite_metadata %}
-                    <div class="muted">
-                        {{ preview.suite_metadata.label }} &middot; {{ preview.suite_metadata.standard }}
-                        {{ preview.suite_metadata.spec_version }} &middot; {{ preview.suite_metadata.profile }} &middot;
-                        {{ preview.suite_metadata.suite }}
-                    </div>
-                {% endif %}
-
-                <div class="counts" aria-label="Plan counts">
-                    <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>
-                    <div class="count"><strong data-plan-count-selected>{{ preview_counts.selected }}</strong><span>Selected</span></div>
-                    <div class="count"><strong>{{ preview_counts.mandatory }}</strong><span>Mandatory</span></div>
-                    <div class="count"><strong>{{ preview_counts.optional }}</strong><span>Optional</span></div>
-                    <div class="count"><strong data-plan-count-mandatory-off>{{ preview_counts.mandatory_deselected }}</strong><span>Mandatory off</span></div>
-                </div>
-
-                <div class="actions preview-actions" aria-label="Bulk selection controls">
-                    <button type="button" class="secondary" data-plan-bulk-action="select-all">select all</button>
-                    <button type="button" class="secondary" data-plan-bulk-action="select-mandatory-only">select mandatory only</button>
-                    <button type="button" class="secondary" data-plan-bulk-action="deselect-all">deselect all</button>
-                </div>
-
-                {% if preview.certification_eligible_by_selection %}
-                    <div class="message success" data-plan-certification-message>Certification selection eligible</div>
-                {% else %}
-                    <div class="message warning" data-plan-certification-message>Certification selection ineligible</div>
-                {% endif %}
-
-                <section class="run-plan-preview" aria-labelledby="run-plan-heading">
-                    <h3 id="run-plan-heading">Run Plan</h3>
-                    <p>Run Plan (export this to reuse your test configuration)</p>
-                    {% if preview.legacy_test_values_warning %}
-                        <div class="message warning">Your configuration includes testValues — these will be migrated to a Run Plan on launch.</div>
+                <div class="actions">
+                    <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}">Preview</button>
+                    {% if preview %}
+                        <button type="submit" formaction="{% url 'plan-launch' %}" {% if not preview.launch_supported %}disabled{% endif %}>Launch run</button>
                     {% endif %}
-                    {% if preview.plan_drift_blocks_launch %}
-                        <div class="message error">Imported Run Plan drift blocks launch until you re-export from the current manifest.</div>
-                    {% endif %}
-                    {% for drift_warning in preview.plan_drift_warnings %}
-                        <div class="message warning">{{ drift_warning }}</div>
-                    {% endfor %}
-                    {% if preview.is_exploratory_run %}
-                        <div class="message warning">⚠️ Exploratory Run — results will not be eligible for certification submission.</div>
-                        <div class="exploratory-ack-row">
-                            <input type="checkbox" name="exploratory_ack" id="exploratory_ack" {% if form.exploratory_ack.value %}checked{% endif %}>
-                            <label for="exploratory_ack">I understand this is an Exploratory Run and results will not be eligible for certification.</label>
-                        </div>
-                    {% endif %}
-                    <label for="run-plan-import">Import Run Plan JSON</label>
-                    <textarea
-                        id="run-plan-import"
-                        name="run_plan_import"
-                        rows="4"
-                        class="run-plan-import"
-                        placeholder="Paste a Run Plan JSON here to import..."
-                        spellcheck="false"
-                    >{{ form.run_plan_import.value|default_if_none:"" }}</textarea>
-                    <div class="run-plan-actions">
-                        <button type="button" class="secondary" data-run-plan-copy>Copy to clipboard</button>
-                        <span class="muted" data-run-plan-copy-status></span>
-                    </div>
-                    <pre class="run-plan-json" data-run-plan-json>{{ preview.run_plan_json }}</pre>
-                </section>
-
-                {% if preview.test_value_step_groups %}
-                    <section class="run-plan-preview" aria-labelledby="test-values-heading">
-                        <h3 id="test-values-heading">Test Values</h3>
-                        <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
-                        <div class="tv-step-list">
-                            {% for group in preview.test_value_step_groups %}
-                                <details class="tv-step">
-                                    <summary class="tv-step-summary">
-                                        <span class="tv-step-name">{{ group.step_name }}</span>
-                                        <span class="step-id tv-step-id">{{ group.step_id }}</span>
-                                    </summary>
-                                    {% for surface in group.surfaces %}
-                                        <div class="tv-surface">
-                                            <div class="tv-surface-heading">{{ surface.surface_label }}</div>
-                                            <div class="tv-rows">
-                                                {% for row in surface.rows %}
-                                                    {% if row.row_type == "group" %}
-                                                        <div class="tv-row tv-group" style="--tv-depth: {{ row.depth }}">
-                                                            <span class="tv-path-segment">{{ row.label }}</span>
-                                                        </div>
-                                                    {% else %}
-                                                        <div class="tv-row tv-leaf" style="--tv-depth: {{ row.depth }}">
-                                                            {% if row.is_generated %}
-                                                                <label class="tv-label">{{ row.label }}</label>
-                                                                <div class="muted">generated per run</div>
-                                                            {% elif row.is_canonical %}
-                                                                <label class="tv-label" for="custom-tv-{{ row.key }}">{{ row.label }}</label>
-                                                                <input
-                                                                    id="custom-tv-{{ row.key }}"
-                                                                    name="custom_tv_{{ row.key }}"
-                                                                    type="text"
-                                                                    value="{{ row.current_value }}"
-                                                                    placeholder="{{ row.default_value }}"
-                                                                    data-custom-test-value-input="{{ row.key }}"
-                                                                    data-default-value="{{ row.default_value }}"
-                                                                >
-                                                                <div class="test-value-meta">
-                                                                    <div>
-                                                                        <span class="badge optional" data-custom-test-value-badge="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>(custom)</span>
-                                                                        <span class="muted" data-custom-test-value-default="{{ row.key }}" {% if row.is_overridden %}hidden{% endif %}>Default: {{ row.default_value }}</span>
-                                                                    </div>
-                                                                    <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>Reset to default</button>
-                                                                </div>
-                                                                {% if row.shape_warning %}
-                                                                    <div class="message warning">{{ row.shape_warning }}</div>
-                                                                {% endif %}
-                                                            {% else %}
-                                                                <label class="tv-label">{{ row.label }}</label>
-                                                                <div class="muted tv-also-above">Edited above ({{ row.key }})</div>
-                                                            {% endif %}
-                                                        </div>
-                                                    {% endif %}
-                                                {% endfor %}
-                                            </div>
-                                        </div>
-                                    {% endfor %}
-                                </details>
-                            {% endfor %}
-                        </div>
-                    </section>
-                {% elif preview.test_value_fields %}
-                    <section class="run-plan-preview" aria-labelledby="test-values-heading">
-                        <h3 id="test-values-heading">Test Values</h3>
-                        <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
-                        {% if preview.manifest.test_value_profiles %}
-                            {% with selected_profile_id=preview.run_plan.test_values.profile|default_if_none:preview.manifest.test_value_profiles.default_profile_id %}
-                                <label for="test-value-profile-selector">Profile</label>
-                                <select id="test-value-profile-selector" name="test_value_profile">
-                                    {% for profile in preview.manifest.test_value_profiles.profiles %}
-                                        <option value="{{ profile.id }}" {% if profile.id == selected_profile_id %}selected{% endif %}>{{ profile.label }} ({{ profile.id }})</option>
-                                    {% endfor %}
-                                </select>
-                            {% endwith %}
-                        {% endif %}
-                        <div class="test-values-grid">
-                            {% for field in preview.test_value_fields %}
-                                <div class="test-value-row">
-                                    <label for="custom-tv-{{ field.key }}">{{ field.key }}</label>
-                                    {% if field.is_generated %}
-                                        <div class="muted">generated per run</div>
-                                    {% else %}
-                                        <input id="custom-tv-{{ field.key }}" name="custom_tv_{{ field.key }}" type="text" value="{{ field.current_value }}" placeholder="{{ field.default_value }}" data-custom-test-value-input="{{ field.key }}" data-default-value="{{ field.default_value }}">
-                                        <div class="test-value-meta">
-                                            <div>
-                                                <span class="badge optional" data-custom-test-value-badge="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>(custom)</span>
-                                                <span class="muted" data-custom-test-value-default="{{ field.key }}" {% if field.is_overridden %}hidden{% endif %}>Default: {{ field.default_value }}</span>
-                                            </div>
-                                            <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>Reset to default</button>
-                                        </div>
-                                    {% endif %}
-                                    {% if field.shape_warning %}
-                                        <div class="message warning">{{ field.shape_warning }}</div>
-                                    {% endif %}
-                                </div>
-                            {% endfor %}
-                        </div>
-                    </section>
-                {% endif %}
-
-                {% for blocker in preview.launch_blockers %}
-                    <div class="message warning">{{ blocker }}</div>
-                {% endfor %}
-
-                <div class="plan-tree" data-plan-tree>
-                  {% for group_node in preview.tree_nodes %}
-                    <div class="tree-group" data-plan-tree-node data-node-id="{{ group_node.id }}" data-descendant-ids="{{ group_node.descendant_step_ids|join:',' }}">
-                      <div class="tree-group-header tree-group-header--open">
-                        <div class="tree-header-content">
-                          <button type="button" class="tree-chevron" data-plan-tree-chevron data-node-id="{{ group_node.id }}" aria-expanded="true" aria-controls="tree-children-{{ group_node.id }}" aria-label="Collapse {{ group_node.label }}">
-                            <span aria-hidden="true">›</span>
-                          </button>
-                          <label class="tree-parent-label">
-                            <input type="checkbox" class="tree-parent-checkbox" data-plan-parent-checkbox data-node-id="{{ group_node.id }}" aria-label="Select all {{ group_node.label }} steps">
-                            <span class="tree-group-name">{{ group_node.label }}</span>
-                          </label>
-                        </div>
-                        <span class="tree-counts">
-                          <span class="badge" data-node-count="{{ group_node.id }}">{{ group_node.selected_count }}/{{ group_node.total_count }}</span>
-                          {% if group_node.cert_impact_count > 0 %}<span class="badge required">{{ group_node.cert_impact_count }} mandatory</span>{% endif %}
-                        </span>
-                      </div>
-                      <div class="tree-children" id="tree-children-{{ group_node.id }}">
-                        {% for child in group_node.children %}
-                          {% include "conformance/partials/plan_tree_node.html" with node=child rows_by_id=rows_by_id depth=1 %}
-                        {% endfor %}
-                      </div>
-                    </div>
-                  {% empty %}
-                    {# Fallback to flat list if tree is empty #}
-                    {% for row in preview.rows %}
-                      <div class="tree-leaf" data-plan-step-row data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}" data-step-selected="{% if row.selected_after_form %}true{% else %}false{% endif %}">
-                        <label class="tree-leaf-label">
-                          <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="Select {{ row.name }}" data-plan-step-checkbox data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}">
-                          <span class="tree-step-name">{{ row.name }}</span>
-                          <span class="step-id">{{ row.id }}</span>
-                        </label>
-                        <span class="tree-leaf-meta">
-                          <span class="badge">{{ row.kind }}</span>
-                          <span class="badge">{{ row.phase }}</span>
-                          <span class="badge">{{ row.group }}</span>
-                          {% if row.mandatory %}<span class="badge required">Mandatory</span>{% endif %}
-                          {% if row.optional %}<span class="badge optional">Optional</span>{% endif %}
-                          {% if row.conditional %}
-                            {% if row.missing_test_value_keys %}
-                              <span class="badge conditional-missing" title="Missing values: {{ row.missing_test_value_keys|join:', ' }}">Conditional – missing values</span>
-                            {% elif row.test_value_profile_source == "overridden" %}
-                              <span class="badge conditional-overridden" title="Profile: {{ row.test_value_profile_id }}{% if row.test_value_override_keys %} (overrides: {{ row.test_value_override_keys|join:', ' }}){% endif %}">Conditional – overridden</span>
-                            {% else %}
-                              <span class="badge conditional-default" title="Profile: {{ row.test_value_profile_id }}">Conditional – default profile</span>
-                            {% endif %}
-                            {% if row.condition_label %}<span class="badge condition-label">{{ row.condition_label }}</span>{% endif %}
-                          {% endif %}
-                          {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
-                        </span>
-                      </div>
-                    {% endfor %}
-                  {% endfor %}
                 </div>
             </section>
-        {% endif %}
-    </form>
+
+            {% if preview %}
+                <section class="panel" aria-labelledby="preview-heading" data-plan-preview>
+                    <h2 id="preview-heading">{{ preview.manifest.name }}</h2>
+                    <div class="counts" aria-label="Plan counts">
+                        <div class="count"><strong>{{ preview_counts.total }}</strong><span>Total</span></div>
+                        <div class="count"><strong data-plan-count-selected>{{ preview_counts.selected }}</strong><span>Selected</span></div>
+                        <div class="count"><strong>{{ preview_counts.mandatory }}</strong><span>Mandatory</span></div>
+                        <div class="count"><strong>{{ preview_counts.optional }}</strong><span>Optional</span></div>
+                        <div class="count"><strong data-plan-count-mandatory-off>{{ preview_counts.mandatory_deselected }}</strong><span>Mandatory off</span></div>
+                    </div>
+
+                    <div class="actions preview-actions" aria-label="Bulk selection controls">
+                        <button type="button" class="secondary" data-plan-bulk-action="select-all">select all</button>
+                        <button type="button" class="secondary" data-plan-bulk-action="select-mandatory-only">select mandatory only</button>
+                        <button type="button" class="secondary" data-plan-bulk-action="deselect-all">deselect all</button>
+                    </div>
+
+                    {% if preview.certification_eligible_by_selection %}
+                        <div class="message success" data-plan-certification-message>Certification selection eligible</div>
+                    {% else %}
+                        <div class="message warning" data-plan-certification-message>Certification selection ineligible</div>
+                    {% endif %}
+
+                    <section class="run-plan-preview" aria-labelledby="launch-readiness-heading">
+                        <h3 id="launch-readiness-heading">Launch readiness</h3>
+                        <p>The staged builder is the supported path for saving reusable configs. This advanced preview can still launch the pasted config.</p>
+                        {% if preview.legacy_test_values_warning %}
+                            <div class="message warning">Your configuration includes legacy testValues — move reusable custom values to testData.values before saving a new config.</div>
+                        {% endif %}
+                        {% if preview.plan_drift_blocks_launch %}
+                            <div class="message error">Imported plan drift blocks launch until you rebuild and export a saved config from the current catalogue.</div>
+                        {% endif %}
+                        {% for drift_warning in preview.plan_drift_warnings %}
+                            <div class="message warning">{{ drift_warning }}</div>
+                        {% endfor %}
+                        {% if preview.is_exploratory_run %}
+                            <div class="message warning">⚠️ Exploratory Run — results will not be eligible for certification submission.</div>
+                            <div class="exploratory-ack-row">
+                                <input type="checkbox" name="exploratory_ack" id="exploratory_ack" {% if form.exploratory_ack.value %}checked{% endif %}>
+                                <label for="exploratory_ack">I understand this is an Exploratory Run and results will not be eligible for certification.</label>
+                            </div>
+                        {% endif %}
+                    </section>
+
+                    {% if preview.test_value_step_groups %}
+                        <section class="run-plan-preview" aria-labelledby="test-values-heading">
+                            <h3 id="test-values-heading">Test Values</h3>
+                            <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
+                            <div class="tv-step-list">
+                                {% for group in preview.test_value_step_groups %}
+                                    <details class="tv-step">
+                                        <summary class="tv-step-summary">
+                                            <span class="tv-step-name">{{ group.step_name }}</span>
+                                            <span class="step-id tv-step-id">{{ group.step_id }}</span>
+                                        </summary>
+                                        {% for surface in group.surfaces %}
+                                            <div class="tv-surface">
+                                                <div class="tv-surface-heading">{{ surface.surface_label }}</div>
+                                                <div class="tv-rows">
+                                                    {% for row in surface.rows %}
+                                                        {% if row.row_type == "group" %}
+                                                            <div class="tv-row tv-group" style="--tv-depth: {{ row.depth }}"><span class="tv-path-segment">{{ row.label }}</span></div>
+                                                        {% else %}
+                                                            <div class="tv-row tv-leaf" style="--tv-depth: {{ row.depth }}">
+                                                                {% if row.is_generated %}
+                                                                    <label class="tv-label">{{ row.label }}</label>
+                                                                    <div class="muted">generated per run</div>
+                                                                {% elif row.is_canonical %}
+                                                                    <label class="tv-label" for="custom-tv-{{ row.key }}">{{ row.label }}</label>
+                                                                    <input id="custom-tv-{{ row.key }}" name="custom_tv_{{ row.key }}" type="text" value="{{ row.current_value }}" placeholder="{{ row.default_value }}" data-custom-test-value-input="{{ row.key }}" data-default-value="{{ row.default_value }}">
+                                                                    <div class="test-value-meta">
+                                                                        <div>
+                                                                            <span class="badge optional" data-custom-test-value-badge="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>(custom)</span>
+                                                                            <span class="muted" data-custom-test-value-default="{{ row.key }}" {% if row.is_overridden %}hidden{% endif %}>Default: {{ row.default_value }}</span>
+                                                                        </div>
+                                                                        <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ row.key }}" {% if not row.is_overridden %}hidden{% endif %}>Reset to default</button>
+                                                                    </div>
+                                                                    {% if row.shape_warning %}<div class="message warning">{{ row.shape_warning }}</div>{% endif %}
+                                                                {% else %}
+                                                                    <label class="tv-label">{{ row.label }}</label>
+                                                                    <div class="muted tv-also-above">Edited above ({{ row.key }})</div>
+                                                                {% endif %}
+                                                            </div>
+                                                        {% endif %}
+                                                    {% endfor %}
+                                                </div>
+                                            </div>
+                                        {% endfor %}
+                                    </details>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    {% elif preview.test_value_fields %}
+                        <section class="run-plan-preview" aria-labelledby="test-values-heading">
+                            <h3 id="test-values-heading">Test Values</h3>
+                            <p>Customising test values makes this an Exploratory Run and disables certification eligibility.</p>
+                            {% if preview.manifest.test_value_profiles %}
+                                {% with selected_profile_id=preview.run_plan.test_values.profile|default_if_none:preview.manifest.test_value_profiles.default_profile_id %}
+                                    <label for="test-value-profile-selector">Profile</label>
+                                    <select id="test-value-profile-selector" name="test_value_profile">
+                                        {% for profile in preview.manifest.test_value_profiles.profiles %}
+                                            <option value="{{ profile.id }}" {% if profile.id == selected_profile_id %}selected{% endif %}>{{ profile.label }} ({{ profile.id }})</option>
+                                        {% endfor %}
+                                    </select>
+                                {% endwith %}
+                            {% endif %}
+                            <div class="test-values-grid">
+                                {% for field in preview.test_value_fields %}
+                                    <div class="test-value-row">
+                                        <label for="custom-tv-{{ field.key }}">{{ field.key }}</label>
+                                        {% if field.is_generated %}
+                                            <div class="muted">generated per run</div>
+                                        {% else %}
+                                            <input id="custom-tv-{{ field.key }}" name="custom_tv_{{ field.key }}" type="text" value="{{ field.current_value }}" placeholder="{{ field.default_value }}" data-custom-test-value-input="{{ field.key }}" data-default-value="{{ field.default_value }}">
+                                            <div class="test-value-meta">
+                                                <div>
+                                                    <span class="badge optional" data-custom-test-value-badge="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>(custom)</span>
+                                                    <span class="muted" data-custom-test-value-default="{{ field.key }}" {% if field.is_overridden %}hidden{% endif %}>Default: {{ field.default_value }}</span>
+                                                </div>
+                                                <button type="button" class="secondary test-value-reset" data-reset-test-value="{{ field.key }}" {% if not field.is_overridden %}hidden{% endif %}>Reset to default</button>
+                                            </div>
+                                        {% endif %}
+                                        {% if field.shape_warning %}<div class="message warning">{{ field.shape_warning }}</div>{% endif %}
+                                    </div>
+                                {% endfor %}
+                            </div>
+                        </section>
+                    {% endif %}
+
+                    {% for blocker in preview.launch_blockers %}
+                        <div class="message warning">{{ blocker }}</div>
+                    {% endfor %}
+
+                    <div class="plan-tree" data-plan-tree>
+                      {% for group_node in preview.tree_nodes %}
+                        <div class="tree-group" data-plan-tree-node data-node-id="{{ group_node.id }}" data-descendant-ids="{{ group_node.descendant_step_ids|join:',' }}">
+                          <div class="tree-group-header tree-group-header--open">
+                            <div class="tree-header-content">
+                              <button type="button" class="tree-chevron" data-plan-tree-chevron data-node-id="{{ group_node.id }}" aria-expanded="true" aria-controls="tree-children-{{ group_node.id }}" aria-label="Collapse {{ group_node.label }}">
+                                <span aria-hidden="true">›</span>
+                              </button>
+                              <label class="tree-parent-label">
+                                <input type="checkbox" class="tree-parent-checkbox" data-plan-parent-checkbox data-node-id="{{ group_node.id }}" aria-label="Select all {{ group_node.label }} steps">
+                                <span class="tree-group-name">{{ group_node.label }}</span>
+                              </label>
+                            </div>
+                            <span class="tree-counts">
+                              <span class="badge" data-node-count="{{ group_node.id }}">{{ group_node.selected_count }}/{{ group_node.total_count }}</span>
+                              {% if group_node.cert_impact_count > 0 %}<span class="badge required">{{ group_node.cert_impact_count }} mandatory</span>{% endif %}
+                            </span>
+                          </div>
+                          <div class="tree-children" id="tree-children-{{ group_node.id }}">
+                            {% for child in group_node.children %}
+                              {% include "conformance/partials/plan_tree_node.html" with node=child rows_by_id=rows_by_id depth=1 %}
+                            {% endfor %}
+                          </div>
+                        </div>
+                      {% empty %}
+                        {% for row in preview.rows %}
+                          <div class="tree-leaf" data-plan-step-row data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}" data-step-selected="{% if row.selected_after_form %}true{% else %}false{% endif %}">
+                            <label class="tree-leaf-label">
+                              <input type="checkbox" name="selected_step_ids" value="{{ row.id }}" {% if row.selected_after_form %}checked{% endif %} aria-label="Select {{ row.name }}" data-plan-step-checkbox data-step-id="{{ row.id }}" data-step-mandatory="{% if row.mandatory %}true{% else %}false{% endif %}">
+                              <span class="tree-step-name">{{ row.name }}</span>
+                              <span class="step-id">{{ row.id }}</span>
+                            </label>
+                            <span class="tree-leaf-meta">
+                              <span class="badge">{{ row.kind }}</span>
+                              <span class="badge">{{ row.phase }}</span>
+                              <span class="badge">{{ row.group }}</span>
+                              {% if row.mandatory %}<span class="badge required">Mandatory</span>{% endif %}
+                              {% if row.optional %}<span class="badge optional">Optional</span>{% endif %}
+                              {% if row.certification_blocked_by_deselection %}<span class="badge blocked">Impact</span>{% endif %}
+                            </span>
+                          </div>
+                        {% endfor %}
+                      {% endfor %}
+                    </div>
+                </section>
+            {% endif %}
+        </form>
+    </details>
+
 </main>
 <script>
+    // ── Staged journey data from Django context ────────────────────────────
+    const STAGED_SPECS = {{ staged_specification_options|safe }};
+    const STAGED_VERSIONS = {{ staged_version_options|safe }};
+    const STAGED_RGS = {{ staged_resource_group_options|safe }};
+    const STAGED_CATALOGUES = {{ staged_catalogue_data|safe }};
+    const STAGED_DISCOVERY_PREVIEW_URL = "{% url 'plan-discovery-preview' %}";
+    const STAGED_LAUNCH_URL = "{% url 'plan-staged-launch' %}";
+
+    // ── Staged journey state ──────────────────────────────────────────────
+    const state = {
+        standard: 'obl',
+        specification: null,
+        version: null,
+        resourceGroups: [],
+        endpointSelections: {},
+        fieldValues: {},
+        baseConfig: {
+            discoveryUrl: '',
+            resultOutputPath: '',
+            executionLogPath: '',
+        },
+        advancedTestDataValues: {},
+        discoveryPreview: null,
+    };
+
+    let currentStage = 1;
+    const TOTAL_STAGES = 8;
+    let showAllApplicableTests = false;
+
+    function getStepEl(n) { return document.getElementById(`stage-${n}`); }
+    function getBodyEl(n) { return document.getElementById(`stage-${n}-body`); }
+    function getSummaryEl(n) { return document.getElementById(`stage-${n}-summary`); }
+    function getCatalogue() {
+        return (((STAGED_CATALOGUES[state.standard] || {})[state.specification] || {})[state.version]) || null;
+    }
+    function escapeHtml(value) {
+        return String(value ?? '').replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[char]));
+    }
+    function isPlainObject(value) {
+        return value !== null && typeof value === 'object' && !Array.isArray(value);
+    }
+    function isValidConfigTestDataKey(key) {
+        return /^[A-Za-z][A-Za-z0-9_-]*$/.test(key);
+    }
+    function nonBlank(value) {
+        return typeof value === 'string' && value.trim() !== '';
+    }
+    function csrfToken() {
+        return document.querySelector('input[name=csrfmiddlewaretoken]')?.value || '';
+    }
+    async function postJson(url, payload) {
+        const response = await fetch(url, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+                'X-CSRFToken': csrfToken(),
+            },
+            body: JSON.stringify(payload),
+        });
+        let body = {};
+        try {
+            body = await response.json();
+        } catch {
+            body = { error: 'Server returned a non-JSON response.' };
+        }
+        return { response, body };
+    }
+
+    function toggleStage(n) {
+        const body = getBodyEl(n);
+        if (!body) return;
+        const isHidden = body.hidden;
+        // Only allow opening completed or current stages
+        const step = getStepEl(n);
+        if (!step) return;
+        body.hidden = !isHidden;
+        const header = step.querySelector('.stage-header');
+        if (header) header.setAttribute('aria-expanded', isHidden ? 'true' : 'false');
+    }
+
+    function goToStage(n) {
+        // Close current, open n
+        for (let i = 1; i <= TOTAL_STAGES; i++) {
+            const body = getBodyEl(i);
+            const header = getStepEl(i)?.querySelector('.stage-header');
+            if (body) body.hidden = (i !== n);
+            if (header) header.setAttribute('aria-expanded', i === n ? 'true' : 'false');
+        }
+        currentStage = n;
+        getStepEl(n)?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    }
+
+    function markStageComplete(n) {
+        const step = getStepEl(n);
+        if (!step) return;
+        step.classList.remove('active');
+        step.classList.add('completed');
+    }
+
+    function markStageActive(n) {
+        const step = getStepEl(n);
+        if (!step) return;
+        step.classList.remove('completed');
+        step.classList.add('active');
+    }
+
+    function advanceStage(fromStage) {
+        markStageComplete(fromStage);
+        const next = fromStage + 1;
+        if (next > TOTAL_STAGES) return;
+        markStageActive(next);
+        if (next === 2) populateSpecStage();
+        if (next === 4) populateVersionStage();
+        if (next === 5) populateResourceGroupStage();
+        if (next === 6) populateEndpointStage();
+        if (next === 7) populateFieldValueStage();
+        if (next === 8) populatePreviewStage();
+        goToStage(next);
+    }
+
+    // ── Stage population functions ────────────────────────────────────────
+
+    function populateSpecStage() {
+        const container = document.getElementById('stage-2-options');
+        if (!container) return;
+        const specs = STAGED_SPECS[state.standard] || [];
+        container.innerHTML = '';
+        specs.forEach(spec => {
+            const label = document.createElement('label');
+            label.className = 'stage-option';
+            label.dataset.value = spec.id;
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'staged_specification';
+            radio.value = spec.id;
+            if (state.specification === spec.id) {
+                radio.checked = true;
+                label.classList.add('selected');
+            }
+            radio.addEventListener('change', () => {
+                container.querySelectorAll('.stage-option').forEach(el => el.classList.remove('selected'));
+                label.classList.add('selected');
+                state.specification = spec.id;
+                state.version = null;
+                state.resourceGroups = [];
+                state.endpointSelections = {};
+                state.fieldValues = {};
+                getSummaryEl(2).textContent = spec.displayLabel;
+            });
+            const span = document.createElement('span');
+            span.className = 'stage-option-label';
+            span.textContent = spec.displayLabel;
+            label.append(radio, span);
+            container.appendChild(label);
+        });
+        // Auto-select first
+        if (specs.length > 0 && !state.specification) {
+            state.specification = specs[0].id;
+            const firstOption = container.querySelector('.stage-option');
+            if (firstOption) {
+                firstOption.classList.add('selected');
+                const radio = firstOption.querySelector('input[type=radio]');
+                if (radio) radio.checked = true;
+                getSummaryEl(2).textContent = specs[0].displayLabel;
+            }
+        }
+    }
+
+    function populateVersionStage() {
+        const container = document.getElementById('stage-4-options');
+        if (!container) return;
+        const versions = (STAGED_VERSIONS[state.standard] || {})[state.specification] || [];
+        container.innerHTML = '';
+        versions.forEach(v => {
+            const label = document.createElement('label');
+            label.className = 'stage-option';
+            label.dataset.value = v.version;
+            const radio = document.createElement('input');
+            radio.type = 'radio';
+            radio.name = 'staged_version';
+            radio.value = v.version;
+            if (state.version === v.version) {
+                radio.checked = true;
+                label.classList.add('selected');
+            }
+            radio.addEventListener('change', () => {
+                container.querySelectorAll('.stage-option').forEach(el => el.classList.remove('selected'));
+                label.classList.add('selected');
+                state.version = v.version;
+                state.resourceGroups = [];
+                state.endpointSelections = {};
+                state.fieldValues = {};
+                getSummaryEl(4).textContent = v.version;
+            });
+            const span = document.createElement('span');
+            span.className = 'stage-option-label';
+            span.textContent = v.version;
+            label.append(radio, span);
+            container.appendChild(label);
+        });
+        if (versions.length > 0 && !state.version) {
+            state.version = versions[0].version;
+            const firstOption = container.querySelector('.stage-option');
+            if (firstOption) {
+                firstOption.classList.add('selected');
+                const radio = firstOption.querySelector('input[type=radio]');
+                if (radio) radio.checked = true;
+                getSummaryEl(4).textContent = versions[0].version;
+            }
+        }
+    }
+
+    function populateResourceGroupStage() {
+        const container = document.getElementById('stage-5-options');
+        if (!container) return;
+        const rgs = ((STAGED_RGS[state.standard] || {})[state.specification] || {})[state.version] || [];
+        container.innerHTML = '';
+        if (rgs.length === 0) {
+            state.resourceGroups = [];
+            container.innerHTML = '<p class="helper">This specification selects operations directly, without resource groups.</p>';
+            getSummaryEl(5).textContent = 'Operations selected next';
+            return;
+        }
+        rgs.forEach(rg => {
+            const label = document.createElement('label');
+            label.className = 'stage-option';
+            label.dataset.value = rg.id;
+            const cb = document.createElement('input');
+            cb.type = 'checkbox';
+            cb.name = 'staged_resource_group';
+            cb.value = rg.id;
+            const isChecked = state.resourceGroups.includes(rg.id);
+            cb.checked = isChecked;
+            if (isChecked) label.classList.add('selected');
+            cb.addEventListener('change', () => {
+                if (cb.checked) {
+                    label.classList.add('selected');
+                    if (!state.resourceGroups.includes(rg.id)) state.resourceGroups.push(rg.id);
+                } else {
+                    label.classList.remove('selected');
+                    state.resourceGroups = state.resourceGroups.filter(r => r !== rg.id);
+                }
+                state.endpointSelections = {};
+                updateRgSummary();
+            });
+            const span = document.createElement('span');
+            span.className = 'stage-option-label';
+            span.textContent = rg.displayLabel;
+            label.append(cb, span);
+            container.appendChild(label);
+        });
+        if (state.resourceGroups.length === 0) {
+            // default: select all
+            state.resourceGroups = rgs.map(r => r.id);
+            container.querySelectorAll('.stage-option').forEach(el => {
+                el.classList.add('selected');
+                const cb = el.querySelector('input[type=checkbox]');
+                if (cb) cb.checked = true;
+            });
+        }
+        updateRgSummary();
+    }
+
+    function updateRgSummary() {
+        const rgs = ((STAGED_RGS[state.standard] || {})[state.specification] || {})[state.version] || [];
+        const selectedLabels = rgs.filter(rg => state.resourceGroups.includes(rg.id)).map(rg => rg.displayLabel.split(' (')[0]);
+        getSummaryEl(5).textContent = selectedLabels.length > 0 ? selectedLabels.join(', ') : 'None selected';
+    }
+
+    function populateEndpointStage() {
+        const container = document.getElementById('stage-6-endpoints');
+        if (!container) return;
+
+        const rgs = ((STAGED_RGS[state.standard] || {})[state.specification] || {})[state.version] || [];
+        const selectedRgs = rgs.filter(rg => state.resourceGroups.includes(rg.id));
+        const catalogue = getCatalogue();
+
+        if (!catalogue) {
+            container.innerHTML = '<p class="helper">No catalogue data is available for this target.</p>';
+            getSummaryEl(6).textContent = 'No catalogue';
+            return;
+        }
+        if (catalogue.usesResourceGroups && selectedRgs.length === 0) {
+            container.innerHTML = '<p class="helper">No resource groups selected.</p>';
+            getSummaryEl(6).textContent = 'No resource groups';
+            return;
+        }
+
+        const selectedRgIds = new Set(state.resourceGroups);
+        const filtered = (catalogue.endpoints || []).filter(ep => !catalogue.usesResourceGroups || selectedRgIds.has(ep.resourceGroup));
+
+        if (filtered.length === 0) {
+            container.innerHTML = '<p class="helper">No endpoint or operation coverage is available for this target.</p>';
+            getSummaryEl(6).textContent = 'No data';
+            return;
+        }
+
+        const byRg = {};
+        filtered.forEach(ep => {
+            const groupKey = ep.resourceGroup || 'operations';
+            if (!byRg[groupKey]) byRg[groupKey] = [];
+            byRg[groupKey].push(ep);
+        });
+
+        const html = [];
+        Object.entries(byRg).forEach(([rgId, eps]) => {
+            const rgMeta = rgs.find(r => r.id === rgId);
+            const groupLabel = rgMeta ? rgMeta.displayLabel : (rgId === 'operations' ? 'Operations' : rgId.toUpperCase());
+            html.push(`<h4 style="margin:16px 0 8px;font-size:0.95rem">${escapeHtml(groupLabel)}</h4>`);
+            html.push('<table class="endpoint-table"><thead><tr><th></th><th>Method</th><th>Path</th><th>Label</th><th>Requirement</th></tr></thead><tbody>');
+            eps.forEach(ep => {
+                const isMandatory = ep.requirement === 'mandatory';
+                const previous = state.endpointSelections[ep.endpointId];
+                const isSelected = previous ? previous.selected : ep.requirement !== 'optional';
+                state.endpointSelections[ep.endpointId] = {
+                    selected: isSelected,
+                    requirement: ep.requirement,
+                    operation: ep.operation,
+                    method: ep.method,
+                };
+                const badgeClass = isMandatory ? 'required' : (ep.requirement === 'conditional' ? 'conditional' : 'optional');
+                html.push(`<tr data-endpoint-row="${escapeHtml(ep.endpointId)}">
+                    <td><input type="checkbox" data-endpoint-checkbox="${escapeHtml(ep.endpointId)}" ${isSelected ? 'checked' : ''} aria-label="Include ${escapeHtml(ep.displayLabel)}"></td>
+                    <td><span class="method-badge method-${escapeHtml(ep.method)}">${escapeHtml(ep.method)}</span></td>
+                    <td class="step-id">${escapeHtml(ep.path)}</td>
+                    <td>${escapeHtml(ep.displayLabel)}</td>
+                    <td><span class="badge ${badgeClass}">${escapeHtml(ep.requirement)}</span></td>
+                </tr>`);
+            });
+            html.push('</tbody></table>');
+        });
+        container.innerHTML = html.join('');
+
+        container.querySelectorAll('[data-endpoint-checkbox]').forEach(cb => {
+            cb.addEventListener('change', () => {
+                const id = cb.dataset.endpointCheckbox;
+                state.endpointSelections[id] = { ...state.endpointSelections[id], selected: cb.checked };
+                checkMandatoryWarning();
+                updateEndpointSummary(filtered);
+            });
+        });
+
+        checkMandatoryWarning();
+        updateEndpointSummary(filtered);
+    }
+
+    function applyEndpointBulkAction(action) {
+        const endpoints = selectedEndpointEntries();
+        for (const ep of endpoints) {
+            const nextSelected = action === 'select-all' || (action === 'select-mandatory' && ep.requirement === 'mandatory');
+            state.endpointSelections[ep.endpointId] = {
+                ...(state.endpointSelections[ep.endpointId] || {}),
+                selected: action === 'deselect-all' ? false : nextSelected,
+                requirement: ep.requirement,
+                operation: ep.operation,
+                method: ep.method,
+            };
+        }
+        for (const cb of document.querySelectorAll('[data-endpoint-checkbox]')) {
+            const id = cb.dataset.endpointCheckbox;
+            cb.checked = Boolean(state.endpointSelections[id]?.selected);
+        }
+        checkMandatoryWarning();
+        updateEndpointSummary(endpoints);
+    }
+
+    function checkMandatoryWarning() {
+        const warningEl = document.getElementById('stage-6-mandatory-warning');
+        if (!warningEl) return;
+        const hasMandatoryOff = Object.values(state.endpointSelections).some(
+            ep => ep.requirement === 'mandatory' && !ep.selected
+        );
+        warningEl.hidden = !hasMandatoryOff;
+    }
+
+    function updateEndpointSummary(allEndpoints) {
+        const total = allEndpoints.length;
+        const selected = allEndpoints.filter(ep => state.endpointSelections[ep.endpointId]?.selected).length;
+        getSummaryEl(6).textContent = `${selected}/${total} ${getCatalogue()?.usesResourceGroups ? 'endpoints' : 'operations'}`;
+    }
+
+    function populateFieldValueStage() {
+        const container = document.getElementById('stage-7-fields');
+        if (!container) return;
+        populateBaseConfigFields();
+        const fields = runtimeMappedFields();
+        if (fields.length === 0) {
+            container.innerHTML = '<p class="helper">This catalogue does not declare participant field prompts.</p>';
+            populateAdvancedTestDataValues();
+            getSummaryEl(7).textContent = 'No fields';
+            return;
+        }
+
+        const html = ['<div class="field-value-grid">'];
+        fields.forEach(field => {
+            const value = state.fieldValues[field.fieldId] || '';
+            const requiredBadge = field.required ? '<span class="badge required">Required</span>' : '<span class="badge optional">Optional</span>';
+            const sensitiveBadge = field.sensitive ? '<span class="badge">Path-only / masked</span>' : '';
+            html.push(`<div class="field-value-card" data-field-card="${escapeHtml(field.fieldId)}">`);
+            if (field.valueType === 'boolean') {
+                html.push(`<label class="field-value-checkbox-label"><input type="checkbox" data-field-value="${escapeHtml(field.fieldId)}" ${value === 'true' ? 'checked' : ''}>${escapeHtml(field.displayLabel)}</label>`);
+            } else if (field.valueType === 'choice' && field.fieldId.endsWith('tokenEndpointAuthMethod')) {
+                html.push(`<label for="field-${escapeHtml(field.fieldId)}">${escapeHtml(field.displayLabel)}</label>`);
+                html.push(`<select id="field-${escapeHtml(field.fieldId)}" data-field-value="${escapeHtml(field.fieldId)}">
+                    <option value="">Select auth method</option>
+                    <option value="private_key_jwt" ${value === 'private_key_jwt' ? 'selected' : ''}>private_key_jwt</option>
+                    <option value="tls_client_auth" ${value === 'tls_client_auth' ? 'selected' : ''}>tls_client_auth</option>
+                </select>`);
+            } else {
+                const inputType = field.valueType === 'url' ? 'url' : 'text';
+                html.push(`<label for="field-${escapeHtml(field.fieldId)}">${escapeHtml(field.displayLabel)}</label>`);
+                html.push(`<input id="field-${escapeHtml(field.fieldId)}" data-field-value="${escapeHtml(field.fieldId)}" type="${inputType}" value="${escapeHtml(value)}" autocomplete="off">`);
+            }
+            html.push(`<div class="test-value-meta"><div>${requiredBadge} ${sensitiveBadge} <span class="badge">${escapeHtml(field.valueType)}</span></div><span class="step-id">${escapeHtml(field.fieldId)}</span></div>`);
+            if (field.valueType === 'path') html.push('<div class="helper">Enter the exact absolute filesystem path. Do not paste key or certificate contents.</div>');
+            html.push('</div>');
+        });
+        html.push('</div>');
+        container.innerHTML = html.join('');
+        container.querySelectorAll('[data-field-value]').forEach(input => {
+            input.addEventListener('input', () => updateFieldValue(input));
+            input.addEventListener('change', () => updateFieldValue(input));
+        });
+        populateAdvancedTestDataValues();
+        updateFieldSummary();
+    }
+
+    function runtimeMappedFields() {
+        return getCatalogue()?.fieldSchemas || [];
+    }
+
+    function populateBaseConfigFields() {
+        const container = document.getElementById('stage-7-base-fields');
+        if (!container) return;
+        const baseFields = [
+            ['discoveryUrl', 'Discovery URL', 'url', true, 'OpenID Provider discovery URL. Use preview to fetch non-secret metadata and prefill empty endpoint fields.'],
+            ['resultOutputPath', 'Result output path', 'text', false, 'Optional result JSON output path for CLI/API reuse.'],
+            ['executionLogPath', 'Execution log path', 'text', false, 'Optional NDJSON execution log output path for CLI/API reuse.'],
+        ];
+        container.innerHTML = `<div class="field-value-grid">${baseFields.map(([key, label, type, required, help]) => `
+            <div class="field-value-card">
+                <label for="base-config-${key}">${escapeHtml(label)}</label>
+                <input id="base-config-${key}" data-base-config-value="${escapeHtml(key)}" type="${type}" value="${escapeHtml(state.baseConfig[key] || '')}" autocomplete="off">
+                <div class="test-value-meta"><div><span class="badge ${required ? 'required' : 'optional'}">${required ? 'Required' : 'Optional'}</span></div><span class="step-id">${escapeHtml(key)}</span></div>
+                <div class="helper">${escapeHtml(help)}</div>
+                ${key === 'discoveryUrl' ? `
+                    <div class="actions preview-actions">
+                        <button type="button" class="secondary" data-discovery-preview>Preview discovery</button>
+                        <span class="muted" data-discovery-preview-status></span>
+                    </div>
+                    <div data-discovery-preview-content></div>
+                ` : ''}
+            </div>`).join('')}</div>`;
+        container.querySelectorAll('[data-base-config-value]').forEach(input => {
+            input.addEventListener('input', () => updateBaseConfigValue(input));
+            input.addEventListener('change', () => updateBaseConfigValue(input));
+        });
+        container.querySelector('[data-discovery-preview]')?.addEventListener('click', fetchDiscoveryPreview);
+        renderDiscoveryPreview();
+    }
+
+    function updateBaseConfigValue(input) {
+        const key = input.dataset.baseConfigValue;
+        if (!key) return;
+        state.baseConfig[key] = input.value;
+        updateFieldSummary();
+    }
+
+    async function fetchDiscoveryPreview() {
+        const status = document.querySelector('[data-discovery-preview-status]');
+        if (status) status.textContent = 'Fetching discovery metadata...';
+        try {
+            const { response, body } = await postJson(STAGED_DISCOVERY_PREVIEW_URL, {
+                discoveryUrl: state.baseConfig.discoveryUrl,
+            });
+            if (!response.ok) {
+                if (status) status.textContent = body.error || 'Discovery preview failed.';
+                return;
+            }
+            state.discoveryPreview = body.discovery || {};
+            applyDiscoveryPrefill(state.discoveryPreview);
+            renderDiscoveryPreview();
+            updateFieldSummary();
+            const nextStatus = document.querySelector('[data-discovery-preview-status]');
+            if (nextStatus) nextStatus.textContent = 'Discovery metadata loaded. Empty matching fields were prefilled.';
+        } catch (error) {
+            if (status) status.textContent = `Discovery preview failed: ${error.message}`;
+        }
+    }
+
+    function applyDiscoveryPrefill(discovery) {
+        const isDcrTarget = state.specification === 'dynamic-client-registration';
+        if (!isDcrTarget) prefillEmptyField('oauth.authorizationBaseUrl', discovery.authorizationEndpoint);
+        if (Array.isArray(discovery.tokenEndpointAuthMethodsSupported)) {
+            const preferredMethod = discovery.tokenEndpointAuthMethodsSupported.includes('tls_client_auth')
+                ? 'tls_client_auth'
+                : (discovery.tokenEndpointAuthMethodsSupported.includes('private_key_jwt') ? 'private_key_jwt' : '');
+            if (isDcrTarget) {
+                prefillEmptyField('dcr.tokenEndpointAuthMethod', preferredMethod);
+            } else {
+                prefillEmptyField('fapiSigning.tokenEndpointAuthMethod', preferredMethod);
+            }
+        }
+        populateFieldValueStage();
+    }
+
+    function prefillEmptyField(fieldId, value) {
+        if (!nonBlank(value) || nonBlank(state.fieldValues[fieldId])) return;
+        state.fieldValues[fieldId] = value;
+    }
+
+    function renderDiscoveryPreview() {
+        const container = document.querySelector('[data-discovery-preview-content]');
+        if (!container) return;
+        const discovery = state.discoveryPreview;
+        if (!discovery) {
+            container.innerHTML = '';
+            return;
+        }
+        const rows = [
+            ['Issuer', discovery.issuer],
+            ['Authorization endpoint', discovery.authorizationEndpoint],
+            ['Token endpoint', discovery.tokenEndpoint],
+            ['JWKS URI', discovery.jwksUri],
+            ['Registration endpoint', discovery.registrationEndpoint],
+            ['Grant types', Array.isArray(discovery.grantTypesSupported) ? discovery.grantTypesSupported.join(', ') : ''],
+            ['Response types', Array.isArray(discovery.responseTypesSupported) ? discovery.responseTypesSupported.join(', ') : ''],
+            ['Token endpoint auth methods', Array.isArray(discovery.tokenEndpointAuthMethodsSupported) ? discovery.tokenEndpointAuthMethodsSupported.join(', ') : ''],
+        ].filter(([, value]) => nonBlank(value));
+        container.innerHTML = rows.length ? `
+            <div class="run-plan-preview">
+                <h3>Discovery preview</h3>
+                <p>This metadata is used only for preview/prefill. The saved config keeps the discovery URL and explicit field values, not the fetched document.</p>
+                <dl>${rows.map(([label, value]) => `<dt>${escapeHtml(label)}</dt><dd class="step-id">${escapeHtml(value)}</dd>`).join('')}</dl>
+            </div>` : '';
+    }
+
+    function updateFieldValue(input) {
+        const fieldId = input.dataset.fieldValue;
+        if (!fieldId) return;
+        if (input.type === 'checkbox') {
+            state.fieldValues[fieldId] = input.checked ? 'true' : '';
+        } else {
+            state.fieldValues[fieldId] = input.value;
+        }
+        updateFieldSummary();
+    }
+
+    function updateFieldSummary() {
+        const fields = runtimeMappedFields();
+        const requiredMissing = fields.filter(field => field.required && !(state.fieldValues[field.fieldId] || '').trim()).length;
+        const supplied = fields.filter(field => (state.fieldValues[field.fieldId] || '').trim()).length;
+        const baseMissing = ['discoveryUrl'].filter(key => !nonBlank(state.baseConfig[key])).length;
+        const warning = document.getElementById('stage-7-required-warning');
+        if (warning) warning.hidden = requiredMissing === 0 && baseMissing === 0;
+        getSummaryEl(7).textContent = `${supplied}/${fields.length} catalogue fields, ${baseMissing ? `${baseMissing} base missing` : 'base ready'}`;
+    }
+
+    function selectedEndpointEntries() {
+        const catalogue = getCatalogue();
+        if (!catalogue) return [];
+        const selectedRgIds = new Set(state.resourceGroups);
+        return (catalogue.endpoints || []).filter(ep => !catalogue.usesResourceGroups || selectedRgIds.has(ep.resourceGroup));
+    }
+
+    function buildTestPlan() {
+        const catalogue = getCatalogue();
+        const target = {
+            standard: state.standard,
+            specification: state.specification,
+            securityProfile: 'fapi1-advanced',
+            specificationVersion: state.version,
+            catalogueHash: catalogue?.catalogueHash || '',
+        };
+        const plan = {
+            target,
+            endpointSelections: selectedEndpointEntries().map(ep => ({
+                endpointId: ep.endpointId,
+                operation: ep.operation,
+                selected: Boolean(state.endpointSelections[ep.endpointId]?.selected),
+            })),
+        };
+        if (catalogue?.usesResourceGroups) plan.resourceGroups = [...state.resourceGroups];
+        for (const [key, value] of Object.entries(state.advancedTestDataValues)) {
+            if (!isValidConfigTestDataKey(key) || !nonBlank(value)) continue;
+            if (!plan.testData) plan.testData = {};
+            plan.testData[key] = value;
+        }
+        return plan;
+    }
+
+    function buildEnhancedConfigDocument() {
+        const config = {};
+        if (nonBlank(state.baseConfig.discoveryUrl)) config.discoveryUrl = state.baseConfig.discoveryUrl.trim();
+        if (nonBlank(state.baseConfig.resultOutputPath)) config.resultOutputPath = state.baseConfig.resultOutputPath.trim();
+        if (nonBlank(state.baseConfig.executionLogPath)) config.executionLogPath = state.baseConfig.executionLogPath.trim();
+        config.testTarget = {
+            standard: state.standard,
+            specification: state.specification,
+            securityProfile: 'fapi1-advanced',
+            specificationVersion: state.version,
+        };
+        if (getCatalogue()?.usesResourceGroups) config.testTarget.resourceGroups = [...state.resourceGroups];
+        applyMappedRuntimeConfig(config);
+        const advancedValues = Object.fromEntries(
+            Object.entries(state.advancedTestDataValues).filter(([key, value]) => isValidConfigTestDataKey(key) && nonBlank(value))
+        );
+        if (Object.keys(advancedValues).length > 0) config.testData = { values: advancedValues };
+        config.testPlan = buildTestPlan();
+        return config;
+    }
+
+    function setNestedObjectValue(obj, section, key, value) {
+        if (!nonBlank(value)) return;
+        if (!obj[section]) obj[section] = {};
+        obj[section][key] = value.trim();
+    }
+
+    function setNestedBooleanValue(obj, section, key, value) {
+        if (value !== 'true') return;
+        if (!obj[section]) obj[section] = {};
+        obj[section][key] = true;
+    }
+
+    function applyMappedRuntimeConfig(config) {
+        const v = state.fieldValues;
+        if (state.specification === 'dynamic-client-registration') {
+            for (const key of ['ssaPath', 'signingPrivateKeyPath', 'signingCertificatePath', 'transportCertificatePath', 'transportPrivateKeyPath', 'caBundlePath', 'tokenEndpointAuthMethod']) {
+                setNestedObjectValue(config, 'dcr', key, v[`dcr.${key}`]);
+            }
+            setNestedBooleanValue(config, 'dcr', 'disableKeepAlives', v['dcr.disableKeepAlives']);
+            return;
+        }
+        setNestedObjectValue(config, 'oauth', 'clientId', v['oauth.clientId']);
+        setNestedObjectValue(config, 'oauth', 'redirectUri', v['psu.authorizationRedirectUri']);
+        setNestedObjectValue(config, 'oauth', 'authorizationEndpoint', v['oauth.authorizationBaseUrl']);
+        setNestedObjectValue(config, 'oauth', 'resourceBaseUrl', v['oauth.resourceBaseUrl']);
+        setNestedObjectValue(config, 'tls', 'clientCertificatePath', v['tls.certPath']);
+        setNestedObjectValue(config, 'tls', 'clientPrivateKeyPath', v['tls.keyPath']);
+        setNestedObjectValue(config, 'tls', 'caBundlePath', v['tls.caBundlePath']);
+        setNestedObjectValue(config, 'fapiSigning', 'signingCertificatePath', v['fapiSigning.signingCertificatePath']);
+        setNestedObjectValue(config, 'fapiSigning', 'signingPrivateKeyPath', v['fapiSigning.signingPrivateKeyPath']);
+        setNestedObjectValue(config, 'fapiSigning', 'kid', v['fapiSigning.kid']);
+        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionIssuer', v['fapiSigning.clientAssertionIssuer']);
+        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionSubject', v['fapiSigning.clientAssertionSubject']);
+        setNestedObjectValue(config, 'fapiSigning', 'tokenEndpointAuthMethod', v['fapiSigning.tokenEndpointAuthMethod']);
+        setNestedObjectValue(config, 'fapiSigning', 'signatureIssuer', v['fapiSigning.signatureIssuer']);
+        setNestedObjectValue(config, 'fapiSigning', 'signatureTrustAnchor', v['fapiSigning.signatureTrustAnchor']);
+        setNestedObjectValue(config, 'openBanking', 'financialId', v['openBanking.financialId']);
+    }
+
+    function applicableTests() {
+        const catalogue = getCatalogue();
+        if (!catalogue) return [];
+        const selectedEndpoints = new Set(Object.entries(state.endpointSelections).filter(([, value]) => value.selected).map(([id]) => id));
+        const selectedRgIds = new Set(state.resourceGroups);
+        return (catalogue.executableTests || []).filter(test => {
+            const endpointApplies = !test.endpointId || selectedEndpoints.has(test.endpointId);
+            const resourceGroupApplies = !catalogue.usesResourceGroups || !test.resourceGroup || selectedRgIds.has(test.resourceGroup);
+            return endpointApplies && resourceGroupApplies;
+        });
+    }
+
+    function omittedMandatoryEndpoints() {
+        return selectedEndpointEntries().filter(ep => ep.requirement === 'mandatory' && !state.endpointSelections[ep.endpointId]?.selected);
+    }
+
+    function populatePreviewStage() {
+        const container = document.getElementById('stage-8-preview-content');
+        if (!container) return;
+
+        const catalogue = getCatalogue();
+        const tests = applicableTests();
+        const omittedMandatory = omittedMandatoryEndpoints();
+        const readiness = catalogue?.readinessPolicy;
+        const selectedCount = selectedEndpointEntries().filter(ep => state.endpointSelections[ep.endpointId]?.selected).length;
+        const visibleTests = showAllApplicableTests ? tests : tests.slice(0, 12);
+        const testsPreview = visibleTests.map(test => `<li><span class="step-id">${escapeHtml(test.testId)}</span> ${escapeHtml(test.displayLabel)}</li>`).join('');
+        const omittedPreview = omittedMandatory.map(ep => `<li><span class="step-id">${escapeHtml(ep.endpointId)}</span> ${escapeHtml(ep.displayLabel)}</li>`).join('');
+        const configJson = JSON.stringify(buildEnhancedConfigDocument(), null, 2);
+
+        container.innerHTML = `
+            <div style="margin-bottom:12px">
+                <div class="muted" style="margin-bottom:8px">Standard: <strong>${state.standard || '—'}</strong> &nbsp; Specification: <strong>${state.specification || '—'}</strong> &nbsp; Version: <strong>${state.version || '—'}</strong></div>
+                <div class="muted">Security Profile: <span class="badge fapi">FAPI 1 Advanced</span> &nbsp; ${catalogue?.usesResourceGroups ? `Resource Groups: <strong>${escapeHtml(state.resourceGroups.join(', ') || '—')}</strong>` : 'Operations selected directly'}</div>
+            </div>
+            <div class="muted" style="margin:8px 0">Catalogue hash: <span class="step-id">${escapeHtml(catalogue?.catalogueHash || 'unavailable')}</span></div>
+            <div class="counts" aria-label="Staged plan counts">
+                <div class="count"><strong>${selectedCount}</strong><span>${catalogue?.usesResourceGroups ? 'Endpoints' : 'Operations'} selected</span></div>
+                <div class="count"><strong>${tests.length}</strong><span>Applicable tests</span></div>
+                <div class="count"><strong>${omittedMandatory.length}</strong><span>Mandatory omitted</span></div>
+                <div class="count"><strong>${escapeHtml(readiness?.certificationStatus || 'unknown')}</strong><span>Readiness policy</span></div>
+            </div>
+            ${readiness ? `<div class="message ${omittedMandatory.length ? 'warning' : 'success'}">Readiness: omitted mandatory coverage results in <strong>${escapeHtml(readiness.omittedMandatoryOutcome)}</strong>; failed selected tests result in <strong>${escapeHtml(readiness.failedSelectedOutcome)}</strong>.</div>` : ''}
+            ${omittedMandatory.length ? `<div class="message warning">Omitted mandatory ${catalogue?.usesResourceGroups ? 'endpoints' : 'operations'}:<ul class="preview-list">${omittedPreview}</ul></div>` : '<div class="message success">No mandatory coverage is omitted.</div>'}
+            <div class="run-plan-preview">
+                <h3>Applicable tests</h3>
+                ${tests.length ? `<ul class="preview-list">${testsPreview}</ul>${tests.length > 12 ? `<button type="button" class="secondary" data-toggle-applicable-tests>${showAllApplicableTests ? 'Show fewer' : `Show all ${tests.length} tests`}</button>` : ''}` : '<p>No applicable tests derived from the selected coverage.</p>'}
+            </div>
+            <div class="run-plan-preview">
+                <h3>Saved config JSON</h3>
+                <p>Download one self-contained participant config containing runtime fields, testTarget, advanced testData.values, and the embedded testPlan snapshot.</p>
+                <div class="run-plan-actions">
+                    <button type="button" data-staged-launch-run>Launch run</button>
+                    <button type="button" data-staged-config-download>Save config JSON</button>
+                    <button type="button" class="secondary" data-staged-config-copy>Copy config JSON</button>
+                    <span class="muted" data-staged-config-status></span>
+                </div>
+                <pre class="run-plan-json" style="max-height:320px;overflow-y:auto" data-staged-config-json>${escapeHtml(configJson)}</pre>
+            </div>`;
+
+        const toggleTestsButton = container.querySelector('[data-toggle-applicable-tests]');
+        if (toggleTestsButton) {
+            toggleTestsButton.addEventListener('click', () => {
+                showAllApplicableTests = !showAllApplicableTests;
+                populatePreviewStage();
+            });
+        }
+        const configCopy = container.querySelector('[data-staged-config-copy]');
+        if (configCopy) configCopy.addEventListener('click', () => copyStagedText(configJson, '[data-staged-config-status]'));
+        const configDownload = container.querySelector('[data-staged-config-download]');
+        if (configDownload) configDownload.addEventListener('click', () => downloadJson(configJson, stagedConfigFilename()));
+        const launchRun = container.querySelector('[data-staged-launch-run]');
+        if (launchRun) launchRun.addEventListener('click', () => launchStagedRun(JSON.parse(configJson)));
+        getSummaryEl(8).textContent = `${selectedCount} selected, ${tests.length} tests`;
+    }
+
+    async function launchStagedRun(configDocument) {
+        const status = document.querySelector('[data-staged-config-status]');
+        if (status) status.textContent = 'Launching run...';
+        try {
+            const { response, body } = await postJson(STAGED_LAUNCH_URL, configDocument);
+            if (response.ok && body.redirectUrl) {
+                window.location.assign(body.redirectUrl);
+                return;
+            }
+            if (body.activeRunUrl) {
+                if (status) status.innerHTML = `${escapeHtml(body.error || 'A run is already active')} <a href="${escapeHtml(body.activeRunUrl)}">Open active run</a>`;
+                return;
+            }
+            if (status) status.textContent = body.error || 'Launch failed.';
+        } catch (error) {
+            if (status) status.textContent = `Launch failed: ${error.message}`;
+        }
+    }
+
+    function stagedConfigFilename() {
+        const groups = state.resourceGroups.length ? state.resourceGroups.join('-') : 'operations';
+        const date = new Date().toISOString().slice(0, 10);
+        const raw = `${state.standard}-${state.specification}-${state.version}-${groups}-${date}-config.json`;
+        return raw.toLowerCase().replace(/[^a-z0-9._-]+/g, '-');
+    }
+
+    async function copyStagedText(text, statusSelector) {
+        const status = document.querySelector(statusSelector);
+        if (!navigator.clipboard || !navigator.clipboard.writeText) {
+            if (status) status.textContent = 'Clipboard API unavailable in this browser.';
+            return;
+        }
+        try {
+            await navigator.clipboard.writeText(text);
+            if (status) status.textContent = 'Copied';
+        } catch {
+            if (status) status.textContent = 'Copy failed';
+        }
+    }
+
+    function downloadJson(text, filename) {
+        const blob = new Blob([text], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+        URL.revokeObjectURL(url);
+        const status = document.querySelector('[data-staged-config-status]');
+        if (status) status.textContent = `Saved as ${filename}`;
+    }
+
+    function populateAdvancedTestDataValues() {
+        const container = document.getElementById('advanced-test-data-values');
+        if (!container) return;
+        const entries = Object.entries(state.advancedTestDataValues);
+        if (!entries.length) entries.push(['', '']);
+        container.innerHTML = entries.map(([key, value], idx) => `
+            <div class="advanced-test-data-row" data-test-data-row="${idx}">
+                <div>
+                    <label for="advanced-test-data-key-${idx}">Key</label>
+                    <input id="advanced-test-data-key-${idx}" data-test-data-key value="${escapeHtml(key)}" autocomplete="off">
+                </div>
+                <div>
+                    <label for="advanced-test-data-value-${idx}">Value</label>
+                    <input id="advanced-test-data-value-${idx}" data-test-data-value value="${escapeHtml(value)}" autocomplete="off">
+                </div>
+                <button type="button" class="secondary" data-remove-test-data-value>Remove</button>
+            </div>`).join('');
+        syncAdvancedTestDataListeners();
+    }
+
+    function syncAdvancedTestDataListeners() {
+        const container = document.getElementById('advanced-test-data-values');
+        if (!container) return;
+        const persist = () => {
+            const next = {};
+            for (const row of container.querySelectorAll('[data-test-data-row]')) {
+                const key = row.querySelector('[data-test-data-key]')?.value.trim() || '';
+                const value = row.querySelector('[data-test-data-value]')?.value || '';
+                if (key) next[key] = value;
+            }
+            state.advancedTestDataValues = next;
+        };
+        container.querySelectorAll('input').forEach(input => {
+            input.addEventListener('input', persist);
+            input.addEventListener('change', persist);
+        });
+        container.querySelectorAll('[data-remove-test-data-value]').forEach(button => {
+            button.addEventListener('click', () => {
+                button.closest('[data-test-data-row]')?.remove();
+                persist();
+                populateAdvancedTestDataValues();
+            });
+        });
+    }
+
+    function addAdvancedTestDataValue() {
+        const keyBase = 'customValue';
+        let key = keyBase;
+        let idx = 2;
+        while (Object.prototype.hasOwnProperty.call(state.advancedTestDataValues, key)) {
+            key = `${keyBase}${idx}`;
+            idx += 1;
+        }
+        state.advancedTestDataValues[key] = '';
+        populateAdvancedTestDataValues();
+    }
+
+    function applyImportedDocument(raw) {
+        if (!isPlainObject(raw)) throw new Error('JSON root must be an object.');
+        if (raw.schemaVersion === '2' && isPlainObject(raw.target)) {
+            throw new Error('Retired standalone plan JSON is no longer supported. Rebuild the selection and export a saved config JSON with testPlan.');
+        }
+        if (Object.prototype.hasOwnProperty.call(raw, 'runPlan')) {
+            throw new Error('runPlan is no longer supported. Rebuild/export the config JSON with top-level testPlan.');
+        }
+        const importedTestPlan = raw.testPlan;
+        if (importedTestPlan && !isPlainObject(importedTestPlan)) throw new Error('testPlan must be a JSON object.');
+        const importedConfig = raw;
+        const target = importedTestPlan?.target || importedConfig.testTarget;
+        if (!isPlainObject(target)) throw new Error('Import must contain config.testTarget or config.testPlan target coordinates.');
+
+        state.standard = target.standard || 'obl';
+        state.specification = target.specification || null;
+        state.version = target.specificationVersion || null;
+        state.resourceGroups = Array.isArray(importedTestPlan?.resourceGroups)
+            ? [...importedTestPlan.resourceGroups]
+            : (Array.isArray(importedConfig.testTarget?.resourceGroups) ? [...importedConfig.testTarget.resourceGroups] : []);
+        state.endpointSelections = {};
+        state.fieldValues = {};
+        state.advancedTestDataValues = {};
+        validateDcrSectionMatchesTarget(importedConfig);
+        applyImportedBaseConfig(importedConfig);
+        applyImportedRuntimeSections(importedConfig);
+        if (Array.isArray(importedTestPlan?.endpointSelections)) {
+            for (const selection of importedTestPlan.endpointSelections) {
+                if (!isPlainObject(selection) || typeof selection.endpointId !== 'string') continue;
+                state.endpointSelections[selection.endpointId] = {
+                    selected: Boolean(selection.selected),
+                    operation: typeof selection.operation === 'string' ? selection.operation : '',
+                    requirement: state.endpointSelections[selection.endpointId]?.requirement || 'optional',
+                };
+            }
+        }
+        applyImportedTestPlanData(importedTestPlan?.testData);
+        applyImportedConfigTestData(importedConfig.testData?.values);
+        refreshStagedUiAfterImport();
+    }
+
+    function validateDcrSectionMatchesTarget(config) {
+        if (state.specification === 'dynamic-client-registration' || !isPlainObject(config.dcr)) return;
+        throw new Error(`The top-level 'dcr' section is only valid for dynamic-client-registration test plans; this config targets '${state.specification}'. Remove the 'dcr' section or rebuild/export the config for a Dynamic Client Registration test plan.`);
+    }
+
+    function applyImportedBaseConfig(config) {
+        state.baseConfig = {
+            discoveryUrl: typeof config.discoveryUrl === 'string' ? config.discoveryUrl : '',
+            resultOutputPath: typeof config.resultOutputPath === 'string' ? config.resultOutputPath : '',
+            executionLogPath: typeof config.executionLogPath === 'string' ? config.executionLogPath : '',
+        };
+    }
+
+    function applyImportedRuntimeSections(config) {
+        const oauth = isPlainObject(config.oauth) ? config.oauth : {};
+        const tls = isPlainObject(config.tls) ? config.tls : {};
+        const dcr = isPlainObject(config.dcr) ? config.dcr : {};
+        const fapiSigning = isPlainObject(config.fapiSigning) ? config.fapiSigning : {};
+        const openBanking = isPlainObject(config.openBanking) ? config.openBanking : {};
+        if (state.specification === 'dynamic-client-registration') {
+            for (const [key, value] of Object.entries(dcr)) {
+                if (typeof value === 'string') state.fieldValues[`dcr.${key}`] = value;
+                if (typeof value === 'boolean') state.fieldValues[`dcr.${key}`] = value ? 'true' : '';
+            }
+            return;
+        }
+        const mappings = {
+            'oauth.clientId': oauth.clientId,
+            'oauth.resourceBaseUrl': oauth.resourceBaseUrl,
+            'oauth.authorizationBaseUrl': oauth.authorizationEndpoint,
+            'psu.authorizationRedirectUri': oauth.redirectUri,
+            'tls.certPath': tls.clientCertificatePath,
+            'tls.keyPath': tls.clientPrivateKeyPath,
+            'tls.caBundlePath': tls.caBundlePath,
+            'fapiSigning.signingCertificatePath': fapiSigning.signingCertificatePath,
+            'fapiSigning.signingPrivateKeyPath': fapiSigning.signingPrivateKeyPath,
+            'fapiSigning.kid': fapiSigning.kid,
+            'fapiSigning.clientAssertionIssuer': fapiSigning.clientAssertionIssuer,
+            'fapiSigning.clientAssertionSubject': fapiSigning.clientAssertionSubject,
+            'fapiSigning.tokenEndpointAuthMethod': fapiSigning.tokenEndpointAuthMethod,
+            'fapiSigning.signatureIssuer': fapiSigning.signatureIssuer,
+            'fapiSigning.signatureTrustAnchor': fapiSigning.signatureTrustAnchor,
+            'openBanking.financialId': openBanking.financialId,
+        };
+        for (const [fieldId, value] of Object.entries(mappings)) {
+            if (typeof value === 'string') state.fieldValues[fieldId] = value;
+        }
+    }
+
+    function applyImportedTestPlanData(testData) {
+        if (!isPlainObject(testData)) return;
+        const fieldIds = new Set((getCatalogue()?.fieldSchemas || []).map(field => field.fieldId));
+        for (const [key, value] of Object.entries(testData)) {
+            if (typeof value !== 'string') continue;
+            if (fieldIds.has(key)) state.fieldValues[key] = value;
+            else if (isValidConfigTestDataKey(key)) state.advancedTestDataValues[key] = value;
+        }
+    }
+
+    function applyImportedConfigTestData(values) {
+        if (!isPlainObject(values)) return;
+        for (const [key, value] of Object.entries(values)) {
+            if (typeof value === 'string' && isValidConfigTestDataKey(key)) state.advancedTestDataValues[key] = value;
+        }
+    }
+
+    function refreshStagedUiAfterImport() {
+        populateSpecStage();
+        populateVersionStage();
+        populateResourceGroupStage();
+        populateEndpointStage();
+        populateFieldValueStage();
+        populatePreviewStage();
+        for (let i = 1; i <= TOTAL_STAGES; i++) markStageComplete(i);
+        markStageActive(7);
+        goToStage(7);
+    }
+
+    function loadStagedImportFromTextarea() {
+        const textarea = document.getElementById('staged-import-json');
+        const status = document.querySelector('[data-staged-import-status]');
+        try {
+            applyImportedDocument(JSON.parse(textarea.value || '{}'));
+            if (status) status.textContent = 'Loaded into builder. Review missing required fields before saving or launching.';
+        } catch (error) {
+            if (status) status.textContent = `Import failed: ${error.message}`;
+        }
+    }
+
+    document.querySelector('[data-staged-import-apply]')?.addEventListener('click', loadStagedImportFromTextarea);
+    document.getElementById('staged-import-file')?.addEventListener('change', event => {
+        const file = event.target.files?.[0];
+        const textarea = document.getElementById('staged-import-json');
+        const status = document.querySelector('[data-staged-import-status]');
+        if (!file || !textarea) return;
+        const reader = new FileReader();
+        reader.addEventListener('load', () => {
+            textarea.value = typeof reader.result === 'string' ? reader.result : '';
+            if (status) status.textContent = `Loaded ${file.name}; click Load into builder to apply it.`;
+        });
+        reader.addEventListener('error', () => {
+            if (status) status.textContent = `Could not read ${file.name}.`;
+        });
+        reader.readAsText(file);
+    });
+    document.querySelectorAll('[data-endpoint-bulk-action]').forEach(button => {
+        button.addEventListener('click', () => applyEndpointBulkAction(button.dataset.endpointBulkAction));
+    });
+    document.querySelector('[data-add-test-data-value]')?.addEventListener('click', addAdvancedTestDataValue);
+
+    // ── Advanced preview JS ───────────────────────────────────────────────
     (() => {
         const specSelect = document.querySelector('[data-guided-spec-version]');
         const modelBankSelect = document.querySelector('[data-guided-model-bank]');
         const apiSelect = document.querySelector('[data-guided-api]');
         const suiteSelect = document.querySelector('[data-guided-suite]');
         const suiteDescription = document.querySelector('[data-guided-suite-description]');
-        const environmentInput = document.querySelector('[data-guided-environment-input]');
         const discoveryUrlInput = document.querySelector('[data-guided-discovery-url-input]');
-        const oauthPanel = document.querySelector('[data-guided-oauth-panel]');
-        const intentPanel = document.querySelector('[data-guided-intent-panel]');
-        const resourcePanel = document.querySelector('[data-guided-resource-panel]');
-        const signingPanel = document.querySelector('[data-guided-signing-panel]');
+        const oauthPanel = document.getElementById('guided-oauth-panel');
+        const intentPanel = document.getElementById('guided-intent-panel');
+        const resourcePanel = document.getElementById('guided-resource-panel');
+        const signingPanel = document.getElementById('guided-signing-panel');
         const bulkButtons = document.querySelectorAll('[data-plan-bulk-action]');
         const stepCheckboxes = document.querySelectorAll('[data-plan-step-checkbox]');
         const parentCheckboxes = document.querySelectorAll('[data-plan-parent-checkbox]');
@@ -1149,384 +1606,208 @@
         const selectedCountValue = document.querySelector('[data-plan-count-selected]');
         const mandatoryOffCountValue = document.querySelector('[data-plan-count-mandatory-off]');
         const certificationMessage = document.querySelector('[data-plan-certification-message]');
-        const runPlanCopyButton = document.querySelector('[data-run-plan-copy]');
-        const runPlanJson = document.querySelector('[data-run-plan-json]');
-        const runPlanCopyStatus = document.querySelector('[data-run-plan-copy-status]');
         const syncTestValueResetState = (input) => {
             const key = input.dataset.customTestValueInput;
-            if (!key) {
-                return;
-            }
+            if (!key) return;
             const escapedKey = CSS.escape(key);
             const resetButton = document.querySelector(`[data-reset-test-value="${escapedKey}"]`);
             const customBadge = document.querySelector(`[data-custom-test-value-badge="${escapedKey}"]`);
             const defaultLabel = document.querySelector(`[data-custom-test-value-default="${escapedKey}"]`);
             const isCustom = input.value !== (input.dataset.defaultValue || '');
-            if (resetButton instanceof HTMLButtonElement) {
-                resetButton.hidden = !isCustom;
-            }
-            if (customBadge instanceof HTMLElement) {
-                customBadge.hidden = !isCustom;
-            }
-            if (defaultLabel instanceof HTMLElement) {
-                defaultLabel.hidden = isCustom;
-            }
+            if (resetButton instanceof HTMLButtonElement) resetButton.hidden = !isCustom;
+            if (customBadge instanceof HTMLElement) customBadge.hidden = !isCustom;
+            if (defaultLabel instanceof HTMLElement) defaultLabel.hidden = isCustom;
         };
         const testValueInputs = document.querySelectorAll('[data-custom-test-value-input]');
         for (const input of testValueInputs) {
-            if (!(input instanceof HTMLInputElement)) {
-                continue;
-            }
-            input.addEventListener('input', () => {
-                syncTestValueResetState(input);
-            });
+            if (!(input instanceof HTMLInputElement)) continue;
+            input.addEventListener('input', () => syncTestValueResetState(input));
             syncTestValueResetState(input);
         }
         for (const resetButton of testValueResetButtons) {
             resetButton.addEventListener('click', () => {
                 const key = resetButton.dataset.resetTestValue;
-                if (!key) {
-                    return;
-                }
+                if (!key) return;
                 const input = document.querySelector(`[data-custom-test-value-input="${CSS.escape(key)}"]`);
-                if (!(input instanceof HTMLInputElement)) {
-                    return;
-                }
+                if (!(input instanceof HTMLInputElement)) return;
                 input.value = input.dataset.defaultValue || '';
                 syncTestValueResetState(input);
             });
         }
-        if (!specSelect || !apiSelect || !suiteSelect || !suiteDescription) {
-            return;
-        }
+        const hasGuidedFlowControls = Boolean(specSelect && apiSelect && suiteSelect && suiteDescription);
 
         const optionMatches = (option, datasetKey, expectedValue) => {
-            if (!expectedValue) {
-                return true;
-            }
+            if (!expectedValue) return true;
             return option.dataset[datasetKey] === expectedValue;
         };
-
         const firstEnabledValue = (select) => {
             for (const option of select.options) {
-                if (!option.disabled && !option.hidden && option.value) {
-                    return option.value;
-                }
+                if (!option.disabled && !option.hidden && option.value) return option.value;
             }
             return '';
         };
-
         const syncModelBankExample = ({ onlyBlank = false } = {}) => {
-            if (!modelBankSelect || !environmentInput || !discoveryUrlInput) {
-                return;
-            }
+            if (!modelBankSelect || !discoveryUrlInput) return;
             const selectedOption = modelBankSelect.selectedOptions[0];
-            if (!selectedOption || !selectedOption.value) {
-                return;
-            }
-            if (!onlyBlank || !environmentInput.value) {
-                environmentInput.value = selectedOption.dataset.environment || '';
-            }
-            if (!onlyBlank || !discoveryUrlInput.value) {
-                discoveryUrlInput.value = selectedOption.dataset.discoveryUrl || '';
-            }
+            if (!selectedOption || !selectedOption.value) return;
+            if (!onlyBlank || !discoveryUrlInput.value) discoveryUrlInput.value = selectedOption.dataset.discoveryUrl || '';
         };
-
         const syncApiOptions = () => {
             const selectedVersion = specSelect.value;
             for (const option of apiSelect.options) {
-                if (!option.value) {
-                    option.hidden = false;
-                    option.disabled = false;
-                    continue;
-                }
+                if (!option.value) { option.hidden = false; option.disabled = false; continue; }
                 const enabled = optionMatches(option, 'specVersion', selectedVersion);
-                option.hidden = !enabled;
-                option.disabled = !enabled;
+                option.hidden = !enabled; option.disabled = !enabled;
             }
             const currentOption = apiSelect.selectedOptions[0];
-            if (!currentOption || currentOption.disabled) {
-                apiSelect.value = firstEnabledValue(apiSelect);
-            }
+            if (!currentOption || currentOption.disabled) apiSelect.value = firstEnabledValue(apiSelect);
         };
-
         const syncSuiteOptions = () => {
             const selectedVersion = specSelect.value;
             const selectedApi = apiSelect.value;
             for (const option of suiteSelect.options) {
-                if (!option.value) {
-                    option.hidden = false;
-                    option.disabled = false;
-                    continue;
-                }
+                if (!option.value) { option.hidden = false; option.disabled = false; continue; }
                 const enabled = optionMatches(option, 'specVersion', selectedVersion) && optionMatches(option, 'api', selectedApi);
-                option.hidden = !enabled;
-                option.disabled = !enabled;
+                option.hidden = !enabled; option.disabled = !enabled;
             }
             const currentOption = suiteSelect.selectedOptions[0];
-            if (!currentOption || currentOption.disabled) {
-                suiteSelect.value = firstEnabledValue(suiteSelect);
-            }
+            if (!currentOption || currentOption.disabled) suiteSelect.value = firstEnabledValue(suiteSelect);
         };
-
         const syncPromptPanels = () => {
             const selectedOption = suiteSelect.selectedOptions[0];
             if (!selectedOption || !selectedOption.value) {
-                suiteDescription.textContent = 'Pick a suite to see the scope and the relevant browser prompts.';
-                oauthPanel.hidden = true;
-                intentPanel.hidden = true;
-                resourcePanel.hidden = true;
-                signingPanel.hidden = true;
+                suiteDescription.textContent = 'Pick a configuration to see the scope and the relevant browser prompts.';
+                if (oauthPanel) oauthPanel.hidden = true;
+                if (intentPanel) intentPanel.hidden = true;
+                if (resourcePanel) resourcePanel.hidden = true;
+                if (signingPanel) signingPanel.hidden = true;
                 return;
             }
             suiteDescription.textContent = selectedOption.dataset.description || '';
-            oauthPanel.hidden = selectedOption.dataset.promptsOauth !== 'true';
-            intentPanel.hidden = selectedOption.dataset.promptsIntentId !== 'true';
-            resourcePanel.hidden = selectedOption.dataset.promptsResourceBaseUrl !== 'true';
-            signingPanel.hidden = selectedOption.dataset.promptsSigning !== 'true';
+            if (oauthPanel) oauthPanel.hidden = selectedOption.dataset.promptsOauth !== 'true';
+            if (intentPanel) intentPanel.hidden = selectedOption.dataset.promptsIntentId !== 'true';
+            if (resourcePanel) resourcePanel.hidden = selectedOption.dataset.promptsResourceBaseUrl !== 'true';
+            if (signingPanel) signingPanel.hidden = selectedOption.dataset.promptsSigning !== 'true';
         };
-
-        const syncGuidedFlow = () => {
-            syncApiOptions();
-            syncSuiteOptions();
-            syncPromptPanels();
-        };
-
+        const syncGuidedFlow = () => { syncApiOptions(); syncSuiteOptions(); syncPromptPanels(); };
         const setStepSelectionState = (checkbox, isSelected) => {
             checkbox.checked = isSelected;
             checkbox.dataset.stepSelected = isSelected ? 'true' : 'false';
             const row = checkbox.closest('[data-plan-step-row]');
-            if (!row) {
-                return;
-            }
-            row.dataset.stepSelected = isSelected ? 'true' : 'false';
+            if (row) row.dataset.stepSelected = isSelected ? 'true' : 'false';
         };
-
         const getDescendantCheckboxes = (parentCheckbox) => {
             const node = parentCheckbox.closest('[data-plan-tree-node]');
             if (!node) return [];
             const ids = (node.dataset.descendantIds || '').split(',').filter(Boolean);
             return ids.map(id => document.querySelector(`[data-plan-step-checkbox][data-step-id="${id}"]`)).filter(Boolean);
         };
-
         const syncParentCheckbox = (parentCheckbox) => {
             const leafCheckboxes = getDescendantCheckboxes(parentCheckbox);
             if (!leafCheckboxes.length) return;
             const checkedCount = leafCheckboxes.filter(cb => cb.checked).length;
-            if (checkedCount === 0) {
-                parentCheckbox.checked = false;
-                parentCheckbox.indeterminate = false;
-            } else if (checkedCount === leafCheckboxes.length) {
-                parentCheckbox.checked = true;
-                parentCheckbox.indeterminate = false;
-            } else {
-                parentCheckbox.checked = false;
-                parentCheckbox.indeterminate = true;
-            }
+            if (checkedCount === 0) { parentCheckbox.checked = false; parentCheckbox.indeterminate = false; }
+            else if (checkedCount === leafCheckboxes.length) { parentCheckbox.checked = true; parentCheckbox.indeterminate = false; }
+            else { parentCheckbox.checked = false; parentCheckbox.indeterminate = true; }
         };
-
-        const syncAllParentCheckboxes = () => {
-            for (const parentCheckbox of parentCheckboxes) {
-                syncParentCheckbox(parentCheckbox);
-            }
-        };
-
+        const syncAllParentCheckboxes = () => { for (const parentCheckbox of parentCheckboxes) syncParentCheckbox(parentCheckbox); };
         const refreshPlanSelectionPreview = () => {
-            let selectedCount = 0;
-            let mandatoryOffCount = 0;
-
+            let selectedCount = 0, mandatoryOffCount = 0;
             for (const checkbox of stepCheckboxes) {
                 const isSelected = checkbox.checked;
                 const isMandatory = checkbox.dataset.stepMandatory === 'true';
-
-                if (isSelected) {
-                    selectedCount += 1;
-                }
-                if (isMandatory && !isSelected) {
-                    mandatoryOffCount += 1;
-                }
-
+                if (isSelected) selectedCount += 1;
+                if (isMandatory && !isSelected) mandatoryOffCount += 1;
                 const row = checkbox.closest('[data-plan-step-row]');
-                if (row) {
-                    row.dataset.stepSelected = isSelected ? 'true' : 'false';
-                }
+                if (row) row.dataset.stepSelected = isSelected ? 'true' : 'false';
             }
-
             syncAllParentCheckboxes();
-
-            if (selectedCountValue) {
-                selectedCountValue.textContent = String(selectedCount);
-            }
-            if (mandatoryOffCountValue) {
-                mandatoryOffCountValue.textContent = String(mandatoryOffCount);
-            }
+            if (selectedCountValue) selectedCountValue.textContent = String(selectedCount);
+            if (mandatoryOffCountValue) mandatoryOffCountValue.textContent = String(mandatoryOffCount);
             if (certificationMessage) {
                 const eligible = mandatoryOffCount === 0;
-                certificationMessage.textContent = eligible
-                    ? 'Certification selection eligible'
-                    : 'Certification selection ineligible';
+                certificationMessage.textContent = eligible ? 'Certification selection eligible' : 'Certification selection ineligible';
                 certificationMessage.classList.toggle('success', eligible);
                 certificationMessage.classList.toggle('warning', !eligible);
             }
-
-            // Update per-node count badges
             const treeNodes = document.querySelectorAll('[data-plan-tree-node]');
             for (const treeNode of treeNodes) {
                 const nodeId = treeNode.dataset.nodeId;
                 if (!nodeId) continue;
                 const descendantIds = (treeNode.dataset.descendantIds || '').split(',').filter(Boolean);
-                const nodeLeafCheckboxes = descendantIds
-                    .map(id => document.querySelector(`[data-plan-step-checkbox][data-step-id="${CSS.escape(id)}"]`))
-                    .filter(Boolean);
+                const nodeLeafCheckboxes = descendantIds.map(id => document.querySelector(`[data-plan-step-checkbox][data-step-id="${CSS.escape(id)}"]`)).filter(Boolean);
                 const nodeSelected = nodeLeafCheckboxes.filter(cb => cb.checked).length;
                 const nodeTotal = nodeLeafCheckboxes.length;
                 const badge = document.querySelector(`[data-node-count="${CSS.escape(nodeId)}"]`);
-                if (badge) {
-                    badge.textContent = `${nodeSelected}/${nodeTotal}`;
-                }
+                if (badge) badge.textContent = `${nodeSelected}/${nodeTotal}`;
             }
         };
-
         const applyBulkSelection = (action) => {
             for (const checkbox of stepCheckboxes) {
-                if (action === 'select-all') {
-                    setStepSelectionState(checkbox, true);
-                    continue;
-                }
-                if (action === 'select-mandatory-only') {
-                    const isMandatory = checkbox.dataset.stepMandatory === 'true';
-                    setStepSelectionState(checkbox, isMandatory);
-                    continue;
-                }
-                if (action === 'deselect-all') {
-                    setStepSelectionState(checkbox, false);
-                }
+                if (action === 'select-all') { setStepSelectionState(checkbox, true); continue; }
+                if (action === 'select-mandatory-only') { setStepSelectionState(checkbox, checkbox.dataset.stepMandatory === 'true'); continue; }
+                if (action === 'deselect-all') { setStepSelectionState(checkbox, false); }
             }
         };
-
-        specSelect.addEventListener('change', syncGuidedFlow);
-
-        // Chevron expand/collapse (Todo 2)
+        if (hasGuidedFlowControls) specSelect.addEventListener('change', syncGuidedFlow);
         const chevronButtons = document.querySelectorAll('[data-plan-tree-chevron]');
-
         const toggleTreeGroup = (chevron) => {
             const treeNode = chevron.closest('[data-plan-tree-node]');
             if (!treeNode) return;
             const controlledId = chevron.getAttribute('aria-controls');
-            const childrenDiv = controlledId
-                ? treeNode.querySelector(`#${CSS.escape(controlledId)}`)
-                : treeNode.querySelector('.tree-children');
+            const childrenDiv = controlledId ? treeNode.querySelector(`#${CSS.escape(controlledId)}`) : treeNode.querySelector('.tree-children');
             if (!childrenDiv) return;
             const isExpanded = chevron.getAttribute('aria-expanded') === 'true';
             const nowExpanded = !isExpanded;
             chevron.setAttribute('aria-expanded', nowExpanded ? 'true' : 'false');
             childrenDiv.hidden = !nowExpanded;
             const header = chevron.closest('.tree-group-header');
-            if (header) {
-                header.classList.toggle('tree-group-header--open', nowExpanded);
-            }
+            if (header) header.classList.toggle('tree-group-header--open', nowExpanded);
             const currentLabel = chevron.getAttribute('aria-label') || '';
             const name = currentLabel.replace(/^(Expand |Collapse )/, '');
             chevron.setAttribute('aria-label', nowExpanded ? `Collapse ${name}` : `Expand ${name}`);
         };
-
-        for (const chevron of chevronButtons) {
-            chevron.addEventListener('click', (e) => {
-                e.stopPropagation();
-                toggleTreeGroup(chevron);
-            });
-        }
-
-        // Row-click selection (Todo 3)
+        for (const chevron of chevronButtons) chevron.addEventListener('click', (e) => { e.stopPropagation(); toggleTreeGroup(chevron); });
         const planTree = document.querySelector('[data-plan-tree]');
         if (planTree) {
             planTree.addEventListener('click', (e) => {
                 const target = e.target;
                 if (target.closest('button, input, label, a, select')) return;
-
                 const headerContent = target.closest('.tree-header-content');
-                if (headerContent) {
-                    const chevronBtn = headerContent.querySelector('[data-plan-tree-chevron]');
-                    if (chevronBtn) toggleTreeGroup(chevronBtn);
-                    return;
-                }
-
+                if (headerContent) { const chevronBtn = headerContent.querySelector('[data-plan-tree-chevron]'); if (chevronBtn) toggleTreeGroup(chevronBtn); return; }
                 const groupHeader = target.closest('.tree-group-header');
                 if (groupHeader) {
                     const treeNode = groupHeader.closest('[data-plan-tree-node]');
                     if (!treeNode) return;
                     const ids = (treeNode.dataset.descendantIds || '').split(',').filter(Boolean);
-                    const leafCheckboxes = ids
-                        .map(id => document.querySelector(`[data-plan-step-checkbox][data-step-id="${CSS.escape(id)}"]`))
-                        .filter(Boolean);
+                    const leafCheckboxes = ids.map(id => document.querySelector(`[data-plan-step-checkbox][data-step-id="${CSS.escape(id)}"]`)).filter(Boolean);
                     if (!leafCheckboxes.length) return;
                     const anyUnchecked = leafCheckboxes.some(cb => !cb.checked);
-                    for (const cb of leafCheckboxes) {
-                        setStepSelectionState(cb, anyUnchecked);
-                    }
+                    for (const cb of leafCheckboxes) setStepSelectionState(cb, anyUnchecked);
                     refreshPlanSelectionPreview();
                     return;
                 }
-
                 const leafRow = target.closest('[data-plan-step-row]');
-                if (leafRow) {
-                    const cb = leafRow.querySelector('[data-plan-step-checkbox]');
-                    if (cb) {
-                        setStepSelectionState(cb, !cb.checked);
-                        refreshPlanSelectionPreview();
-                    }
-                }
+                if (leafRow) { const cb = leafRow.querySelector('[data-plan-step-checkbox]'); if (cb) { setStepSelectionState(cb, !cb.checked); refreshPlanSelectionPreview(); } }
             });
         }
-        if (modelBankSelect) {
-            modelBankSelect.addEventListener('change', syncModelBankExample);
-        }
-        apiSelect.addEventListener('change', () => {
-            syncSuiteOptions();
-            syncPromptPanels();
-        });
-        suiteSelect.addEventListener('change', syncPromptPanels);
-        for (const button of bulkButtons) {
-            button.addEventListener('click', () => {
-                applyBulkSelection(button.dataset.planBulkAction);
-                refreshPlanSelectionPreview();
-            });
-        }
-        for (const checkbox of stepCheckboxes) {
-            checkbox.addEventListener('change', refreshPlanSelectionPreview);
-        }
+        if (hasGuidedFlowControls && modelBankSelect) modelBankSelect.addEventListener('change', syncModelBankExample);
+        if (hasGuidedFlowControls) apiSelect.addEventListener('change', () => { syncSuiteOptions(); syncPromptPanels(); });
+        if (hasGuidedFlowControls) suiteSelect.addEventListener('change', syncPromptPanels);
+        for (const button of bulkButtons) button.addEventListener('click', () => { applyBulkSelection(button.dataset.planBulkAction); refreshPlanSelectionPreview(); });
+        for (const checkbox of stepCheckboxes) checkbox.addEventListener('change', refreshPlanSelectionPreview);
         for (const parentCheckbox of parentCheckboxes) {
             parentCheckbox.addEventListener('change', () => {
                 const leafCheckboxes = getDescendantCheckboxes(parentCheckbox);
                 const isChecked = parentCheckbox.checked;
-                for (const leaf of leafCheckboxes) {
-                    setStepSelectionState(leaf, isChecked);
-                }
+                for (const leaf of leafCheckboxes) setStepSelectionState(leaf, isChecked);
                 refreshPlanSelectionPreview();
             });
         }
-        if (runPlanCopyButton && runPlanJson) {
-            runPlanCopyButton.addEventListener('click', async () => {
-                if (!navigator.clipboard || !navigator.clipboard.writeText) {
-                    if (runPlanCopyStatus) {
-                        runPlanCopyStatus.textContent = 'Clipboard API unavailable in this browser.';
-                    }
-                    return;
-                }
-                try {
-                    await navigator.clipboard.writeText(runPlanJson.textContent || '');
-                    if (runPlanCopyStatus) {
-                        runPlanCopyStatus.textContent = 'Copied';
-                    }
-                } catch {
-                    if (runPlanCopyStatus) {
-                        runPlanCopyStatus.textContent = 'Copy failed';
-                    }
-                }
-            });
+        if (hasGuidedFlowControls) {
+            syncGuidedFlow();
+            syncModelBankExample({ onlyBlank: true });
         }
-        syncGuidedFlow();
-        syncModelBankExample({ onlyBlank: true });
         refreshPlanSelectionPreview();
     })();
 </script>

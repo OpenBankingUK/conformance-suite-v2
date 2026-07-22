@@ -1,0 +1,19 @@
+{
+    "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
+    "timeoutSeconds": 30,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "dynamic-client-registration",
+        "specificationVersion": "3.3"
+    },
+    "dcr": {
+        "ssaPath": "/path/to/ssa.jwt",
+        "signingPrivateKeyPath": "/path/to/signing.key",
+        "signingCertificatePath": "/path/to/signing.crt",
+        "transportCertificatePath": "/path/to/transport.crt",
+        "transportPrivateKeyPath": "/path/to/transport.key",
+        "tokenEndpointAuthMethod": "tls_client_auth"
+    },
+    "resultOutputPath": "./out/dcr-results.json",
+    "executionLogPath": "./out/dcr-log.ndjson"
+}

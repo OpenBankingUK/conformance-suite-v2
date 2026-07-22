@@ -93,20 +93,19 @@ def test_load_signing_credentials_rejects_missing_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_load_signing_credentials_rejects_paths_outside_certificate_root(tmp_path: Path) -> None:
+def test_load_signing_credentials_rejects_relative_paths(tmp_path: Path) -> None:
+    """Runtime signing loader requires exact absolute credential paths."""
     certificate_root = tmp_path / "certs"
     certificate_root.mkdir()
-    outside_path = tmp_path / "outside.crt"
-    outside_path.write_text("outside", encoding="utf-8")
 
     with pytest.raises(
         SigningCredentialError,
-        match="fapiSigning.signingCertificatePath must resolve inside certificatePathRoot",
+        match="fapiSigning.signingCertificatePath must be an absolute file path",
     ):
         load_signing_credentials(
             _build_signing_config(
                 certificate_root,
-                certificate_path=outside_path,
+                certificate_path=Path("relative.crt"),
                 private_key_path=certificate_root / "missing.key",
             )
         )

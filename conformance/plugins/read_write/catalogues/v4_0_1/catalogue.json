@@ -1,0 +1,3606 @@
+{
+  "schemaVersion": 2,
+  "identity": {
+    "pluginId": "read-write",
+    "standard": "obl",
+    "specification": "read-write",
+    "securityProfile": "fapi1-advanced",
+    "specificationVersion": "v4.0.1",
+    "versionAliases": [],
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "resourceGroups": [
+    {
+      "id": "ais",
+      "displayLabel": "Accounts and Transactions (AIS)",
+      "requirement": "mandatory",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/ais.json"
+      ],
+      "endpoints": [
+        {
+          "endpointId": "ais.account-access-consents.create",
+          "operation": "CreateAccountAccessConsents",
+          "path": "/account-access-consents",
+          "method": "POST",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Create Account Access Consent",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents/post",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.account-access-consents.get",
+          "operation": "GetAccountAccessConsentsConsentId",
+          "path": "/account-access-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Get Account Access Consent",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents~1{ConsentId}/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.account-access-consents.delete",
+          "operation": "DeleteAccountAccessConsentsConsentId",
+          "path": "/account-access-consents/{ConsentId}",
+          "method": "DELETE",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Delete Account Access Consent",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1account-access-consents~1{ConsentId}/delete",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.accounts.get-accounts",
+          "operation": "GetAccounts",
+          "path": "/accounts",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Get Accounts",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.accounts.get-account",
+          "operation": "GetAccountsAccountId",
+          "path": "/accounts/{AccountId}",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Get Account",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.transactions.get-account-transactions",
+          "operation": "GetAccountsAccountIdTransactions",
+          "path": "/accounts/{AccountId}/transactions",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Get Account Transactions",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1transactions/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.balances.get-account-balances",
+          "operation": "GetAccountsAccountIdBalances",
+          "path": "/accounts/{AccountId}/balances",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "mandatory",
+          "displayLabel": "Get Account Balances",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1balances/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.beneficiaries.get-account-beneficiaries",
+          "operation": "GetAccountsAccountIdBeneficiaries",
+          "path": "/accounts/{AccountId}/beneficiaries",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Beneficiaries",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1beneficiaries/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.direct-debits.get-account-direct-debits",
+          "operation": "GetAccountsAccountIdDirectDebits",
+          "path": "/accounts/{AccountId}/direct-debits",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Direct Debits",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1direct-debits/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.offers.get-account-offers",
+          "operation": "GetAccountsAccountIdOffers",
+          "path": "/accounts/{AccountId}/offers",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Offers",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1offers/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.parties.get-account-parties",
+          "operation": "GetAccountsAccountIdParties",
+          "path": "/accounts/{AccountId}/parties",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Parties",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1parties/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.parties.get-account-party",
+          "operation": "GetAccountsAccountIdParty",
+          "path": "/accounts/{AccountId}/party",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Party",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1party/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.products.get-account-product",
+          "operation": "GetAccountsAccountIdProduct",
+          "path": "/accounts/{AccountId}/product",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Product",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1product/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.scheduled-payments.get-account-scheduled-payments",
+          "operation": "GetAccountsAccountIdScheduledPayments",
+          "path": "/accounts/{AccountId}/scheduled-payments",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Scheduled Payments",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1scheduled-payments/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.standing-orders.get-account-standing-orders",
+          "operation": "GetAccountsAccountIdStandingOrders",
+          "path": "/accounts/{AccountId}/standing-orders",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Standing Orders",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1standing-orders/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.statements.get-account-statements",
+          "operation": "GetAccountsAccountIdStatements",
+          "path": "/accounts/{AccountId}/statements",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Statements",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.statements.get-account-statement",
+          "operation": "GetAccountsAccountIdStatementsStatementId",
+          "path": "/accounts/{AccountId}/statements/{StatementId}",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Statement",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements~1{StatementId}/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.statements.get-account-statement-transactions",
+          "operation": "GetAccountsAccountIdStatementsStatementIdTransactions",
+          "path": "/accounts/{AccountId}/statements/{StatementId}/transactions",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Account Statement Transactions",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1accounts~1{AccountId}~1statements~1{StatementId}~1transactions/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.balances.get-balances",
+          "operation": "GetBalances",
+          "path": "/balances",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Balances (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1balances/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.beneficiaries.get-beneficiaries",
+          "operation": "GetBeneficiaries",
+          "path": "/beneficiaries",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Beneficiaries (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1beneficiaries/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.direct-debits.get-direct-debits",
+          "operation": "GetDirectDebits",
+          "path": "/direct-debits",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Direct Debits (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1direct-debits/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.offers.get-offers",
+          "operation": "GetOffers",
+          "path": "/offers",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Offers (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1offers/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.parties.get-party",
+          "operation": "GetParty",
+          "path": "/party",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Party",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1party/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.products.get-products",
+          "operation": "GetProducts",
+          "path": "/products",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Products (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1products/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.scheduled-payments.get-scheduled-payments",
+          "operation": "GetScheduledPayments",
+          "path": "/scheduled-payments",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Scheduled Payments (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1scheduled-payments/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.standing-orders.get-standing-orders",
+          "operation": "GetStandingOrders",
+          "path": "/standing-orders",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Standing Orders (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1standing-orders/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.statements.get-statements",
+          "operation": "GetStatements",
+          "path": "/statements",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Statements (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1statements/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        },
+        {
+          "endpointId": "ais.transactions.get-transactions",
+          "operation": "GetTransactions",
+          "path": "/transactions",
+          "method": "GET",
+          "resourceGroup": "ais",
+          "requirement": "conditional",
+          "displayLabel": "Get Transactions (bulk)",
+          "schemaRef": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json#/paths/~1transactions/get",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pis",
+      "displayLabel": "Payments (PIS)",
+      "requirement": "mandatory",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+      ],
+      "endpoints": [
+        {
+          "endpointId": "pis.domestic-payment-consents.create",
+          "operation": "CreateDomesticPaymentConsents",
+          "path": "/domestic-payment-consents",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "mandatory",
+          "displayLabel": "Create Domestic Payment Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-payment-consents.get",
+          "operation": "GetDomesticPaymentConsentsConsentId",
+          "path": "/domestic-payment-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "mandatory",
+          "displayLabel": "Get Domestic Payment Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-payment-consents.get-funds-confirmation",
+          "operation": "GetDomesticPaymentConsentsConsentIdFundsConfirmation",
+          "path": "/domestic-payment-consents/{ConsentId}/funds-confirmation",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Payment Consent Funds Confirmation",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-payments.create",
+          "operation": "CreateDomesticPayments",
+          "path": "/domestic-payments",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "mandatory",
+          "displayLabel": "Create Domestic Payment",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-payments.get",
+          "operation": "GetDomesticPaymentsDomesticPaymentId",
+          "path": "/domestic-payments/{DomesticPaymentId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "mandatory",
+          "displayLabel": "Get Domestic Payment",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-payments.get-payment-details",
+          "operation": "GetDomesticPaymentsDomesticPaymentIdPaymentDetails",
+          "path": "/domestic-payments/{DomesticPaymentId}/payment-details",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Payment Details",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-scheduled-payment-consents.create",
+          "operation": "CreateDomesticScheduledPaymentConsents",
+          "path": "/domestic-scheduled-payment-consents",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Create Domestic Scheduled Payment Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-scheduled-payment-consents.get",
+          "operation": "GetDomesticScheduledPaymentConsentsConsentId",
+          "path": "/domestic-scheduled-payment-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Scheduled Payment Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-scheduled-payments.create",
+          "operation": "CreateDomesticScheduledPayments",
+          "path": "/domestic-scheduled-payments",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Create Domestic Scheduled Payment",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-scheduled-payments.get",
+          "operation": "GetDomesticScheduledPaymentsDomesticScheduledPaymentId",
+          "path": "/domestic-scheduled-payments/{DomesticScheduledPaymentId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Scheduled Payment",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-standing-order-consents.create",
+          "operation": "CreateDomesticStandingOrderConsents",
+          "path": "/domestic-standing-order-consents",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Create Domestic Standing Order Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-standing-order-consents.get",
+          "operation": "GetDomesticStandingOrderConsentsConsentId",
+          "path": "/domestic-standing-order-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Standing Order Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-standing-orders.create",
+          "operation": "CreateDomesticStandingOrders",
+          "path": "/domestic-standing-orders",
+          "method": "POST",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Create Domestic Standing Order",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        },
+        {
+          "endpointId": "pis.domestic-standing-orders.get",
+          "operation": "GetDomesticStandingOrdersDomesticStandingOrderId",
+          "path": "/domestic-standing-orders/{DomesticStandingOrderId}",
+          "method": "GET",
+          "resourceGroup": "pis",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic Standing Order",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "cbpii",
+      "displayLabel": "Confirmation of Funds (CBPII)",
+      "requirement": "optional",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+      ],
+      "endpoints": [
+        {
+          "endpointId": "cbpii.funds-confirmation-consents.create",
+          "operation": "CreateFundsConfirmationConsents",
+          "path": "/funds-confirmation-consents",
+          "method": "POST",
+          "resourceGroup": "cbpii",
+          "requirement": "mandatory",
+          "displayLabel": "Create Funds Confirmation Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        },
+        {
+          "endpointId": "cbpii.funds-confirmation-consents.get",
+          "operation": "GetFundsConfirmationConsentsConsentId",
+          "path": "/funds-confirmation-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "cbpii",
+          "requirement": "mandatory",
+          "displayLabel": "Get Funds Confirmation Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        },
+        {
+          "endpointId": "cbpii.funds-confirmation-consents.delete",
+          "operation": "DeleteFundsConfirmationConsentsConsentId",
+          "path": "/funds-confirmation-consents/{ConsentId}",
+          "method": "DELETE",
+          "resourceGroup": "cbpii",
+          "requirement": "mandatory",
+          "displayLabel": "Delete Funds Confirmation Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        },
+        {
+          "endpointId": "cbpii.funds-confirmations.create",
+          "operation": "CreateFundsConfirmations",
+          "path": "/funds-confirmations",
+          "method": "POST",
+          "resourceGroup": "cbpii",
+          "requirement": "mandatory",
+          "displayLabel": "Create Funds Confirmation",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vrp",
+      "displayLabel": "Variable Recurring Payments (VRP)",
+      "requirement": "optional",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+      ],
+      "endpoints": [
+        {
+          "endpointId": "vrp.domestic-vrp-consents.create",
+          "operation": "CreateDomesticVRPConsents",
+          "path": "/domestic-vrp-consents",
+          "method": "POST",
+          "resourceGroup": "vrp",
+          "requirement": "mandatory",
+          "displayLabel": "Create Domestic VRP Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrp-consents.get",
+          "operation": "GetDomesticVRPConsentsConsentId",
+          "path": "/domestic-vrp-consents/{ConsentId}",
+          "method": "GET",
+          "resourceGroup": "vrp",
+          "requirement": "mandatory",
+          "displayLabel": "Get Domestic VRP Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrp-consents.delete",
+          "operation": "DeleteDomesticVRPConsentsConsentId",
+          "path": "/domestic-vrp-consents/{ConsentId}",
+          "method": "DELETE",
+          "resourceGroup": "vrp",
+          "requirement": "mandatory",
+          "displayLabel": "Delete Domestic VRP Consent",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrp-consents.get-funds-confirmation",
+          "operation": "GetDomesticVRPConsentsConsentIdFundsConfirmation",
+          "path": "/domestic-vrp-consents/{ConsentId}/funds-confirmation",
+          "method": "GET",
+          "resourceGroup": "vrp",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic VRP Consent Funds Confirmation",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrps.create",
+          "operation": "CreateDomesticVRPs",
+          "path": "/domestic-vrps",
+          "method": "POST",
+          "resourceGroup": "vrp",
+          "requirement": "mandatory",
+          "displayLabel": "Create Domestic VRP",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrps.get",
+          "operation": "GetDomesticVRPsDomesticVRPId",
+          "path": "/domestic-vrps/{DomesticVRPId}",
+          "method": "GET",
+          "resourceGroup": "vrp",
+          "requirement": "mandatory",
+          "displayLabel": "Get Domestic VRP",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        },
+        {
+          "endpointId": "vrp.domestic-vrps.get-payment-details",
+          "operation": "GetDomesticVRPsDomesticVRPIdPaymentDetails",
+          "path": "/domestic-vrps/{DomesticVRPId}/payment-details",
+          "method": "GET",
+          "resourceGroup": "vrp",
+          "requirement": "conditional",
+          "displayLabel": "Get Domestic VRP Payment Details",
+          "testApplicabilityRules": [],
+          "sourceCitations": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    }
+  ],
+  "fieldSchemas": [
+    {
+      "fieldId": "oauth.resourceBaseUrl",
+      "displayLabel": "Resource base URL",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "oauth.authorizationBaseUrl",
+      "displayLabel": "Authorization base URL",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "oauth.clientId",
+      "displayLabel": "Client ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.certPath",
+      "displayLabel": "mTLS certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.keyPath",
+      "displayLabel": "mTLS private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.caBundlePath",
+      "displayLabel": "CA bundle path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.signingCertificatePath",
+      "displayLabel": "FAPI signing certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.signingPrivateKeyPath",
+      "displayLabel": "FAPI signing private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.kid",
+      "displayLabel": "FAPI signing key ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.clientAssertionIssuer",
+      "displayLabel": "Client assertion issuer",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.clientAssertionSubject",
+      "displayLabel": "Client assertion subject",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.tokenEndpointAuthMethod",
+      "displayLabel": "Token endpoint auth method",
+      "scope": "shared",
+      "valueType": "choice",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.signatureIssuer",
+      "displayLabel": "OB detached-JWS signature issuer",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.signatureTrustAnchor",
+      "displayLabel": "OB detached-JWS trust anchor",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "openBanking.financialId",
+      "displayLabel": "Open Banking financial ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "psu.authorizationRedirectUri",
+      "displayLabel": "PSU authorization redirect URI",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    }
+  ],
+  "runnerPrimitives": [
+    {
+      "primitiveId": "read-write.discovery",
+      "type": "oidc-discovery",
+      "description": "Fetch and validate OIDC discovery metadata."
+    },
+    {
+      "primitiveId": "read-write.jwks",
+      "type": "jwks-fetch",
+      "description": "Fetch and validate ASPSP JWKS metadata."
+    },
+    {
+      "primitiveId": "read-write.client-credentials-token",
+      "type": "oauth-token",
+      "description": "Request a client credentials access token using configured client authentication."
+    },
+    {
+      "primitiveId": "read-write.psu-authorization",
+      "type": "psu-authorization",
+      "description": "Coordinate PSU authorization prerequisites for consent-bound flows."
+    },
+    {
+      "primitiveId": "read-write.http-request",
+      "type": "http-step",
+      "description": "Execute an Open Banking API HTTP operation with configured auth, mTLS, signing, and assertions."
+    },
+    {
+      "primitiveId": "read-write.detached-jws",
+      "type": "detached-jws",
+      "description": "Create Open Banking detached JWS request signatures for write operations."
+    },
+    {
+      "primitiveId": "read-write.schema-assertion",
+      "type": "response-schema-assertion",
+      "description": "Validate HTTP responses against the OpenAPI schema reference declared by the endpoint."
+    },
+    {
+      "primitiveId": "read-write.response-signature",
+      "type": "response-signature-assertion",
+      "description": "Validate Open Banking response signature headers when required by the operation."
+    },
+    {
+      "primitiveId": "read-write.migration-source-step",
+      "type": "migration-source-step",
+      "description": "Mechanical migration placeholder preserving current-suite and previous-FCS source coverage."
+    }
+  ],
+  "readinessPolicy": {
+    "policyId": "read-write-resource-group-readiness-v1",
+    "certificationStatus": "certifying",
+    "omittedMandatoryOutcome": "not-ready",
+    "failedSelectedOutcome": "not-ready"
+  },
+  "masking": {
+    "maskedFields": [
+      "access_token",
+      "refresh_token",
+      "id_token",
+      "client_assertion",
+      "oauth.clientId",
+      "tls.certPath",
+      "tls.keyPath",
+      "tls.caBundlePath",
+      "fapiSigning.signingCertificatePath",
+      "fapiSigning.signingPrivateKeyPath"
+    ],
+    "evidencePaths": [
+      "$.request.headers.Authorization",
+      "$.request.headers.x-jws-signature",
+      "$.request.body.client_assertion",
+      "$.response.body.access_token",
+      "$.response.body.refresh_token",
+      "$.response.body.id_token"
+    ]
+  },
+  "sourceCoverage": {
+    "baselinePath": "docs/requirements/suite-coverage/migration-parity-baseline.json",
+    "baselineSchemaVersion": 1,
+    "sourceKinds": [
+      "current-suite",
+      "previous-fcs",
+      "catalogue-endpoint"
+    ],
+    "notes": "Mechanical phase-2/3 migration metadata; execution parity is completed by later catalogue-native runner phases."
+  },
+  "tests": [
+    {
+      "testId": "ais.account-access-consents.create.http",
+      "displayLabel": "Create Account Access Consent",
+      "endpointId": "ais.account-access-consents.create",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.account-access-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.account-access-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.account-access-consents.get.http",
+      "displayLabel": "Get Account Access Consent",
+      "endpointId": "ais.account-access-consents.get",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.account-access-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.account-access-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.account-access-consents.delete.http",
+      "displayLabel": "Delete Account Access Consent",
+      "endpointId": "ais.account-access-consents.delete",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.account-access-consents.delete"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.account-access-consents.delete",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.accounts.get-accounts.http",
+      "displayLabel": "Get Accounts",
+      "endpointId": "ais.accounts.get-accounts",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.accounts.get-accounts"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.accounts.get-accounts",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.accounts.get-account.http",
+      "displayLabel": "Get Account",
+      "endpointId": "ais.accounts.get-account",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.accounts.get-account"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.accounts.get-account",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.transactions.get-account-transactions.http",
+      "displayLabel": "Get Account Transactions",
+      "endpointId": "ais.transactions.get-account-transactions",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.transactions.get-account-transactions"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.transactions.get-account-transactions",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.balances.get-account-balances.http",
+      "displayLabel": "Get Account Balances",
+      "endpointId": "ais.balances.get-account-balances",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.balances.get-account-balances"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.balances.get-account-balances",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.beneficiaries.get-account-beneficiaries.http",
+      "displayLabel": "Get Account Beneficiaries",
+      "endpointId": "ais.beneficiaries.get-account-beneficiaries",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.beneficiaries.get-account-beneficiaries"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.beneficiaries.get-account-beneficiaries",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.direct-debits.get-account-direct-debits.http",
+      "displayLabel": "Get Account Direct Debits",
+      "endpointId": "ais.direct-debits.get-account-direct-debits",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.direct-debits.get-account-direct-debits"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.direct-debits.get-account-direct-debits",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.offers.get-account-offers.http",
+      "displayLabel": "Get Account Offers",
+      "endpointId": "ais.offers.get-account-offers",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.offers.get-account-offers"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.offers.get-account-offers",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.parties.get-account-parties.http",
+      "displayLabel": "Get Account Parties",
+      "endpointId": "ais.parties.get-account-parties",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.parties.get-account-parties"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.parties.get-account-parties",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.parties.get-account-party.http",
+      "displayLabel": "Get Account Party",
+      "endpointId": "ais.parties.get-account-party",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.parties.get-account-party"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.parties.get-account-party",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.products.get-account-product.http",
+      "displayLabel": "Get Account Product",
+      "endpointId": "ais.products.get-account-product",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.products.get-account-product"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.products.get-account-product",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.scheduled-payments.get-account-scheduled-payments.http",
+      "displayLabel": "Get Account Scheduled Payments",
+      "endpointId": "ais.scheduled-payments.get-account-scheduled-payments",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.scheduled-payments.get-account-scheduled-payments"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.scheduled-payments.get-account-scheduled-payments",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.standing-orders.get-account-standing-orders.http",
+      "displayLabel": "Get Account Standing Orders",
+      "endpointId": "ais.standing-orders.get-account-standing-orders",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.standing-orders.get-account-standing-orders"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.standing-orders.get-account-standing-orders",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.statements.get-account-statements.http",
+      "displayLabel": "Get Account Statements",
+      "endpointId": "ais.statements.get-account-statements",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.statements.get-account-statements"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.statements.get-account-statements",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.statements.get-account-statement.http",
+      "displayLabel": "Get Account Statement",
+      "endpointId": "ais.statements.get-account-statement",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.statements.get-account-statement"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.statements.get-account-statement",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.statements.get-account-statement-transactions.http",
+      "displayLabel": "Get Account Statement Transactions",
+      "endpointId": "ais.statements.get-account-statement-transactions",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.statements.get-account-statement-transactions"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.statements.get-account-statement-transactions",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.balances.get-balances.http",
+      "displayLabel": "Get Balances (bulk)",
+      "endpointId": "ais.balances.get-balances",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.balances.get-balances"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.balances.get-balances",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.beneficiaries.get-beneficiaries.http",
+      "displayLabel": "Get Beneficiaries (bulk)",
+      "endpointId": "ais.beneficiaries.get-beneficiaries",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.beneficiaries.get-beneficiaries"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.beneficiaries.get-beneficiaries",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.direct-debits.get-direct-debits.http",
+      "displayLabel": "Get Direct Debits (bulk)",
+      "endpointId": "ais.direct-debits.get-direct-debits",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.direct-debits.get-direct-debits"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.direct-debits.get-direct-debits",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.offers.get-offers.http",
+      "displayLabel": "Get Offers (bulk)",
+      "endpointId": "ais.offers.get-offers",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.offers.get-offers"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.offers.get-offers",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.parties.get-party.http",
+      "displayLabel": "Get Party",
+      "endpointId": "ais.parties.get-party",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.parties.get-party"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.parties.get-party",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.products.get-products.http",
+      "displayLabel": "Get Products (bulk)",
+      "endpointId": "ais.products.get-products",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.products.get-products"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.products.get-products",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.scheduled-payments.get-scheduled-payments.http",
+      "displayLabel": "Get Scheduled Payments (bulk)",
+      "endpointId": "ais.scheduled-payments.get-scheduled-payments",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.scheduled-payments.get-scheduled-payments"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.scheduled-payments.get-scheduled-payments",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.standing-orders.get-standing-orders.http",
+      "displayLabel": "Get Standing Orders (bulk)",
+      "endpointId": "ais.standing-orders.get-standing-orders",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.standing-orders.get-standing-orders"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.standing-orders.get-standing-orders",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.statements.get-statements.http",
+      "displayLabel": "Get Statements (bulk)",
+      "endpointId": "ais.statements.get-statements",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.statements.get-statements"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.statements.get-statements",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "ais.transactions.get-transactions.http",
+      "displayLabel": "Get Transactions (bulk)",
+      "endpointId": "ais.transactions.get-transactions",
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "ais.transactions.get-transactions"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "ais.transactions.get-transactions",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payment-consents.create.http",
+      "displayLabel": "Create Domestic Payment Consent",
+      "endpointId": "pis.domestic-payment-consents.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payment-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payment-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payment-consents.get.http",
+      "displayLabel": "Get Domestic Payment Consent",
+      "endpointId": "pis.domestic-payment-consents.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payment-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payment-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payment-consents.get-funds-confirmation.http",
+      "displayLabel": "Get Domestic Payment Consent Funds Confirmation",
+      "endpointId": "pis.domestic-payment-consents.get-funds-confirmation",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payment-consents.get-funds-confirmation"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payment-consents.get-funds-confirmation",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payments.create.http",
+      "displayLabel": "Create Domestic Payment",
+      "endpointId": "pis.domestic-payments.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payments.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payments.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payments.get.http",
+      "displayLabel": "Get Domestic Payment",
+      "endpointId": "pis.domestic-payments.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payments.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payments.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-payments.get-payment-details.http",
+      "displayLabel": "Get Domestic Payment Details",
+      "endpointId": "pis.domestic-payments.get-payment-details",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-payments.get-payment-details"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-payments.get-payment-details",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-scheduled-payment-consents.create.http",
+      "displayLabel": "Create Domestic Scheduled Payment Consent",
+      "endpointId": "pis.domestic-scheduled-payment-consents.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-scheduled-payment-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-scheduled-payment-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-scheduled-payment-consents.get.http",
+      "displayLabel": "Get Domestic Scheduled Payment Consent",
+      "endpointId": "pis.domestic-scheduled-payment-consents.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-scheduled-payment-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-scheduled-payment-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-scheduled-payments.create.http",
+      "displayLabel": "Create Domestic Scheduled Payment",
+      "endpointId": "pis.domestic-scheduled-payments.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-scheduled-payments.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-scheduled-payments.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-scheduled-payments.get.http",
+      "displayLabel": "Get Domestic Scheduled Payment",
+      "endpointId": "pis.domestic-scheduled-payments.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-scheduled-payments.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-scheduled-payments.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-standing-order-consents.create.http",
+      "displayLabel": "Create Domestic Standing Order Consent",
+      "endpointId": "pis.domestic-standing-order-consents.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-standing-order-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-standing-order-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-standing-order-consents.get.http",
+      "displayLabel": "Get Domestic Standing Order Consent",
+      "endpointId": "pis.domestic-standing-order-consents.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-standing-order-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-standing-order-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-standing-orders.create.http",
+      "displayLabel": "Create Domestic Standing Order",
+      "endpointId": "pis.domestic-standing-orders.create",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-standing-orders.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-standing-orders.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "pis.domestic-standing-orders.get.http",
+      "displayLabel": "Get Domestic Standing Order",
+      "endpointId": "pis.domestic-standing-orders.get",
+      "resourceGroup": "pis",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "pis"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "pis.domestic-standing-orders.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "pis.domestic-standing-orders.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "cbpii.funds-confirmation-consents.create.http",
+      "displayLabel": "Create Funds Confirmation Consent",
+      "endpointId": "cbpii.funds-confirmation-consents.create",
+      "resourceGroup": "cbpii",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "cbpii"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "cbpii.funds-confirmation-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "cbpii.funds-confirmation-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "cbpii.funds-confirmation-consents.get.http",
+      "displayLabel": "Get Funds Confirmation Consent",
+      "endpointId": "cbpii.funds-confirmation-consents.get",
+      "resourceGroup": "cbpii",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "cbpii"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "cbpii.funds-confirmation-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "cbpii.funds-confirmation-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "cbpii.funds-confirmation-consents.delete.http",
+      "displayLabel": "Delete Funds Confirmation Consent",
+      "endpointId": "cbpii.funds-confirmation-consents.delete",
+      "resourceGroup": "cbpii",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "cbpii"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "cbpii.funds-confirmation-consents.delete"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "cbpii.funds-confirmation-consents.delete",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "cbpii.funds-confirmations.create.http",
+      "displayLabel": "Create Funds Confirmation",
+      "endpointId": "cbpii.funds-confirmations.create",
+      "resourceGroup": "cbpii",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "cbpii"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "cbpii.funds-confirmations.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "cbpii.funds-confirmations.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrp-consents.create.http",
+      "displayLabel": "Create Domestic VRP Consent",
+      "endpointId": "vrp.domestic-vrp-consents.create",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrp-consents.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrp-consents.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrp-consents.get.http",
+      "displayLabel": "Get Domestic VRP Consent",
+      "endpointId": "vrp.domestic-vrp-consents.get",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrp-consents.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrp-consents.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrp-consents.delete.http",
+      "displayLabel": "Delete Domestic VRP Consent",
+      "endpointId": "vrp.domestic-vrp-consents.delete",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrp-consents.delete"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrp-consents.delete",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrp-consents.get-funds-confirmation.http",
+      "displayLabel": "Get Domestic VRP Consent Funds Confirmation",
+      "endpointId": "vrp.domestic-vrp-consents.get-funds-confirmation",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrp-consents.get-funds-confirmation"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrp-consents.get-funds-confirmation",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrps.create.http",
+      "displayLabel": "Create Domestic VRP",
+      "endpointId": "vrp.domestic-vrps.create",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrps.create"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrps.create",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrps.get.http",
+      "displayLabel": "Get Domestic VRP",
+      "endpointId": "vrp.domestic-vrps.get",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrps.get"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrps.get",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "vrp.domestic-vrps.get-payment-details.http",
+      "displayLabel": "Get Domestic VRP Payment Details",
+      "endpointId": "vrp.domestic-vrps.get-payment-details",
+      "resourceGroup": "vrp",
+      "runnerPrimitiveId": "read-write.http-request",
+      "applicability": [
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "vrp"
+          }
+        },
+        {
+          "type": "endpoint-selected",
+          "parameters": {
+            "endpointId": "vrp.domestic-vrps.get-payment-details"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "catalogue-endpoint",
+          "sourceId": "vrp.domestic-vrps.get-payment-details",
+          "mappingMode": "catalogue-native",
+          "sourceFiles": [
+            "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-access-consent",
+      "displayLabel": "Account access consent creation",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-access-consent",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-balances",
+      "displayLabel": "Account balances resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-balances",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-beneficiaries",
+      "displayLabel": "Account beneficiaries resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-beneficiaries",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-detail",
+      "displayLabel": "Account detail resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-detail",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-direct-debits",
+      "displayLabel": "Account direct debits resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-direct-debits",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-offers",
+      "displayLabel": "Account offers resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-offers",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-parties",
+      "displayLabel": "Account parties resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-parties",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-party",
+      "displayLabel": "Account party resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-party",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-product",
+      "displayLabel": "Account product resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-product",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-scheduled-payments",
+      "displayLabel": "Account scheduled payments resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-scheduled-payments",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-standing-orders",
+      "displayLabel": "Account standing orders resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-standing-orders",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "account-transactions",
+      "displayLabel": "Account transactions resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "account-transactions",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "accounts-list",
+      "displayLabel": "Accounts resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "accounts-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "balances-list",
+      "displayLabel": "Bulk balances resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "balances-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "beneficiaries-list",
+      "displayLabel": "Bulk beneficiaries resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "beneficiaries-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "client-credentials-token",
+      "displayLabel": "Client credentials token for consent setup",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "client-credentials-token",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "direct-debits-list",
+      "displayLabel": "Bulk direct debits resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "direct-debits-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "jwks-fetch",
+      "displayLabel": "JWKS endpoint",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "jwks-fetch",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "offers-list",
+      "displayLabel": "Bulk offers resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "offers-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "openid-discovery",
+      "displayLabel": "OpenID discovery document",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "openid-discovery",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "party-list",
+      "displayLabel": "PSU party resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "party-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "products-list",
+      "displayLabel": "Bulk products resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "products-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "psu-authorization",
+      "displayLabel": "PSU authorisation (manual)",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "psu-authorization",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "scheduled-payments-list",
+      "displayLabel": "Bulk scheduled payments resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "scheduled-payments-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "standing-orders-list",
+      "displayLabel": "Bulk standing orders resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "standing-orders-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "statements-list",
+      "displayLabel": "Bulk statements resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "statements-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "token-exchange",
+      "displayLabel": "OAuth token exchange",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "token-exchange",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "transactions-list",
+      "displayLabel": "Bulk transactions resource",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v4.0.1"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "transactions-list",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json"
+          ]
+        }
+      ]
+    }
+  ]
+}

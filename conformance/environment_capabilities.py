@@ -5,15 +5,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 
-from conformance.model_bank_config import (
+from conformance.model_bank_config import TokenEndpointClientAuthMode
+from conformance.suite_catalog import (
     SuiteApiFamily,
+    SuiteCatalogKey,
+    SuiteMetadata,
     SuiteName,
     SuiteSelection,
     SuiteSpecVersion,
     SuiteStandard,
-    TokenEndpointClientAuthMode,
+    list_supported_suites,
 )
-from conformance.suite_catalog import SuiteCatalogKey, SuiteMetadata, list_supported_suites
 
 PsuMode = Literal["manual", "headless", "mobile_qr"]
 """PSU authorisation modes considered by guided compatibility checks."""

@@ -11,6 +11,8 @@ from conformance.api.plan_builder import (
     PlanBuilderForm,
     PlanPreview,
     _infer_shape_warning,
+    staged_catalogue_data,
+    staged_ui_context,
 )
 from conformance.json_types import JsonValue
 
@@ -104,9 +106,8 @@ PIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
         "resourceBaseUrl": "https://resource.example.com",
     },
     "fapiSigning": {
-        "certificatePathRoot": "./certs",
-        "signingCertificatePath": "dummy-signing.crt",
-        "signingPrivateKeyPath": "dummy-signing.key",  # pragma: allowlist secret
+        "signingCertificatePath": "/local-config/certs/dummy-signing.crt",
+        "signingPrivateKeyPath": "/local-config/certs/dummy-signing.key",  # pragma: allowlist secret
         "kid": "test-signing-kid",
         "clientAssertionIssuer": "test-client-id",
         "clientAssertionSubject": "test-client-id",
@@ -240,6 +241,58 @@ def _validated_preview(form: PlanBuilderForm) -> PlanPreview:
 
 
 @pytest.mark.unit
+def test_staged_ui_context_exposes_catalogue_backed_targets() -> None:
+    """Staged UI context includes Read/Write and DCR catalogue target metadata."""
+    context = staged_ui_context()
+
+    specifications = json.loads(cast(str, context["staged_specification_options"]))
+    catalogues = json.loads(cast(str, context["staged_catalogue_data"]))
+
+    assert {item["id"] for item in specifications["obl"]} >= {
+        "read-write",
+        "dynamic-client-registration",
+    }
+    assert catalogues["obl"]["read-write"]["v4.0.0"]["catalogueHash"].startswith("sha256:")
+    assert catalogues["obl"]["dynamic-client-registration"]["3.3"]["catalogueHash"].startswith("sha256:")
+
+
+@pytest.mark.unit
+def test_staged_catalogue_data_contains_fields_readiness_and_tests() -> None:
+    """Catalogue data for staged UI includes fields, readiness, and executable tests."""
+    catalogues = staged_catalogue_data()
+    dcr = cast(dict[str, JsonValue], cast(dict[str, JsonValue], catalogues["obl"])["dynamic-client-registration"])
+    dcr_33 = cast(dict[str, JsonValue], dcr["3.3"])
+    fields = cast(list[dict[str, JsonValue]], dcr_33["fieldSchemas"])
+    tests = cast(list[dict[str, JsonValue]], dcr_33["executableTests"])
+    readiness = cast(dict[str, JsonValue], dcr_33["readinessPolicy"])
+
+    assert dcr_33["usesResourceGroups"] is False
+    assert any(field["fieldId"] == "dcr.ssaPath" and field["valueType"] == "path" for field in fields)
+    assert any(test["testId"] == "DCR-001" for test in tests)
+    assert readiness["certificationStatus"] == "non-certifying"
+
+
+@pytest.mark.unit
+def test_staged_read_write_fields_are_runtime_mapped_config_fields() -> None:
+    """Read/Write staged fields include only saved-config runtime mappings."""
+    catalogues = staged_catalogue_data()
+    read_write = cast(dict[str, JsonValue], cast(dict[str, JsonValue], catalogues["obl"])["read-write"])
+    rw_401 = cast(dict[str, JsonValue], read_write["v4.0.1"])
+    fields = cast(list[dict[str, JsonValue]], rw_401["fieldSchemas"])
+    field_ids = {cast(str, field["fieldId"]) for field in fields}
+
+    assert "oauth.tokenEndpoint" not in field_ids
+    assert "transport.disableKeepAlives" not in field_ids
+    assert "transport.tlsSkipVerify" not in field_ids
+    assert "fapiSigning.signingCertificatePath" in field_ids
+    assert "fapiSigning.signingPrivateKeyPath" in field_ids
+    assert "fapiSigning.clientAssertionIssuer" in field_ids
+    assert "fapiSigning.clientAssertionSubject" in field_ids
+    assert "fapiSigning.tokenEndpointAuthMethod" in field_ids
+    assert "fapiSigning.privateKeyPath" not in field_ids
+
+
+@pytest.mark.unit
 def test_valid_v1_preview_builds_step_rows_and_allows_optional_opt_in() -> None:
     manifest = _v1_manifest(
         [
@@ -356,165 +409,13 @@ def test_select_mode_with_empty_selection_deselects_all_rows() -> None:
 
 
 @pytest.mark.unit
-def test_blank_manifest_resolves_config_selected_suite() -> None:
-    """A blank manifest textarea can preview the suite selected by config."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(SUITE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "select",
-            "selected_step_ids": ["openid-discovery"],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
-    assert preview.selected_plan.selected_step_ids() == ["openid-discovery"]
-
-
-@pytest.mark.unit
-def test_blank_manifest_resolves_psu_auth_starter_suite() -> None:
-    """A blank manifest with a ``psu-auth-starter`` testSuite resolves the PSU auth starter catalog entry."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(PSU_AUTH_STARTER_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "select",
-            "selected_step_ids": ["openid-discovery", "jwks-fetch", "psu-authorization"],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
-    assert preview.selected_plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-
-
-@pytest.mark.unit
-def test_blank_manifest_resolves_ais_slice_suite() -> None:
-    """A blank manifest with an AIS ``testSuite`` resolves the AIS catalog entry."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_SLICE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "select",
-            "selected_step_ids": [
-                "openid-discovery",
-                "jwks-fetch",
-                "client-credentials-token",
-                "account-access-consent",
-                "psu-authorization",
-                "token-exchange",
-                "accounts-list",
-                "account-balances",
-                "account-transactions",
-            ],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
-    assert preview.selected_plan.selected_step_ids() == [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "accounts-list",
-        "account-balances",
-        "account-transactions",
-    ]
-    assert preview.launch_supported is True
-
-
-@pytest.mark.unit
-def test_guided_fields_can_build_config_selected_suite_without_config_json() -> None:
-    """Structured guided fields can generate config for suite-backed previews."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": "",
-            "manifest_json": "",
-            "guided_environment": "guided-env",
-            "guided_discovery_url": "https://example.com/.well-known/openid-configuration",
-            "guided_spec_version": "v4.0.1",
-            "guided_api": "ais",
-            "guided_suite": "ais-certification-slice",
-            "guided_client_id": "guided-client",
-            "guided_redirect_uri": "https://conformance.example.com/callback",
-            "guided_resource_base_url": "https://resource.example.com",
-            "selection_mode": "select",
-            "selected_step_ids": [
-                "openid-discovery",
-                "jwks-fetch",
-                "client-credentials-token",
-                "account-access-consent",
-                "psu-authorization",
-                "token-exchange",
-                "accounts-list",
-                "account-balances",
-                "account-transactions",
-            ],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.config.environment == "guided-env"
-    assert preview.config.discovery_url == "https://example.com/.well-known/openid-configuration"
-    assert preview.config.test_suite is not None
-    assert preview.config.test_suite.spec_version == "v4.0.1"
-    assert preview.config.test_suite.api == "ais"
-    assert preview.config.test_suite.suite == "ais-certification-slice"
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0.1/fapi1-advanced/ais-certification-slice"
-    assert form.generated_config_json is not None
-    assert '"specVersion": "v4.0.1"' in form.generated_config_json
-
-
-@pytest.mark.unit
-def test_guided_model_bank_example_populates_environment_and_discovery_when_blank() -> None:
-    """A guided model-bank example can supply environment and discovery values."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": "",
-            "manifest_json": "",
-            "guided_model_bank": "ozone-obie-preprod",
-            "guided_spec_version": "v4.0",
-            "guided_api": "ais",
-            "guided_suite": "discovery-jwks",
-            "selection_mode": "select",
-            "selected_step_ids": ["openid-discovery"],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.config.environment == "ozone-model-bank"
-    assert preview.config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
-    assert preview.config.test_suite is not None
-    assert preview.config.test_suite.suite == "discovery-jwks"
-    assert form.generated_config_json is not None
-    assert '"environment": "ozone-model-bank"' in form.generated_config_json
-
-
-@pytest.mark.unit
-def test_guided_model_bank_example_allows_custom_environment_override() -> None:
-    """Custom guided environment and discovery values take precedence over an example."""
+def test_guided_model_bank_example_allows_custom_discovery_override() -> None:
+    """Custom guided discovery values take precedence over an example."""
     form = PlanBuilderForm(
         data={
             "config_json": "",
             "manifest_json": json.dumps(_v1_manifest([_http_step("guided-custom")])),
             "guided_model_bank": "ozone-obie-preprod",
-            "guided_environment": "custom-env",
             "guided_discovery_url": "https://custom.example.com/.well-known/openid-configuration",
             "selection_mode": "select",
             "selected_step_ids": ["guided-custom"],
@@ -523,20 +424,19 @@ def test_guided_model_bank_example_allows_custom_environment_override() -> None:
 
     preview = _validated_preview(form)
 
-    assert preview.config.environment == "custom-env"
+    assert preview.config.environment is None
     assert preview.config.discovery_url == "https://custom.example.com/.well-known/openid-configuration"
     assert form.generated_config_json is not None
-    assert '"environment": "custom-env"' in form.generated_config_json
+    assert '"environment"' not in form.generated_config_json
 
 
 @pytest.mark.unit
 def test_guided_fields_can_build_config_for_explicit_manifest_without_suite_selection() -> None:
-    """Guided environment and OAuth fields still work with an explicit manifest override."""
+    """Guided discovery and OAuth fields still work with an explicit manifest override."""
     form = PlanBuilderForm(
         data={
             "config_json": "",
             "manifest_json": json.dumps(_v1_manifest([_http_step("guided-explicit")])),
-            "guided_environment": "guided-explicit-env",
             "guided_discovery_url": "https://example.com/.well-known/openid-configuration",
             "guided_client_id": "guided-client",
             "guided_redirect_uri": "https://conformance.example.com/callback",
@@ -549,7 +449,7 @@ def test_guided_fields_can_build_config_for_explicit_manifest_without_suite_sele
 
     assert preview.suite_metadata is None
     assert preview.manifest.name == "Plan builder manifest"
-    assert preview.config.environment == "guided-explicit-env"
+    assert preview.config.environment is None
     assert preview.config.oauth is not None
     assert preview.config.oauth.client_id == "guided-client"
 
@@ -568,232 +468,6 @@ def test_blank_config_without_json_or_guided_inputs_returns_form_error() -> None
 
     assert form.is_valid() is False
     assert "guided inputs supply a config" in form.errors["config_json"][0]
-
-
-@pytest.mark.unit
-def test_blank_manifest_resolves_ais_baseline_suite_with_optional_steps_deselected() -> None:
-    """A blank manifest with the AIS baseline ``testSuite`` preserves opt-in optional rows."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_BASELINE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    mandatory_step_ids = [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "accounts-list",
-        "account-detail",
-        "account-balances",
-        "account-access-consent-transactions-basic",
-        "psu-authorization-transactions-basic",
-        "token-exchange-transactions-basic",
-        "account-transactions-basic",
-        "account-transactions",
-        "transactions-list",
-    ]
-    optional_step_ids = [
-        "transactions-list-basic",
-        "balances-list",
-        "account-beneficiaries",
-        "beneficiaries-list",
-        "account-direct-debits",
-        "direct-debits-list",
-        "account-offers",
-        "offers-list",
-        "account-party",
-        "account-parties",
-        "party-list",
-        "account-product",
-        "products-list",
-        "account-scheduled-payments",
-        "scheduled-payments-list",
-        "account-standing-orders",
-        "standing-orders-list",
-        "statements-list",
-    ]
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
-    assert preview.selected_plan.selected_step_ids() == mandatory_step_ids
-    assert [row.id for row in preview.rows] == mandatory_step_ids + optional_step_ids
-    assert [row.id for row in preview.rows if row.default_selected] == mandatory_step_ids
-    assert [row.id for row in preview.rows if row.optional and not row.default_selected] == optional_step_ids
-    assert preview.launch_supported is True
-
-
-@pytest.mark.unit
-def test_blank_manifest_resolves_ais_fcs_legacy_benchmark_with_optional_steps_deselected() -> None:
-    """A blank manifest with the legacy benchmark ``testSuite`` preserves opt-in optional rows."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_FCS_LEGACY_BENCHMARK_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    mandatory_step_ids = [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "OB-400-ACC-100400",
-        "OB-400-ACC-100200",
-        "OB-400-BAL-101200",
-        "account-access-consent-transactions-basic",
-        "psu-authorization-transactions-basic",
-        "token-exchange-transactions-basic",
-        "OB-400-TRA-105000",
-        "OB-400-TRA-105100",
-        "OB-400-TRA-105110",
-        "OB-400-TRA-105120",
-    ]
-    optional_step_ids = [
-        "OB-400-BAL-101300",
-        "OB-400-BEN-101800",
-        "OB-400-BEN-101900",
-        "OB-400-DIR-102300",
-        "OB-400-DIR-102400",
-        "OB-400-OFF-102600",
-        "OB-400-PAR-102900",
-        "OB-400-PAR-102901",
-        "OB-400-PRO-103200",
-        "OB-400-SCP-103500",
-        "OB-400-STO-103800",
-        "OB-400-TRA-105200",
-    ]
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-fcs-legacy-benchmark"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark"
-    assert preview.selected_plan.selected_step_ids() == mandatory_step_ids
-    assert [row.id for row in preview.rows] == mandatory_step_ids + optional_step_ids
-    assert [row.id for row in preview.rows if row.default_selected] == mandatory_step_ids
-    assert [row.id for row in preview.rows if row.optional and not row.default_selected] == optional_step_ids
-    rows_by_id = {row.id: row for row in preview.rows}
-    assert rows_by_id["OB-400-TRA-105000"].mandatory is True
-    assert rows_by_id["OB-400-TRA-105000"].default_selected is True
-    assert rows_by_id["OB-400-TRA-105200"].optional is True
-    assert rows_by_id["OB-400-TRA-105200"].default_selected is False
-    assert preview.launch_supported is True
-
-
-@pytest.mark.unit
-def test_blank_manifest_resolves_pis_fcs_legacy_benchmark_with_conditional_gating() -> None:
-    """PIS FCS preview selects/deselects conditional rows from resolved test values."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(PIS_FCS_LEGACY_BENCHMARK_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "exploratory_ack": "on",
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is not None
-    assert preview.suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/pis/pis-fcs-legacy-benchmark"
-    assert preview.manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PIS FCS legacy benchmark"
-    rows_by_id = {row.id: row for row in preview.rows}
-    scheduled_row = rows_by_id["OB-400-DOP-100800"]
-    standing_order_row = rows_by_id["OB-400-DOP-101200"]
-    international_row = rows_by_id["OB-400-DOP-101600"]
-    assert scheduled_row.conditional is True
-    assert scheduled_row.selected_after_form is True
-    assert scheduled_row.missing_test_value_keys == ()
-    assert standing_order_row.conditional is True
-    assert standing_order_row.selected_after_form is True
-    assert standing_order_row.missing_test_value_keys == ()
-    assert international_row.conditional is True
-    assert international_row.selected_after_form is True
-    assert international_row.missing_test_value_keys == ()
-    selected_step_ids = preview.selected_plan.selected_step_ids()
-    assert "OB-400-DOP-100800" in selected_step_ids
-    assert "OB-400-DOP-101200" in selected_step_ids
-    assert "OB-400-DOP-101600" in selected_step_ids
-    assert preview.is_exploratory_run is True
-    assert preview.launch_supported is True
-
-
-@pytest.mark.unit
-def test_explicit_manifest_overrides_config_selected_suite() -> None:
-    """Pasted manifest JSON remains the plan-builder authoring override."""
-    explicit_manifest = _v1_manifest([_http_step("explicit")])
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(SUITE_CONFIG),
-            "manifest_json": json.dumps(explicit_manifest),
-            "selection_mode": "select",
-            "selected_step_ids": ["explicit"],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is None
-    assert preview.manifest.name == "Plan builder manifest"
-    assert preview.selected_plan.selected_step_ids() == ["explicit"]
-
-
-@pytest.mark.unit
-def test_blank_manifest_without_config_suite_returns_form_error() -> None:
-    """A blank manifest still needs ``config.testSuite`` to be previewable."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(VALID_CONFIG),
-            "manifest_json": "",
-        }
-    )
-
-    assert form.is_valid() is False
-    assert "required unless config.testSuite" in form.errors["manifest_json"][0]
-
-
-@pytest.mark.unit
-def test_config_suite_resolution_error_returns_form_error(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Catalog resolution failures are shown as validation errors.
-
-    Args:
-        monkeypatch: Pytest fixture used to replace suite resolution.
-    """
-    from conformance.suite_catalog import SuiteCatalogError
-
-    def fail_resolve_suite(_selection: object) -> object:
-        """Raise a catalog error for form validation.
-
-        Args:
-            _selection: Suite selection supplied by the validated config.
-
-        Raises:
-            SuiteCatalogError: Always raised to exercise form error handling.
-        """
-        raise SuiteCatalogError("missing suite")
-
-    monkeypatch.setattr("conformance.api.plan_builder.resolve_suite", fail_resolve_suite)
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(SUITE_CONFIG),
-            "manifest_json": "",
-        }
-    )
-
-    assert form.is_valid() is False
-    assert "Suite resolution failed" in form.non_field_errors()[0]
 
 
 @pytest.mark.unit
@@ -841,6 +515,72 @@ def test_invalid_config_json_returns_form_error() -> None:
 
 
 @pytest.mark.unit
+def test_bare_run_plan_json_in_config_field_returns_clear_form_error() -> None:
+    """Bare RunPlanV2 pasted as Config JSON gets a targeted error message."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(
+                {
+                    "schemaVersion": "2",
+                    "target": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:test",
+                    },
+                    "resourceGroups": ["ais"],
+                }
+            ),
+            "manifest_json": json.dumps(_v1_manifest([_http_step("standard")])),
+        }
+    )
+
+    assert form.is_valid() is False
+    assert "bare RunPlanV2" in form.errors["config_json"][0]
+
+
+@pytest.mark.unit
+def test_config_field_accepts_embedded_test_plan_with_explicit_manifest() -> None:
+    """Browser config parsing accepts enhanced one-file config documents."""
+    form = PlanBuilderForm(
+        data={
+            "config_json": json.dumps(
+                {
+                    **VALID_CONFIG,
+                    "testTarget": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "resourceGroups": ["ais"],
+                    },
+                    "testPlan": {
+                        "target": {
+                            "standard": "obl",
+                            "specification": "read-write",
+                            "securityProfile": "fapi1-advanced",
+                            "specificationVersion": "v4.0.1",
+                            "catalogueHash": "sha256:test",
+                        },
+                        "resourceGroups": ["ais"],
+                    },
+                }
+            ),
+            "manifest_json": json.dumps(_v1_manifest([_http_step("standard")])),
+            "selection_mode": "select",
+            "selected_step_ids": ["standard"],
+        }
+    )
+
+    preview = _validated_preview(form)
+
+    assert preview.config.test_target is not None
+    assert form.embedded_test_plan is not None
+    assert form.embedded_test_plan.target.specification_version == "v4.0.1"
+
+
+@pytest.mark.unit
 def test_invalid_manifest_returns_form_error() -> None:
     form = _bound_form({"schemaVersion": "v1", "name": "Broken", "steps": []})
 
@@ -881,26 +621,6 @@ def test_manual_psu_step_previews_and_allows_browser_launch() -> None:
     assert preview.rows[0].selected_after_form is True
     assert preview.launch_supported is True
     assert preview.launch_blockers == ()
-
-
-@pytest.mark.unit
-def test_ais_suite_preview_marks_mandatory_selection_and_launch_support() -> None:
-    """AIS suite previews remain browser-launchable and flag deselected mandatory steps."""
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_SLICE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": ["accounts-list"],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.launch_supported is True
-    assert preview.launch_blockers == ()
-    assert preview.certification_eligible_by_selection is False
-    assert preview.selected_plan.deselected_mandatory_step_ids() == ["accounts-list"]
 
 
 def _auth_inventory_manifest(*, permissions: list[str]) -> dict[str, JsonValue]:
@@ -1422,172 +1142,6 @@ def test_preview_has_empty_capability_warnings_for_explicit_manifest() -> None:
     preview = _validated_preview(form)
 
     assert preview.capability_warnings == ()
-
-
-@pytest.mark.unit
-def test_preview_capability_warnings_empty_for_catalog_suite_without_declaration() -> None:
-    """Catalog suite preview with custom environment and no declaration produces warnings only."""
-    # discovery-jwks suite — no PSU mode or token auth method required
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(SUITE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": [],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    # Custom environment without declaration — each unknown dimension is a warning
-    # discovery-jwks has no PSU or token-auth requirements, so only dimension
-    # warnings are generated (standard, spec_version, api, suite).
-    assert isinstance(preview.capability_warnings, tuple)
-    assert preview.launch_blockers == ()
-
-
-@pytest.mark.unit
-def test_discovery_suite_ignores_unrelated_fapi_signing_auth_method_for_capabilities() -> None:
-    """No-auth discovery suites must not inherit config-level token auth choices."""
-    config_with_signing: dict[str, JsonValue] = {
-        **SUITE_CONFIG,
-        "fapiSigning": {
-            "certificatePathRoot": ".",
-            "signingCertificatePath": "dummy-signing.crt",
-            "signingPrivateKeyPath": "dummy-signing.key",  # pragma: allowlist secret
-            "kid": "test-kid",
-            "clientAssertionIssuer": "test-client",
-            "clientAssertionSubject": "test-client",
-            "tokenEndpointAuthMethod": "private_key_jwt",
-        },
-    }
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(config_with_signing),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": [],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.launch_blockers == ()
-
-
-@pytest.mark.unit
-def test_preview_launch_blockers_includes_capability_blockers_from_known_preset(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Capability hard blockers from environment evaluation are merged into launch_blockers."""
-    from conformance.api import plan_builder as pb
-    from conformance.environment_capabilities import CapabilityEvaluation
-
-    fake_evaluation = CapabilityEvaluation(
-        support="blocked",
-        blockers=("Unsupported suite/auth combination.",),
-        warnings=(),
-        suite_capability=None,
-    )
-
-    def _fake_evaluate_capability_support(
-        *,
-        config: object,
-        manifest: object,
-        suite_metadata: object,
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Return fake capability blockers for testing.
-
-        Args:
-            config: Ignored mock config argument.
-            manifest: Ignored mock manifest argument.
-            suite_metadata: Ignored mock suite metadata argument.
-
-        Returns:
-            Two-tuple of capability blockers and empty warnings.
-        """
-        return fake_evaluation.blockers, fake_evaluation.warnings
-
-    monkeypatch.setattr(pb, "_evaluate_capability_support", _fake_evaluate_capability_support)
-
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_SLICE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": [],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert "Unsupported suite/auth combination." in preview.launch_blockers
-    assert preview.launch_supported is False
-
-
-@pytest.mark.unit
-def test_preview_capability_warnings_surfaced_without_blocking_launch(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Capability warnings are stored in capability_warnings and do not block launch."""
-    from conformance.api import plan_builder as pb
-
-    def _fake_evaluate_capability_support(
-        *,
-        config: object,
-        manifest: object,
-        suite_metadata: object,
-    ) -> tuple[tuple[str, ...], tuple[str, ...]]:
-        """Return fake capability warnings for testing.
-
-        Args:
-            config: Ignored mock config argument.
-            manifest: Ignored mock manifest argument.
-            suite_metadata: Ignored mock suite metadata argument.
-
-        Returns:
-            Two-tuple of empty blockers and one capability warning.
-        """
-        return (), ("Custom environment capability for PSU mode is undeclared; compatibility is unknown.",)
-
-    monkeypatch.setattr(pb, "_evaluate_capability_support", _fake_evaluate_capability_support)
-
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_SLICE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": [],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    expected_warning = "Custom environment capability for PSU mode is undeclared; compatibility is unknown."
-    assert expected_warning in preview.capability_warnings
-    assert preview.launch_supported is True
-    assert preview.launch_blockers == ()
-
-
-@pytest.mark.unit
-def test_build_plan_preview_populates_tree_nodes_for_catalog_suite() -> None:
-    """build_plan_preview populates tree_nodes when suite_metadata is available."""
-    from conformance.openapi_plan_metadata import StepTreeNode
-
-    form = PlanBuilderForm(
-        data={
-            "config_json": json.dumps(AIS_BASELINE_CONFIG),
-            "manifest_json": "",
-            "selection_mode": "deselect",
-            "deselect_step_ids": [],
-        }
-    )
-
-    preview = _validated_preview(form)
-
-    assert preview.suite_metadata is not None
-    assert preview.tree_nodes
-    assert all(isinstance(node, StepTreeNode) for node in preview.tree_nodes)
 
 
 @pytest.mark.unit

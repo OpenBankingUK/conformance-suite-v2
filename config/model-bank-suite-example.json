@@ -1,16 +1,11 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "api": "ais",
-        "profile": "fapi1-advanced",
-        "suite": "discovery-jwks"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "specificationVersion": "v4.0",
+        "resourceGroups": ["ais"]
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"
