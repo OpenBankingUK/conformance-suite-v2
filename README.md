@@ -118,7 +118,6 @@ Supported DCR versions: `3.2`, `3.3`, `3.4`. The `dcr` section requires:
 | `caBundlePath` | Optional additional PEM CA bundle for ASPSP server verification |
 | `tokenEndpointAuthMethod` | `tls_client_auth` (default) or `private_key_jwt` |
 | `disableKeepAlives` | Optional boolean; disables HTTP keep-alives when `true` |
-| `tlsSkipVerify` | Optional boolean; **unsafe** — disables TLS server verification. Never use against real ASPSP infrastructure |
 
 All credential paths are exact absolute file paths. DCR runs are **non-certifying** until a formal certification policy exists.
 

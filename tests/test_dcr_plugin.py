@@ -308,7 +308,6 @@ class TestDcrPluginLoadCatalogue:
             "dcr.transportPrivateKeyPath",
             "dcr.caBundlePath",
             "dcr.disableKeepAlives",
-            "dcr.tlsSkipVerify",
         }
         assert {primitive.primitive_id for primitive in catalogue.runner_primitives} == {"dcr.scenario"}
         assert catalogue.readiness_policy is not None

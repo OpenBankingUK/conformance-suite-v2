@@ -1211,11 +1211,11 @@ def test_parse_model_bank_config_rejects_dcr_non_bool_disable_keep_alives(tmp_pa
 
 
 @pytest.mark.unit
-def test_parse_model_bank_config_warns_on_dcr_tls_skip_verify(tmp_path: Path) -> None:
-    """``tlsSkipVerify=true`` emits a warning at parse time."""
+def test_parse_model_bank_config_rejects_dcr_tls_skip_verify(tmp_path: Path) -> None:
+    """``tlsSkipVerify=true`` is rejected instead of disabling verification."""
     files = _write_dcr_material(tmp_path)
-    with pytest.warns(UserWarning, match="TLS server certificate verification is disabled"):
-        config = parse_model_bank_config(
+    with pytest.raises(ConfigError, match="certificate verification"):
+        parse_model_bank_config(
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
@@ -1223,5 +1223,3 @@ def test_parse_model_bank_config_warns_on_dcr_tls_skip_verify(tmp_path: Path) ->
             },
             base_dir=tmp_path,
         )
-    assert config.dcr is not None
-    assert config.dcr.transport.tls_skip_verify is True

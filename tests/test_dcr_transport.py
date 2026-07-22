@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import dataclasses
-import warnings
 
 import pytest
 
 from conformance.dcr.transport import (
     DcrTransportConfig,
-    tls_skip_verify_warning,
+    tls_skip_verify_error,
 )
 
 # ---------------------------------------------------------------------------
@@ -54,34 +53,32 @@ def test_custom_timeouts() -> None:
 
 
 # ---------------------------------------------------------------------------
-# DcrTransportConfig — tls_skip_verify warning
+# DcrTransportConfig — tls_skip_verify rejection
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-def test_tls_skip_verify_emits_warning() -> None:
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
+def test_tls_skip_verify_raises() -> None:
+    """``tls_skip_verify=True`` is rejected instead of disabling verification."""
+    with pytest.raises(ValueError, match="certificate verification"):
         DcrTransportConfig(
             token_endpoint_auth_method="tls_client_auth",  # noqa: S106
             tls_skip_verify=True,
         )
-    assert len(w) == 1
-    assert tls_skip_verify_warning() in str(w[0].message)
 
 
 @pytest.mark.unit
-def test_no_warning_when_tls_skip_verify_false() -> None:
-    with warnings.catch_warnings(record=True) as w:
-        warnings.simplefilter("always")
-        DcrTransportConfig(token_endpoint_auth_method="tls_client_auth")  # noqa: S106
-    assert len(w) == 0
+def test_accepts_tls_skip_verify_false() -> None:
+    """``tls_skip_verify=False`` remains the default supported value."""
+    config = DcrTransportConfig(token_endpoint_auth_method="tls_client_auth")  # noqa: S106
+    assert config.tls_skip_verify is False
 
 
 @pytest.mark.unit
-def test_tls_skip_verify_warning_contains_unsafe_message() -> None:
-    msg = tls_skip_verify_warning()
-    assert "unsafe" in msg.lower()
+def test_tls_skip_verify_error_contains_remediation() -> None:
+    """The rejection message directs users to CA bundle trust instead."""
+    msg = tls_skip_verify_error()
+    assert "trusted CA bundle" in msg
 
 
 # ---------------------------------------------------------------------------

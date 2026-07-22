@@ -124,7 +124,6 @@ _RUNTIME_MAPPED_FIELD_IDS: Mapping[str, frozenset[str]] = MappingProxyType(
                 "dcr.caBundlePath",
                 "dcr.tokenEndpointAuthMethod",
                 "dcr.disableKeepAlives",
-                "dcr.tlsSkipVerify",
             }
         ),
     }

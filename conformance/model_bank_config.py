@@ -6,7 +6,6 @@ import json
 import math
 import os
 import re
-import warnings
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,7 +18,7 @@ from conformance.approved_releases import (
     load_approved_release_policy,
 )
 from conformance.dcr.credentials import DcrCredentialPaths
-from conformance.dcr.transport import DcrTokenEndpointAuthMethod, DcrTransportConfig
+from conformance.dcr.transport import DcrTokenEndpointAuthMethod, DcrTransportConfig, tls_skip_verify_error
 from conformance.json_types import JsonValue
 from conformance.target_config import TestTargetConfig, TestTargetConfigError, parse_test_target_config
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
@@ -41,13 +40,6 @@ TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 
 _TEST_VALUES_KEY_PATTERN = re.compile(r"^[A-Za-z][A-Za-z0-9_-]*$")
 """Pattern for valid test-value key names accepted in ``testValues.overrides``."""
-
-_DCR_TLS_SKIP_VERIFY_WARNING = (
-    "dcr.tlsSkipVerify is enabled: TLS server certificate verification is "
-    "disabled. This is unsafe and must never be used against real ASPSP "
-    "infrastructure or in certification runs."
-)
-"""Warning text emitted when ``dcr.tlsSkipVerify`` is ``True`` in a participant config."""
 
 
 @dataclass(frozen=True)
@@ -543,7 +535,7 @@ def _parse_dcr_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Dc
     timeout_seconds = _optional_positive_number(raw_dcr, "timeoutSeconds", default=30.0)
 
     if tls_skip_verify:
-        warnings.warn(_DCR_TLS_SKIP_VERIFY_WARNING, stacklevel=4)
+        raise ConfigError(tls_skip_verify_error())
 
     credential_paths = DcrCredentialPaths(
         credential_path_root=_credential_compatibility_root(

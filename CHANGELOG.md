@@ -52,10 +52,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   endpoint bulk selection controls, server-side OpenID discovery preview and
   empty-field prefill, staged launch routing through the shared target/test-plan
   planning path, and focused UI/API/CLI/config coverage for the contract.
+- **Security hardening**: DCR now rejects `tlsSkipVerify: true` instead of
+  constructing an HTTP client with TLS certificate verification disabled. Use
+  `caBundlePath` to trust participant or ASPSP CA roots.
 
 - **Stage 3 — CLI/API integration, `testSuite` removal, and hardening tests**:
   - `conformance/plan_executor.py`: New bridge module connecting `RunPlanV2` + `ModelBankConfig` to plugin-specific execution. Provides `build_default_registry()` (singleton `PluginRegistry` with `ReadWritePlugin` and `DcrPlugin`), `check_catalogue_drift()` (compares live catalogue hash against plan's stored hash), `execute_dcr_run()` (derives advertise flags from `endpoint_selections` and delegates to `DcrRunner`), `dcr_run_result_to_json_object()` (serialises `DcrRunResult` to JSON-ready dict with masked evidence), `resolve_rw_suite_for_plan()` (maps `specificationVersion` + resource group to a suite-catalog selection), and `utc_now()`.
-  - `conformance/model_bank_config.py`: New `DcrConfig` frozen dataclass capturing file-backed DCR credentials and transport options. New `test_target: TestTargetConfig | None` and `dcr: DcrConfig | None` fields on `ModelBankConfig`. New `_parse_test_target_from_config()` and `_parse_dcr_config()` parsers. `tlsSkipVerify: true` emits a `warnings.warn()` with an explicit unsafe-use message.
+  - `conformance/model_bank_config.py`: New `DcrConfig` frozen dataclass capturing file-backed DCR credentials and transport options. New `test_target: TestTargetConfig | None` and `dcr: DcrConfig | None` fields on `ModelBankConfig`. New `_parse_test_target_from_config()` and `_parse_dcr_config()` parsers. `tlsSkipVerify: true` is rejected because disabling TLS certificate verification is not allowed.
   - `conformance/cli.py`: Routes one-file config JSON documents with `testTarget`/`testPlan` through DCR (via `execute_dcr_run`) and Read/Write (via `resolve_rw_suite_for_plan`) without browser interaction, unless the selected tests require PSU/manual auth.
   - `conformance/api/views.py`: `POST /api/runs/` accepts config JSON with `testTarget`/`testPlan` and routes DCR or Read/Write plans through the plugin planning path.
   - `conformance/api/run_lifecycle.py`: `start_dcr_run()` and `_execute_dcr_run()` for async background DCR execution from the API.

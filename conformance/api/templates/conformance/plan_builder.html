@@ -1229,7 +1229,6 @@
                 setNestedObjectValue(config, 'dcr', key, v[`dcr.${key}`]);
             }
             setNestedBooleanValue(config, 'dcr', 'disableKeepAlives', v['dcr.disableKeepAlives']);
-            setNestedBooleanValue(config, 'dcr', 'tlsSkipVerify', v['dcr.tlsSkipVerify']);
             return;
         }
         setNestedObjectValue(config, 'oauth', 'clientId', v['oauth.clientId']);

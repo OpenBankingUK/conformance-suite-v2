@@ -170,14 +170,6 @@
       "valueType": "boolean",
       "required": false,
       "sensitive": false
-    },
-    {
-      "fieldId": "dcr.tlsSkipVerify",
-      "displayLabel": "Skip TLS verification",
-      "scope": "shared",
-      "valueType": "boolean",
-      "required": false,
-      "sensitive": false
     }
   ],
   "runnerPrimitives": [
