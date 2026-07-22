@@ -1,5 +1,4 @@
 {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
     "timeoutSeconds": 10,
     "testTarget": {
@@ -12,9 +11,6 @@
         "clientId": "your-client-id-here",
         "redirectUri": "https://conformance.example.com/callback",
         "openBankingIntentId": "aac-example-consent-id"
-    },
-    "tls": {
-        "certificatePathRoot": "./certs"
     },
     "resultOutputPath": "./out/test-results.json",
     "executionLogPath": "./out/execution-log.ndjson"

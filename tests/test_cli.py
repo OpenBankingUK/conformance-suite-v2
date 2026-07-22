@@ -132,7 +132,6 @@ def _write_ais_baseline_suite_config(tmp_path: Path) -> Path:
                     "resourceBaseUrl": "https://resource.example.com",
                 },
                 "fapiSigning": {
-                    "certificatePathRoot": str(signing_config.certificate_path_root),
                     "signingCertificatePath": str(signing_config.signing_certificate_path),
                     "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
                     "kid": signing_config.key_id,
@@ -181,7 +180,7 @@ def test_cli_writes_result_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path)
     monkeypatch.setattr(httpx, "Client", mock_client)
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
 
     assert exit_code == 0
     result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -211,7 +210,7 @@ def test_cli_runs_committed_example_config(monkeypatch: pytest.MonkeyPatch, tmp_
     monkeypatch.chdir(tmp_path)
     monkeypatch.setattr(httpx, "Client", mock_client)
 
-    exit_code = cli.run([str(EXAMPLE_CONFIG_PATH)])
+    exit_code = cli.run([str(EXAMPLE_CONFIG_PATH), "--smoke-check"])
 
     assert exit_code == 0
     assert requested_urls == ["https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"]
@@ -248,14 +247,8 @@ def test_cli_runs_manifest_from_committed_example_config(monkeypatch: pytest.Mon
 
     exit_code = cli.run([str(EXAMPLE_CONFIG_PATH), "--manifest", str(EXAMPLE_MANIFEST_PATH)])
 
-    assert exit_code == 0
-    assert requested_urls == [
-        "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-        "https://keystore.openbankingtest.org.uk/example.jwks",
-    ]
-    result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
-    assert result["status"] == "passed"
-    assert result["summary"] == {"total": 2, "passed": 2, "failed": 0, "warn": 0, "skipped": 0}
+    assert exit_code == 2
+    assert requested_urls == []
 
 
 @pytest.mark.unit
@@ -264,7 +257,6 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
     tmp_path: Path,
 ) -> None:
     config_path = tmp_path / "model-bank.json"
-    manifest_path = tmp_path / "manifest.json"
     policy_path = tmp_path / "approved-releases.json"
     policy_path.write_text(
         json.dumps(
@@ -283,23 +275,13 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
                 "resultOutputPath": str(tmp_path / "result.json"),
                 "executionLogPath": str(tmp_path / "execution.ndjson"),
                 "approvedReleasePolicyPath": policy_path.name,
-            }
-        ),
-        encoding="utf-8",
-    )
-    manifest_path.write_text(
-        json.dumps(
-            {
-                "schemaVersion": "v1",
-                "name": "cli psu url surfacing",
-                "steps": [
-                    {
-                        "id": "placeholder",
-                        "name": "Placeholder HTTP step",
-                        "request": {"method": "GET", "url": "https://example.com/unused"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    }
-                ],
+                "testTarget": {
+                    "standard": "obl",
+                    "specification": "read-write",
+                    "securityProfile": "fapi1-advanced",
+                    "specificationVersion": "v3.1.11",
+                    "resourceGroups": ["ais"],
+                },
             }
         ),
         encoding="utf-8",
@@ -340,7 +322,7 @@ def test_cli_prints_psu_authorization_url_to_tty_stderr(
     monkeypatch.setattr(sys, "stdout", stdout)
     monkeypatch.setattr(sys, "stderr", stderr)
 
-    exit_code = cli.run([str(config_path), "--manifest", str(manifest_path)])
+    exit_code = cli.run([str(config_path)])
 
     assert exit_code == 0
     assert stderr.getvalue() == f"\033[1m[PSU]\033[0m Open this URL to authorise: {url}\n"
@@ -369,7 +351,7 @@ def test_cli_returns_failure_when_model_bank_check_fails(monkeypatch: pytest.Mon
     monkeypatch.setattr(httpx, "Client", mock_client)
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
 
     assert exit_code == 1
     result = json.loads(result_path.read_text(encoding="utf-8"))
@@ -415,7 +397,7 @@ def test_cli_returns_write_error_when_result_file_cannot_be_written(
     monkeypatch.setattr(httpx, "Client", mock_client)
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
 
     assert exit_code == 3
 
@@ -425,7 +407,7 @@ def test_cli_returns_config_error_for_invalid_config(tmp_path: Path) -> None:
     config_path = tmp_path / "invalid.json"
     config_path.write_text("{}", encoding="utf-8")
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
 
     assert exit_code == 2
 
@@ -449,6 +431,103 @@ def test_cli_returns_manifest_error_for_invalid_manifest(tmp_path: Path) -> None
     exit_code = cli.run([str(config_path), "--manifest", str(manifest_path)])
 
     assert exit_code == 2
+
+
+@pytest.mark.unit
+def test_cli_rejects_run_plan_with_stale_dcr_operation_id(tmp_path: Path) -> None:
+    """CLI config.testPlan input is catalogue-compiled before DCR execution starts."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "test-env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "testPlan": {
+                    "target": {
+                        "standard": "obl",
+                        "specification": "dynamic-client-registration",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "3.3",
+                        "catalogueHash": "sha256:unknown",
+                    },
+                    "endpointSelections": [
+                        {
+                            "endpointId": "get-registration",
+                            "operation": "GET",
+                            "selected": True,
+                        }
+                    ],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.run([str(config_path)])
+
+    assert exit_code == 2
+    assert not (tmp_path / "result.json").exists()
+
+
+@pytest.mark.unit
+def test_cli_blocks_test_plan_catalogue_hash_drift(tmp_path: Path) -> None:
+    """CLI refuses to launch a saved testPlan when its catalogue hash is stale."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resultOutputPath": str(tmp_path / "result.json"),
+                "testPlan": {
+                    "target": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:definitely-not-the-live-hash",
+                    },
+                    "resourceGroups": ["ais"],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.run([str(config_path)])
+
+    assert exit_code == 2
+    assert not (tmp_path / "result.json").exists()
+
+
+@pytest.mark.unit
+def test_cli_rejects_run_plan_flag(tmp_path: Path) -> None:
+    """CLI rejects the retired separate run-plan flag."""
+    config_path = tmp_path / "model-bank.json"
+    plan_path = tmp_path / "run-plan.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "test-env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "testTarget": {
+                    "standard": "obl",
+                    "specification": "read-write",
+                    "securityProfile": "fapi1-advanced",
+                    "specificationVersion": "v4.0.1",
+                    "resourceGroups": ["ais"],
+                },
+                "resultOutputPath": str(tmp_path / "result.json"),
+            }
+        ),
+        encoding="utf-8",
+    )
+    plan_path.write_text("{}", encoding="utf-8")
+
+    exit_code = cli.run([str(config_path), "--run-plan", str(plan_path)])
+
+    assert exit_code == 2
+    assert not (tmp_path / "result.json").exists()
 
 
 @pytest.mark.unit
@@ -495,7 +574,7 @@ def test_cli_writes_execution_log_ndjson(monkeypatch: pytest.MonkeyPatch, tmp_pa
     monkeypatch.setattr(httpx, "Client", mock_client)
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
 
     assert exit_code == 0
     assert log_path.is_file()
@@ -506,6 +585,25 @@ def test_cli_writes_execution_log_ndjson(monkeypatch: pytest.MonkeyPatch, tmp_pa
     assert types[-1] == "run-completed"
     # RFC 3339 with Z suffix per the plan's verification step
     assert all(event["timestamp"].endswith("Z") for event in parsed)
+
+
+@pytest.mark.unit
+def test_cli_requires_target_or_run_plan_for_participant_run(tmp_path: Path) -> None:
+    """A bare config no longer falls back to the developer smoke check."""
+    config_path = tmp_path / "model-bank.json"
+    config_path.write_text(
+        json.dumps(
+            {
+                "environment": "test-env",
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = cli.run([str(config_path)])
+
+    assert exit_code == 2
 
 
 @pytest.mark.unit
@@ -549,7 +647,7 @@ def test_cli_developer_mode_warn_line_logged(
     monkeypatch.chdir(tmp_path)
 
     with caplog.at_level("WARNING", logger="conformance.execution_log"):
-        cli.run([str(config_path)])
+        cli.run([str(config_path), "--smoke-check"])
 
     assert any("CONFORMANCE_DEVELOPER_MODE" in record.message for record in caplog.records)
 
@@ -593,7 +691,7 @@ def test_cli_returns_exit_code_3_when_execution_log_cannot_be_written(
     monkeypatch.setattr(httpx, "Client", mock_client)
     monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path)])
+    exit_code = cli.run([str(config_path), "--smoke-check"])
     assert exit_code == 3
 
 
@@ -652,7 +750,7 @@ def _write_plan_config_and_manifest(tmp_path: Path) -> tuple[Path, Path]:
 
 @pytest.mark.unit
 def test_cli_deselect_repeated_excludes_each_step_from_result(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """``--deselect`` can be repeated; each id is excluded from the result file."""
+    """``--deselect`` is no longer accepted for participant runs."""
     config_path, manifest_path = _write_plan_config_and_manifest(tmp_path)
     original_client = httpx.Client
 
@@ -663,22 +761,7 @@ def test_cli_deselect_repeated_excludes_each_step_from_result(monkeypatch: pytes
     monkeypatch.chdir(tmp_path)
 
     exit_code = cli.run([str(config_path), "--manifest", str(manifest_path), "--deselect", "optional-step"])
-
-    # Only an optional step is deselected and the mandatory step passes,
-    # so the run as a whole passes → exit code 0.
-    assert exit_code == 0
-    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
-    assert result["status"] == "passed"
-    assert [step["name"] for step in result["steps"]] == ["mandatory-step"]
-    assert result["plan"] == {
-        "totalSteps": 2,
-        "selectedSteps": 1,
-        "deselectedSteps": 1,
-        "mandatorySelected": 1,
-        "mandatoryDeselected": 0,
-        "conditionalSelected": 0,
-        "conditionalDeselectedMissingValues": 0,
-    }
+    assert exit_code == 2
 
 
 @pytest.mark.unit

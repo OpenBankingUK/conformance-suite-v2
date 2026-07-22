@@ -8,10 +8,17 @@ import logging
 import sys
 from collections.abc import Sequence
 from contextlib import AbstractContextManager, nullcontext
+from dataclasses import replace
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
+from conformance.catalogue_execution import CompiledCatalogueRun
 from conformance.cli_callback_server import CliCallbackServer, CliCallbackServerError, needs_cli_callback_listener
+from conformance.config_document import (
+    ConfigDocumentError,
+    load_participant_config_document,
+    resolve_config_document_execution_plan,
+)
 from conformance.context import (
     RuntimeConfig,
     build_runtime_test_values,
@@ -25,33 +32,34 @@ from conformance.execution_log import (
 )
 from conformance.executor import run_manifest
 from conformance.http import build_json_http_client
-from conformance.manifest import ManifestError, PsuAuthorizationStep, load_manifest
-from conformance.model_bank_config import ConfigError, ModelBankConfig, load_model_bank_config
+from conformance.manifest import PsuAuthorizationStep
+from conformance.model_bank_config import ConfigError, ModelBankConfig
 from conformance.plan_executor import (
-    check_catalogue_drift,
+    compile_catalogue_graph_for_plan,
     dcr_run_result_to_json_object,
+    emit_dcr_execution_log,
     execute_dcr_run,
+    readiness_report_for_smoke_result,
+    require_no_catalogue_drift,
     resolve_rw_suite_for_plan,
+    run_plan_from_test_target,
     utc_now,
 )
+from conformance.plugins.registry import PluginRegistryError
 from conformance.run_configuration import compile_run_configuration
 from conformance.run_plan_v2 import (
     EndpointSelection,
     RunPlanV2,
-    RunPlanV2ParseError,
-    RunPlanV2TargetCoordinates,
-    parse_run_plan_v2,
 )
 from conformance.runner import run_model_bank_smoke_check
 from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata
-from conformance.target_config import TestTargetConfig
 from conformance.test_plan import TestPlan, build_plan_test_value_context
 
 logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check (model-bank smoke check, RunPlan v2, or manifest run).
+    """Run a conformance check from a participant config or smoke-check config.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -63,28 +71,15 @@ def run(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
-    parser.add_argument("--manifest", type=Path, help="Optional manifest JSON file (v0 or v1) to execute")
-    parser.add_argument(
-        "--run-plan",
-        type=Path,
-        default=None,
-        help=(
-            "Optional RunPlan v2 JSON file describing target coordinates and endpoint "
-            "selections.  When supplied, the run is driven by the plan rather than a "
-            "``testTarget`` config section or an inline manifest."
-        ),
-    )
+    parser.add_argument("--manifest", type=Path, help=argparse.SUPPRESS)
+    parser.add_argument("--smoke-check", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--run-plan", type=Path, nargs="?", default=None, const=Path(), help=argparse.SUPPRESS)
     parser.add_argument(
         "--deselect",
         action="append",
         default=[],
         metavar="STEP_ID",
-        help=(
-            "Deselect a v1 manifest step from the default test plan. Repeatable. "
-            "Deselected steps do not run and produce no step result. Deselecting "
-            "a mandatory step flips certificationEligibility to ineligible. "
-            "Only valid with --manifest or a Read/Write run plan/testTarget."
-        ),
+        help=argparse.SUPPRESS,
     )
     try:
         args = parser.parse_args(argv)
@@ -93,38 +88,63 @@ def run(argv: Sequence[str] | None = None) -> int:
 
     warn_if_developer_mode()
 
+    if args.run_plan is not None:
+        logger.error("--run-plan is no longer supported; use one config JSON with top-level testPlan")
+        return 2
+
     try:
-        config = load_model_bank_config(args.config)
+        config_document = load_participant_config_document(args.config)
     except ConfigError as error:
         logger.error("Config error: %s", error)
         return 2
+    config = config_document.config
 
-    run_plan: RunPlanV2 | None = None
-    if args.run_plan is not None:
-        try:
-            raw_plan = json.loads(args.run_plan.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError) as error:
-            logger.error("Unable to read run plan file %s: %s", args.run_plan, error)
-            return 2
-        try:
-            run_plan = parse_run_plan_v2(raw_plan)
-        except RunPlanV2ParseError as error:
-            logger.error("Invalid run plan: %s", error)
-            return 2
-    elif config.test_target is not None:
-        run_plan = _run_plan_from_test_target(config.test_target)
-
-    if args.deselect and args.manifest is None and run_plan is None:
-        logger.error("--deselect requires --manifest, --run-plan, or config.testTarget")
+    try:
+        run_plan = resolve_config_document_execution_plan(config_document)
+    except ConfigDocumentError as error:
+        logger.error("Config error: %s", error)
         return 2
 
+    if run_plan is None and config.test_target is not None:
+        try:
+            run_plan = run_plan_from_test_target(config.test_target)
+        except (PluginRegistryError, ValueError) as error:
+            logger.error("Target planning error: %s", error)
+            return 2
+
+    if args.manifest is not None:
+        logger.error("--manifest is no longer supported; use config.testPlan or config.testTarget")
+        return 2
+    if args.deselect:
+        logger.error("--deselect is no longer supported; use config.testPlan endpoint selections instead")
+        return 2
+
+    if run_plan is None and not args.smoke_check:
+        logger.error("config.testPlan or config.testTarget is required for participant runs")
+        return 2
+
+    compiled_run = None
     if run_plan is not None:
-        drift = check_catalogue_drift(run_plan)
-        if drift is not None:
-            logger.warning("%s", drift)
+        try:
+            compiled_run = compile_catalogue_graph_for_plan(run_plan)
+        except (PluginRegistryError, ValueError) as error:
+            logger.error("Catalogue planning error: %s", error)
+            return 2
+        try:
+            require_no_catalogue_drift(run_plan)
+        except ValueError as error:
+            logger.error("%s", error)
+            return 2
+        logger.info(
+            "Compiled catalogue plan for %s/%s %s with %d selected steps",
+            compiled_run.target.standard,
+            compiled_run.target.specification,
+            compiled_run.target.specification_version,
+            len(compiled_run.steps),
+        )
 
         if run_plan.target.specification == "dynamic-client-registration":
-            return _run_dcr(config=config, plan=run_plan)
+            return _run_dcr(config=config, plan=run_plan, compiled_run=compiled_run)
 
     run_id = new_run_id()
     execution_logger = BufferedExecutionLogger(run_id=run_id)
@@ -135,24 +155,17 @@ def run(argv: Sequence[str] | None = None) -> int:
     )
 
     suite_metadata: SuiteMetadata | None = None
-    if args.manifest is None and run_plan is None:
+    if run_plan is None:
         result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
-        if args.manifest is None:
-            if run_plan is None:  # pragma: no cover - defended above
-                logger.error("Internal error: run plan missing")
-                return 2
-            try:
-                manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
-            except (ValueError, SuiteCatalogError) as error:
-                logger.error("Suite resolution error: %s", error)
-                return 2
-        else:
-            try:
-                manifest = load_manifest(args.manifest)
-            except ManifestError as error:
-                logger.error("Manifest error: %s", error)
-                return 2
+        if run_plan is None:  # pragma: no cover - defended above
+            logger.error("Internal error: run plan missing")
+            return 2
+        try:
+            manifest, suite_metadata = resolve_rw_suite_for_plan(run_plan)
+        except (ValueError, SuiteCatalogError) as error:
+            logger.error("Target resolution error: %s", error)
+            return 2
 
         try:
             validate_test_value_config_contract(
@@ -266,15 +279,27 @@ def run(argv: Sequence[str] | None = None) -> int:
                             )
                         ),
                     )
+                    if compiled_run is not None:
+                        result = replace(
+                            result,
+                            readiness_report=readiness_report_for_smoke_result(
+                                compiled_run,
+                                result,
+                                run_id=run_id,
+                            ),
+                        )
             except CliCallbackServerError as error:
                 logger.error("Callback listener error: %s", error)
                 return 2
         finally:
             http_client.close()
     try:
+        result_object = result.to_json_object()
+        if compiled_run is not None:
+            result_object.pop("suite", None)
         config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
         config.result_output_path.write_text(
-            json.dumps(result.to_json_object(), indent=2, sort_keys=True) + "\n",
+            json.dumps(result_object, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
     except OSError as error:
@@ -287,12 +312,13 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Unable to write execution log to %s: %s", config.execution_log_path, error)
         return 3
 
-    if args.manifest is not None:
-        run_label = f"Manifest run ({args.manifest})"
-    elif suite_metadata is not None:
-        run_label = f"Suite run ({suite_metadata.label})"
+    if suite_metadata is not None:
+        run_label = (
+            f"Target run ({suite_metadata.standard} {suite_metadata.spec_version} "
+            f"{suite_metadata.profile} {suite_metadata.api})"
+        )
     else:
-        run_label = "Model-bank smoke check"
+        run_label = "Developer smoke check"
     if result.status == "passed":
         logger.info(
             "%s passed; wrote %s and %s",
@@ -311,7 +337,7 @@ def run(argv: Sequence[str] | None = None) -> int:
     return 1
 
 
-def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
+def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2, compiled_run: CompiledCatalogueRun | None = None) -> int:
     """Execute a DCR conformance run driven by a RunPlanV2.
 
     Args:
@@ -319,12 +345,15 @@ def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
             ``dcr`` section.
         plan: The DCR run plan authored against ``dynamic-client-registration``
             target coordinates.
+        compiled_run: Optional catalogue-native graph used to derive the
+            readiness report.
 
     Returns:
         Process-style exit code: 0 for pass, 1 for conformance failure, 2 for
         invalid input, and 3 when result artifacts cannot be written.
     """
     run_id = new_run_id()
+    execution_logger = BufferedExecutionLogger(run_id=run_id)
     started_at = utc_now()
     try:
         dcr_result = execute_dcr_run(plan, config)
@@ -343,7 +372,9 @@ def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
         run_id=run_id,
         started_at=started_at,
         finished_at=finished_at,
+        compiled_run=compiled_run,
     )
+    emit_dcr_execution_log(dcr_result, execution_logger=execution_logger)
 
     try:
         config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -354,10 +385,8 @@ def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
     except OSError as error:
         logger.error("Unable to write DCR result to %s: %s", config.result_output_path, error)
         return 3
-
     try:
-        config.execution_log_path.parent.mkdir(parents=True, exist_ok=True)
-        config.execution_log_path.write_bytes(b"")
+        execution_logger.flush_to_path(config.execution_log_path)
     except OSError as error:
         logger.error("Unable to write DCR execution log to %s: %s", config.execution_log_path, error)
         return 3
@@ -381,35 +410,6 @@ def _run_dcr(*, config: ModelBankConfig, plan: RunPlanV2) -> int:
         config.result_output_path,
     )
     return 1
-
-
-def _run_plan_from_test_target(target: TestTargetConfig) -> RunPlanV2:
-    """Build a minimal RunPlanV2 from a :class:`TestTargetConfig`.
-
-    Used when the CLI or API caller supplies ``testTarget`` in config without a
-    ``runPlan`` file.  The generated plan uses an ``sha256:unknown`` catalogue
-    hash so :func:`check_catalogue_drift` treats drift detection as
-    unavailable rather than emitting a false-positive warning.
-
-    Args:
-        target: Validated target coordinates from participant config.
-
-    Returns:
-        A :class:`RunPlanV2` with no endpoint selections (all default), the
-        supplied resource groups, and a placeholder catalogue hash.
-    """
-    return RunPlanV2(
-        schema_version="2",
-        target=RunPlanV2TargetCoordinates(
-            standard=target.standard,
-            specification=target.specification,
-            security_profile=target.security_profile,
-            specification_version=target.specification_version,
-            catalogue_hash="sha256:unknown",
-        ),
-        resource_groups=target.resource_groups,
-        endpoint_selections=(),
-    )
 
 
 def _plan_has_manual_psu_step(*, manifest: object, plan: TestPlan) -> bool:

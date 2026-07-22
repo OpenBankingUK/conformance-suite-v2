@@ -2,7 +2,7 @@
 
 import ssl
 from pathlib import Path
-from unittest.mock import Mock, patch
+from unittest.mock import Mock, call, patch
 
 import httpx
 import pytest
@@ -56,23 +56,52 @@ class TestBuildJsonHttpClientMtlsValidation:
         client = build_json_http_client(timeout_seconds=10.0)
         client.close()
 
-    @patch("conformance.http.ssl.create_default_context")
+    @patch("conformance.default_trust.bundled_open_banking_ca_paths")
+    @patch("conformance.default_trust.ssl.create_default_context")
     @patch("conformance.http.httpx.Client")
-    def test_ca_bundle_augments_default_trust_store(
+    def test_bundled_open_banking_ca_trust_is_loaded_by_default(
         self,
         mock_client: Mock,
         mock_create_context: Mock,
+        mock_bundled_ca_paths: Mock,
+    ) -> None:
+        """Default HTTP clients append bundled Open Banking CAs to system trust."""
+        bundled_ca = Path("/tool/openbanking-root-ca.pem")
+        mock_bundled_ca_paths.return_value = (bundled_ca,)
+        ssl_context = Mock()
+        mock_create_context.return_value = ssl_context
+
+        build_json_http_client(timeout_seconds=10.0)
+
+        ssl_context.load_verify_locations.assert_called_once_with(cafile=str(bundled_ca))
+        assert mock_client.call_args.kwargs["verify"] is ssl_context
+
+    @patch("conformance.default_trust.bundled_open_banking_ca_paths")
+    @patch("conformance.default_trust.ssl.create_default_context")
+    @patch("conformance.http.httpx.Client")
+    def test_ca_bundle_augments_bundled_open_banking_trust_store(
+        self,
+        mock_client: Mock,
+        mock_create_context: Mock,
+        mock_bundled_ca_paths: Mock,
         tmp_path: Path,
     ) -> None:
-        """Supplying a CA bundle passes an SSL context to ``httpx``."""
+        """Supplying a CA bundle appends it after bundled Open Banking CAs."""
         ca_bundle = tmp_path / "ca.pem"
         ca_bundle.touch()
+        bundled_ca = Path("/tool/openbanking-root-ca.pem")
+        mock_bundled_ca_paths.return_value = (bundled_ca,)
         ssl_context = Mock()
         mock_create_context.return_value = ssl_context
 
         build_json_http_client(timeout_seconds=10.0, ca_bundle_path=ca_bundle)
 
-        ssl_context.load_verify_locations.assert_called_once_with(cafile=str(ca_bundle))
+        ssl_context.load_verify_locations.assert_has_calls(
+            [
+                call(cafile=str(bundled_ca)),
+                call(cafile=str(ca_bundle)),
+            ]
+        )
         assert mock_client.call_args.kwargs["verify"] is ssl_context
 
     def test_reports_unloadable_client_certificate_pair(self, tmp_path: Path) -> None:

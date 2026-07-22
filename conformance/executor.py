@@ -286,7 +286,7 @@ def _mask_result_url_query(url: str) -> str:
 
 def _resolve_environment_reference(
     *,
-    environment: str,
+    environment: str | None,
     runtime_config: RuntimeConfig | None,
 ) -> EnvironmentReference:
     """Resolve the safest available environment capability reference.
@@ -296,7 +296,8 @@ def _resolve_environment_reference(
     with no declaration so capability evaluation remains conservative.
 
     Args:
-        environment: Run environment label supplied to :func:`run_manifest`.
+        environment: Optional legacy run environment label supplied to
+            :func:`run_manifest`.
         runtime_config: Optional runtime config carrying discovery URL and
             environment values.
 
@@ -305,11 +306,13 @@ def _resolve_environment_reference(
     """
     discovery_url = runtime_config.discovery_url if runtime_config is not None else None
     for preset in list_environment_presets():
-        if environment == preset.environment or (discovery_url is not None and discovery_url == preset.discovery_url):
+        if (environment is not None and environment == preset.environment) or (
+            discovery_url is not None and discovery_url == preset.discovery_url
+        ):
             preset_reference = make_preset_environment_reference(preset.key)
             if preset_reference is not None:
                 return preset_reference
-    return make_custom_environment_reference(label=environment)
+    return make_custom_environment_reference(label=environment or "target/discovery config")
 
 
 def _serialize_auth_bundle(bundle: AuthBundleDeclaration) -> JsonObject:
@@ -533,7 +536,7 @@ def _build_environment_capability_evidence(
     *,
     manifest: Manifest,
     suite_metadata: SuiteMetadata | None,
-    environment: str,
+    environment: str | None,
     runtime_config: RuntimeConfig | None,
     selected_step_ids: frozenset[str],
 ) -> JsonObject | None:
@@ -542,7 +545,7 @@ def _build_environment_capability_evidence(
     Args:
         manifest: Parsed manifest for the current run.
         suite_metadata: Optional metadata for a config-resolved bundled suite.
-        environment: Run environment label.
+        environment: Optional legacy run environment label.
         runtime_config: Optional runtime config carrying discovery/environment
             values for preset matching.
         selected_step_ids: Selected/executed step ids for the run plan.
@@ -1230,7 +1233,7 @@ def _build_custom_test_value_impact_evidence(
 def run_manifest(
     manifest: Manifest,
     *,
-    environment: str,
+    environment: str | None,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     plan: TestPlan | None = None,
@@ -1251,7 +1254,7 @@ def run_manifest(
 
     Args:
         manifest: Parsed and validated manifest to execute.
-        environment: Environment name copied into the result file.
+        environment: Optional legacy environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
         execution_logger: Optional structured execution-log sink. Defaults to
             a :class:`NullExecutionLogger` for backwards-compatible callers
@@ -1320,7 +1323,9 @@ def run_manifest(
         plan=effective_plan,
         runtime_config=runtime_config,
     )
-    run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
+    run_started_payload: JsonObject = {"schemaVersion": manifest.schema_version}
+    if environment is not None:
+        run_started_payload["environment"] = environment
     if suite_metadata is not None:
         run_started_payload["suite"] = suite_metadata.to_json_object()
     logger_sink.emit("run-started", payload=run_started_payload)
@@ -1464,7 +1469,7 @@ class _LazyFapiSigningService:
 def _run_manifest_v1(
     manifest: Manifest,
     *,
-    environment: str,
+    environment: str | None,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     plan: TestPlan,
@@ -1498,7 +1503,7 @@ def _run_manifest_v1(
 
     Args:
         manifest: Parsed v1 manifest containing sequential steps.
-        environment: Environment name copied into the result file.
+        environment: Optional legacy environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink.
         plan: Test plan governing which steps run and which are skipped
@@ -3488,7 +3493,7 @@ def _serialize_json_request_body(body: JsonValue) -> bytes:
 def _run_manifest_v0(
     manifest: Manifest,
     *,
-    environment: str,
+    environment: str | None,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     run_id: str,
@@ -3510,7 +3515,7 @@ def _run_manifest_v0(
 
     Args:
         manifest: Parsed v0 manifest containing tests with optional followUp.
-        environment: Environment name copied into the result file.
+        environment: Optional legacy environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink threaded through to
             each desugared v1 step.

@@ -9,24 +9,35 @@ DCR runner tests.
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 import pytest
 
+from conformance.execution_log import BufferedExecutionLogger
+from conformance.masking import MASKED_VALUE
+from conformance.model_bank_config import ModelBankConfig
 from conformance.plan_executor import (
     _RW_SUITE_MAP,
     build_default_registry,
     check_catalogue_drift,
+    compile_catalogue_graph_for_plan,
     dcr_run_result_to_json_object,
+    emit_dcr_execution_log,
     execute_dcr_run,
+    require_no_catalogue_drift,
     resolve_rw_suite_for_plan,
+    run_plan_from_test_target,
     utc_now,
 )
 from conformance.plugins.dcr.client_state import DcrScenarioResult, DcrStepEvidence
 from conformance.plugins.dcr.runner import DcrRunResult
 from conformance.plugins.registry import PluginRegistry
 from conformance.run_plan_v2 import EndpointSelection, RunPlanV2, RunPlanV2TargetCoordinates
+from conformance.target_config import TestTargetConfig as TargetConfig
 
 
 @pytest.mark.unit
@@ -94,6 +105,12 @@ class TestCheckCatalogueDrift:
         assert result is not None
         assert "Catalogue drift detected" in result
 
+    def test_require_no_catalogue_drift_rejects_mismatch(self) -> None:
+        """Hard drift enforcement raises before a stale saved test plan can launch."""
+        plan = self._plan(catalogue_hash="sha256:definitely-not-the-live-hash")
+        with pytest.raises(ValueError, match="Catalogue drift detected"):
+            require_no_catalogue_drift(plan)
+
     def test_returns_none_when_plugin_unknown(self) -> None:
         """Unknown target coordinates return ``None`` without raising."""
         plan = RunPlanV2(
@@ -108,6 +125,29 @@ class TestCheckCatalogueDrift:
             resource_groups=("ais",),
             endpoint_selections=(),
         )
+        assert check_catalogue_drift(plan) is None
+
+
+@pytest.mark.unit
+class TestRunPlanFromTestTarget:
+    """Coverage for shared ``testTarget`` to RunPlanV2 derivation."""
+
+    def test_uses_live_catalogue_hash_and_canonical_version(self) -> None:
+        """A config target is normalised through plugin catalogue identity."""
+        target = TargetConfig(
+            standard="obl",
+            specification="read-write",
+            security_profile="fapi1-advanced",
+            specification_version="v4.0",
+            resource_groups=("ais",),
+        )
+
+        plan = run_plan_from_test_target(target)
+
+        assert plan.target.specification_version == "v4.0.0"
+        assert plan.target.catalogue_hash.startswith("sha256:")
+        assert plan.target.catalogue_hash != "sha256:unknown"
+        assert plan.resource_groups == ("ais",)
         assert check_catalogue_drift(plan) is None
 
 
@@ -187,11 +227,54 @@ class TestExecuteDcrRun:
                 standard="obl",
                 specification="dynamic-client-registration",
                 security_profile="fapi1-advanced",
-                specification_version="v3.3",
+                specification_version="3.3",
                 catalogue_hash="sha256:unknown",
             ),
             resource_groups=(),
             endpoint_selections=selections,
+        )
+
+    def _selection(self, endpoint_id: str, operation: str) -> EndpointSelection:
+        """Build a DCR endpoint selection.
+
+        Args:
+            endpoint_id: Catalogue-native DCR endpoint identifier.
+            operation: HTTP operation selected for the endpoint.
+
+        Returns:
+            EndpointSelection for a DCR plan.
+        """
+        return EndpointSelection(endpoint_id=endpoint_id, operation=operation, selected=True, field_values={})
+
+    def _config(self) -> ModelBankConfig:
+        """Build a DCR model-bank config fixture.
+
+        Returns:
+            A ModelBankConfig with placeholder DCR paths.
+        """
+        from conformance.dcr.credentials import DcrCredentialPaths
+        from conformance.dcr.transport import DcrTransportConfig
+        from conformance.model_bank_config import DcrConfig
+
+        root = Path("dcr-fixture")
+        paths = DcrCredentialPaths(
+            credential_path_root=root,
+            ssa_path=root / "ssa.jwt",
+            signing_private_key_path=root / "signing.key",
+            signing_certificate_path=root / "signing.crt",
+            transport_certificate_path=root / "transport.crt",
+            transport_private_key_path=root / "transport.key",
+        )
+        return ModelBankConfig(
+            environment="test",
+            discovery_url="https://issuer.example.com",
+            result_output_path=Path("out/results.json"),
+            dcr=DcrConfig(
+                credential_paths=paths,
+                transport=DcrTransportConfig(
+                    token_endpoint_auth_method="tls_client_auth",  # noqa: S106 - auth-method enum fixture, not a secret
+                ),
+            ),
         )
 
     def test_raises_when_config_missing_dcr_section(self) -> None:
@@ -207,6 +290,55 @@ class TestExecuteDcrRun:
         )
         with pytest.raises(ConfigError, match="'dcr' section is required"):
             execute_dcr_run(self._plan(), config)
+
+    @pytest.mark.parametrize(
+        ("endpoint_id", "operation", "expected_flags"),
+        [
+            ("dcr.register.get", "GET", {"advertise_get": True, "advertise_put": False, "advertise_delete": False}),
+            ("dcr.register.put", "PUT", {"advertise_get": False, "advertise_put": True, "advertise_delete": False}),
+            (
+                "dcr.register.delete",
+                "DELETE",
+                {"advertise_get": False, "advertise_put": False, "advertise_delete": True},
+            ),
+        ],
+    )
+    def test_dcr_catalogue_endpoint_ids_drive_get_put_delete_selection(
+        self,
+        endpoint_id: str,
+        operation: str,
+        expected_flags: dict[str, bool],
+    ) -> None:
+        """DCR GET, PUT, and DELETE selections use catalogue-native endpoint IDs."""
+        from conformance.dcr.credentials import DcrCredentials
+
+        credentials = DcrCredentials(
+            ssa_jwt=b"ssa",
+            signing_private_key_pem=b"signing-key",
+            signing_certificate_pem=b"signing-cert",
+            transport_certificate_pem=b"transport-cert",
+            transport_private_key_pem=b"transport-key",
+        )
+        run_result = DcrRunResult(
+            discovery=None,
+            scenario_results=[],
+            cleanup_attempted=False,
+            cleanup_succeeded=False,
+            cleanup_detail="not run",
+        )
+
+        with (
+            patch("conformance.plan_executor.load_dcr_credentials", return_value=credentials),
+            patch("conformance.plan_executor.DcrRunner") as runner_cls,
+        ):
+            runner_cls.return_value.run.return_value = run_result
+
+            execute_dcr_run(self._plan(selections=(self._selection(endpoint_id, operation),)), self._config())
+
+        kwargs = runner_cls.call_args.kwargs
+        assert kwargs["advertise_get"] is expected_flags["advertise_get"]
+        assert kwargs["advertise_put"] is expected_flags["advertise_put"]
+        assert kwargs["advertise_delete"] is expected_flags["advertise_delete"]
 
 
 @pytest.mark.unit
@@ -225,7 +357,7 @@ class TestDcrRunResultToJsonObject:
                 standard="obl",
                 specification="dynamic-client-registration",
                 security_profile="fapi1-advanced",
-                specification_version="v3.3",
+                specification_version="3.3",
                 catalogue_hash="sha256:unknown",
             ),
             resource_groups=(),
@@ -361,6 +493,57 @@ class TestDcrRunResultToJsonObject:
         assert isinstance(scenarios, list)
         first: Any = scenarios[0]
         assert "evidence" in first
+
+    def test_includes_catalogue_readiness_report_when_compiled_run_supplied(self) -> None:
+        """DCR result JSON includes endpoint-first readiness from catalogue policy."""
+        compiled_run = compile_catalogue_graph_for_plan(self._plan())
+        body = dcr_run_result_to_json_object(
+            self._run_result(results=(self._scenario(outcome="passed"),)),
+            plan=self._plan(),
+            environment="test-env",
+            run_id="run-6",
+            started_at=utc_now(),
+            finished_at=utc_now(),
+            compiled_run=compiled_run,
+        )
+
+        readiness = body["readinessReport"]
+        assert isinstance(readiness, dict)
+        assert readiness["overallOutcome"] == "non-certifying"
+        assert readiness["catalogueHash"] == compiled_run.catalogue_identity.content_hash
+        dcr_status = readiness["dcrStatus"]
+        assert isinstance(dcr_status, dict)
+        assert dcr_status["certifying"] is False
+        policy = readiness["readinessPolicy"]
+        assert isinstance(policy, dict)
+        assert policy["certificationStatus"] == "non-certifying"
+
+    def test_emit_dcr_execution_log_masks_scenario_evidence(self) -> None:
+        """DCR scenario evidence is emitted through the shared masked NDJSON logger."""
+        evidence = DcrStepEvidence(
+            request_url="https://example.com/token",
+            request_method="POST",
+            request_content_type="application/x-www-form-urlencoded",
+            request_headers_masked={"Authorization": "Bearer live-token"},
+            response_status=200,
+            response_headers_masked={"Content-Type": "application/json"},
+            response_body_masked={"access_token": "live-access-token", "token_type": "Bearer"},
+        )
+        logger = BufferedExecutionLogger(run_id="run-1", developer_mode=False)
+
+        emit_dcr_execution_log(
+            self._run_result(results=(self._scenario(outcome="passed", evidence=evidence),)),
+            execution_logger=logger,
+        )
+
+        rendered = logger.to_ndjson_bytes().decode("utf-8")
+        events = [json.loads(line) for line in rendered.splitlines()]
+        step_event = next(event for event in events if event["type"] == "step-completed")
+        response_body = step_event["payload"]["evidence"]["responseBody"]
+
+        assert response_body["access_token"] == MASKED_VALUE
+        assert "live-access-token" not in rendered
+        assert "Bearer live-token" not in rendered
 
 
 @pytest.mark.unit

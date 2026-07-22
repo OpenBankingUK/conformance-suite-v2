@@ -3,11 +3,17 @@
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
+from unittest.mock import Mock, patch
 
 import pytest
 
 from conformance.catalogue import Catalogue, CatalogueIdentity
+from conformance.dcr.credentials import DcrCredentialPaths, DcrCredentials
+from conformance.dcr.transport import DcrTransportConfig
 from conformance.plugins.dcr.plugin import PLUGIN_ID, DcrPlugin, get_dcr_plugin
+from conformance.plugins.dcr.runner import DcrRunner
+from conformance.plugins.dcr.scenarios import ALL_SCENARIOS
 from conformance.target_config import TestTargetConfig
 
 
@@ -21,6 +27,43 @@ def _make_target(version: str = "3.3") -> TestTargetConfig:
     )
 
 
+def _dcr_credential_paths(root: Path, *, ca_bundle_path: Path | None = None) -> DcrCredentialPaths:
+    """Build DCR credential paths for runner factory tests.
+
+    Args:
+        root: Root path used for all dummy credential file names.
+        ca_bundle_path: Optional participant CA bundle path to include.
+
+    Returns:
+        DCR credential paths pointing at files below ``root``.
+    """
+    return DcrCredentialPaths(
+        credential_path_root=root,
+        ssa_path=root / "ssa.jwt",
+        signing_private_key_path=root / "signing.key",
+        signing_certificate_path=root / "signing.pem",
+        transport_certificate_path=root / "transport.pem",
+        transport_private_key_path=root / "transport.key",
+        ca_bundle_path=ca_bundle_path,
+    )
+
+
+def _dcr_credentials() -> DcrCredentials:
+    """Build dummy in-memory DCR credentials for runner factory tests.
+
+    Returns:
+        DCR credential bytes sufficient to instantiate a runner when the HTTP
+        client constructor is mocked.
+    """
+    return DcrCredentials(
+        ssa_jwt=b"ssa",
+        signing_private_key_pem=b"signing-key",
+        signing_certificate_pem=b"signing-cert",
+        transport_certificate_pem=b"transport-cert",
+        transport_private_key_pem=b"transport-key",
+    )
+
+
 @pytest.mark.unit
 class TestDcrPluginId:
     """Verify plugin_id is stable."""
@@ -29,6 +72,34 @@ class TestDcrPluginId:
         """plugin_id returns the string 'dcr'."""
         assert DcrPlugin().plugin_id == "dcr"
         assert PLUGIN_ID == "dcr"
+
+
+@pytest.mark.unit
+class TestDcrRunnerHttpClient:
+    """Verify DCR runner HTTP client TLS trust configuration."""
+
+    @patch("conformance.plugins.dcr.runner.httpx.Client")
+    @patch("conformance.plugins.dcr.runner.build_default_tls_context")
+    def test_http_client_uses_bundled_trust_with_optional_ca_bundle(
+        self,
+        mock_build_default_tls_context: Mock,
+        mock_client: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """DCR verified transport appends participant CA bundles to default trust."""
+        ca_bundle = tmp_path / "custom-ca.pem"
+        runner = DcrRunner(
+            credential_paths=_dcr_credential_paths(tmp_path, ca_bundle_path=ca_bundle),
+            credentials=_dcr_credentials(),
+            transport_config=DcrTransportConfig("tls_client_auth"),
+            issuer_url="https://auth.example.com",
+            dcr_version="3.3",
+        )
+
+        runner._build_http_client()
+
+        mock_build_default_tls_context.assert_called_once_with(extra_ca_bundle_path=ca_bundle)
+        assert mock_client.call_args.kwargs["verify"] is mock_build_default_tls_context.return_value
 
 
 @pytest.mark.unit
@@ -211,6 +282,48 @@ class TestDcrPluginLoadCatalogue:
         catalogue = DcrPlugin().load_catalogue(_make_target("3.3"))
         for entry in catalogue.endpoints:
             assert entry.resource_group is None, f"{entry.endpoint_id} should have no resource group"
+
+    def test_load_catalogue_identity_matches_catalogue_identity_method(self) -> None:
+        """Loaded DCR catalogue identity uses the live computed content hash."""
+        plugin = DcrPlugin()
+        target = _make_target("3.3")
+
+        from_method = plugin.catalogue_identity(target).content_hash
+        from_catalogue = plugin.load_catalogue(target).identity.content_hash
+
+        assert from_method == from_catalogue
+
+    def test_load_catalogue_schema_v2_metadata(self) -> None:
+        """DCR catalogues expose schema v2 policy, field, runner, and masking metadata."""
+        catalogue = DcrPlugin().load_catalogue(_make_target("3.3"))
+
+        assert catalogue.schema_version == 2
+        assert catalogue.identity.standard == "obl"
+        assert catalogue.identity.security_profile == "fapi1-advanced"
+        assert {field.field_id for field in catalogue.field_schemas} >= {
+            "dcr.ssaPath",
+            "dcr.signingPrivateKeyPath",
+            "dcr.signingCertificatePath",
+            "dcr.transportCertificatePath",
+            "dcr.transportPrivateKeyPath",
+            "dcr.caBundlePath",
+            "dcr.disableKeepAlives",
+        }
+        assert {primitive.primitive_id for primitive in catalogue.runner_primitives} == {"dcr.scenario"}
+        assert catalogue.readiness_policy is not None
+        assert catalogue.readiness_policy.certification_status == "non-certifying"
+        assert catalogue.masking is not None
+        assert "registration_access_token" in catalogue.masking.masked_fields
+        assert catalogue.source_coverage["scenarioSource"] == "conformance.plugins.dcr.scenarios.ALL_SCENARIOS"
+
+    def test_load_catalogue_exposes_primary_scenario_test_ids_for_all_versions(self) -> None:
+        """DCR 3.2, 3.3, and 3.4 catalogues expose the primary DCR scenario IDs."""
+        expected_ids = {scenario.scenario_id for scenario in ALL_SCENARIOS}
+        for version in ("3.2", "3.3", "3.4"):
+            catalogue = DcrPlugin().load_catalogue(_make_target(version))
+            actual_ids = {test.test_id for test in catalogue.executable_tests}
+
+            assert actual_ids == expected_ids
 
 
 @pytest.mark.unit

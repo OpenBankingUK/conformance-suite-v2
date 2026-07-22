@@ -5,6 +5,7 @@ import time
 from collections.abc import Callable, Iterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from typing import cast
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
@@ -17,6 +18,13 @@ from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunPlanStep, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.execution_log import BufferedExecutionLogger
+from conformance.json_types import JsonValue
+from conformance.participant_test_plan import (
+    participant_test_plan_from_run_plan_v2,
+    serialise_participant_test_plan,
+)
+from conformance.plan_executor import run_plan_from_test_target
+from conformance.target_config import parse_test_target_config
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -526,6 +534,17 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
+TARGET_CONFIG = {
+    **VALID_CONFIG,
+    "testTarget": {
+        "standard": "obl",
+        "specification": "read-write",
+        "securityProfile": "fapi1-advanced",
+        "specificationVersion": "v4.0.1",
+        "resourceGroups": ["ais"],
+    },
+}
+
 SUITE_CONFIG = {
     **VALID_CONFIG,
     "testSuite": {
@@ -740,7 +759,7 @@ class TestCreateRunEndpoint:
         body = {"config": VALID_CONFIG, "manifest": {"schemaVersion": "v99"}}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Manifest validation failed" in response.json()["error"]
+        assert "no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_start_run_derives_default_plan_and_persists_selected_steps(self, mock_execute: Mock) -> None:
@@ -857,10 +876,53 @@ class TestCreateRunEndpoint:
         assert threaded_plan is not None
         assert threaded_plan.selected_step_ids() == ["keep-me"]
 
+    @patch("conformance.api.run_lifecycle._execute_dcr_run")
+    def test_start_dcr_run_snapshots_catalogue_steps(self, mock_execute: Mock) -> None:
+        """DCR API launches expose catalogue-native planned steps in run progress."""
+        from conformance.api.run_lifecycle import start_dcr_run
+        from conformance.model_bank_config import ModelBankConfig
+        from conformance.plan_executor import compile_catalogue_graph_for_plan
+        from conformance.run_plan_v2 import RunPlanV2, RunPlanV2TargetCoordinates
+
+        config = ModelBankConfig(
+            environment="test-env",
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=Path("results.json"),
+        )
+        plan = RunPlanV2(
+            schema_version="2",
+            target=RunPlanV2TargetCoordinates(
+                standard="obl",
+                specification="dynamic-client-registration",
+                security_profile="fapi1-advanced",
+                specification_version="3.3",
+                catalogue_hash="sha256:unknown",
+            ),
+            resource_groups=(),
+            endpoint_selections=(),
+        )
+        compiled_run = compile_catalogue_graph_for_plan(plan)
+
+        response = start_dcr_run(config=config, plan=plan, compiled_run=compiled_run)
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        assert [step.step_id for step in record.planned_steps][:3] == ["DCR-001", "DCR-002", "DCR-003"]
+        assert all(step.kind == "dcr-scenario" for step in record.planned_steps)
+
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        assert mock_execute.call_args.args[0] == run_id
+
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": TARGET_CONFIG}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
         data = response.json()
@@ -876,22 +938,100 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
-        assert mock_execute.call_args.args[2:] == (None, None, None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_from_embedded_test_plan(self, mock_execute: Mock) -> None:
+        """Embedded config.testPlan is accepted as the effective API planning intent."""
+        client = Client()
+        target = parse_test_target_config(cast(JsonValue, TARGET_CONFIG["testTarget"]))
+        test_plan = participant_test_plan_from_run_plan_v2(run_plan_from_test_target(target))
+        body = {
+            "config": {
+                **TARGET_CONFIG,
+                "testPlan": serialise_participant_test_plan(test_plan),
+            }
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 201
+        data = response.json()
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        assert mock_execute.call_args is not None
+        assert mock_execute.call_args.args[0] == data["id"]
+
+    def test_rejects_embedded_test_plan_target_mismatch(self) -> None:
+        """API config validation rejects config.testTarget/testPlan mismatches."""
+        client = Client()
+        target = parse_test_target_config(cast(JsonValue, TARGET_CONFIG["testTarget"]))
+        test_plan = participant_test_plan_from_run_plan_v2(run_plan_from_test_target(target))
+        embedded_plan = serialise_participant_test_plan(test_plan)
+        assert isinstance(embedded_plan["target"], dict)
+        embedded_plan["target"]["specificationVersion"] = "v4.0.0"
+        body = {"config": {**TARGET_CONFIG, "testPlan": embedded_plan}}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "does not match embedded testPlan" in response.json()["error"]
+
+    def test_rejects_test_plan_catalogue_hash_drift(self) -> None:
+        """API refuses to launch stale saved testPlan catalogue hashes."""
+        client = Client()
+        body = {
+            "config": {
+                **VALID_CONFIG,
+                "testPlan": {
+                    "target": {
+                        "standard": "obl",
+                        "specification": "read-write",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "v4.0.1",
+                        "catalogueHash": "sha256:definitely-not-the-live-hash",
+                    },
+                    "resourceGroups": ["ais"],
+                },
+            }
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "Catalogue drift detected" in response.json()["error"]
+
+    def test_rejects_run_without_target_plan_or_manifest(self) -> None:
+        """A bare config no longer falls back to the developer smoke check."""
+        client = Client()
+        body = {"config": VALID_CONFIG}
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+        assert response.status_code == 400
+        assert "testPlan" in response.json()["error"]
+
+    def test_rejects_top_level_run_plan(self) -> None:
+        """API rejects the retired top-level runPlan request key."""
+        client = Client()
+        body = {"config": TARGET_CONFIG, "runPlan": {}}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
         client = Client()
         body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 201
-        data = response.json()
-        assert data["status"] == "pending"
-        assert "id" in data
+        assert response.status_code == 400
+        assert "no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
-        """A valid ``deselectStepIds`` against a v1 manifest is accepted."""
+        """Manifest/deselect compatibility paths are rejected."""
         client = Client()
         v1_manifest = {
             "schemaVersion": "v1",
@@ -914,19 +1054,20 @@ class TestCreateRunEndpoint:
         }
         body = {"config": VALID_CONFIG, "manifest": v1_manifest, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 201
+        assert response.status_code == 400
+        assert "no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
-        """An unknown step id in ``deselectStepIds`` returns 400."""
+        """Deprecated deselection input is rejected."""
         client = Client()
         body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": ["ghost"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Plan validation failed" in response.json()["error"]
+        assert "no longer supported" in response.json()["error"]
 
     def test_rejects_legacy_test_values_for_new_schema_manifest(self) -> None:
-        """API run creation rejects legacy ``testValues`` for baseline-schema suites."""
+        """API run creation rejects deprecated manifest payloads."""
         client = Client()
         manifest = {
             "schemaVersion": "v1",
@@ -959,28 +1100,59 @@ class TestCreateRunEndpoint:
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
         assert response.status_code == 400
-        assert "legacy testValues.profile/testValues.overrides" in response.json()["error"]
+        assert "no longer supported" in response.json()["error"]
 
-    def test_rejects_deselect_without_manifest(self) -> None:
-        """``deselectStepIds`` requires an inline or config-resolved manifest."""
+    def test_rejects_deselect_without_target_plan_or_manifest(self) -> None:
+        """Deprecated ``deselectStepIds`` input is rejected."""
         client = Client()
         body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "deselectStepIds" in response.json()["error"]
+        assert "no longer supported" in response.json()["error"]
+
+    def test_rejects_test_plan_with_stale_dcr_operation_id(self) -> None:
+        """API config.testPlan input is compiled through catalogue validation before DCR dispatch."""
+        client = Client()
+        body = {
+            "config": {
+                **VALID_CONFIG,
+                "testPlan": {
+                    "target": {
+                        "standard": "obl",
+                        "specification": "dynamic-client-registration",
+                        "securityProfile": "fapi1-advanced",
+                        "specificationVersion": "3.3",
+                        "catalogueHash": "sha256:unknown",
+                    },
+                    "endpointSelections": [
+                        {
+                            "endpointId": "get-registration",
+                            "operation": "GET",
+                            "selected": True,
+                        }
+                    ],
+                },
+            },
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "Catalogue planning failed" in response.json()["error"]
+        assert "get-registration" in response.json()["error"]
 
     def test_rejects_deselect_not_array_of_strings(self) -> None:
-        """``deselectStepIds`` must be an array of strings; otherwise 400."""
+        """Deprecated ``deselectStepIds`` input is rejected regardless of shape."""
         client = Client()
-        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": [1, 2]}
+        body = {"config": VALID_CONFIG, "deselectStepIds": [1, 2]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "array of strings" in response.json()["error"]
+        assert "no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": TARGET_CONFIG}
         first = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert first.status_code == 201
         second = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -995,80 +1167,19 @@ class TestCreateRunEndpoint:
 
 @pytest.mark.integration
 class TestPsuAuthorizationApiRun:
-    """End-to-end API coverage for manual PSU authorisation manifest runs."""
+    """Legacy manifest API path rejection coverage."""
 
     def test_manifest_run_passes_after_synthetic_callback(self) -> None:
-        """A PSU manifest run can be completed through the public callback path."""
+        """API rejects legacy manifest runs in favour of target/run-plan inputs."""
         client = Client()
-        state = "api-psu-state-" + "x" * 32
-        manifest = {
-            "schemaVersion": "v1",
-            "name": "api psu authorisation",
-            "steps": [
-                {
-                    "kind": "psu-authorization",
-                    "id": "psu",
-                    "name": "PSU authorisation",
-                    "mode": "manual",
-                    "authorizationEndpoint": "https://auth.example.com/authorize",
-                    "clientId": "client-123",
-                    "redirectUri": "https://conformance.example.com/callback",
-                    "state": state,
-                    "timeoutSeconds": 3,
-                    "mandatory": True,
-                }
-            ],
-        }
 
         create_response = client.post(
             "/api/runs/",
-            data=json.dumps({"config": VALID_CONFIG, "manifest": manifest}),
+            data=json.dumps({"config": VALID_CONFIG, "manifest": VALID_MANIFEST}),
             content_type="application/json",
         )
-        assert create_response.status_code == 201
-        run_id = create_response.json()["id"]
-
-        _wait_for_value(
-            lambda: True if auth_session_store.get(run_id, state) is not None else None,
-            timeout_seconds=2.0,
-        )
-        callback_response = client.get("/callback/", {"state": state, "code": "api-auth-code"})
-        assert callback_response.status_code == 200
-
-        def completed_result() -> dict[str, object] | None:
-            """Return result JSON once the asynchronous run has completed.
-
-            Returns:
-                Result JSON dictionary when available, otherwise ``None``
-                while the run is still pending/running.
-
-            Raises:
-                AssertionError: If the result endpoint reports an unexpected
-                terminal or internal-error response.
-            """
-            result_response = client.get(f"/api/runs/{run_id}/result/")
-            if result_response.status_code == 200:
-                body = result_response.json()
-                assert isinstance(body, dict)
-                return body
-            if result_response.status_code == 409:
-                return None
-            raise AssertionError(
-                f"Unexpected result response {result_response.status_code}: {result_response.content!r}"
-            )
-
-        result = _wait_for_value(completed_result, timeout_seconds=4.0)
-        assert result["status"] == "passed"
-        assert result["summary"] == {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0}
-        steps = result["steps"]
-        assert isinstance(steps, list)
-        assert steps[0]["name"] == "psu"
-        assert steps[0]["status"] == "passed"
-
-        log_response = client.get(f"/api/runs/{run_id}/log/")
-        assert log_response.status_code == 200
-        events = json.loads(log_response.content.decode("utf-8"))
-        assert "psu-authorization-url" in [event["type"] for event in events]
+        assert create_response.status_code == 400
+        assert "no longer supported" in create_response.json()["error"]
 
 
 @pytest.mark.integration
@@ -1081,7 +1192,7 @@ class TestGetRunStatusEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_run_status(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": TARGET_CONFIG}
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/")
@@ -1161,7 +1272,7 @@ class TestGetRunResultEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_409_when_run_not_complete(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": TARGET_CONFIG}
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/result/")
@@ -1326,7 +1437,7 @@ class TestLoopbackGuard:
     def test_loopback_request_is_allowed_by_default(self) -> None:
         # Django test client uses REMOTE_ADDR=127.0.0.1 by default.
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": TARGET_CONFIG}
         with patch("conformance.api.run_lifecycle._execute_run"):
             response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201

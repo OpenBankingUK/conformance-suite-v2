@@ -29,15 +29,14 @@ before any evidence is stored or returned.
 from __future__ import annotations
 
 import logging
-import ssl
-import warnings
 from dataclasses import dataclass
 from uuid import uuid4
 
 import httpx
 
 from conformance.dcr.credentials import DcrCredentialPaths, DcrCredentials
-from conformance.dcr.transport import DcrTransportConfig
+from conformance.dcr.transport import DcrTransportConfig, tls_skip_verify_error
+from conformance.default_trust import build_default_tls_context
 from conformance.http import JsonHttpClientError, send_json
 from conformance.json_types import JsonObject
 from conformance.plugins.dcr.client_state import (
@@ -824,8 +823,8 @@ class DcrRunner:
     def _build_http_client(self) -> httpx.Client:
         """Build an mTLS httpx client from the configured credential paths.
 
-        Applies transport config options: ``tls_skip_verify``, CA bundle,
-        ``disable_keep_alives``, and timeouts.
+        Applies transport config options: bundled/default CA trust, optional
+        participant CA bundle, ``disable_keep_alives``, and timeouts.
 
         Returns:
             A configured :class:`httpx.Client` ready for DCR requests.
@@ -834,16 +833,8 @@ class DcrRunner:
         cred_paths = self._credential_paths
 
         if transport_config.tls_skip_verify:
-            from conformance.dcr.transport import tls_skip_verify_warning
-
-            warnings.warn(tls_skip_verify_warning(), stacklevel=2)
-            verify: bool | ssl.SSLContext = False
-        elif cred_paths.ca_bundle_path is not None:
-            ctx = ssl.create_default_context()
-            ctx.load_verify_locations(cafile=str(cred_paths.ca_bundle_path))
-            verify = ctx
-        else:
-            verify = True
+            raise ValueError(tls_skip_verify_error())
+        verify = build_default_tls_context(extra_ca_bundle_path=cred_paths.ca_bundle_path)
 
         cert = (
             str(cred_paths.transport_certificate_path),

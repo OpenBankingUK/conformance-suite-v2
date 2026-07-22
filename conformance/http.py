@@ -11,6 +11,7 @@ from urllib.parse import parse_qsl, urlencode
 
 import httpx
 
+from conformance.default_trust import build_default_tls_context
 from conformance.headers import FrozenHeaders, freeze_headers
 from conformance.json_types import JsonObject, JsonValue
 from conformance.masking import mask_form_fields
@@ -371,7 +372,8 @@ def build_json_http_client(
 
     Args:
         timeout_seconds: Per-request timeout in seconds.
-        ca_bundle_path: Optional CA bundle used for TLS verification.
+        ca_bundle_path: Optional participant-supplied CA bundle appended to the
+            default system roots and bundled Open Banking CA roots.
         client_certificate_path: Optional client certificate for mTLS.
         client_private_key_path: Optional client private key for mTLS.
 
@@ -385,13 +387,7 @@ def build_json_http_client(
     if (client_certificate_path is None) != (client_private_key_path is None):
         raise ValueError("client_certificate_path and client_private_key_path must be supplied together")
 
-    verify: bool | ssl.SSLContext = True
-    if ca_bundle_path is not None:
-        verify = ssl.create_default_context()
-        try:
-            verify.load_verify_locations(cafile=str(ca_bundle_path))
-        except ssl.SSLError as error:
-            raise ValueError(f"Unable to load TLS CA bundle from {ca_bundle_path}: {error}") from error
+    verify: ssl.SSLContext = build_default_tls_context(extra_ca_bundle_path=ca_bundle_path)
 
     cert: tuple[str, str] | None = None
     if client_certificate_path is not None and client_private_key_path is not None:

@@ -9,10 +9,12 @@ import pytest
 
 from conformance.catalogue import (
     Catalogue,
+    compute_catalogue_hash,
     parse_catalogue,
 )
 from conformance.plugins.read_write.plugin import (
     ReadWritePlugin,
+    _normalise_version,
     _version_to_dir,
 )
 from conformance.target_config import TestTargetConfig
@@ -52,6 +54,13 @@ def test_version_to_dir_no_dots_unchanged() -> None:
     assert _version_to_dir("v4") == "v4"
 
 
+@pytest.mark.unit
+def test_normalise_version_converts_v40_alias() -> None:
+    """The temporary v4.0 migration alias serialises as patch-explicit v4.0.0."""
+    assert _normalise_version("v4.0") == "v4.0.0"
+    assert _normalise_version("v4.0.1") == "v4.0.1"
+
+
 # ---------------------------------------------------------------------------
 # ReadWritePlugin.plugin_id
 # ---------------------------------------------------------------------------
@@ -73,6 +82,7 @@ def test_target_metadata_fields() -> None:
     assert meta.plugin_id == "read-write"
     assert meta.standard == "obl"
     assert meta.specification == "read-write"
+    assert meta.supported_versions == ("v3.1.11", "v4.0.0", "v4.0.1")
     assert "v4.0.1" in meta.supported_versions
     assert meta.uses_resource_groups is True
     assert set(meta.resource_groups) == {"ais", "pis", "cbpii", "vrp"}
@@ -97,7 +107,7 @@ def test_supports_target_wrong_standard() -> None:
         standard="obl",
         specification="read-write",
         security_profile="fapi1-advanced",
-        specification_version="v3.1.11",
+        specification_version="v9.9.9",
     )
     assert ReadWritePlugin().supports_target(target_bad_version) is False
 
@@ -119,6 +129,12 @@ def test_supports_target_unsupported_version() -> None:
     assert ReadWritePlugin().supports_target(target) is False
 
 
+@pytest.mark.unit
+def test_supports_target_accepts_v40_alias() -> None:
+    """The temporary v4.0 alias resolves to the v4.0.0 catalogue."""
+    assert ReadWritePlugin().supports_target(_make_target(version="v4.0")) is True
+
+
 # ---------------------------------------------------------------------------
 # ReadWritePlugin.catalogue_identity
 # ---------------------------------------------------------------------------
@@ -131,8 +147,18 @@ def test_catalogue_identity_returns_correct_fields() -> None:
     assert identity.plugin_id == "read-write"
     assert identity.specification == "read-write"
     assert identity.specification_version == "v4.0.1"
+    assert identity.standard == "obl"
+    assert identity.security_profile == "fapi1-advanced"
     assert identity.content_hash.startswith("sha256:")
     assert len(identity.content_hash) == len("sha256:") + 64
+
+
+@pytest.mark.unit
+def test_catalogue_identity_normalises_v40_alias() -> None:
+    """Catalogue identities expose the canonical patch-explicit version."""
+    identity = ReadWritePlugin().catalogue_identity(_make_target(version="v4.0"))
+    assert identity.specification_version == "v4.0.0"
+    assert identity.version_aliases == ("v4.0",)
 
 
 @pytest.mark.unit
@@ -162,6 +188,85 @@ def test_load_catalogue_identity_matches_catalogue_identity_method() -> None:
     from_method = plugin.catalogue_identity(target).content_hash
     from_catalogue = plugin.load_catalogue(target).identity.content_hash
     assert from_method == from_catalogue
+
+
+@pytest.mark.unit
+def test_load_catalogue_schema_v2_metadata() -> None:
+    """Consolidated Read/Write catalogues expose schema v2 migration metadata."""
+    catalogue = ReadWritePlugin().load_catalogue(_make_target(version="v4.0.0"))
+    assert catalogue.schema_version == 2
+    assert catalogue.identity.specification_version == "v4.0.0"
+    assert catalogue.identity.version_aliases == ("v4.0",)
+    assert {group.resource_group for group in catalogue.resource_groups} == {"ais", "pis", "cbpii", "vrp"}
+    assert {field.field_id for field in catalogue.field_schemas} >= {
+        "tls.certPath",
+        "tls.keyPath",
+        "tls.caBundlePath",
+        "fapiSigning.signingCertificatePath",
+        "fapiSigning.signingPrivateKeyPath",
+        "fapiSigning.clientAssertionIssuer",
+        "fapiSigning.clientAssertionSubject",
+        "fapiSigning.tokenEndpointAuthMethod",
+    }
+    assert {primitive.primitive_id for primitive in catalogue.runner_primitives} >= {
+        "read-write.http-request",
+        "read-write.detached-jws",
+        "read-write.response-signature",
+        "read-write.migration-source-step",
+    }
+    assert catalogue.readiness_policy is not None
+    assert catalogue.readiness_policy.policy_id == "read-write-resource-group-readiness-v1"
+    assert catalogue.masking is not None
+    assert "client_assertion" in catalogue.masking.masked_fields
+    assert catalogue.source_coverage["baselinePath"] == (
+        "docs/requirements/suite-coverage/migration-parity-baseline.json"
+    )
+
+
+@pytest.mark.unit
+def test_load_catalogue_has_executable_tests_and_source_coverage() -> None:
+    """Migrated catalogues preserve source coverage as executable test metadata."""
+    catalogue = ReadWritePlugin().load_catalogue(_make_target(version="v4.0.0"))
+    test_ids = {test.test_id for test in catalogue.executable_tests}
+
+    assert "OB-400-ACC-100400" in test_ids
+    assert "OB-400-DOP-100100" in test_ids
+    assert "ais.accounts.get-accounts.http" in test_ids
+    migrated = next(test for test in catalogue.executable_tests if test.test_id == "OB-400-ACC-100400")
+    assert {ref.source_kind for ref in migrated.source_coverage} == {"current-suite", "previous-fcs"}
+
+
+@pytest.mark.unit
+def test_v400_catalogue_covers_phase_1_target_test_ids() -> None:
+    """The v4.0.0 catalogue preserves every phase-1 target catalogue test ID."""
+    catalogue = ReadWritePlugin().load_catalogue(_make_target(version="v4.0.0"))
+    test_ids = {test.test_id for test in catalogue.executable_tests}
+    baseline = json.loads(_MIGRATION_BASELINE.read_bytes())
+    target_ids = {target_id for record in baseline["records"] for target_id in record["targetCatalogueTestIds"]}
+
+    assert target_ids <= test_ids
+
+
+@pytest.mark.unit
+def test_catalogue_hash_includes_schema_v2_policy_metadata() -> None:
+    """Catalogue drift hashes change when executable policy metadata changes."""
+    catalogue_path = _CATALOGUE_ROOT / "v4_0_0" / "catalogue.json"
+    raw = catalogue_path.read_bytes()
+    mutated = json.loads(raw)
+    mutated["readinessPolicy"]["failedSelectedOutcome"] = "manual-review"
+
+    assert compute_catalogue_hash(raw) != compute_catalogue_hash(json.dumps(mutated, sort_keys=True).encode())
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize("version", ["v3.1.11", "v4.0.0", "v4.0.1"])
+def test_load_catalogue_supported_versions(version: str) -> None:
+    """Every planned Read/Write version has a parseable consolidated catalogue."""
+    catalogue = ReadWritePlugin().load_catalogue(_make_target(version=version))
+    assert catalogue.schema_version == 2
+    assert catalogue.identity.specification_version == version
+    assert {group.resource_group for group in catalogue.resource_groups} == {"ais", "pis", "cbpii", "vrp"}
+    assert catalogue.executable_tests
 
 
 @pytest.mark.unit
@@ -267,25 +372,33 @@ def test_masking_fields_returns_frozenset() -> None:
 # ---------------------------------------------------------------------------
 
 
-_CATALOGUE_DIR = Path(__file__).parent.parent / "conformance" / "plugins" / "read_write" / "catalogues" / "v4_0_1"
+_CATALOGUE_ROOT = Path(__file__).parent.parent / "conformance" / "plugins" / "read_write" / "catalogues"
+_MIGRATION_BASELINE = (
+    Path(__file__).parent.parent / "docs" / "requirements" / "suite-coverage" / "migration-parity-baseline.json"
+)
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("filename", ["ais.json", "pis.json", "cbpii.json", "vrp.json"])
-def test_individual_catalogue_file_is_parseable(filename: str) -> None:
-    """Each resource-group catalogue file must be valid standalone JSON catalogue."""
-    file_path = _CATALOGUE_DIR / filename
+@pytest.mark.parametrize("version_dir", ["v3_1_11", "v4_0_0", "v4_0_1"])
+def test_consolidated_catalogue_file_is_parseable(version_dir: str) -> None:
+    """Each consolidated catalogue file must be valid schema v2 JSON."""
+    file_path = _CATALOGUE_ROOT / version_dir / "catalogue.json"
     raw_bytes = file_path.read_bytes()
     raw_json = json.loads(raw_bytes)
     catalogue = parse_catalogue(raw_json)
     assert isinstance(catalogue, Catalogue)
-    assert len(catalogue.endpoints) > 0
+    assert catalogue.schema_version == 2
+    assert catalogue.executable_tests
 
 
 @pytest.mark.unit
-def test_catalogue_index_json_is_valid_json() -> None:
-    index_path = _CATALOGUE_DIR / "catalogue_index.json"
+@pytest.mark.parametrize("version_dir", ["v3_1_11", "v4_0_0", "v4_0_1"])
+def test_catalogue_index_json_is_valid_json(version_dir: str) -> None:
+    """Each catalogue index points at the consolidated schema v2 catalogue."""
+    index_path = _CATALOGUE_ROOT / version_dir / "catalogue_index.json"
     raw = json.loads(index_path.read_bytes())
+    assert raw["schemaVersion"] == 2
+    assert raw["catalogueFile"] == "catalogue.json"
     assert "specification" in raw
     assert "resourceGroups" in raw
     resource_group_ids = {rg["id"] for rg in raw["resourceGroups"]}

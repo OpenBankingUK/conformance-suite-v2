@@ -12,17 +12,17 @@ The active product requirements and AI-agent-compatible delivery artefacts live 
 
 ## Model-bank smoke check
 
-The first Ozone model-bank interaction is available as a small manual runner. It reads a JSON config and fetches the OpenID discovery document. The runner can also fetch the discovered JWKS endpoint when `followUp.mode` is set to `jwks` and the required certificate trust chain is available locally.
+The first Ozone model-bank interaction is available as a small manual runner. It reads a JSON config and fetches the OpenID discovery document. The runner can also fetch the discovered JWKS endpoint when `followUp.mode` is set to `jwks`; outbound TLS verification uses the system trust store plus the bundled public Open Banking production and pre-production CA roots inherited from the previous FCS.
 
 ```bash
 uv run python main.py config/model-bank-example.json
 ```
 
-The runner writes a structured result JSON to the configured `resultOutputPath`, which defaults to `out/test-results.json`, and exits with `0` when all smoke-check steps pass, `1` when the model-bank check fails, `2` when the config is invalid, or `3` when the result file or the structured execution log cannot be written. Relative `resultOutputPath` and `executionLogPath` values are resolved from the current working directory, while certificate paths are resolved from the config file location.
+The runner writes a structured result JSON to the configured `resultOutputPath`, which defaults to `out/test-results.json`, and exits with `0` when all smoke-check steps pass, `1` when the model-bank check fails, `2` when the config is invalid, or `3` when the result file or the structured execution log cannot be written. Relative `resultOutputPath` and `executionLogPath` values are resolved from the current working directory, while credential paths must be exact absolute file paths.
 
 Alongside the result file the runner writes a structured **execution log** (NDJSON, one event per line) to `executionLogPath` (default `out/execution-log.ndjson`). The log records `run-started`, `step-started`, `request-sent`, `response-received`, `assertion-evaluated`, `step-completed`, `run-completed` and the error events, with credentials and sensitive headers masked exactly as in the result file. The same log is exposed by the REST API as `GET /api/runs/<id>/log/` (`application/x-ndjson`), which returns the current full NDJSON snapshot in a single response — CI scripts can poll the endpoint to observe an in-flight run, but it is not a streaming/tail endpoint. Set `CONFORMANCE_DEVELOPER_MODE=true` to disable masking for local engineering debugging only — a `WARN` line is logged at startup whenever this is set, and it must never be enabled in release builds.
 
-The config is JSON-only for now. TLS certificate paths, when supplied, are resolved under `tls.certificatePathRoot`; FAPI signing certificate and private-key paths are resolved under `fapiSigning.certificatePathRoot`. Do not commit real certificates, private keys, or inline secret material.
+The config is JSON-only for now. TLS, FAPI signing, and DCR credential paths, when supplied, must be exact absolute file paths. Do not commit real certificates, private keys, SSA files, or inline secret material.
 
 ## Target-based conformance runs
 
@@ -34,7 +34,6 @@ Add a `testTarget` section selecting the Read/Write specification and one resour
 
 ```jsonc
 {
-	"environment": "ozone-model-bank",
 	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
 	"timeoutSeconds": 10,
 	"testTarget": {
@@ -49,16 +48,12 @@ Add a `testTarget` section selecting the Read/Write specification and one resour
 		"resourceBaseUrl": "https://resource.example.com"
 	},
 	"fapiSigning": {
-		"certificatePathRoot": "./certs",
-		"signingCertificatePath": "signing.crt",
-		"signingPrivateKeyPath": "signing.key", // pragma: allowlist secret
+		"signingCertificatePath": "/path/to/signing.crt",
+		"signingPrivateKeyPath": "/path/to/signing.key", // pragma: allowlist secret
 		"kid": "your-signing-kid-here",
 		"clientAssertionIssuer": "your-client-id-here",
 		"clientAssertionSubject": "your-client-id-here",
 		"tokenEndpointAuthMethod": "private_key_jwt"
-	},
-	"tls": {
-		"certificatePathRoot": "./certs"
 	},
 	"resultOutputPath": "./out/rw-ais-results.json",
 	"executionLogPath": "./out/rw-ais-log.ndjson"
@@ -91,7 +86,6 @@ Add a `testTarget` section selecting the DCR specification plus a `dcr` section 
 
 ```jsonc
 {
-	"environment": "ozone-model-bank",
 	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
 	"timeoutSeconds": 30,
 	"testTarget": {
@@ -100,18 +94,12 @@ Add a `testTarget` section selecting the DCR specification plus a `dcr` section 
 		"specificationVersion": "3.3"
 	},
 	"dcr": {
-		"credentialPathRoot": "./certs",
-		"ssaPath": "ssa.jwt",
-		"signingPrivateKeyPath": "signing.key", // pragma: allowlist secret
-		"signingCertificatePath": "signing.crt",
-		"transportCertificatePath": "transport.crt",
-		"transportPrivateKeyPath": "transport.key", // pragma: allowlist secret
+		"ssaPath": "/path/to/ssa.jwt",
+		"signingPrivateKeyPath": "/path/to/signing.key", // pragma: allowlist secret
+		"signingCertificatePath": "/path/to/signing.crt",
+		"transportCertificatePath": "/path/to/transport.crt",
+		"transportPrivateKeyPath": "/path/to/transport.key", // pragma: allowlist secret
 		"tokenEndpointAuthMethod": "tls_client_auth"
-	},
-	"tls": {
-		"certificatePathRoot": "./certs",
-		"clientCertificatePath": "transport.crt",
-		"clientPrivateKeyPath": "transport.key" // pragma: allowlist secret
 	},
 	"resultOutputPath": "./out/dcr-results.json",
 	"executionLogPath": "./out/dcr-log.ndjson"
@@ -127,12 +115,11 @@ Supported DCR versions: `3.2`, `3.3`, `3.4`. The `dcr` section requires:
 | `signingCertificatePath` | X.509 certificate paired with the signing key |
 | `transportCertificatePath` | mTLS client certificate for all DCR connections |
 | `transportPrivateKeyPath` | Private key paired with the transport certificate |
-| `caBundlePath` | Optional PEM CA bundle for ASPSP server verification |
+| `caBundlePath` | Optional additional PEM CA bundle for ASPSP server verification |
 | `tokenEndpointAuthMethod` | `tls_client_auth` (default) or `private_key_jwt` |
 | `disableKeepAlives` | Optional boolean; disables HTTP keep-alives when `true` |
-| `tlsSkipVerify` | Optional boolean; **unsafe** — disables TLS server verification. Never use against real ASPSP infrastructure |
 
-All credential paths are resolved under `credentialPathRoot` (defaults to the config file directory). DCR runs are **non-certifying** until a formal certification policy exists.
+All credential paths are exact absolute file paths. DCR runs are **non-certifying** until a formal certification policy exists.
 
 ### CLI runs
 
@@ -142,14 +129,13 @@ uv run python main.py config/model-bank-rw-ais-example.json
 
 # DCR run (requires dcr section in config)
 uv run python main.py config/model-bank-dcr-example.json
-
-# Headless run from a saved RunPlan v2 JSON file
-uv run python main.py config/model-bank-rw-ais-example.json --run-plan my-run-plan.json
 ```
 
-`--manifest` remains an explicit override for authoring and certification-validation workflows. `--run-plan` accepts a RunPlan v2 JSON file (the export format from the plan-builder UI) for headless target/coverage-based runs. `--deselect` works with an explicit `--manifest`; it is not valid for target-based or smoke-check runs.
+`--manifest`, `--deselect`, and `--run-plan` are no longer supported for participant runs. Use a one-file config JSON with `testTarget` and, when endpoint/operation selections need to be pinned, a top-level `testPlan` section.
 
-The REST API follows the same model: an inline `manifest` in `POST /api/runs/` wins; a `runPlan` key (RunPlan v2 JSON object) or `config.testTarget` routes through the plugin planning path; otherwise the smoke check runs. `deselectStepIds` is accepted with inline manifests only. In the browser plan builder at `/plan/`, the guided Standard → Specification → Security Profile → Version → Resource Group(s) → Endpoint Coverage → Field Values journey builds a RunPlan v2 for the configured ASPSP without requiring manual JSON entry. The guided flow includes model-bank examples for environment and discovery values, with the generated fields remaining editable for custom ASPSP/model-bank endpoints. CLI, REST API, and browser-launched runs all carry the validated `fapiSigning` block into runtime execution without widening the manifest placeholder boundary.
+The REST API uses the same participant contract: `POST /api/runs/` accepts a config JSON containing `testTarget` and optional `testPlan`; legacy `runPlan`, `manifest`, and `deselectStepIds` request fields are rejected. In the browser plan builder at `/plan/`, the guided Standard → Specification → Security Profile → Version → Resource Group(s) → Endpoint Coverage → Field Values journey builds the saved config for the configured ASPSP without requiring manual JSON entry. The guided flow includes model-bank examples for discovery values, with the generated fields remaining editable for custom ASPSP/model-bank endpoints. CLI, REST API, and browser-launched runs all carry the validated `fapiSigning` block into runtime execution without widening credential placeholder boundaries.
+
+The browser builder saves a single participant config JSON document. That document keeps the normal config fields, `testTarget`, optional `testData.values`, and an embedded `testPlan` snapshot of the endpoint/operation selections and catalogue hash, so the same artifact can be loaded back into the builder or run from the CLI/API. CLI, REST API, and browser launch reject saved `testPlan` documents whose stored catalogue hash no longer matches the bundled catalogue; re-open the builder and export a fresh config after catalogue updates. The saved artifact does not include `environment`, `certificatePathRoot`, or `credentialPathRoot`; TLS, FAPI signing, and DCR credential fields use exact absolute file paths instead. TLS server certificates are verified by default against system roots plus the bundled public Open Banking production and pre-production CA roots. `tls.caBundlePath` and `dcr.caBundlePath` remain optional advanced overrides that append a participant-supplied PEM CA bundle for sandbox, pre-production, or custom ASPSP trust chains. The Field Values step only prompts for fields that map to saved runtime config inputs; unsupported token endpoint and transport toggles are omitted, while optional CA/signing/Open Banking metadata is visibly marked. The builder can preview an OpenID Provider discovery URL server-side and prefill only empty derived fields such as authorization endpoint and token-auth method hints; the fetched discovery document is not stored in the saved config. Credential material remains path-only: file browsing/upload and credential storage are intentionally deferred, and users should enter exact absolute local paths rather than certificate, private-key, or SSA contents.
 
 The PIS starter's manifest and config example show the new user-level schema contracts in practice: `testValueProfiles` declare named defaults and generated non-secret keys, `${testValues.<key>}` placeholders are only allowed for manifest-declared keys, `selectionMetadata` marks conditional rows with a machine-readable condition id/label, and `testValues.profile` / `testValues.overrides` select the effective profile at run time. The plan summary records whether a row was selected by default values, by override values, or remained conditional and deselected.
 

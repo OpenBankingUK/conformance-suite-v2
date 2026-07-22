@@ -1,0 +1,423 @@
+{
+  "schemaVersion": 2,
+  "identity": {
+    "pluginId": "read-write",
+    "standard": "obl",
+    "specification": "read-write",
+    "securityProfile": "fapi1-advanced",
+    "specificationVersion": "v3.1.11",
+    "versionAliases": [],
+    "contentHash": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "resourceGroups": [
+    {
+      "id": "ais",
+      "displayLabel": "Accounts and Transactions (AIS)",
+      "requirement": "mandatory",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/ais.json"
+      ],
+      "endpoints": []
+    },
+    {
+      "id": "pis",
+      "displayLabel": "Payments (PIS)",
+      "requirement": "mandatory",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/pis.json"
+      ],
+      "endpoints": []
+    },
+    {
+      "id": "cbpii",
+      "displayLabel": "Confirmation of Funds (CBPII)",
+      "requirement": "optional",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/cbpii.json"
+      ],
+      "endpoints": []
+    },
+    {
+      "id": "vrp",
+      "displayLabel": "Variable Recurring Payments (VRP)",
+      "requirement": "optional",
+      "sourceCitations": [
+        "conformance/plugins/read_write/catalogues/v4_0_1/vrp.json"
+      ],
+      "endpoints": []
+    }
+  ],
+  "fieldSchemas": [
+    {
+      "fieldId": "oauth.resourceBaseUrl",
+      "displayLabel": "Resource base URL",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "oauth.authorizationBaseUrl",
+      "displayLabel": "Authorization base URL",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "oauth.clientId",
+      "displayLabel": "Client ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.certPath",
+      "displayLabel": "mTLS certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.keyPath",
+      "displayLabel": "mTLS private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "tls.caBundlePath",
+      "displayLabel": "CA bundle path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": false,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.signingCertificatePath",
+      "displayLabel": "FAPI signing certificate path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.signingPrivateKeyPath",
+      "displayLabel": "FAPI signing private key path",
+      "scope": "shared",
+      "valueType": "path",
+      "required": true,
+      "sensitive": true
+    },
+    {
+      "fieldId": "fapiSigning.kid",
+      "displayLabel": "FAPI signing key ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.clientAssertionIssuer",
+      "displayLabel": "Client assertion issuer",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.clientAssertionSubject",
+      "displayLabel": "Client assertion subject",
+      "scope": "shared",
+      "valueType": "string",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.tokenEndpointAuthMethod",
+      "displayLabel": "Token endpoint auth method",
+      "scope": "shared",
+      "valueType": "choice",
+      "required": true,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.signatureIssuer",
+      "displayLabel": "OB detached-JWS signature issuer",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.signatureTrustAnchor",
+      "displayLabel": "OB detached-JWS trust anchor",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "openBanking.financialId",
+      "displayLabel": "Open Banking financial ID",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "sensitive": false
+    },
+    {
+      "fieldId": "psu.authorizationRedirectUri",
+      "displayLabel": "PSU authorization redirect URI",
+      "scope": "shared",
+      "valueType": "url",
+      "required": true,
+      "sensitive": false
+    }
+  ],
+  "runnerPrimitives": [
+    {
+      "primitiveId": "read-write.discovery",
+      "type": "oidc-discovery",
+      "description": "Fetch and validate OIDC discovery metadata."
+    },
+    {
+      "primitiveId": "read-write.jwks",
+      "type": "jwks-fetch",
+      "description": "Fetch and validate ASPSP JWKS metadata."
+    },
+    {
+      "primitiveId": "read-write.client-credentials-token",
+      "type": "oauth-token",
+      "description": "Request a client credentials access token using configured client authentication."
+    },
+    {
+      "primitiveId": "read-write.psu-authorization",
+      "type": "psu-authorization",
+      "description": "Coordinate PSU authorization prerequisites for consent-bound flows."
+    },
+    {
+      "primitiveId": "read-write.http-request",
+      "type": "http-step",
+      "description": "Execute an Open Banking API HTTP operation with configured auth, mTLS, signing, and assertions."
+    },
+    {
+      "primitiveId": "read-write.detached-jws",
+      "type": "detached-jws",
+      "description": "Create Open Banking detached JWS request signatures for write operations."
+    },
+    {
+      "primitiveId": "read-write.schema-assertion",
+      "type": "response-schema-assertion",
+      "description": "Validate HTTP responses against the OpenAPI schema reference declared by the endpoint."
+    },
+    {
+      "primitiveId": "read-write.response-signature",
+      "type": "response-signature-assertion",
+      "description": "Validate Open Banking response signature headers when required by the operation."
+    },
+    {
+      "primitiveId": "read-write.migration-source-step",
+      "type": "migration-source-step",
+      "description": "Mechanical migration placeholder preserving current-suite and previous-FCS source coverage."
+    }
+  ],
+  "readinessPolicy": {
+    "policyId": "read-write-resource-group-readiness-v1",
+    "certificationStatus": "certifying",
+    "omittedMandatoryOutcome": "not-ready",
+    "failedSelectedOutcome": "not-ready"
+  },
+  "masking": {
+    "maskedFields": [
+      "access_token",
+      "refresh_token",
+      "id_token",
+      "client_assertion",
+      "oauth.clientId",
+      "tls.certPath",
+      "tls.keyPath",
+      "tls.caBundlePath",
+      "fapiSigning.signingCertificatePath",
+      "fapiSigning.signingPrivateKeyPath"
+    ],
+    "evidencePaths": [
+      "$.request.headers.Authorization",
+      "$.request.headers.x-jws-signature",
+      "$.request.body.client_assertion",
+      "$.response.body.access_token",
+      "$.response.body.refresh_token",
+      "$.response.body.id_token"
+    ]
+  },
+  "sourceCoverage": {
+    "baselinePath": "docs/requirements/suite-coverage/migration-parity-baseline.json",
+    "baselineSchemaVersion": 1,
+    "sourceKinds": [
+      "current-suite",
+      "previous-fcs",
+      "catalogue-endpoint"
+    ],
+    "notes": "Mechanical phase-2/3 migration metadata; execution parity is completed by later catalogue-native runner phases."
+  },
+  "tests": [
+    {
+      "testId": "jwks-fetch",
+      "displayLabel": "JWKS endpoint",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v3.1.11"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "jwks-fetch",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "openid-discovery",
+      "displayLabel": "OpenID discovery document",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v3.1.11"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "openid-discovery",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-discovery-jwks.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    },
+    {
+      "testId": "psu-authorization",
+      "displayLabel": "PSU authorisation (manual)",
+      "endpointId": null,
+      "resourceGroup": "ais",
+      "runnerPrimitiveId": "read-write.migration-source-step",
+      "applicability": [
+        {
+          "type": "target-version",
+          "parameters": {
+            "specificationVersion": "v3.1.11"
+          }
+        },
+        {
+          "type": "resource-group-selected",
+          "parameters": {
+            "resourceGroup": "ais"
+          }
+        }
+      ],
+      "sourceCoverage": [
+        {
+          "sourceKind": "current-suite",
+          "sourceId": "psu-authorization",
+          "mappingMode": "current-step-id",
+          "sourceFiles": [
+            "ob-read-write-v3.1.11-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0-fapi1-advanced-ais-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-domestic-payment-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-fcs-legacy-benchmark.json",
+            "ob-read-write-v4.0-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0-fapi1-advanced-vrp-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-baseline.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-ais-certification-slice.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-cbpii-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-pis-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-psu-auth-starter.json",
+            "ob-read-write-v4.0.1-fapi1-advanced-vrp-psu-auth-starter.json"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -8,6 +8,7 @@ from django.views.generic import RedirectView
 
 from conformance.api.callback_views import callback_view
 from conformance.api.ui_views import (
+    discovery_preview,
     plan_builder,
     plan_launch,
     plan_preview,
@@ -19,6 +20,7 @@ from conformance.api.ui_views import (
     run_status_partial,
     run_steps_partial,
     run_wait,
+    staged_plan_launch,
 )
 
 
@@ -61,6 +63,8 @@ urlpatterns = [
     path("plan/", plan_builder, name="plan-builder"),
     path("plan/preview/", plan_preview, name="plan-preview"),
     path("plan/launch/", plan_launch, name="plan-launch"),
+    path("plan/discovery-preview/", discovery_preview, name="plan-discovery-preview"),
+    path("plan/staged/launch/", staged_plan_launch, name="plan-staged-launch"),
     path("runs/<str:run_id>/", run_detail, name="ui-run-detail"),
     path("runs/<str:run_id>/status/", run_status_partial, name="ui-run-status"),
     path("runs/<str:run_id>/steps/", run_steps_partial, name="ui-run-steps"),
