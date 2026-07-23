@@ -61,8 +61,9 @@ def _build_signing_config(
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="signing-key-001",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="request-object-issuer",
+        private_key_jwt_issuer="client-issuer",  # pragma: allowlist secret
+        private_key_jwt_subject="client-subject",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
     )
 
@@ -359,8 +360,9 @@ def test_sign_detached_json_payload_includes_ob_headers_when_metadata_configured
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="ob-signing-key",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="request-object-issuer",
+        private_key_jwt_issuer="client-issuer",  # pragma: allowlist secret
+        private_key_jwt_subject="client-subject",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
         signature_issuer="0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
         signature_trust_anchor="openbanking.org.uk",
@@ -411,8 +413,9 @@ def test_sign_detached_json_payload_minimal_header_when_ob_metadata_absent(tmp_p
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="signing-key-001",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="request-object-issuer",
+        private_key_jwt_issuer="client-issuer",  # pragma: allowlist secret
+        private_key_jwt_subject="client-subject",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
     )
     service = _build_signing_service(config)

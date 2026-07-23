@@ -274,14 +274,14 @@ The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE
     "signingCertificatePath": "/path/to/dummy-signing.crt",
     "signingPrivateKeyPath": "/path/to/dummy-signing.key", // pragma: allowlist secret
     "kid": "your-signing-kid-here",
-    "clientAssertionIssuer": "your-client-id-here",
-    "clientAssertionSubject": "your-client-id-here",
     "tokenEndpointAuthMethod": "private_key_jwt"
   }
 }
 ```
 
-Signing certificate and key bytes stay on disk until execution time, must be supplied as exact absolute file paths, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
+Signing certificate and key bytes stay on disk until execution time, must be supplied as exact absolute file paths, and are never exposed through `${config.*}` placeholders. `fapiSigning` defaults request-object issuer and private-key JWT `iss`/`sub` claims to `oauth.clientId`.
+
+For advanced negative/non-standard coverage, optional overrides are available: `requestObjectIssuerOverride`, `privateKeyJwtIssuerOverride`, and `privateKeyJwtSubjectOverride`. The private-key JWT overrides are only valid when `tokenEndpointAuthMethod` is `private_key_jwt`.
 
 The baseline manifest uses this block in three places: PSU authorisation can generate a PS256 request object from `{"source": "fapi-signing"}`, token exchange can apply `tokenEndpointAuthPolicy: {"source": "fapi-signing"}` to emit either `private_key_jwt` form fields or `tls_client_auth` pre-dispatch validation, and account-access consent creation signs the exact JSON payload into a detached `x-jws-signature` header. The preserved AIS slice remains the older proof flow and does not opt into these directives.
 

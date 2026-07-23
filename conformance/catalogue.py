@@ -161,6 +161,20 @@ class CatalogueResourceGroup:
 
 
 @dataclass(frozen=True)
+class CatalogueFieldVisibilityCondition:
+    """Predicate controlling when one field is visible in guided UI prompts.
+
+    Attributes:
+        field_id: Referenced field identifier whose selected value controls
+            visibility.
+        equals: Allowed string values that make the field visible.
+    """
+
+    field_id: str
+    equals: tuple[str, ...]
+
+
+@dataclass(frozen=True)
 class CatalogueFieldSchema:
     """Participant-supplied or generated field metadata from a catalogue.
 
@@ -173,6 +187,9 @@ class CatalogueFieldSchema:
             ``"path"``.
         required: Whether the field is required for its scope.
         sensitive: Whether values for this field must be masked in evidence.
+        helper_text: Optional UI guidance shown below the field prompt.
+        visible_when: Optional visibility predicates that must all match before
+            the field is shown in the plan-builder UI.
     """
 
     field_id: str
@@ -181,6 +198,8 @@ class CatalogueFieldSchema:
     value_type: str
     required: bool
     sensitive: bool
+    helper_text: str | None = None
+    visible_when: tuple[CatalogueFieldVisibilityCondition, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
@@ -853,9 +872,48 @@ def _parse_field_schemas(doc: dict[str, JsonValue]) -> tuple[CatalogueFieldSchem
                 value_type=_require_string(raw_field, "valueType", context=ctx),
                 required=_require_bool(raw_field, "required", context=ctx),
                 sensitive=_optional_bool(raw_field, "sensitive", default=False),
+                helper_text=_optional_string(raw_field, "helperText", context=ctx),
+                visible_when=_parse_field_visibility_conditions(raw_field, context=ctx),
             )
         )
     return tuple(fields)
+
+
+def _parse_field_visibility_conditions(
+    obj: dict[str, JsonValue],
+    *,
+    context: str,
+) -> tuple[CatalogueFieldVisibilityCondition, ...]:
+    """Parse optional field-visibility predicates from one field schema object.
+
+    Args:
+        obj: Raw field schema object.
+        context: Dot-path context for validation errors.
+
+    Returns:
+        Ordered visibility predicates, or an empty tuple when absent.
+
+    Raises:
+        CatalogueParseError: If ``visibleWhen`` is present but malformed.
+    """
+    raw_conditions = obj.get("visibleWhen")
+    if raw_conditions is None:
+        return ()
+    if not isinstance(raw_conditions, list):
+        raise CatalogueParseError(f"{context}.visibleWhen must be a JSON array")
+
+    conditions: list[CatalogueFieldVisibilityCondition] = []
+    for idx, raw_condition in enumerate(raw_conditions):
+        if not isinstance(raw_condition, dict):
+            raise CatalogueParseError(f"{context}.visibleWhen[{idx}] must be a JSON object")
+        condition_context = f"{context}.visibleWhen[{idx}]"
+        conditions.append(
+            CatalogueFieldVisibilityCondition(
+                field_id=_require_string(raw_condition, "fieldId", context=condition_context),
+                equals=_parse_string_array(raw_condition, "equals", context=condition_context, required=True),
+            )
+        )
+    return tuple(conditions)
 
 
 def _parse_runner_primitives(doc: dict[str, JsonValue]) -> tuple[CatalogueRunnerPrimitive, ...]:

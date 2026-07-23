@@ -204,8 +204,9 @@ def test_load_catalogue_schema_v2_metadata() -> None:
         "tls.caBundlePath",
         "fapiSigning.signingCertificatePath",
         "fapiSigning.signingPrivateKeyPath",
-        "fapiSigning.clientAssertionIssuer",
-        "fapiSigning.clientAssertionSubject",
+        "fapiSigning.requestObjectIssuerOverride",
+        "fapiSigning.privateKeyJwtIssuerOverride",
+        "fapiSigning.privateKeyJwtSubjectOverride",
         "fapiSigning.tokenEndpointAuthMethod",
     }
     assert {primitive.primitive_id for primitive in catalogue.runner_primitives} >= {

@@ -84,6 +84,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   exports a single config JSON with top-level `testPlan`, removes the separate
   derived plan preview/copy surface, rejects retired `runPlan` imports with
   rebuild guidance, and filters Field Values to saved runtime config fields.
+- **FAPI issuer/subject defaults and override model tightened**: Read/Write
+  config parsing now rejects legacy `fapiSigning.clientAssertionIssuer` and
+  `fapiSigning.clientAssertionSubject`, derives request-object and private-key
+  JWT issuer/subject defaults from `oauth.clientId`, and introduces optional
+  advanced override keys (`requestObjectIssuerOverride`,
+  `privateKeyJwtIssuerOverride`, `privateKeyJwtSubjectOverride`) with
+  `tls_client_auth` applicability validation. The staged planner now surfaces
+  the new fields with conditional visibility and helper text, and bundled
+  examples/documentation were updated to use the defaulted contract.
 
 - **`testSuite` config key removed** (breaking): Participant configs that include `testSuite` will now fail with `ConfigError: Unknown config field(s): testSuite`. Migrate to `testTarget` using the updated example configs in `config/`. The `SuiteSelection` type is now internal-only (in `conformance/suite_catalog.py`) and is no longer part of the public config API.
 
