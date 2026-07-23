@@ -20,6 +20,7 @@ from conformance.auth_metadata import AuthBundleDeclaration
 from conformance.catalogue import (
     CatalogueExecutableTest,
     CatalogueFieldSchema,
+    CatalogueFieldVisibilityCondition,
     CatalogueReadinessPolicy,
 )
 from conformance.config_document import (
@@ -106,8 +107,9 @@ _RUNTIME_MAPPED_FIELD_IDS: Mapping[str, frozenset[str]] = MappingProxyType(
                 "fapiSigning.signingCertificatePath",
                 "fapiSigning.signingPrivateKeyPath",
                 "fapiSigning.kid",
-                "fapiSigning.clientAssertionIssuer",
-                "fapiSigning.clientAssertionSubject",
+                "fapiSigning.requestObjectIssuerOverride",
+                "fapiSigning.privateKeyJwtIssuerOverride",
+                "fapiSigning.privateKeyJwtSubjectOverride",
                 "fapiSigning.tokenEndpointAuthMethod",
                 "fapiSigning.signatureIssuer",
                 "fapiSigning.signatureTrustAnchor",
@@ -571,10 +573,12 @@ class PlanBuilderForm(forms.Form):
         guided_signing_private_key_path: Optional structured signing private
             key path prompt.
         guided_signing_kid: Optional structured signing key id prompt.
-        guided_signing_client_assertion_issuer: Optional structured client
-            assertion issuer prompt.
-        guided_signing_client_assertion_subject: Optional structured client
-            assertion subject prompt.
+        guided_signing_request_object_issuer_override: Optional structured
+            request-object issuer override prompt.
+        guided_signing_private_key_jwt_issuer_override: Optional structured
+            private-key JWT issuer override prompt.
+        guided_signing_private_key_jwt_subject_override: Optional structured
+            private-key JWT subject override prompt.
         guided_signing_token_endpoint_auth_method: Optional structured token
             endpoint auth-method prompt.
         selection_mode: Choice controlling whether selected or deselected ids drive the submitted plan.
@@ -608,12 +612,16 @@ class PlanBuilderForm(forms.Form):
     guided_signing_certificate_path: forms.CharField = forms.CharField(label="Signing certificate path", required=False)
     guided_signing_private_key_path: forms.CharField = forms.CharField(label="Signing private key path", required=False)
     guided_signing_kid: forms.CharField = forms.CharField(label="Signing key id", required=False)
-    guided_signing_client_assertion_issuer: forms.CharField = forms.CharField(
-        label="Client assertion issuer",
+    guided_signing_request_object_issuer_override: forms.CharField = forms.CharField(
+        label="Request object issuer override",
         required=False,
     )
-    guided_signing_client_assertion_subject: forms.CharField = forms.CharField(
-        label="Client assertion subject",
+    guided_signing_private_key_jwt_issuer_override: forms.CharField = forms.CharField(
+        label="Private-key JWT issuer override",
+        required=False,
+    )
+    guided_signing_private_key_jwt_subject_override: forms.CharField = forms.CharField(
+        label="Private-key JWT subject override",
         required=False,
     )
     guided_signing_token_endpoint_auth_method: forms.ChoiceField = forms.ChoiceField(
@@ -2409,8 +2417,9 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
             "guided_signing_certificate_path",
             "guided_signing_private_key_path",
             "guided_signing_kid",
-            "guided_signing_client_assertion_issuer",
-            "guided_signing_client_assertion_subject",
+            "guided_signing_request_object_issuer_override",
+            "guided_signing_private_key_jwt_issuer_override",
+            "guided_signing_private_key_jwt_subject_override",
             "guided_signing_token_endpoint_auth_method",
         )
     )
@@ -2453,8 +2462,9 @@ def _build_guided_fapi_signing_object(cleaned_data: dict[str, object]) -> dict[s
         "signingCertificatePath": "guided_signing_certificate_path",
         "signingPrivateKeyPath": "guided_signing_private_key_path",  # pragma: allowlist secret
         "kid": "guided_signing_kid",
-        "clientAssertionIssuer": "guided_signing_client_assertion_issuer",
-        "clientAssertionSubject": "guided_signing_client_assertion_subject",
+        "requestObjectIssuerOverride": "guided_signing_request_object_issuer_override",
+        "privateKeyJwtIssuerOverride": "guided_signing_private_key_jwt_issuer_override",  # pragma: allowlist secret
+        "privateKeyJwtSubjectOverride": "guided_signing_private_key_jwt_subject_override",  # pragma: allowlist secret
         "tokenEndpointAuthMethod": "guided_signing_token_endpoint_auth_method",
     }
     raw_fapi_signing: dict[str, JsonValue] = {}
@@ -3549,6 +3559,23 @@ def _field_schema_payload(field_schema: CatalogueFieldSchema) -> JsonObject:
         "valueType": field_schema.value_type,
         "required": field_schema.required,
         "sensitive": field_schema.sensitive,
+        "helperText": field_schema.helper_text,
+        "visibleWhen": [_field_visibility_payload(condition) for condition in field_schema.visible_when],
+    }
+
+
+def _field_visibility_payload(condition: CatalogueFieldVisibilityCondition) -> JsonObject:
+    """Serialise one field-visibility predicate for staged UI consumers.
+
+    Args:
+        condition: Parsed field-visibility predicate.
+
+    Returns:
+        JSON-compatible predicate payload.
+    """
+    return {
+        "fieldId": condition.field_id,
+        "equals": list(condition.equals),
     }
 
 

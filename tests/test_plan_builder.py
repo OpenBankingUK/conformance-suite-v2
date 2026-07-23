@@ -109,8 +109,6 @@ PIS_FCS_LEGACY_BENCHMARK_CONFIG: dict[str, JsonValue] = {
         "signingCertificatePath": "/local-config/certs/dummy-signing.crt",
         "signingPrivateKeyPath": "/local-config/certs/dummy-signing.key",  # pragma: allowlist secret
         "kid": "test-signing-kid",
-        "clientAssertionIssuer": "test-client-id",
-        "clientAssertionSubject": "test-client-id",
         "tokenEndpointAuthMethod": "private_key_jwt",
     },
     "openBanking": {
@@ -286,10 +284,35 @@ def test_staged_read_write_fields_are_runtime_mapped_config_fields() -> None:
     assert "transport.tlsSkipVerify" not in field_ids
     assert "fapiSigning.signingCertificatePath" in field_ids
     assert "fapiSigning.signingPrivateKeyPath" in field_ids
-    assert "fapiSigning.clientAssertionIssuer" in field_ids
-    assert "fapiSigning.clientAssertionSubject" in field_ids
+    assert "fapiSigning.requestObjectIssuerOverride" in field_ids
+    assert "fapiSigning.privateKeyJwtIssuerOverride" in field_ids
+    assert "fapiSigning.privateKeyJwtSubjectOverride" in field_ids
     assert "fapiSigning.tokenEndpointAuthMethod" in field_ids
     assert "fapiSigning.privateKeyPath" not in field_ids
+
+
+@pytest.mark.unit
+def test_staged_read_write_field_metadata_includes_visibility_and_helper_text() -> None:
+    """Read/Write staged field metadata includes optional helper and visibility rules."""
+    catalogues = staged_catalogue_data()
+    read_write = cast(dict[str, JsonValue], cast(dict[str, JsonValue], catalogues["obl"])["read-write"])
+    rw_401 = cast(dict[str, JsonValue], read_write["v4.0.1"])
+    fields = cast(list[dict[str, JsonValue]], rw_401["fieldSchemas"])
+    by_field_id = {cast(str, field["fieldId"]): field for field in fields}
+
+    request_object_override = cast(dict[str, JsonValue], by_field_id["fapiSigning.requestObjectIssuerOverride"])
+    assert request_object_override["required"] is False
+    assert "oauth.clientId" in cast(str, request_object_override["helperText"])
+    assert cast(list[JsonValue], request_object_override["visibleWhen"]) == []
+
+    private_key_jwt_issuer_override = cast(dict[str, JsonValue], by_field_id["fapiSigning.privateKeyJwtIssuerOverride"])
+    visible_when = cast(list[dict[str, JsonValue]], private_key_jwt_issuer_override["visibleWhen"])
+    assert visible_when == [
+        {
+            "fieldId": "fapiSigning.tokenEndpointAuthMethod",
+            "equals": ["private_key_jwt"],
+        }
+    ]
 
 
 @pytest.mark.unit

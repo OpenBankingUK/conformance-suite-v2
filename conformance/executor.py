@@ -2431,7 +2431,7 @@ def _generate_psu_request_object(
         raise ValueError("Generated PSU requestObject requires participant fapiSigning config")
     signed_request_object = signing_service.sign_request_object(
         RequestObjectSigningInput(
-            issuer=fapi_signing_config.client_assertion_issuer,
+            issuer=fapi_signing_config.request_object_issuer,
             audience=audience,
             client_id=client_id,
             redirect_uri=redirect_uri,

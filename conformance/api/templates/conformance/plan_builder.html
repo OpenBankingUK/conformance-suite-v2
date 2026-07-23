@@ -983,13 +983,14 @@
         const container = document.getElementById('stage-7-fields');
         if (!container) return;
         populateBaseConfigFields();
-        const fields = runtimeMappedFields();
-        if (fields.length === 0) {
+        const catalogueFields = runtimeMappedFields();
+        if (catalogueFields.length === 0) {
             container.innerHTML = '<p class="helper">This catalogue does not declare participant field prompts.</p>';
             populateAdvancedTestDataValues();
             getSummaryEl(7).textContent = 'No fields';
             return;
         }
+        const fields = visibleRuntimeMappedFields();
 
         const html = ['<div class="field-value-grid">'];
         fields.forEach(field => {
@@ -1013,6 +1014,7 @@
             }
             html.push(`<div class="test-value-meta"><div>${requiredBadge} ${sensitiveBadge} <span class="badge">${escapeHtml(field.valueType)}</span></div><span class="step-id">${escapeHtml(field.fieldId)}</span></div>`);
             if (field.valueType === 'path') html.push('<div class="helper">Enter the exact absolute filesystem path. Do not paste key or certificate contents.</div>');
+            if (nonBlank(field.helperText)) html.push(`<div class="helper">${escapeHtml(field.helperText)}</div>`);
             html.push('</div>');
         });
         html.push('</div>');
@@ -1027,6 +1029,31 @@
 
     function runtimeMappedFields() {
         return getCatalogue()?.fieldSchemas || [];
+    }
+
+    function fieldVisibleByConditions(field) {
+        const visibleWhen = Array.isArray(field.visibleWhen) ? field.visibleWhen : [];
+        if (visibleWhen.length === 0) return true;
+        return visibleWhen.every(condition => {
+            if (!isPlainObject(condition)) return false;
+            if (typeof condition.fieldId !== 'string') return false;
+            const equals = Array.isArray(condition.equals)
+                ? condition.equals.filter(value => typeof value === 'string')
+                : [];
+            if (equals.length === 0) return false;
+            const controllingValue = (state.fieldValues[condition.fieldId] || '').trim();
+            return equals.includes(controllingValue);
+        });
+    }
+
+    function visibleRuntimeMappedFields() {
+        return runtimeMappedFields().filter(fieldVisibleByConditions);
+    }
+
+    function fieldValueForExport(fieldId) {
+        const visibleFieldIds = new Set(visibleRuntimeMappedFields().map(field => field.fieldId));
+        if (!visibleFieldIds.has(fieldId)) return '';
+        return state.fieldValues[fieldId] || '';
     }
 
     function populateBaseConfigFields() {
@@ -1143,11 +1170,15 @@
         } else {
             state.fieldValues[fieldId] = input.value;
         }
+        if (fieldId === 'fapiSigning.tokenEndpointAuthMethod') {
+            populateFieldValueStage();
+            return;
+        }
         updateFieldSummary();
     }
 
     function updateFieldSummary() {
-        const fields = runtimeMappedFields();
+        const fields = visibleRuntimeMappedFields();
         const requiredMissing = fields.filter(field => field.required && !(state.fieldValues[field.fieldId] || '').trim()).length;
         const supplied = fields.filter(field => (state.fieldValues[field.fieldId] || '').trim()).length;
         const baseMissing = ['discoveryUrl'].filter(key => !nonBlank(state.baseConfig[key])).length;
@@ -1238,14 +1269,15 @@
         setNestedObjectValue(config, 'tls', 'clientCertificatePath', v['tls.certPath']);
         setNestedObjectValue(config, 'tls', 'clientPrivateKeyPath', v['tls.keyPath']);
         setNestedObjectValue(config, 'tls', 'caBundlePath', v['tls.caBundlePath']);
-        setNestedObjectValue(config, 'fapiSigning', 'signingCertificatePath', v['fapiSigning.signingCertificatePath']);
-        setNestedObjectValue(config, 'fapiSigning', 'signingPrivateKeyPath', v['fapiSigning.signingPrivateKeyPath']);
-        setNestedObjectValue(config, 'fapiSigning', 'kid', v['fapiSigning.kid']);
-        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionIssuer', v['fapiSigning.clientAssertionIssuer']);
-        setNestedObjectValue(config, 'fapiSigning', 'clientAssertionSubject', v['fapiSigning.clientAssertionSubject']);
-        setNestedObjectValue(config, 'fapiSigning', 'tokenEndpointAuthMethod', v['fapiSigning.tokenEndpointAuthMethod']);
-        setNestedObjectValue(config, 'fapiSigning', 'signatureIssuer', v['fapiSigning.signatureIssuer']);
-        setNestedObjectValue(config, 'fapiSigning', 'signatureTrustAnchor', v['fapiSigning.signatureTrustAnchor']);
+        setNestedObjectValue(config, 'fapiSigning', 'signingCertificatePath', fieldValueForExport('fapiSigning.signingCertificatePath'));
+        setNestedObjectValue(config, 'fapiSigning', 'signingPrivateKeyPath', fieldValueForExport('fapiSigning.signingPrivateKeyPath'));
+        setNestedObjectValue(config, 'fapiSigning', 'kid', fieldValueForExport('fapiSigning.kid'));
+        setNestedObjectValue(config, 'fapiSigning', 'requestObjectIssuerOverride', fieldValueForExport('fapiSigning.requestObjectIssuerOverride'));
+        setNestedObjectValue(config, 'fapiSigning', 'privateKeyJwtIssuerOverride', fieldValueForExport('fapiSigning.privateKeyJwtIssuerOverride'));
+        setNestedObjectValue(config, 'fapiSigning', 'privateKeyJwtSubjectOverride', fieldValueForExport('fapiSigning.privateKeyJwtSubjectOverride'));
+        setNestedObjectValue(config, 'fapiSigning', 'tokenEndpointAuthMethod', fieldValueForExport('fapiSigning.tokenEndpointAuthMethod'));
+        setNestedObjectValue(config, 'fapiSigning', 'signatureIssuer', fieldValueForExport('fapiSigning.signatureIssuer'));
+        setNestedObjectValue(config, 'fapiSigning', 'signatureTrustAnchor', fieldValueForExport('fapiSigning.signatureTrustAnchor'));
         setNestedObjectValue(config, 'openBanking', 'financialId', v['openBanking.financialId']);
     }
 
@@ -1514,8 +1546,9 @@
             'fapiSigning.signingCertificatePath': fapiSigning.signingCertificatePath,
             'fapiSigning.signingPrivateKeyPath': fapiSigning.signingPrivateKeyPath,
             'fapiSigning.kid': fapiSigning.kid,
-            'fapiSigning.clientAssertionIssuer': fapiSigning.clientAssertionIssuer,
-            'fapiSigning.clientAssertionSubject': fapiSigning.clientAssertionSubject,
+            'fapiSigning.requestObjectIssuerOverride': fapiSigning.requestObjectIssuerOverride,
+            'fapiSigning.privateKeyJwtIssuerOverride': fapiSigning.privateKeyJwtIssuerOverride,
+            'fapiSigning.privateKeyJwtSubjectOverride': fapiSigning.privateKeyJwtSubjectOverride,
             'fapiSigning.tokenEndpointAuthMethod': fapiSigning.tokenEndpointAuthMethod,
             'fapiSigning.signatureIssuer': fapiSigning.signatureIssuer,
             'fapiSigning.signatureTrustAnchor': fapiSigning.signatureTrustAnchor,

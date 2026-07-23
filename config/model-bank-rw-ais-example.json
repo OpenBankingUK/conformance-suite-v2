@@ -16,8 +16,6 @@
         "signingCertificatePath": "/path/to/dummy-signing.crt",
         "signingPrivateKeyPath": "/path/to/dummy-signing.key",
         "kid": "your-signing-kid-here",
-        "clientAssertionIssuer": "your-client-id-here",
-        "clientAssertionSubject": "your-client-id-here",
         "tokenEndpointAuthMethod": "private_key_jwt"
     },
     "resultOutputPath": "./out/rw-ais-results.json",

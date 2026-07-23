@@ -109,8 +109,9 @@ def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="executor-signing-key",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="request-object-issuer",
+        private_key_jwt_issuer="client-issuer",  # pragma: allowlist secret
+        private_key_jwt_subject="client-subject",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
     )
 
@@ -167,8 +168,9 @@ def _invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="invalid-executor-signing-key",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="request-object-issuer",
+        private_key_jwt_issuer="client-issuer",  # pragma: allowlist secret
+        private_key_jwt_subject="client-subject",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - enum fixture, not a secret
     )
 

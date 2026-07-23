@@ -117,12 +117,14 @@ def test_parse_model_bank_config_accepts_fapi_signing_ob_metadata(tmp_path: Path
         {
             "environment": "ozone-model-bank",
             "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "my-client-id",
+                "redirectUri": "https://rp.example.com/callback",
+            },
             "fapiSigning": {
                 "signingCertificatePath": str(certificate_path),
                 "signingPrivateKeyPath": str(private_key_path),
                 "kid": "ob-signing-key",
-                "clientAssertionIssuer": "my-client-id",
-                "clientAssertionSubject": "my-client-id",
                 "tokenEndpointAuthMethod": "private_key_jwt",
                 "signatureIssuer": "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
                 "signatureTrustAnchor": "openbanking.org.uk",
@@ -148,12 +150,14 @@ def test_parse_model_bank_config_rejects_fapi_signing_ob_metadata_partial(tmp_pa
             {
                 "environment": "ozone-model-bank",
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": {
                     "signingCertificatePath": str(certificate_path),
                     "signingPrivateKeyPath": str(private_key_path),
                     "kid": "ob-key",
-                    "clientAssertionIssuer": "client-id",
-                    "clientAssertionSubject": "client-id",
                     "tokenEndpointAuthMethod": "private_key_jwt",
                     "signatureIssuer": "0015800001041RbAAI/WznYcRurtfGGuhfqzGeH00",
                 },
@@ -793,12 +797,14 @@ def test_parse_model_bank_config_accepts_fapi_signing_section(tmp_path: Path) ->
         {
             "environment": "sandbox",
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "oauth-client-id",
+                "redirectUri": "https://rp.example.com/callback",
+            },
             "fapiSigning": {
                 "signingCertificatePath": str(certificate_path),
                 "signingPrivateKeyPath": str(private_key_path),
                 "kid": "signing-key-001",
-                "clientAssertionIssuer": "client-issuer",
-                "clientAssertionSubject": "client-subject",
                 "tokenEndpointAuthMethod": "private_key_jwt",
             },
         },
@@ -810,8 +816,9 @@ def test_parse_model_bank_config_accepts_fapi_signing_section(tmp_path: Path) ->
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="signing-key-001",
-        client_assertion_issuer="client-issuer",
-        client_assertion_subject="client-subject",
+        request_object_issuer="oauth-client-id",
+        private_key_jwt_issuer="oauth-client-id",  # pragma: allowlist secret
+        private_key_jwt_subject="oauth-client-id",  # pragma: allowlist secret
         token_endpoint_auth_method="private_key_jwt",  # noqa: S106 - auth-method enum fixture, not a secret
     )
 
@@ -840,12 +847,14 @@ def test_parse_model_bank_config_accepts_missing_signing_files_until_runtime(tmp
         {
             "environment": "sandbox",
             "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "oauth-client-id",
+                "redirectUri": "https://rp.example.com/callback",
+            },
             "fapiSigning": {
                 "signingCertificatePath": str(certificate_root / "missing.crt"),
                 "signingPrivateKeyPath": str(certificate_root / "missing.key"),  # pragma: allowlist secret
                 "kid": "signing-key-001",
-                "clientAssertionIssuer": "client-issuer",
-                "clientAssertionSubject": "client-subject",
                 "tokenEndpointAuthMethod": "private_key_jwt",
             },
         },
@@ -880,12 +889,14 @@ def test_parse_model_bank_config_rejects_unknown_fapi_signing_field(tmp_path: Pa
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": {
                     "signingCertificatePath": str(certificate_path),
                     "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
-                    "clientAssertionIssuer": "client-issuer",
-                    "clientAssertionSubject": "client-subject",
                     "tokenEndpointAuthMethod": "private_key_jwt",
                     "jwk": "should-not-be-here",
                 },
@@ -906,11 +917,13 @@ def test_parse_model_bank_config_requires_signing_cert_and_key_together(tmp_path
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": {
                     "signingCertificatePath": str(certificate_path),
                     "kid": "signing-key-001",
-                    "clientAssertionIssuer": "client-issuer",
-                    "clientAssertionSubject": "client-subject",
                     "tokenEndpointAuthMethod": "private_key_jwt",
                 },
             },
@@ -928,12 +941,14 @@ def test_parse_model_bank_config_rejects_fapi_signing_relative_path(tmp_path: Pa
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": {
                     "signingCertificatePath": "relative.crt",
                     "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
-                    "clientAssertionIssuer": "client-issuer",
-                    "clientAssertionSubject": "client-subject",
                     "tokenEndpointAuthMethod": "private_key_jwt",
                 },
             },
@@ -953,12 +968,14 @@ def test_parse_model_bank_config_rejects_unknown_token_endpoint_auth_method(tmp_
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": {
                     "signingCertificatePath": str(certificate_path),
                     "signingPrivateKeyPath": str(private_key_path),
                     "kid": "signing-key-001",
-                    "clientAssertionIssuer": "client-issuer",
-                    "clientAssertionSubject": "client-subject",
                     "tokenEndpointAuthMethod": "client_secret_basic",
                 },
             },
@@ -972,14 +989,14 @@ def test_parse_model_bank_config_rejects_unknown_token_endpoint_auth_method(tmp_
     [
         ("kid", "", "fapiSigning.kid must be a non-empty string"),
         (
-            "clientAssertionIssuer",
+            "requestObjectIssuerOverride",
             "   ",
-            "fapiSigning.clientAssertionIssuer must be a non-empty string",
+            "fapiSigning.requestObjectIssuerOverride must be a non-empty string",
         ),
         (
-            "clientAssertionSubject",
+            "privateKeyJwtSubjectOverride",
             42,
-            "fapiSigning.clientAssertionSubject must be a non-empty string",
+            "fapiSigning.privateKeyJwtSubjectOverride must be a non-empty string",
         ),
     ],
 )
@@ -995,8 +1012,6 @@ def test_parse_model_bank_config_rejects_malformed_fapi_signing_strings(
         "signingCertificatePath": str(certificate_path),
         "signingPrivateKeyPath": str(private_key_path),
         "kid": "signing-key-001",
-        "clientAssertionIssuer": "client-issuer",
-        "clientAssertionSubject": "client-subject",
         "tokenEndpointAuthMethod": "private_key_jwt",
     }
     fapi_signing[field_name] = value
@@ -1006,10 +1021,166 @@ def test_parse_model_bank_config_rejects_malformed_fapi_signing_strings(
             {
                 "environment": "sandbox",
                 "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
                 "fapiSigning": fapi_signing,
             },
             base_dir=tmp_path,
         )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_legacy_client_assertion_fields(tmp_path: Path) -> None:
+    """Legacy client-assertion field names must now be rejected."""
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    with pytest.raises(
+        ConfigError,
+        match=r"Unknown fapiSigning field\(s\): clientAssertionIssuer, clientAssertionSubject",
+    ):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
+                "fapiSigning": {
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
+                    "kid": "signing-key-001",
+                    "clientAssertionIssuer": "legacy-issuer",
+                    "clientAssertionSubject": "legacy-subject",
+                    "tokenEndpointAuthMethod": "private_key_jwt",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_requires_oauth_client_id_for_fapi_signing_defaults(tmp_path: Path) -> None:
+    """FAPI signing requires oauth.clientId for issuer/subject defaults."""
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            "fapiSigning requires oauth.clientId so default request-object and private-key JWT issuer values can be"
+            " derived"
+        ),
+    ):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "fapiSigning": {
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
+                    "kid": "signing-key-001",
+                    "tokenEndpointAuthMethod": "private_key_jwt",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_applies_fapi_override_values(tmp_path: Path) -> None:
+    """Explicit override fields must replace oauth.clientId defaults."""
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "oauth-client-id",
+                "redirectUri": "https://rp.example.com/callback",
+            },
+            "fapiSigning": {
+                "signingCertificatePath": str(certificate_path),
+                "signingPrivateKeyPath": str(private_key_path),
+                "kid": "signing-key-001",
+                "requestObjectIssuerOverride": "request-object-issuer-override",
+                "privateKeyJwtIssuerOverride": "private-key-jwt-issuer-override",  # pragma: allowlist secret
+                "privateKeyJwtSubjectOverride": "private-key-jwt-subject-override",  # pragma: allowlist secret
+                "tokenEndpointAuthMethod": "private_key_jwt",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.request_object_issuer == "request-object-issuer-override"
+    assert config.fapi_signing.private_key_jwt_issuer == "private-key-jwt-issuer-override"  # pragma: allowlist secret
+    assert config.fapi_signing.private_key_jwt_subject == "private-key-jwt-subject-override"  # pragma: allowlist secret
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_rejects_private_key_jwt_overrides_for_tls_client_auth(tmp_path: Path) -> None:
+    """TLS client-auth mode must reject private-key JWT-only override fields."""
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    with pytest.raises(
+        ConfigError,
+        match=(
+            "fapiSigning.privateKeyJwtIssuerOverride, fapiSigning.privateKeyJwtSubjectOverride are only allowed when"
+            " fapiSigning.tokenEndpointAuthMethod is private_key_jwt"
+        ),
+    ):
+        parse_model_bank_config(
+            {
+                "environment": "sandbox",
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "oauth": {
+                    "clientId": "oauth-client-id",
+                    "redirectUri": "https://rp.example.com/callback",
+                },
+                "fapiSigning": {
+                    "signingCertificatePath": str(certificate_path),
+                    "signingPrivateKeyPath": str(private_key_path),
+                    "kid": "signing-key-001",
+                    "privateKeyJwtIssuerOverride": "issuer-override",  # pragma: allowlist secret
+                    "privateKeyJwtSubjectOverride": "subject-override",  # pragma: allowlist secret
+                    "tokenEndpointAuthMethod": "tls_client_auth",
+                },
+            },
+            base_dir=tmp_path,
+        )
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_allows_request_object_override_for_tls_client_auth(tmp_path: Path) -> None:
+    """TLS client-auth mode may still override request-object issuer."""
+    _, certificate_path, private_key_path = _write_signing_material(tmp_path)
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "oauth": {
+                "clientId": "oauth-client-id",
+                "redirectUri": "https://rp.example.com/callback",
+            },
+            "fapiSigning": {
+                "signingCertificatePath": str(certificate_path),
+                "signingPrivateKeyPath": str(private_key_path),
+                "kid": "signing-key-001",
+                "requestObjectIssuerOverride": "request-object-override",
+                "tokenEndpointAuthMethod": "tls_client_auth",
+            },
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.fapi_signing is not None
+    assert config.fapi_signing.request_object_issuer == "request-object-override"
+    assert config.fapi_signing.private_key_jwt_issuer == "oauth-client-id"  # pragma: allowlist secret
+    assert config.fapi_signing.private_key_jwt_subject == "oauth-client-id"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------

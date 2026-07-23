@@ -51,14 +51,14 @@ Add a `testTarget` section selecting the Read/Write specification and one resour
 		"signingCertificatePath": "/path/to/signing.crt",
 		"signingPrivateKeyPath": "/path/to/signing.key", // pragma: allowlist secret
 		"kid": "your-signing-kid-here",
-		"clientAssertionIssuer": "your-client-id-here",
-		"clientAssertionSubject": "your-client-id-here",
 		"tokenEndpointAuthMethod": "private_key_jwt"
 	},
 	"resultOutputPath": "./out/rw-ais-results.json",
 	"executionLogPath": "./out/rw-ais-log.ndjson"
 }
 ```
+
+`fapiSigning` defaults request-object issuer and private-key JWT `iss`/`sub` to `oauth.clientId`. Advanced negative-test overrides are optional: `requestObjectIssuerOverride`, `privateKeyJwtIssuerOverride`, and `privateKeyJwtSubjectOverride`.
 
 Supported `testTarget` combinations for Read/Write:
 

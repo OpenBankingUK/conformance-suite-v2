@@ -233,12 +233,12 @@ class FapiSigningService:
                 invalid, the lifetime is non-positive, or the key cannot sign.
         """
         issuer = _require_non_empty_string(
-            self.signing_config.client_assertion_issuer,
-            label="fapiSigning.clientAssertionIssuer",
+            self.signing_config.private_key_jwt_issuer,
+            label="fapiSigning.privateKeyJwtIssuerOverride",
         )
         subject = _require_non_empty_string(
-            self.signing_config.client_assertion_subject,
-            label="fapiSigning.clientAssertionSubject",
+            self.signing_config.private_key_jwt_subject,
+            label="fapiSigning.privateKeyJwtSubjectOverride",
         )
         audience = _require_non_empty_string(client_assertion.audience, label="client_assertion.audience")
 

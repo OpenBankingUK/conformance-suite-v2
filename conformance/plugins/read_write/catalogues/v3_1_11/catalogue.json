@@ -121,19 +121,42 @@
       "sensitive": false
     },
     {
-      "fieldId": "fapiSigning.clientAssertionIssuer",
-      "displayLabel": "Client assertion issuer",
+      "fieldId": "fapiSigning.requestObjectIssuerOverride",
+      "displayLabel": "Request object issuer override",
       "scope": "shared",
       "valueType": "string",
-      "required": true,
+      "required": false,
+      "helperText": "Advanced/negative-test override. Leave blank to default request-object iss to oauth.clientId.",
       "sensitive": false
     },
     {
-      "fieldId": "fapiSigning.clientAssertionSubject",
-      "displayLabel": "Client assertion subject",
+      "fieldId": "fapiSigning.privateKeyJwtIssuerOverride",
+      "displayLabel": "Private-key JWT issuer override",
       "scope": "shared",
       "valueType": "string",
-      "required": true,
+      "required": false,
+      "helperText": "Advanced/negative-test override. Leave blank to default private_key_jwt iss to oauth.clientId.",
+      "visibleWhen": [
+        {
+          "fieldId": "fapiSigning.tokenEndpointAuthMethod",
+          "equals": ["private_key_jwt"]
+        }
+      ],
+      "sensitive": false
+    },
+    {
+      "fieldId": "fapiSigning.privateKeyJwtSubjectOverride",
+      "displayLabel": "Private-key JWT subject override",
+      "scope": "shared",
+      "valueType": "string",
+      "required": false,
+      "helperText": "Advanced/negative-test override. Leave blank to default private_key_jwt sub to oauth.clientId.",
+      "visibleWhen": [
+        {
+          "fieldId": "fapiSigning.tokenEndpointAuthMethod",
+          "equals": ["private_key_jwt"]
+        }
+      ],
       "sensitive": false
     },
     {

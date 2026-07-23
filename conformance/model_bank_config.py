@@ -105,10 +105,12 @@ class FapiSigningConfig:
         signing_private_key_path: Private key path paired with
             ``signing_certificate_path``.
         key_id: JOSE ``kid`` header value associated with the signing key.
-        client_assertion_issuer: ``iss`` claim value for token-endpoint
-            client assertions.
-        client_assertion_subject: ``sub`` claim value for token-endpoint
-            client assertions.
+        request_object_issuer: ``iss`` claim value for generated OAuth request
+            object JWTs used by PSU-authorisation steps.
+        private_key_jwt_issuer: ``iss`` claim value for token-endpoint
+            private-key JWT client assertions.
+        private_key_jwt_subject: ``sub`` claim value for token-endpoint
+            private-key JWT client assertions.
         token_endpoint_auth_method: Declared client-authentication method for
             the token endpoint.
         signature_issuer: Optional Open Banking detached-JWS issuer identifier
@@ -125,8 +127,9 @@ class FapiSigningConfig:
     signing_certificate_path: Path
     signing_private_key_path: Path
     key_id: str
-    client_assertion_issuer: str
-    client_assertion_subject: str
+    request_object_issuer: str
+    private_key_jwt_issuer: str
+    private_key_jwt_subject: str
     token_endpoint_auth_method: TokenEndpointClientAuthMode
     signature_issuer: str | None = None
     signature_trust_anchor: str | None = None
@@ -355,7 +358,7 @@ def parse_model_bank_config(
     dcr = _parse_dcr_config(raw_config, base_dir=base_dir)
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
-    fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
+    fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir, oauth=oauth)
     test_values = _parse_test_values_config(raw_config)
     test_data = _parse_test_data_config(raw_config)
     open_banking = _parse_open_banking_config(raw_config)
@@ -738,7 +741,12 @@ class OpenBankingConfig:
     financial_id: str
 
 
-def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> FapiSigningConfig | None:
+def _parse_fapi_signing_config(
+    raw_config: dict[str, JsonValue],
+    *,
+    base_dir: Path,
+    oauth: OAuthConfig | None,
+) -> FapiSigningConfig | None:
     """Parse the optional ``fapiSigning`` section of a participant config.
 
     This section is intentionally separate from ``oauth`` so bundled manifest
@@ -751,6 +759,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         base_dir: Directory of the config file. Kept for API symmetry; signing
             credential paths must be absolute and are not resolved relative to
             it.
+        oauth: Parsed OAuth config used to derive default issuer and subject
+            values for request-object and token client-assertion JWT claims.
 
     Returns:
         Parsed ``FapiSigningConfig``, or ``None`` when the config omits the
@@ -773,8 +783,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
             "signingCertificatePath",
             "signingPrivateKeyPath",
             "kid",
-            "clientAssertionIssuer",
-            "clientAssertionSubject",
+            "requestObjectIssuerOverride",
+            "privateKeyJwtIssuerOverride",
+            "privateKeyJwtSubjectOverride",
             "tokenEndpointAuthMethod",
             "signatureIssuer",
             "signatureTrustAnchor",
@@ -790,8 +801,6 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         )
 
     key_id = _required_string_at(raw_fapi_signing, "kid", location="fapiSigning")
-    client_assertion_issuer = _required_string_at(raw_fapi_signing, "clientAssertionIssuer", location="fapiSigning")
-    client_assertion_subject = _required_string_at(raw_fapi_signing, "clientAssertionSubject", location="fapiSigning")
     token_endpoint_auth_method = _required_string_at(
         raw_fapi_signing,
         "tokenEndpointAuthMethod",
@@ -799,6 +808,40 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     )
     if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
         raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
+
+    if oauth is None:
+        raise ConfigError(
+            "fapiSigning requires oauth.clientId so default request-object and private-key JWT issuer values can be derived"
+        )
+    oauth_client_id = oauth.client_id
+    request_object_issuer_override = _optional_string_at(
+        raw_fapi_signing,
+        "requestObjectIssuerOverride",
+        location="fapiSigning",
+    )
+    private_key_jwt_issuer_override = _optional_string_at(
+        raw_fapi_signing,
+        "privateKeyJwtIssuerOverride",
+        location="fapiSigning",
+    )
+    private_key_jwt_subject_override = _optional_string_at(
+        raw_fapi_signing,
+        "privateKeyJwtSubjectOverride",
+        location="fapiSigning",
+    )
+
+    if token_endpoint_auth_method == "tls_client_auth":
+        inapplicable_overrides: list[str] = []
+        if private_key_jwt_issuer_override is not None:
+            inapplicable_overrides.append("fapiSigning.privateKeyJwtIssuerOverride")
+        if private_key_jwt_subject_override is not None:
+            inapplicable_overrides.append("fapiSigning.privateKeyJwtSubjectOverride")
+        if inapplicable_overrides:
+            joined = ", ".join(inapplicable_overrides)
+            verb = "are" if len(inapplicable_overrides) > 1 else "is"
+            raise ConfigError(
+                f"{joined} {verb} only allowed when fapiSigning.tokenEndpointAuthMethod is private_key_jwt"
+            )
 
     signature_issuer = _optional_string_at(raw_fapi_signing, "signatureIssuer", location="fapiSigning")
     signature_trust_anchor = _optional_string_at(raw_fapi_signing, "signatureTrustAnchor", location="fapiSigning")
@@ -814,8 +857,9 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         signing_certificate_path=signing_certificate_path,
         signing_private_key_path=signing_private_key_path,
         key_id=key_id,
-        client_assertion_issuer=client_assertion_issuer,
-        client_assertion_subject=client_assertion_subject,
+        request_object_issuer=request_object_issuer_override or oauth_client_id,
+        private_key_jwt_issuer=private_key_jwt_issuer_override or oauth_client_id,
+        private_key_jwt_subject=private_key_jwt_subject_override or oauth_client_id,
         token_endpoint_auth_method=cast(TokenEndpointClientAuthMode, token_endpoint_auth_method),
         signature_issuer=signature_issuer,
         signature_trust_anchor=signature_trust_anchor,

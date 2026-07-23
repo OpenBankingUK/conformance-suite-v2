@@ -135,8 +135,9 @@ def _write_ais_baseline_suite_config(tmp_path: Path) -> Path:
                     "signingCertificatePath": str(signing_config.signing_certificate_path),
                     "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
                     "kid": signing_config.key_id,
-                    "clientAssertionIssuer": signing_config.client_assertion_issuer,
-                    "clientAssertionSubject": signing_config.client_assertion_subject,
+                    "requestObjectIssuerOverride": signing_config.request_object_issuer,
+                    "privateKeyJwtIssuerOverride": signing_config.private_key_jwt_issuer,
+                    "privateKeyJwtSubjectOverride": signing_config.private_key_jwt_subject,
                     "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
                 },
             }
