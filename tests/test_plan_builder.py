@@ -37,6 +37,26 @@ def _endpoint_id_for(*, api: str, path: str) -> str:
     raise AssertionError(f"Endpoint option not found for {api} {path}")
 
 
+def _endpoint_option_for(*, api: str, path: str) -> CatalogueEndpointOption:
+    """Return the rendered endpoint option for a catalogue path.
+
+    Args:
+        api: API family for the option.
+        path: Standards endpoint path.
+
+    Returns:
+        Rendered endpoint option for the path.
+
+    Raises:
+        AssertionError: If the endpoint is not rendered by the guided context.
+    """
+    context = guided_flow_context(PlanBuilderForm())
+    for option in cast(tuple[CatalogueEndpointOption, ...], context["guided_endpoint_options"]):
+        if option.api == api and option.path == path:
+            return option
+    raise AssertionError(f"Endpoint option not found for {api} {path}")
+
+
 def _ais_accounts_endpoint_id() -> str:
     """Return the AIS accounts-list endpoint id.
 
@@ -46,15 +66,57 @@ def _ais_accounts_endpoint_id() -> str:
     return _endpoint_id_for(api="ais", path="/open-banking/v4.0/aisp/accounts")
 
 
+def _ais_account_transactions_endpoint() -> CatalogueEndpointOption:
+    """Return the AIS account-transactions endpoint option.
+
+    Returns:
+        Endpoint option for ``GET /open-banking/v4.0/aisp/accounts/{AccountId}/transactions``.
+    """
+    return _endpoint_option_for(
+        api="ais",
+        path="/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+    )
+
+
+def _ais_account_transactions_endpoint_id() -> str:
+    """Return the AIS account-transactions endpoint id.
+
+    Returns:
+        Endpoint id for ``GET /open-banking/v4.0/aisp/accounts/{AccountId}/transactions``.
+    """
+    return _ais_account_transactions_endpoint().id
+
+
+def _capability_value(*, endpoint: CatalogueEndpointOption, capability_id: str) -> str:
+    """Return the rendered checkbox value for an endpoint capability.
+
+    Args:
+        endpoint: Endpoint option that owns the capability.
+        capability_id: Catalogue capability id to find.
+
+    Returns:
+        Browser checkbox value for the endpoint capability.
+
+    Raises:
+        AssertionError: If the capability is not rendered on the endpoint.
+    """
+    for capability in endpoint.capabilities:
+        if capability.capability_id == capability_id:
+            return capability.value
+    raise AssertionError(f"Capability option not found for {capability_id}")
+
+
 def _bound_guided_form(
     *,
     endpoint_ids: list[str] | None = None,
+    capability_values: list[str] | None = None,
     runtime_inputs: dict[str, str] | None = None,
 ) -> PlanBuilderForm:
     """Build a guided AIS plan-builder form submission.
 
     Args:
         endpoint_ids: Implemented endpoint ids to submit.
+        capability_values: Endpoint capability checkbox values to submit.
         runtime_inputs: Runtime input id/value strings to submit.
 
     Returns:
@@ -68,6 +130,7 @@ def _bound_guided_form(
         "guided_api": "ais",
         "guided_security_profile": "fapi1-advanced",
         "implemented_endpoint_ids": endpoint_ids or [],
+        "implemented_endpoint_capabilities": capability_values or [],
     }
     for input_id, value in (runtime_inputs or {}).items():
         data[f"runtime_input__{input_id}"] = value
@@ -86,6 +149,67 @@ def _validated_preview(form: PlanBuilderForm) -> PlanPreview:
     assert form.is_valid(), form.errors.as_json()
     assert form.preview is not None
     return form.preview
+
+
+@pytest.mark.unit
+def test_guided_context_renders_endpoint_capability_cards() -> None:
+    """Selected endpoint cards expose locked required and unchecked optional capabilities."""
+    endpoint = _ais_account_transactions_endpoint()
+    form = _bound_guided_form(endpoint_ids=[endpoint.id])
+
+    context = guided_flow_context(form)
+    options = cast(tuple[CatalogueEndpointOption, ...], context["guided_endpoint_options"])
+    rendered = next(option for option in options if option.id == endpoint.id)
+    capabilities = {capability.capability_id: capability for capability in rendered.capabilities}
+
+    assert rendered.selected is True
+    assert capabilities["ais.accounts.transactions.core"].required is True
+    assert capabilities["ais.accounts.transactions.core"].selected is True
+    assert capabilities["ais.transactions.date-range-filtering"].required is False
+    assert capabilities["ais.transactions.date-range-filtering"].selected is False
+
+
+@pytest.mark.unit
+def test_guided_optional_capability_selection_exports_endpoint_capabilities() -> None:
+    """Optional capability selection is exported through plan spec, not generated-test controls."""
+    endpoint = _ais_account_transactions_endpoint()
+    form = _bound_guided_form(
+        endpoint_ids=[endpoint.id],
+        capability_values=[_capability_value(endpoint=endpoint, capability_id="ais.transactions.date-range-filtering")],
+        runtime_inputs={
+            "resourceBaseUrl": "https://resource.example.com",
+            "accessToken": "secret-access-token",
+            "consentedAccountId": "account-123",
+            "fromBookingDateTime": "2026-01-01T00:00:00Z",
+            "toBookingDateTime": "2026-01-31T23:59:59Z",
+        },
+    )
+
+    preview = _validated_preview(form)
+    exported_plan_spec = json.loads(preview.generated_plan_spec_json)
+
+    assert preview.plan_spec.implemented_endpoints[0].capability_ids == ("ais.transactions.date-range-filtering",)
+    assert "ais-at-account-transactions-200" in preview.compiled_plan.traceability.generated_test_case_ids
+    assert exported_plan_spec["implementedEndpoints"][0]["capabilities"] == ["ais.transactions.date-range-filtering"]
+    assert exported_plan_spec["runtimeInputs"]["resourceBaseUrl"] == "https://resource.example.com"
+    assert "accessToken" not in exported_plan_spec["runtimeInputs"]
+    assert "secret-access-token" not in json.dumps(exported_plan_spec)
+    assert "selected_step_ids" not in exported_plan_spec
+
+
+@pytest.mark.unit
+def test_guided_optional_capability_selection_exposes_runtime_prompts() -> None:
+    """Capability-selected optional cases contribute their runtime prompts before validation."""
+    endpoint = _ais_account_transactions_endpoint()
+    form = _bound_guided_form(
+        endpoint_ids=[endpoint.id],
+        capability_values=[_capability_value(endpoint=endpoint, capability_id="ais.transactions.date-range-filtering")],
+    )
+
+    assert form.is_valid() is False
+    prompt_ids = [prompt.input_id for prompt in form.runtime_input_prompts]
+    assert "fromBookingDateTime" in prompt_ids
+    assert "toBookingDateTime" in prompt_ids
 
 
 @pytest.mark.unit

@@ -31,6 +31,7 @@ FollowUpMode = Literal["jwks", "discovery_only"]
 TokenEndpointClientAuthMode = Literal["private_key_jwt", "tls_client_auth"]
 """Supported FAPI token-endpoint client authentication modes."""
 
+
 @dataclass(frozen=True)
 class OAuthConfig:
     """Narrow set of non-secret OAuth participant config values for manifest placeholders.

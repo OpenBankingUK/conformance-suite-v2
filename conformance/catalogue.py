@@ -79,12 +79,16 @@ class ImplementedEndpoint:
         path: Absolute standards path implemented by the participant.
         resource_group: Human-readable resource group, such as ``"Accounts"``.
         operation_id: Optional standards/OpenAPI operation identifier.
+        capability_ids: Catalogue-owned implementation capabilities selected
+            for this endpoint. Required capabilities may be omitted by the
+            input plan spec and are normalised during compilation.
     """
 
     method: HttpMethod
     path: str
     resource_group: str
     operation_id: str | None = None
+    capability_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -119,6 +123,10 @@ class TestCaseApplicability:
         endpoint_refs: Endpoint operations that make this test case applicable.
             An empty tuple means the case applies whenever the profile matches,
             which is useful for setup/security prerequisites.
+        required_capability_ids: Endpoint capability ids that must be selected
+            before this case becomes directly applicable. Required catalogue
+            capabilities are selected automatically for implemented endpoints;
+            optional capabilities only apply when the participant declares them.
     """
 
     # Class starts with "Test" but is production code, not a pytest collection target.
@@ -126,6 +134,27 @@ class TestCaseApplicability:
 
     security_profiles: SecurityProfileApplicability
     endpoint_refs: tuple[EndpointRef, ...] = ()
+    required_capability_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class EndpointCapability:
+    """Catalogue-owned implementation capability scoped to endpoint operations.
+
+    Attributes:
+        capability_id: Stable domain identifier for the capability.
+        label: Human-readable label for builder and preview surfaces.
+        description: Explanation of what implementation feature this declares.
+        required: Whether the capability is baseline endpoint coverage and is
+            implicitly selected whenever an applicable endpoint is implemented.
+        endpoint_refs: Endpoint operations this capability can be declared on.
+    """
+
+    capability_id: str
+    label: str
+    description: str
+    required: bool
+    endpoint_refs: tuple[EndpointRef, ...]
 
 
 @dataclass(frozen=True)
@@ -224,6 +253,8 @@ class TestCatalogue:
             the standards version.
         test_cases: Ordered canonical test cases. Catalogue order is used as a
             deterministic tie-breaker after dependency ordering.
+        capabilities: Endpoint-scoped implementation capabilities exposed by
+            the catalogue for participant plan-spec declarations.
     """
 
     # Class starts with "Test" but is production code, not a pytest collection target.
@@ -232,6 +263,7 @@ class TestCatalogue:
     key: CatalogueKey
     catalogue_version: str
     test_cases: tuple[CatalogueTestCase, ...]
+    capabilities: tuple[EndpointCapability, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -303,6 +335,26 @@ class RuntimeInputTrace:
 
 
 @dataclass(frozen=True)
+class EndpointCapabilitySelection:
+    """Normalised endpoint capability selected for a compiled plan.
+
+    Attributes:
+        method: Endpoint HTTP method the capability is selected for.
+        path: Endpoint standards path the capability is selected for.
+        capability_id: Stable catalogue capability identifier.
+        label: Human-readable catalogue capability label.
+        required: Whether the capability was implicitly selected as baseline
+            endpoint coverage.
+    """
+
+    method: HttpMethod
+    path: str
+    capability_id: str
+    label: str
+    required: bool
+
+
+@dataclass(frozen=True)
 class ApplicabilityDecision:
     """Traceability decision for one catalogue test case.
 
@@ -328,6 +380,8 @@ class CompilerTraceability:
         catalogue_version: Version of the catalogue content.
         security_profile: Security profile selected by the plan spec.
         selected_endpoints: Participant-declared implemented endpoints.
+        selected_capabilities: Normalised required and explicitly selected
+            endpoint capabilities used for applicability decisions.
         applicability_decisions: Per-test-case applicability decisions.
         generated_test_case_ids: Ordered compiled test case ids.
         runtime_input_snapshot: Trace-safe runtime input values/references.
@@ -339,6 +393,7 @@ class CompilerTraceability:
     catalogue_version: str
     security_profile: SecurityProfile
     selected_endpoints: tuple[ImplementedEndpoint, ...]
+    selected_capabilities: tuple[EndpointCapabilitySelection, ...]
     applicability_decisions: tuple[ApplicabilityDecision, ...]
     generated_test_case_ids: tuple[str, ...]
     runtime_input_snapshot: tuple[RuntimeInputTrace, ...]
@@ -439,8 +494,21 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         raise CatalogueError("planSpec.catalogue does not match the supplied catalogue")
 
     cases_by_id = _catalogue_cases_by_id(catalogue)
+    capabilities_by_id, capabilities_by_ref = _catalogue_capability_indexes(catalogue)
     implemented_refs = _implemented_endpoint_refs(spec.implemented_endpoints)
-    direct_ids, base_decisions = _directly_applicable_case_ids(catalogue, spec, implemented_refs)
+    selected_capabilities_by_ref, selected_capabilities = _selected_capabilities_by_endpoint(
+        spec.implemented_endpoints,
+        capabilities_by_id=capabilities_by_id,
+        capabilities_by_ref=capabilities_by_ref,
+        catalogue_capabilities=catalogue.capabilities,
+    )
+    _validate_test_case_capability_references(catalogue, capabilities_by_id)
+    direct_ids, base_decisions = _directly_applicable_case_ids(
+        catalogue,
+        spec,
+        implemented_refs,
+        selected_capabilities_by_ref,
+    )
     _reject_invalid_deselection(spec.deselected_test_case_ids, cases_by_id, direct_ids)
     ordered_ids, dependency_edges = _ordered_case_ids(
         cases_by_id,
@@ -462,6 +530,7 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         catalogue_version=catalogue.catalogue_version,
         security_profile=spec.security_profile,
         selected_endpoints=spec.implemented_endpoints,
+        selected_capabilities=selected_capabilities,
         applicability_decisions=decisions,
         generated_test_case_ids=ordered_ids,
         runtime_input_snapshot=runtime_snapshot,
@@ -705,7 +774,7 @@ def _parse_implemented_endpoints(raw_endpoints: Iterable[Mapping[str, JsonValue]
         location = f"planSpec.implementedEndpoints[{index}]"
         _reject_unknown_keys(
             raw_endpoint,
-            allowed_keys={"method", "path", "resourceGroup", "operationId"},
+            allowed_keys={"method", "path", "resourceGroup", "operationId", "capabilities"},
             location=location,
         )
         endpoint = ImplementedEndpoint(
@@ -719,6 +788,7 @@ def _parse_implemented_endpoints(raw_endpoints: Iterable[Mapping[str, JsonValue]
             ),
             resource_group=_required_string(raw_endpoint, "resourceGroup", location=location),
             operation_id=_optional_string(raw_endpoint, "operationId", location=location),
+            capability_ids=_parse_endpoint_capability_ids(raw_endpoint, location=location),
         )
         endpoint_ref = EndpointRef(method=endpoint.method, path=endpoint.path)
         if endpoint_ref in seen_refs:
@@ -726,6 +796,29 @@ def _parse_implemented_endpoints(raw_endpoints: Iterable[Mapping[str, JsonValue]
         seen_refs.add(endpoint_ref)
         endpoints.append(endpoint)
     return tuple(endpoints)
+
+
+def _parse_endpoint_capability_ids(raw_endpoint: Mapping[str, JsonValue], *, location: str) -> tuple[str, ...]:
+    """Parse endpoint-scoped capability ids from a plan spec endpoint.
+
+    Args:
+        raw_endpoint: Raw endpoint object from ``implementedEndpoints``.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of stripped capability ids, empty when the field is absent.
+
+    Raises:
+        CatalogueError: If capability ids are malformed or duplicated within
+            the endpoint declaration.
+    """
+    capability_ids = _parse_optional_string_array(raw_endpoint, "capabilities", location=location)
+    seen: set[str] = set()
+    for index, capability_id in enumerate(capability_ids):
+        if capability_id in seen:
+            raise CatalogueError(f"{location}.capabilities[{index}] duplicates capability '{capability_id}'")
+        seen.add(capability_id)
+    return capability_ids
 
 
 def _parse_absolute_path(value: str, *, location: str) -> str:
@@ -827,6 +920,140 @@ def _catalogue_cases_by_id(catalogue: TestCatalogue) -> dict[str, CatalogueTestC
     return cases_by_id
 
 
+def _catalogue_capability_indexes(
+    catalogue: TestCatalogue,
+) -> tuple[dict[str, EndpointCapability], dict[EndpointRef, dict[str, EndpointCapability]]]:
+    """Build capability indexes and validate catalogue capability metadata.
+
+    Args:
+        catalogue: Catalogue whose capability definitions should be indexed.
+
+    Returns:
+        Pair of capability-by-id and capability-by-endpoint-ref indexes.
+
+    Raises:
+        CatalogueError: If catalogue capability definitions are malformed or
+            duplicate a capability id.
+    """
+    capabilities_by_id: dict[str, EndpointCapability] = {}
+    capabilities_by_ref: dict[EndpointRef, dict[str, EndpointCapability]] = {}
+    for capability in catalogue.capabilities:
+        if not capability.capability_id.strip():
+            raise CatalogueError("Catalogue capability id must be a non-empty string")
+        if not capability.label.strip():
+            raise CatalogueError(f"Catalogue capability '{capability.capability_id}' label must be non-empty")
+        if not capability.description.strip():
+            raise CatalogueError(f"Catalogue capability '{capability.capability_id}' description must be non-empty")
+        if not capability.endpoint_refs:
+            raise CatalogueError(
+                f"Catalogue capability '{capability.capability_id}' must apply to at least one endpoint"
+            )
+        if capability.capability_id in capabilities_by_id:
+            raise CatalogueError(f"Catalogue capability id '{capability.capability_id}' is a duplicate")
+        capabilities_by_id[capability.capability_id] = capability
+        for endpoint_ref in capability.endpoint_refs:
+            capabilities_by_ref.setdefault(endpoint_ref, {})[capability.capability_id] = capability
+    return capabilities_by_id, capabilities_by_ref
+
+
+def _selected_capabilities_by_endpoint(
+    endpoints: Iterable[ImplementedEndpoint],
+    *,
+    capabilities_by_id: Mapping[str, EndpointCapability],
+    capabilities_by_ref: Mapping[EndpointRef, Mapping[str, EndpointCapability]],
+    catalogue_capabilities: Iterable[EndpointCapability],
+) -> tuple[dict[EndpointRef, set[str]], tuple[EndpointCapabilitySelection, ...]]:
+    """Normalise endpoint capability selections for compilation.
+
+    Args:
+        endpoints: Participant-declared implemented endpoints.
+        capabilities_by_id: Catalogue capabilities indexed by id.
+        capabilities_by_ref: Catalogue capabilities indexed by endpoint ref.
+        catalogue_capabilities: Capabilities in catalogue order.
+
+    Returns:
+        Pair of selected capability ids by endpoint ref and trace entries in
+        participant endpoint order, then catalogue capability order.
+
+    Raises:
+        CatalogueError: If the plan spec selects an unknown capability or a
+            capability that does not apply to the declared endpoint.
+    """
+    selected_by_ref: dict[EndpointRef, set[str]] = {}
+    selections: list[EndpointCapabilitySelection] = []
+    capability_order = tuple(catalogue_capabilities)
+    for index, endpoint in enumerate(endpoints):
+        endpoint_ref = EndpointRef(method=endpoint.method, path=endpoint.path)
+        endpoint_capabilities = capabilities_by_ref.get(endpoint_ref, {})
+        explicit_capability_ids = set(endpoint.capability_ids)
+        for capability_id in endpoint.capability_ids:
+            if capability_id not in capabilities_by_id:
+                raise CatalogueError(
+                    f"planSpec.implementedEndpoints[{index}].capabilities contains unknown capability '{capability_id}'"
+                )
+            if capability_id not in endpoint_capabilities:
+                raise CatalogueError(
+                    f"Capability '{capability_id}' does not apply to implemented endpoint "
+                    f"{endpoint.method} {endpoint.path}"
+                )
+
+        normalised_ids = {
+            capability.capability_id
+            for capability in endpoint_capabilities.values()
+            if capability.required or capability.capability_id in explicit_capability_ids
+        }
+        selected_by_ref[endpoint_ref] = normalised_ids
+        for capability in capability_order:
+            if endpoint_ref not in capability.endpoint_refs or capability.capability_id not in normalised_ids:
+                continue
+            selections.append(
+                EndpointCapabilitySelection(
+                    method=endpoint.method,
+                    path=endpoint.path,
+                    capability_id=capability.capability_id,
+                    label=capability.label,
+                    required=capability.required,
+                )
+            )
+    return selected_by_ref, tuple(selections)
+
+
+def _validate_test_case_capability_references(
+    catalogue: TestCatalogue,
+    capabilities_by_id: Mapping[str, EndpointCapability],
+) -> None:
+    """Validate test-case capability references against catalogue definitions.
+
+    Args:
+        catalogue: Catalogue containing the test cases to validate.
+        capabilities_by_id: Catalogue capability definitions indexed by id.
+
+    Raises:
+        CatalogueError: If a test case references an unknown capability or a
+            capability that cannot apply to any endpoint used by the case.
+    """
+    for test_case in catalogue.test_cases:
+        required_capability_ids = test_case.applicability.required_capability_ids
+        if not required_capability_ids:
+            continue
+        if not test_case.applicability.endpoint_refs:
+            raise CatalogueError(
+                f"Catalogue test case '{test_case.test_case_id}' cannot require capabilities without endpoint refs"
+            )
+        endpoint_refs = set(test_case.applicability.endpoint_refs)
+        for capability_id in required_capability_ids:
+            capability = capabilities_by_id.get(capability_id)
+            if capability is None:
+                raise CatalogueError(
+                    f"Catalogue test case '{test_case.test_case_id}' references unknown capability '{capability_id}'"
+                )
+            if endpoint_refs.isdisjoint(capability.endpoint_refs):
+                raise CatalogueError(
+                    f"Catalogue test case '{test_case.test_case_id}' references capability "
+                    f"'{capability_id}' outside its endpoint applicability"
+                )
+
+
 def _implemented_endpoint_refs(endpoints: Iterable[ImplementedEndpoint]) -> set[EndpointRef]:
     """Return exact endpoint references implemented by the participant.
 
@@ -843,6 +1070,7 @@ def _directly_applicable_case_ids(
     catalogue: TestCatalogue,
     spec: TestPlanSpec,
     implemented_refs: set[EndpointRef],
+    selected_capabilities_by_ref: Mapping[EndpointRef, set[str]],
 ) -> tuple[set[str], dict[str, ApplicabilityDecision]]:
     """Select cases directly applicable to the profile and endpoints.
 
@@ -850,6 +1078,8 @@ def _directly_applicable_case_ids(
         catalogue: Catalogue containing candidate test cases.
         spec: Plan spec with profile and endpoint selections.
         implemented_refs: Exact method/path refs implemented by the participant.
+        selected_capabilities_by_ref: Normalised selected capability ids by
+            implemented endpoint ref.
 
     Returns:
         Pair of selected case ids and initial per-case traceability decisions.
@@ -864,10 +1094,8 @@ def _directly_applicable_case_ids(
                 reason=f"not applicable to security profile {spec.security_profile}",
             )
             continue
-        if (
-            not test_case.applicability.endpoint_refs
-            or set(test_case.applicability.endpoint_refs).issubset(implemented_refs)
-        ):
+        endpoint_refs = set(test_case.applicability.endpoint_refs)
+        if not endpoint_refs:
             selected_ids.add(test_case.test_case_id)
             decisions[test_case.test_case_id] = ApplicabilityDecision(
                 test_case_id=test_case.test_case_id,
@@ -875,12 +1103,56 @@ def _directly_applicable_case_ids(
                 reason="applicable to selected profile and implemented endpoints",
             )
             continue
+        if not endpoint_refs.issubset(implemented_refs):
+            decisions[test_case.test_case_id] = ApplicabilityDecision(
+                test_case_id=test_case.test_case_id,
+                selected=False,
+                reason="no matching implemented endpoint",
+            )
+            continue
+        missing_capability_ids = sorted(
+            set(test_case.applicability.required_capability_ids)
+            - _selected_capability_ids_for_refs(endpoint_refs, selected_capabilities_by_ref)
+        )
+        if missing_capability_ids:
+            decisions[test_case.test_case_id] = ApplicabilityDecision(
+                test_case_id=test_case.test_case_id,
+                selected=False,
+                reason=f"required capability not selected: {', '.join(missing_capability_ids)}",
+            )
+            continue
+        reason = (
+            "applicable to selected profile, implemented endpoints, and selected capabilities"
+            if test_case.applicability.required_capability_ids
+            else "applicable to selected profile and implemented endpoints"
+        )
+        selected_ids.add(test_case.test_case_id)
         decisions[test_case.test_case_id] = ApplicabilityDecision(
             test_case_id=test_case.test_case_id,
-            selected=False,
-            reason="no matching implemented endpoint",
+            selected=True,
+            reason=reason,
         )
     return selected_ids, decisions
+
+
+def _selected_capability_ids_for_refs(
+    endpoint_refs: Iterable[EndpointRef],
+    selected_capabilities_by_ref: Mapping[EndpointRef, set[str]],
+) -> set[str]:
+    """Return capability ids selected across endpoint refs.
+
+    Args:
+        endpoint_refs: Endpoint refs used by a catalogue test case.
+        selected_capabilities_by_ref: Normalised selected capability ids by
+            implemented endpoint ref.
+
+    Returns:
+        Set of capability ids selected for any of the supplied endpoint refs.
+    """
+    selected_ids: set[str] = set()
+    for endpoint_ref in endpoint_refs:
+        selected_ids.update(selected_capabilities_by_ref.get(endpoint_ref, set()))
+    return selected_ids
 
 
 def _ordered_case_ids(
@@ -1098,8 +1370,7 @@ def _validate_assertion_overrides(
         assertion_ids = {assertion.assertion_id for assertion in cases_by_id[override.test_case_id].assertions}
         if override.assertion_id not in assertion_ids:
             raise CatalogueError(
-                f"Assertion override targets unknown assertion "
-                f"'{override.test_case_id}.{override.assertion_id}'"
+                f"Assertion override targets unknown assertion '{override.test_case_id}.{override.assertion_id}'"
             )
         reasons.append(
             f"Assertion override supplied for {override.test_case_id}.{override.assertion_id}: {override.reason}"

@@ -39,6 +39,7 @@ def test_ais_catalogue_key_version_and_id_uniqueness() -> None:
 
 @pytest.mark.unit
 def test_compile_selects_ais_cases_for_implemented_endpoints_and_dependencies() -> None:
+    """Select baseline AIS cases and optional date-range coverage together."""
     catalogue = get_ais_accounts_transactions_catalogue()
     compiled = compile_test_plan(
         catalogue,
@@ -53,6 +54,13 @@ def test_compile_selects_ais_cases_for_implemented_endpoints_and_dependencies() 
                     method="GET",
                     path="/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
                     resource_group="Transactions",
+                    capability_ids=("ais.transactions.date-range-filtering",),
+                ),
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/transactions",
+                    resource_group="Transactions",
+                    capability_ids=("ais.transactions.date-range-filtering",),
                 ),
             ),
             runtime_inputs={
@@ -68,7 +76,107 @@ def test_compile_selects_ais_cases_for_implemented_endpoints_and_dependencies() 
     assert selected_ids.index("ais-at-setup-consent") < selected_ids.index("ais-at-setup-token")
     assert "ais-at-accounts-list-200" in selected_ids
     assert "ais-at-account-transactions-200" in selected_ids
+    assert "ais-at-transactions-list-200" in selected_ids
+    selected_capabilities = {
+        selection.capability_id: selection for selection in compiled.traceability.selected_capabilities
+    }
+    assert selected_capabilities["ais.accounts.list.core"].required is True
+    assert selected_capabilities["ais.accounts.transactions.core"].required is True
+    assert selected_capabilities["ais.transactions.list.core"].required is True
+    assert selected_capabilities["ais.transactions.date-range-filtering"].required is False
+
+
+@pytest.mark.unit
+def test_compile_excludes_optional_ais_transaction_cases_when_date_range_capability_is_omitted() -> None:
+    """Exclude implementation-dependent AIS transaction cases without capability selection."""
+    catalogue = get_ais_accounts_transactions_catalogue()
+    compiled = compile_test_plan(
+        catalogue,
+        _spec(
+            endpoints=(
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts",
+                    resource_group="Accounts",
+                ),
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+                    resource_group="Transactions",
+                ),
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/transactions",
+                    resource_group="Transactions",
+                ),
+            ),
+            runtime_inputs={
+                "resourceBaseUrl": "https://rs.example.com",
+                "accessToken": "access-token",
+                "consentedAccountId": "account-123",
+            },
+        ),
+    )
+
+    selected_ids = list(compiled.traceability.generated_test_case_ids)
+    assert "ais-at-accounts-list-200" in selected_ids
+    assert "ais-at-account-transactions-200" not in selected_ids
     assert "ais-at-transactions-list-200" not in selected_ids
+    decisions = {decision.test_case_id: decision for decision in compiled.traceability.applicability_decisions}
+    assert decisions["ais-at-account-transactions-200"].reason == (
+        "required capability not selected: ais.transactions.date-range-filtering"
+    )
+    assert decisions["ais-at-transactions-list-200"].reason == (
+        "required capability not selected: ais.transactions.date-range-filtering"
+    )
+
+
+@pytest.mark.unit
+def test_compile_preserves_ais_generated_ids_and_legacy_provenance() -> None:
+    """Keep generated AIS ids and legacy compliance scopes parity-safe."""
+    catalogue = get_ais_accounts_transactions_catalogue()
+    compiled = compile_test_plan(
+        catalogue,
+        _spec(
+            endpoints=(
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts",
+                    resource_group="Accounts",
+                ),
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+                    resource_group="Transactions",
+                    capability_ids=("ais.transactions.date-range-filtering",),
+                ),
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/transactions",
+                    resource_group="Transactions",
+                    capability_ids=("ais.transactions.date-range-filtering",),
+                ),
+            ),
+            runtime_inputs={
+                "resourceBaseUrl": "https://rs.example.com",
+                "accessToken": "access-token",
+                "consentedAccountId": "account-123",
+            },
+        ),
+    )
+
+    generated_ids = compiled.traceability.generated_test_case_ids
+    assert generated_ids.index("ais-at-setup-discovery") < generated_ids.index("ais-at-setup-token")
+    assert generated_ids.index("ais-at-setup-token") < generated_ids.index("ais-at-account-transactions-200")
+    assert generated_ids.index("ais-at-account-transactions-200") < generated_ids.index("ais-at-transactions-list-200")
+    case_map = {case.test_case_id: case for case in catalogue.test_cases}
+    legacy_source = (
+        "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_3.1_accounts_transactions_fca.json"
+    )
+    account_transactions_scope = case_map["ais-at-account-transactions-200"].compliance_scope
+    assert legacy_source in account_transactions_scope
+    assert any("OB-301-TRA-105000" in scope for scope in account_transactions_scope)
+    assert any("OB-400-TRA-105200" in scope for scope in case_map["ais-at-transactions-list-200"].compliance_scope)
 
 
 @pytest.mark.unit

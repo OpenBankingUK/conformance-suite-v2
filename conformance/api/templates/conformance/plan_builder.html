@@ -14,6 +14,7 @@
             --text: #1b1f24;
             --muted: #667085;
             --accent: #0b6bcb;
+            --accent-soft: #eff6ff;
             --danger: #b42318;
             --warning: #a15c07;
             --success: #1f7a4d;
@@ -151,23 +152,80 @@
             background: #ffffff;
         }
 
-        .endpoint-option {
-            display: grid;
-            grid-template-columns: auto 1fr;
-            gap: 8px 10px;
-            align-items: start;
-            padding: 8px 0;
+        .endpoint-card {
             border-top: 1px solid #eef2f6;
+            padding: 12px 0;
         }
 
-        .endpoint-option:first-of-type {
+        .endpoint-card:first-of-type {
             border-top: 0;
         }
 
-        .endpoint-option input {
+        .endpoint-card[data-selected="true"] {
+            background: linear-gradient(90deg, var(--accent-soft), transparent 80%);
+        }
+
+        .endpoint-option {
+            display: grid;
+            grid-template-columns: auto 1fr auto;
+            gap: 8px 10px;
+            align-items: start;
+            margin: 0;
+        }
+
+        .endpoint-option input,
+        .capability-option input {
             width: auto;
             min-height: auto;
             margin-top: 4px;
+        }
+
+        .endpoint-summary {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .endpoint-capabilities {
+            margin: 10px 0 0 28px;
+            padding: 10px;
+            border-top: 1px solid #eef2f6;
+            border-radius: 6px;
+            background: #fbfcfe;
+        }
+
+        .endpoint-capabilities[hidden] {
+            display: none;
+        }
+
+        .capability-option {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 8px 10px;
+            margin: 8px 0 0;
+            font-weight: 400;
+        }
+
+        .capability-option:first-child {
+            margin-top: 0;
+        }
+
+        .advanced-json {
+            margin-top: 16px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            background: #fbfcfe;
+        }
+
+        .advanced-json summary {
+            cursor: pointer;
+            font-weight: 700;
+        }
+
+        .preview-actions {
+            justify-content: flex-start;
         }
 
         .step-id,
@@ -275,6 +333,24 @@
             border-color: #fecdd3;
             color: var(--danger);
             background: #fff1f2;
+        }
+
+        .badge.optional {
+            border-color: #bfdbfe;
+            color: #175cd3;
+            background: #eff6ff;
+        }
+
+        .badge.success {
+            border-color: #abefc6;
+            color: var(--success);
+            background: #f6fef9;
+        }
+
+        .badge.warning {
+            border-color: #fedf89;
+            color: var(--warning);
+            background: #fffcf5;
         }
 
         .table-wrap {
@@ -409,20 +485,53 @@
                     <fieldset class="field-row" aria-labelledby="endpoint-heading">
                         <h3 id="endpoint-heading">Implemented endpoints</h3>
                         {{ form.implemented_endpoint_ids.errors }}
-                        <p class="helper">Choose the Open Banking operations your implementation supports. Mandatory applicable tests are generated automatically and cannot be deselected here.</p>
+                        {{ form.implemented_endpoint_capabilities.errors }}
+                        <p class="helper">Choose the Open Banking operations your implementation supports. Selected endpoint cards expand to show catalogue-owned implementation capabilities. Required capabilities are locked baseline coverage; optional capabilities declare extra supported behaviour. Generated tests are never selected directly.</p>
                         {% regroup guided_endpoint_options by resource_group as endpoint_groups %}
                         {% for group in endpoint_groups %}
                             <section class="endpoint-group" data-endpoint-group>
                                 <h3>{{ group.grouper }}</h3>
                                 {% for endpoint in group.list %}
-                                    <label class="endpoint-option" data-endpoint-option data-standard="{{ endpoint.standard }}" data-spec-version="{{ endpoint.spec_version }}" data-api="{{ endpoint.api }}">
-                                        <input type="checkbox" name="implemented_endpoint_ids" value="{{ endpoint.id }}" {% if endpoint.selected %}checked{% endif %}>
-                                        <span>
-                                            <strong>{{ endpoint.method }}</strong>
-                                            <span class="path">{{ endpoint.path }}</span>
-                                            {% if endpoint.operation_id %}<br><span class="muted">{{ endpoint.operation_id }}</span>{% endif %}
-                                        </span>
-                                    </label>
+                                    <article class="endpoint-card" data-endpoint-option data-standard="{{ endpoint.standard }}" data-spec-version="{{ endpoint.spec_version }}" data-api="{{ endpoint.api }}" data-selected="{% if endpoint.selected %}true{% else %}false{% endif %}">
+                                        <label class="endpoint-option">
+                                            <input type="checkbox" name="implemented_endpoint_ids" value="{{ endpoint.id }}" {% if endpoint.selected %}checked{% endif %} data-endpoint-checkbox>
+                                            <span>
+                                                <span class="endpoint-summary">
+                                                    <strong>{{ endpoint.method }}</strong>
+                                                    <span class="path">{{ endpoint.path }}</span>
+                                                    {% if endpoint.capabilities %}<span class="badge">{{ endpoint.capabilities|length }} capabilities</span>{% endif %}
+                                                </span>
+                                                {% if endpoint.operation_id %}<br><span class="muted">{{ endpoint.operation_id }}</span>{% endif %}
+                                            </span>
+                                            <span class="muted">{% if endpoint.selected %}selected{% else %}select{% endif %}</span>
+                                        </label>
+                                        {% if endpoint.capabilities %}
+                                            <div class="endpoint-capabilities" data-endpoint-capabilities {% if not endpoint.selected %}hidden{% endif %}>
+                                                {% for capability in endpoint.capabilities %}
+                                                    <label class="capability-option">
+                                                        <input type="checkbox"
+                                                               name="implemented_endpoint_capabilities"
+                                                               value="{{ capability.value }}"
+                                                               {% if capability.selected %}checked{% endif %}
+                                                               {% if capability.required or not endpoint.selected %}disabled{% endif %}
+                                                               data-capability-required="{% if capability.required %}true{% else %}false{% endif %}"
+                                                               data-capability-checkbox>
+                                                        <span>
+                                                            <strong>{{ capability.label }}</strong>
+                                                            {% if capability.required %}
+                                                                <span class="badge required">Required</span>
+                                                                <span class="badge">Locked</span>
+                                                            {% else %}
+                                                                <span class="badge optional">Optional</span>
+                                                            {% endif %}
+                                                            <br><span class="helper">{{ capability.description }}</span>
+                                                            <br><span class="step-id">{{ capability.capability_id }}</span>
+                                                        </span>
+                                                    </label>
+                                                {% endfor %}
+                                            </div>
+                                        {% endif %}
+                                    </article>
                                 {% empty %}
                                     <p class="helper">No endpoints are available for this catalogue yet.</p>
                                 {% endfor %}
@@ -543,20 +652,24 @@
                 </aside>
             </div>
 
-            <div class="grid">
-                <div>
-                    <label for="{{ form.config_json.id_for_label }}">Config JSON</label>
-                    {{ form.config_json.errors }}
-                    <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
-                    <p class="helper">Optional import path. When supplied, this config JSON wins over guided environment fields.</p>
+            <details class="advanced-json">
+                <summary>Advanced JSON import/export</summary>
+                <p class="helper">Use raw JSON only as an escape hatch. Pasted config wins over guided fields. Exported plan specs keep endpoint/capability scope and non-sensitive runtime references only; tokens and other sensitive runtime values are omitted.</p>
+                <div class="grid">
+                    <div>
+                        <label for="{{ form.config_json.id_for_label }}">Config JSON import</label>
+                        {{ form.config_json.errors }}
+                        <textarea id="{{ form.config_json.id_for_label }}" name="config_json" spellcheck="false">{{ form.config_json.value|default_if_none:"" }}</textarea>
+                        <p class="helper">Optional import path for environment, OAuth, signing, TLS, and runtime file references. Keep actual secrets out of this JSON.</p>
+                    </div>
+                    <div>
+                        <label for="{{ form.plan_spec_json.id_for_label }}">Plan spec JSON import</label>
+                        {{ form.plan_spec_json.errors }}
+                        <textarea id="{{ form.plan_spec_json.id_for_label }}" name="plan_spec_json" spellcheck="false">{{ form.plan_spec_json.value|default_if_none:"" }}</textarea>
+                        <p class="helper">Optional import path for a previously exported endpoint/capability plan spec. Exact generated test selection is not available in the normal UI.</p>
+                    </div>
                 </div>
-                <div>
-                    <label for="{{ form.plan_spec_json.id_for_label }}">Plan spec JSON</label>
-                    {{ form.plan_spec_json.errors }}
-                    <textarea id="{{ form.plan_spec_json.id_for_label }}" name="plan_spec_json" spellcheck="false">{{ form.plan_spec_json.value|default_if_none:"" }}</textarea>
-                    <p class="helper">Optional import path for a previously exported endpoint-selected plan spec.</p>
-                </div>
-            </div>
+            </details>
 
             <div class="actions">
                 <button class="secondary" type="submit" formaction="{% url 'plan-preview' %}">Preview</button>
@@ -574,6 +687,7 @@
                 <div class="counts" aria-label="Plan counts">
                     <div class="count"><strong>{{ preview_counts.generated }}</strong><span>Generated tests</span></div>
                     <div class="count"><strong>{{ preview_counts.endpoints }}</strong><span>Implemented endpoints</span></div>
+                    <div class="count"><strong>{{ preview_counts.capabilities }}</strong><span>Selected capabilities</span></div>
                     <div class="count"><strong>{{ preview_counts.mandatory }}</strong><span>Mandatory tests</span></div>
                     <div class="count"><strong>{{ preview_counts.runtime_inputs }}</strong><span>Runtime inputs</span></div>
                 </div>
@@ -587,24 +701,31 @@
                 {% for blocker in preview.launch_blockers %}
                     <div class="message warning">{{ blocker }}</div>
                 {% endfor %}
+                {% for reason in preview.compiled_plan.traceability.non_certifying_reasons %}
+                    <div class="message warning">Non-certifying imported override: {{ reason }}</div>
+                {% endfor %}
 
                 <section class="guide-card" aria-labelledby="generated-plan-spec-heading">
-                    <h3 id="generated-plan-spec-heading">Generated plan spec</h3>
+                    <h3 id="generated-plan-spec-heading">Secret-safe plan spec export</h3>
+                    <p class="helper">This JSON preserves endpoint and capability selections but omits sensitive runtime values such as access tokens.</p>
                     <textarea aria-label="Generated plan spec JSON" spellcheck="false" readonly>{{ preview.generated_plan_spec_json }}</textarea>
                 </section>
 
-                <details class="audit">
-                    <summary>Audit generated tests and traceability</summary>
+                <section class="guide-card" aria-labelledby="generated-tests-heading">
+                    <h3 id="generated-tests-heading">Generated plan preview</h3>
+                    <p class="helper">Read-only generated catalogue coverage. Participants cannot select or deselect individual generated tests from this view.</p>
                     <div class="table-wrap">
                         <table>
                             <thead>
                             <tr>
                                 <th scope="col">Test case</th>
-                                <th scope="col">Role</th>
+                                <th scope="col">Source</th>
+                                <th scope="col">Phase</th>
                                 <th scope="col">Requests</th>
                                 <th scope="col">Assertions</th>
+                                <th scope="col">Runtime/auth</th>
                                 <th scope="col">Certification</th>
-                                <th scope="col">Traceability</th>
+                                <th scope="col">Launch</th>
                             </tr>
                             </thead>
                             <tbody>
@@ -613,24 +734,61 @@
                                     <td>
                                         <strong>{{ row.name }}</strong><br>
                                         <span class="step-id">{{ row.id }}</span>
+                                        <details class="audit">
+                                            <summary>Audit details</summary>
+                                            {% if row.dependencies %}
+                                                <div class="helper">Dependencies:
+                                                    {% for dependency in row.dependencies %}<span class="step-id">{{ dependency }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+                                                </div>
+                                            {% endif %}
+                                            {% if row.request_step_ids %}
+                                                <div class="helper">Requests:
+                                                    {% for request_step_id in row.request_step_ids %}<span class="step-id">{{ request_step_id }}</span>{% if not forloop.last %}, {% endif %}{% endfor %}
+                                                </div>
+                                            {% endif %}
+                                            {% if row.assertion_summaries %}
+                                                <div class="helper">Assertions:
+                                                    {% for assertion in row.assertion_summaries %}<div>{{ assertion }}</div>{% endfor %}
+                                                </div>
+                                            {% endif %}
+                                            {% if row.compliance_scope %}
+                                                <div class="helper">Traceability:
+                                                    {% for scope in row.compliance_scope %}<div class="step-id">{{ scope }}</div>{% endfor %}
+                                                </div>
+                                            {% endif %}
+                                        </details>
                                     </td>
-                                    <td><span class="badge">{{ row.role }}</span></td>
+                                    <td>
+                                        <span class="badge">{{ row.source }}</span><br>
+                                        <span class="muted">{{ row.source_detail }}</span>
+                                    </td>
+                                    <td>
+                                        <span class="badge">{{ row.phase }}</span><br>
+                                        <span class="muted">{{ row.role }}</span>
+                                    </td>
                                     <td>{{ row.request_count }}</td>
                                     <td>{{ row.assertion_count }}</td>
-                                    <td>{% if row.mandatory %}<span class="badge required">Mandatory</span>{% else %}<span class="badge">Optional</span>{% endif %}</td>
                                     <td>
-                                        {% for scope in row.compliance_scope %}
-                                            <div class="step-id">{{ scope }}</div>
+                                        {% for requirement in row.runtime_requirements %}
+                                            <div>
+                                                <span class="step-id">{{ requirement.input_id }}</span>
+                                                {% if requirement.required %}<span class="badge required">Required</span>{% endif %}
+                                                {% if requirement.sensitive %}<span class="badge warning">Sensitive</span>{% endif %}
+                                            </div>
+                                        {% empty %}
+                                            <span class="muted">No runtime input</span>
                                         {% endfor %}
                                     </td>
+                                    <td>{% if row.mandatory %}<span class="badge required">Mandatory</span>{% else %}<span class="badge optional">Optional</span>{% endif %}</td>
+                                    <td><span class="badge success">Ready</span></td>
                                 </tr>
                             {% empty %}
-                                <tr><td colspan="6">No generated tests. Select at least one implemented endpoint.</td></tr>
+                                <tr><td colspan="8">No generated tests. Select at least one implemented endpoint.</td></tr>
                             {% endfor %}
                             </tbody>
                         </table>
                     </div>
-                </details>
+                </section>
             </section>
         {% endif %}
     </form>
@@ -682,12 +840,37 @@
                 if (checkbox) {
                     checkbox.disabled = !enabled;
                 }
+                syncEndpointCard(option, enabled);
             }
             for (const group of document.querySelectorAll('[data-endpoint-group]')) {
                 const visibleOptions = group.querySelectorAll('[data-endpoint-option]:not([hidden])');
                 group.hidden = visibleOptions.length === 0;
             }
         };
+
+        const syncEndpointCard = (card, catalogueEnabled) => {
+            const endpointCheckbox = card.querySelector('[data-endpoint-checkbox]');
+            const capabilityPanel = card.querySelector('[data-endpoint-capabilities]');
+            const selected = Boolean(catalogueEnabled && endpointCheckbox && endpointCheckbox.checked);
+            card.dataset.selected = selected ? 'true' : 'false';
+            if (capabilityPanel) {
+                capabilityPanel.hidden = !selected;
+            }
+            for (const capabilityCheckbox of card.querySelectorAll('[data-capability-checkbox]')) {
+                const required = capabilityCheckbox.dataset.capabilityRequired === 'true';
+                capabilityCheckbox.disabled = !selected || required;
+                if (required) {
+                    capabilityCheckbox.checked = true;
+                }
+            }
+        };
+
+        for (const option of endpointOptions) {
+            const checkbox = option.querySelector('[data-endpoint-checkbox]');
+            if (checkbox) {
+                checkbox.addEventListener('change', () => syncEndpointCard(option, !option.hidden));
+            }
+        }
 
         standardSelect.addEventListener('change', syncApiOptions);
         versionSelect.addEventListener('change', syncApiOptions);

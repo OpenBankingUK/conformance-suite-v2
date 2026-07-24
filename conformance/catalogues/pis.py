@@ -7,6 +7,7 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueRequestStep,
     CatalogueTestCase,
+    EndpointCapability,
     EndpointRef,
     HttpMethod,
     RuntimeInputRequirement,
@@ -113,6 +114,60 @@ _INTERNATIONAL_SCHEDULED_PAYMENT_ID = RuntimeInputRequirement(
     label="International scheduled payment identifier",
 )
 """Payment identifier returned by international-scheduled submission."""
+
+
+PIS_PAYMENT_CAPABILITIES = (
+    EndpointCapability(
+        capability_id="pis.domestic-payment-submission",
+        label="Domestic payment submission",
+        description="Baseline support for submitting domestic payments.",
+        required=True,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-payments"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.domestic-scheduled-payment-submission",
+        label="Domestic scheduled payment submission",
+        description="Baseline support for submitting domestic scheduled payments.",
+        required=True,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-scheduled-payments"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.domestic-standing-order-submission",
+        label="Domestic standing order submission",
+        description="Baseline support for submitting domestic standing orders.",
+        required=True,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-standing-orders"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.international-payment-submission",
+        label="International payment submission",
+        description="Baseline support for submitting international payments.",
+        required=True,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/international-payments"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.international-scheduled-payment-submission",
+        label="International scheduled payment submission",
+        description="Baseline support for submitting international scheduled payments.",
+        required=True,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/international-scheduled-payments"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.domestic-payment-consent.reject-invalid-detached-jws",
+        label="Domestic payment consent invalid detached JWS rejection",
+        description="Optional support for rejecting invalid detached JWS on domestic payment consent creation.",
+        required=False,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-payment-consents"),),
+    ),
+    EndpointCapability(
+        capability_id="pis.domestic-standing-order.reject-invalid-frequency-combination",
+        label="Domestic standing order invalid frequency rejection",
+        description="Optional support for rejecting invalid domestic standing order frequency combinations.",
+        required=False,
+        endpoint_refs=(EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-standing-orders"),),
+    ),
+)
+"""Catalogue-owned implementation features represented by the legacy PIS catalogue."""
 
 
 def _legacy_compliance_scope(
@@ -245,6 +300,7 @@ def _build_case(
     scripts_40: tuple[str, ...],
     legacy_assertion_ids: tuple[str, ...],
     assertions: tuple[CatalogueAssertion, ...],
+    required_capability_ids: tuple[str, ...] = (),
     dependencies: tuple[str, ...] = (),
     mandatory: bool = True,
 ) -> CatalogueTestCase:
@@ -261,6 +317,8 @@ def _build_case(
         scripts_40: Legacy script ids from ``ob_4.0_payment_fca.json``.
         legacy_assertion_ids: Legacy assertion ids represented by this case.
         assertions: Catalogue assertions locked for this case.
+        required_capability_ids: Catalogue capability ids required for this case
+            to apply directly.
         dependencies: Other test-case ids required before this case.
         mandatory: Whether deselection is blocked for applicable plans.
 
@@ -279,6 +337,7 @@ def _build_case(
         applicability=TestCaseApplicability(
             security_profiles=SecurityProfileApplicability(profiles=("all",)),
             endpoint_refs=(EndpointRef(method=method, path=path),),
+            required_capability_ids=required_capability_ids,
         ),
         mandatory=mandatory,
         dependencies=dependencies,
@@ -299,6 +358,7 @@ def _build_case(
 PIS_PAYMENT_CATALOGUE = TestCatalogue(
     key=PIS_PAYMENT_CATALOGUE_KEY,
     catalogue_version=PIS_PAYMENT_CATALOGUE_VERSION,
+    capabilities=PIS_PAYMENT_CAPABILITIES,
     test_cases=(
         _build_case(
             test_case_id="pis-v4-domestic-payment-consent-create",
@@ -366,6 +426,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
                     legacy_assertion_ids=("OB3GLOAssertOn400",),
                 ),
             ),
+            required_capability_ids=("pis.domestic-payment-consent.reject-invalid-detached-jws",),
             mandatory=False,
         ),
         _build_case(
@@ -435,6 +496,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-100600",),
             scripts_40=("OB-400-DOP-100600",),
             legacy_assertion_ids=("OB3GLOAssertOn201",),
+            required_capability_ids=("pis.domestic-payment-submission",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-201",
@@ -529,6 +591,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-101000", "OB-301-DOP-101101"),
             scripts_40=("OB-400-DOP-101000", "OB-400-DOP-101101"),
             legacy_assertion_ids=("OB3GLOAssertOn201",),
+            required_capability_ids=("pis.domestic-scheduled-payment-submission",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-201",
@@ -619,6 +682,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-101401",),
             scripts_40=("OB-400-DOP-101401",),
             legacy_assertion_ids=("OB3GLOAssertOn201",),
+            required_capability_ids=("pis.domestic-standing-order-submission",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-201",
@@ -664,6 +728,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-101400", "OB-301-DOP-1015003"),
             scripts_40=("OB-400-DOP-101400", "OB-400-DOP-101503"),
             legacy_assertion_ids=("OB3GLOAssertOn400",),
+            required_capability_ids=("pis.domestic-standing-order.reject-invalid-frequency-combination",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-400",
@@ -735,6 +800,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-101800",),
             scripts_40=("OB-400-DOP-101800",),
             legacy_assertion_ids=("OB3GLOAssertOn201", "OB3IPAssertInternationalPaymentId"),
+            required_capability_ids=("pis.international-payment-submission",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-201",
@@ -829,6 +895,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             scripts_31=("OB-301-DOP-102200",),
             scripts_40=("OB-400-DOP-102200",),
             legacy_assertion_ids=("OB3GLOAssertOn201", "OB3IPAssertInternationalScheduledPaymentId"),
+            required_capability_ids=("pis.international-scheduled-payment-submission",),
             assertions=(
                 _status_assertion(
                     assertion_id="status-201",

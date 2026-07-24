@@ -8,6 +8,7 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueRequestStep,
     CatalogueTestCase,
+    EndpointCapability,
     EndpointRef,
     HttpMethod,
     RuntimeInputRequirement,
@@ -78,11 +79,16 @@ _COMMON_RESOURCE_RUNTIME_REQUIREMENTS = (_RESOURCE_BASE_URL, _ACCESS_TOKEN)
 _ACCOUNT_RESOURCE_RUNTIME_REQUIREMENTS = (_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID)
 
 
-def _applicability(*endpoint_refs: EndpointRef) -> TestCaseApplicability:
+def _applicability(
+    *endpoint_refs: EndpointRef,
+    required_capability_ids: tuple[str, ...] = (),
+) -> TestCaseApplicability:
     """Build profile and endpoint applicability for imported AIS cases.
 
     Args:
         *endpoint_refs: Endpoints that must be implemented for the case to apply.
+        required_capability_ids: Endpoint capability ids that must be selected
+            before the case becomes directly applicable.
 
     Returns:
         Applicability constrained to legacy FCS FCA profile coverage.
@@ -90,6 +96,7 @@ def _applicability(*endpoint_refs: EndpointRef) -> TestCaseApplicability:
     return TestCaseApplicability(
         security_profiles=_FAPI1_ADVANCED_ONLY,
         endpoint_refs=endpoint_refs,
+        required_capability_ids=required_capability_ids,
     )
 
 
@@ -150,6 +157,7 @@ def _case(
     role: TestCaseRole,
     compliance_scope: tuple[str, ...],
     endpoint_refs: tuple[EndpointRef, ...],
+    required_capability_ids: tuple[str, ...] = (),
     dependencies: tuple[str, ...],
     mandatory: bool,
     request_method: HttpMethod,
@@ -165,6 +173,8 @@ def _case(
         role: Catalogue execution role for the case.
         compliance_scope: Traceability labels and legacy provenance metadata.
         endpoint_refs: Endpoints that make the case directly applicable.
+        required_capability_ids: Endpoint capability ids that must be selected
+            before this case becomes directly applicable.
         dependencies: Other test case ids that must execute first.
         mandatory: Whether direct applicability makes the case non-deselectable.
         request_method: HTTP method represented by this case.
@@ -181,7 +191,7 @@ def _case(
         name=name,
         role=role,
         compliance_scope=compliance_scope,
-        applicability=_applicability(*endpoint_refs),
+        applicability=_applicability(*endpoint_refs, required_capability_ids=required_capability_ids),
         mandatory=mandatory,
         dependencies=dependencies,
         runtime_input_requirements=runtime_requirements,
@@ -201,6 +211,53 @@ def _case(
 AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
     key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
     catalogue_version=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_VERSION,
+    capabilities=(
+        EndpointCapability(
+            capability_id="ais.accounts.list.core",
+            label="AIS accounts list baseline coverage",
+            description="Baseline support for GET /open-banking/v4.0/aisp/accounts.",
+            required=True,
+            endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+        ),
+        EndpointCapability(
+            capability_id="ais.accounts.by-id.core",
+            label="AIS account details baseline coverage",
+            description="Baseline support for GET /open-banking/v4.0/aisp/accounts/{AccountId}.",
+            required=True,
+            endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+        ),
+        EndpointCapability(
+            capability_id="ais.accounts.balances.core",
+            label="AIS account balances baseline coverage",
+            description="Baseline support for GET /open-banking/v4.0/aisp/accounts/{AccountId}/balances.",
+            required=True,
+            endpoint_refs=(_ACCOUNT_BALANCES_ENDPOINT,),
+        ),
+        EndpointCapability(
+            capability_id="ais.accounts.transactions.core",
+            label="AIS account transactions baseline coverage",
+            description="Baseline support for GET /open-banking/v4.0/aisp/accounts/{AccountId}/transactions.",
+            required=True,
+            endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT,),
+        ),
+        EndpointCapability(
+            capability_id="ais.transactions.list.core",
+            label="AIS transactions list baseline coverage",
+            description="Baseline support for GET /open-banking/v4.0/aisp/transactions.",
+            required=True,
+            endpoint_refs=(_TRANSACTIONS_ENDPOINT,),
+        ),
+        EndpointCapability(
+            capability_id="ais.transactions.date-range-filtering",
+            label="AIS transaction date-range filtering",
+            description=(
+                "Optional support for fromBookingDateTime and toBookingDateTime "
+                "transaction filters on account and bulk transaction queries."
+            ),
+            required=False,
+            endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT, _TRANSACTIONS_ENDPOINT),
+        ),
+    ),
     test_cases=(
         _case(
             "ais-at-setup-discovery",
@@ -212,6 +269,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_4.0_accounts_transactions_fca.json",
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=(),
             mandatory=True,
             request_method="GET",
@@ -227,6 +285,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_4.0_accounts_transactions_fca.json",
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-discovery",),
             mandatory=True,
             request_method="POST",
@@ -251,6 +310,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 "legacy-fcs-source:OpenBankingUK/conformance-suite@develop/manifests/ob_4.0_accounts_transactions_fca.json",
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-consent",),
             mandatory=True,
             request_method="POST",
@@ -271,6 +331,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 ),
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=("ais.accounts.list.core",),
             dependencies=("ais-at-setup-token",),
             mandatory=True,
             request_method="GET",
@@ -302,6 +363,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn401",),
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -331,6 +393,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 ),
             ),
             endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+            required_capability_ids=("ais.accounts.by-id.core",),
             dependencies=("ais-at-setup-token",),
             mandatory=True,
             request_method="GET",
@@ -386,6 +449,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertFAPIPlayBack",),
             ),
             endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -410,6 +474,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn404",),
             ),
             endpoint_refs=(_ACCOUNT_BY_ID_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -434,6 +499,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn200", "OB3GLOFAPIHeader"),
             ),
             endpoint_refs=(_ACCOUNT_BALANCES_ENDPOINT,),
+            required_capability_ids=("ais.accounts.balances.core",),
             dependencies=("ais-at-setup-token",),
             mandatory=True,
             request_method="GET",
@@ -459,6 +525,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertFAPIPlayBack",),
             ),
             endpoint_refs=(_ACCOUNT_BALANCES_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -483,6 +550,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn404",),
             ),
             endpoint_refs=(_ACCOUNT_BALANCES_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -512,6 +580,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 ),
             ),
             endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=("ais.accounts.transactions.core", "ais.transactions.date-range-filtering"),
             dependencies=("ais-at-setup-token",),
             mandatory=True,
             request_method="GET",
@@ -549,6 +618,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn401",),
             ),
             endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -573,6 +643,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertFAPIPlayBack",),
             ),
             endpoint_refs=(_ACCOUNT_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -602,6 +673,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 ),
             ),
             endpoint_refs=(_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=("ais.transactions.list.core", "ais.transactions.date-range-filtering"),
             dependencies=("ais-at-setup-token",),
             mandatory=True,
             request_method="GET",
@@ -638,6 +710,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn401",),
             ),
             endpoint_refs=(_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -662,6 +735,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertFAPIPlayBack",),
             ),
             endpoint_refs=(_TRANSACTIONS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",
@@ -686,6 +760,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
                 legacy_assertions=("OB3GLOAssertOn404",),
             ),
             endpoint_refs=(_ACCOUNTS_ENDPOINT,),
+            required_capability_ids=(),
             dependencies=("ais-at-setup-token",),
             mandatory=False,
             request_method="GET",

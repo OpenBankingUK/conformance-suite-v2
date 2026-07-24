@@ -88,10 +88,14 @@ Core modules:
 | `conformance.executor.run_compiled_test_plan` | Executes compiled catalogue plans through the existing hardened HTTP/PSU/signing engine. |
 | `conformance.results` | Serializes catalogue traceability and certification reasons in result JSON. |
 
-The compiler selects test cases by catalogue key, security profile, and exact
-implemented endpoint operations. It includes dependencies automatically, rejects
-mandatory applicable deselection, snapshots runtime inputs without sensitive
-values, and marks assertion overrides as non-certifying.
+The compiler selects test cases by catalogue key, security profile, exact
+implemented endpoint operations, and endpoint-scoped implementation
+capabilities. Required capabilities are baseline endpoint coverage and are
+selected automatically. Optional capabilities only generate implementation-
+dependent cases when the participant declares them under the matching endpoint.
+The compiler includes dependencies automatically, rejects mandatory applicable
+deselection, snapshots runtime inputs without sensitive values, and marks
+assertion overrides as non-certifying.
 
 ## Plan-spec contract
 
@@ -111,7 +115,8 @@ Plan specs use schema version `v1`:
       "method": "GET",
       "path": "/open-banking/v4.0/aisp/accounts",
       "resourceGroup": "Accounts",
-      "operationId": "GetAccounts"
+      "operationId": "GetAccounts",
+      "capabilities": []
     }
   ],
   "runtimeInputs": {
@@ -123,6 +128,14 @@ Plan specs use schema version `v1`:
 
 Sensitive runtime values may be supplied to execution, but the compiler's
 traceability snapshot records only that they were provided.
+
+Keep capability IDs stable and domain-oriented, for example
+`ais.transactions.date-range-filtering`, rather than generated test-case IDs.
+The same `implementedEndpoints[].capabilities` contract is parsed by the UI,
+CLI, and REST API. Exported browser plan specs preserve endpoint/capability
+scope and non-sensitive runtime references only; secret-bearing runtime values
+remain in the current browser submission for launch and must not be written into
+downloadable JSON.
 
 The CLI accepts `config.json --plan-spec plan-spec.json`. The REST API accepts
 `{"config": {...}, "planSpec": {...}}`. The browser plan builder generates the
@@ -151,14 +164,22 @@ The `/plan/` flow keeps the guided UX:
 
 1. Select standard, version, API family, and security profile.
 2. Select implemented endpoints grouped by resource group.
-3. Provide endpoint-derived runtime inputs.
-4. Preview generated test counts, certification status, and runtime prompts.
-5. Expand audit details only when generated test IDs or applicability decisions
-   are needed.
-6. Launch through the shared run lifecycle.
+3. Review inline capability selectors on selected endpoint cards. Required
+   capabilities are checked and locked; optional capabilities are unchecked until
+   selected.
+4. Provide endpoint/capability-derived runtime inputs.
+5. Preview the read-only generated plan with source traceability, phase,
+   mandatory/certification status, runtime/auth requirements, and launch
+   blockers. Exact generated tests must not become participant-selectable.
+6. Expand low-level request/assertion audit details only when generated test IDs
+   or applicability decisions are needed.
+7. Launch through the shared run lifecycle.
 
 Browser posts remain Django-form mediated and CSRF-protected. Run detail and log
-downloads continue to use the same masking boundary as CLI/API execution.
+downloads continue to use the same masking boundary as CLI/API execution. Run
+detail surfaces the top-level catalogue evidence summary from the completed
+result: selected endpoints, selected capabilities, generated test-case counts,
+and non-certifying reasons.
 
 ## Certification validation
 

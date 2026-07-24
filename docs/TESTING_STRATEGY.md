@@ -25,6 +25,7 @@ side effects. Result JSON assertions should cover:
 
 - `summary` totals and statuses.
 - `catalogue` traceability for compiled plan runs.
+- Selected endpoint capabilities and applicability decisions.
 - `certificationEligibility` reasons.
 - Masked request, response, token, signing, and PSU evidence.
 
@@ -35,7 +36,10 @@ for:
 
 - Plan-spec parsing and unknown-field rejection.
 - Duplicate catalogue/test/request/assertion ID detection.
-- Applicability filtering by catalogue key, profile, and implemented endpoint.
+- Applicability filtering by catalogue key, profile, implemented endpoint, and
+  selected endpoint capabilities.
+- Required capability defaulting, optional capability inclusion/exclusion, and
+  invalid capability rejection.
 - Dependency inclusion and deterministic ordering.
 - Runtime input requirement validation and sensitive-value snapshots.
 - Assertion override non-certifying behaviour.
@@ -66,7 +70,13 @@ Regression coverage should prove that replacing public manifests did not weaken:
 - Masking in result JSON, NDJSON logs, browser downloads, and API log snapshots.
 - CLI `--plan-spec` validation and rejection of public `--manifest`.
 - REST `planSpec` validation and rejection of public `manifest`/`deselectStepIds`.
-- Browser implemented-endpoint selection, preview counts, launch, and hidden audit details.
+- Browser implemented-endpoint cards, locked required capabilities, unchecked
+  optional capabilities, capability-triggered runtime prompts, safe plan-spec
+  export, read-only generated plan preview, launch, and collapsed low-level audit
+  details.
+- REST and CLI parity for the same capability-selected plan-spec contract.
+- Run-detail rendering of catalogue traceability evidence from completed result
+  JSON.
 
 Focused run:
 

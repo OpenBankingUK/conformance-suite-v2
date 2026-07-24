@@ -26,6 +26,12 @@ profiles remain applicability filters, not duplicate catalogues.
 
 - Catalogue IDs are new v2 IDs; they do not preserve old suite names.
 - Endpoint applicability is exact HTTP method plus standards path.
+- Endpoint capabilities are new v2 domain IDs; they describe participant
+  implementation scope and are not generated test-case IDs.
+- Required capabilities document baseline endpoint coverage and are selected
+  automatically for implemented endpoints.
+- Optional capabilities document implementation-dependent features, filters,
+  variants, or resource/payment types that only generate tests when selected.
 - Setup, consent, token, and security prerequisites are dependency test cases,
   not participant-selectable suites.
 - Runtime values are represented as catalogue runtime input requirements.
@@ -33,6 +39,22 @@ profiles remain applicability filters, not duplicate catalogues.
   prefixed with `legacy-` or the older CBPII `legacy_` form.
 - Generated results expose the compiled catalogue traceability block instead of
   a legacy `suite` block.
+
+## Capability traceability
+
+Capability selections are recorded in three places:
+
+1. `planSpec.implementedEndpoints[].capabilities` records optional capabilities
+   explicitly declared by the participant. Required baseline capabilities may be
+   omitted because the compiler selects them automatically.
+2. Compiler traceability records `selectedCapabilities` with method, path,
+   capability ID, label, and required/optional status.
+3. Result JSON and run detail surface selected endpoint/capability counts,
+   generated test-case IDs, applicability decisions, runtime input snapshots
+   with sensitive values omitted, and non-certifying reasons.
+
+This preserves legacy FCS parity while replacing suite/test checkbox selection
+with endpoint/capability/config selection.
 
 ## AIS accounts and transactions
 
@@ -104,8 +126,12 @@ The mapping is guarded by tests that assert:
   provenance.
 - Family-specific catalogue tests compile representative endpoint selections and
   retain expected legacy manifest/source traces.
+- Capability tests prove required baseline capabilities are implicit and optional
+  implementation features include or exclude only the intended generated cases.
 - Compiled plan results include top-level `catalogue` traceability and omit the
   removed legacy `suite` block.
+- Browser, REST, CLI, and run-detail tests share the same endpoint/capability
+  plan-spec contract and secret-safe export/evidence expectations.
 
 Any expansion of the catalogue must update this document and the matching
 family-specific catalogue tests in the same change.

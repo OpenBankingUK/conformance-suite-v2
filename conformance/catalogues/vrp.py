@@ -11,6 +11,7 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueRequestStep,
     CatalogueTestCase,
+    EndpointCapability,
     EndpointRef,
     HttpMethod,
     RuntimeInputRequirement,
@@ -74,6 +75,18 @@ _REPEATED_PAYMENT_ID = RuntimeInputRequirement(
     required=False,
 )
 """Runtime identifier for repeated domestic VRP payment resources."""
+
+_VRP_CORE_CAPABILITY = "vrp.core"
+"""Baseline capability for domestic VRP/cVRP endpoint coverage."""
+
+_VRP_FUNDS_CONFIRMATION_CAPABILITY = "vrp.funds-confirmation"
+"""Optional capability for funds-confirmation support on VRP endpoints."""
+
+_CVRP_CORE_CAPABILITY = "cvrp.core"
+"""Baseline capability for domestic cVRP endpoint coverage."""
+
+_CVRP_FUNDS_CONFIRMATION_CAPABILITY = "cvrp.funds-confirmation"
+"""Optional capability for funds-confirmation support on cVRP endpoints."""
 
 _LEGACY_ASSERTIONS: dict[str, tuple[AssertionKind, str, dict[str, JsonValue]]] = {
     "OB3GLOAssertOn200": (
@@ -149,6 +162,8 @@ class _LegacyCaseBlueprint:
         mandatory: Whether the case is mandatory when applicable.
         runtime_input_requirements: Runtime inputs needed for execution.
         assertion_ids: Legacy assertion identifiers attached to the case.
+        requires_funds_confirmation_capability: Whether the case depends on the
+            optional funds-confirmation implementation feature.
         legacy_vrp_sources: Legacy manifest/script references for VRP provenance.
         legacy_cvrp_sources: Legacy manifest/script references for cVRP provenance.
     """
@@ -162,6 +177,7 @@ class _LegacyCaseBlueprint:
     mandatory: bool = True
     runtime_input_requirements: tuple[RuntimeInputRequirement, ...] = ()
     assertion_ids: tuple[str, ...] = ()
+    requires_funds_confirmation_capability: bool = False
     legacy_vrp_sources: tuple[tuple[str, str], ...] = ()
     legacy_cvrp_sources: tuple[tuple[str, str], ...] = ()
 
@@ -231,6 +247,7 @@ _BLUEPRINTS: tuple[_LegacyCaseBlueprint, ...] = (
             (_VRP_V31_MANIFEST, "OB-301-VRP-100650"),
             (_VRP_V40_MANIFEST, "OB-400-VRP-100650"),
         ),
+        requires_funds_confirmation_capability=True,
         legacy_cvrp_sources=((_CVRP_V40_MANIFEST, "OB-400-CVRP-100650"),),
     ),
     _LegacyCaseBlueprint(
@@ -414,6 +431,45 @@ def _build_compliance_scope(family: _CatalogueFamily, blueprint: _LegacyCaseBlue
     )
 
 
+def _build_family_capabilities(family: _CatalogueFamily) -> tuple[EndpointCapability, ...]:
+    """Build endpoint capabilities for one VRP family.
+
+    Args:
+        family: Catalogue family name.
+
+    Returns:
+        Ordered capability definitions for the family.
+    """
+    if family == "vrp":
+        baseline_capability_id = _VRP_CORE_CAPABILITY
+        funds_confirmation_capability_id = _VRP_FUNDS_CONFIRMATION_CAPABILITY
+    else:
+        baseline_capability_id = _CVRP_CORE_CAPABILITY
+        funds_confirmation_capability_id = _CVRP_FUNDS_CONFIRMATION_CAPABILITY
+    endpoint_refs = tuple(EndpointRef(method=blueprint.method, path=blueprint.path) for blueprint in _BLUEPRINTS)
+    return (
+        EndpointCapability(
+            capability_id=baseline_capability_id,
+            label=f"{family.upper()} core coverage",
+            description=f"Baseline domestic {family.upper()} consent and payment endpoint support.",
+            required=True,
+            endpoint_refs=endpoint_refs,
+        ),
+        EndpointCapability(
+            capability_id=funds_confirmation_capability_id,
+            label=f"{family.upper()} funds confirmation support",
+            description=f"Optional domestic {family.upper()} funds-confirmation endpoint support.",
+            required=False,
+            endpoint_refs=(
+                EndpointRef(
+                    method="POST",
+                    path="/domestic-vrp-consents/{consentId}/funds-confirmation",
+                ),
+            ),
+        ),
+    )
+
+
 def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint) -> CatalogueTestCase:
     """Build a family-specific catalogue test case from a legacy blueprint.
 
@@ -425,6 +481,11 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
         A concrete catalogue test case for the chosen family.
     """
     runtime_input_refs = tuple(requirement.input_id for requirement in blueprint.runtime_input_requirements)
+    required_capability_ids = [_VRP_CORE_CAPABILITY] if family == "vrp" else [_CVRP_CORE_CAPABILITY]
+    if blueprint.requires_funds_confirmation_capability:
+        required_capability_ids.append(
+            _VRP_FUNDS_CONFIRMATION_CAPABILITY if family == "vrp" else _CVRP_FUNDS_CONFIRMATION_CAPABILITY
+        )
     return CatalogueTestCase(
         test_case_id=_case_id(family, blueprint.id_suffix),
         name=blueprint.name,
@@ -433,6 +494,7 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
         applicability=TestCaseApplicability(
             security_profiles=SecurityProfileApplicability(profiles=("all",)),
             endpoint_refs=(EndpointRef(method=blueprint.method, path=blueprint.path),),
+            required_capability_ids=tuple(required_capability_ids),
         ),
         mandatory=blueprint.mandatory,
         dependencies=tuple(_case_id(family, suffix) for suffix in blueprint.dependencies),
@@ -466,6 +528,7 @@ VRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
     key=CatalogueKey(standard="open-banking", version="v4.0", api="vrp"),
     catalogue_version=_CATALOGUE_VERSION,
     test_cases=_build_family_cases("vrp"),
+    capabilities=_build_family_capabilities("vrp"),
 )
 """Catalogue mapping legacy OB v3.1/v4.0 VRP FCS coverage into the v2 model."""
 
@@ -473,6 +536,7 @@ CVRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
     key=CatalogueKey(standard="open-banking", version="v4.0", api="cvrp"),
     catalogue_version=_CATALOGUE_VERSION,
     test_cases=_build_family_cases("cvrp"),
+    capabilities=_build_family_capabilities("cvrp"),
 )
 """Catalogue mapping legacy OB v4.0 cVRP FCS coverage into the v2 model."""
 

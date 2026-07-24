@@ -14,8 +14,10 @@ from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import MultiValueDict
 
 from conformance.catalogue import (
+    ApplicabilityDecision,
     CatalogueError,
     CatalogueKey,
+    CatalogueTestCase,
     CompiledTestPlan,
     EndpointRef,
     HttpMethod,
@@ -33,6 +35,9 @@ from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_mo
 
 _RUNTIME_INPUT_PREFIX = "runtime_input__"
 """Prefix used for runtime input names in browser form submissions."""
+
+_CAPABILITY_VALUE_SEPARATOR = "::"
+"""Separator used in endpoint capability checkbox values."""
 
 
 @dataclass(frozen=True)
@@ -53,6 +58,29 @@ class GuidedApiOption:
 
 
 @dataclass(frozen=True)
+class EndpointCapabilityOption:
+    """One endpoint-scoped capability rendered inside an endpoint card.
+
+    Attributes:
+        value: Stable browser checkbox value pairing endpoint and capability.
+        endpoint_id: Endpoint option id that owns the capability.
+        capability_id: Catalogue-owned capability id.
+        label: Human-readable capability label.
+        description: Participant-facing capability explanation.
+        required: Whether the capability is locked baseline endpoint coverage.
+        selected: Whether the capability is currently selected or implied.
+    """
+
+    value: str
+    endpoint_id: str
+    capability_id: str
+    label: str
+    description: str
+    required: bool
+    selected: bool = False
+
+
+@dataclass(frozen=True)
 class CatalogueEndpointOption:
     """One implemented-endpoint option rendered by the browser plan builder.
 
@@ -65,6 +93,7 @@ class CatalogueEndpointOption:
         path: Standards path for the endpoint.
         resource_group: Human-readable grouping label.
         operation_id: Optional operation identifier exported in the plan spec.
+        capabilities: Capability selectors available for this endpoint.
         selected: Whether the submitted form currently selects this endpoint.
     """
 
@@ -76,6 +105,7 @@ class CatalogueEndpointOption:
     path: str
     resource_group: str
     operation_id: str | None
+    capabilities: tuple[EndpointCapabilityOption, ...] = ()
     selected: bool = False
 
 
@@ -104,25 +134,56 @@ class RuntimeInputPrompt:
 
 
 @dataclass(frozen=True)
+class PlanRuntimeRequirement:
+    """Runtime requirement summary shown in the generated plan preview.
+
+    Attributes:
+        input_id: Stable runtime input identifier.
+        label: Human-readable catalogue prompt label.
+        required: Whether the generated case requires the input.
+        sensitive: Whether values for this input are secret-bearing.
+    """
+
+    input_id: str
+    label: str
+    required: bool
+    sensitive: bool
+
+
+@dataclass(frozen=True)
 class PlanTestCaseRow:
-    """Hidden-by-default generated test-case audit row.
+    """Read-only generated test-case preview row.
 
     Attributes:
         id: Catalogue test-case identifier.
         name: Human-readable test-case name.
         role: Execution/compliance role.
+        phase: High-level execution phase derived from the compiled case role.
+        source: Human-readable reason this case was generated.
+        source_detail: Additional endpoint, capability, or dependency context.
         mandatory: Whether the generated case is mandatory for certification.
+        dependencies: Other generated case ids this case depends on.
         request_count: Number of request steps generated for the case.
         assertion_count: Number of locked assertions attached to the case.
+        runtime_requirements: Runtime inputs consumed by the generated case.
+        request_step_ids: Request-step identifiers owned by the case.
+        assertion_summaries: Assertion summaries owned by the case.
         compliance_scope: Traceability labels for standards and legacy coverage.
     """
 
     id: str
     name: str
     role: str
+    phase: str
+    source: str
+    source_detail: str
     mandatory: bool
+    dependencies: tuple[str, ...]
     request_count: int
     assertion_count: int
+    runtime_requirements: tuple[PlanRuntimeRequirement, ...]
+    request_step_ids: tuple[str, ...]
+    assertion_summaries: tuple[str, ...]
     compliance_scope: tuple[str, ...]
 
 
@@ -218,6 +279,8 @@ class PlanBuilderForm(forms.Form):
         guided_signing_client_assertion_subject: Optional assertion subject.
         guided_signing_token_endpoint_auth_method: Optional token endpoint auth method.
         implemented_endpoint_ids: Endpoint ids posted by endpoint checkboxes.
+        implemented_endpoint_capabilities: Endpoint capability checkbox values
+            posted for optional implementation features.
         preview: Typed preview built after successful form validation.
         generated_config_json: Optional generated config JSON emitted from guided fields.
         runtime_input_prompts: Runtime prompts derived from current endpoint selection.
@@ -258,6 +321,7 @@ class PlanBuilderForm(forms.Form):
         required=False,
     )
     implemented_endpoint_ids: EndpointIdListField = EndpointIdListField(required=False)
+    implemented_endpoint_capabilities: EndpointIdListField = EndpointIdListField(required=False)
 
     preview: PlanPreview | None = None
     generated_config_json: str | None = None
@@ -357,10 +421,18 @@ class PlanBuilderForm(forms.Form):
 
         selected_catalogue = _catalogue_from_cleaned_data(cleaned_data)
         selected_endpoint_ids = _cleaned_endpoint_ids(cleaned_data.get("implemented_endpoint_ids"))
-        endpoint_options = _endpoint_options_for_catalogue(selected_catalogue, selected_endpoint_ids)
-        self.runtime_input_prompts = _runtime_prompts_for_endpoint_ids(
+        selected_capability_values = _cleaned_endpoint_ids(cleaned_data.get("implemented_endpoint_capabilities"))
+        security_profile = _security_profile_from_cleaned_data(cleaned_data)
+        endpoint_options = _endpoint_options_for_catalogue(
+            selected_catalogue,
+            selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+        )
+        self.runtime_input_prompts = _runtime_prompts_for_endpoint_selection(
             catalogue=selected_catalogue,
             selected_endpoint_ids=selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+            security_profile=security_profile,
             data=self.data if self.is_bound else {},
         )
 
@@ -370,6 +442,7 @@ class PlanBuilderForm(forms.Form):
                 catalogue=selected_catalogue,
                 endpoint_options=endpoint_options,
                 selected_endpoint_ids=selected_endpoint_ids,
+                selected_capability_values=selected_capability_values,
             )
             compiled_catalogue = resolve_catalogue(plan_spec.catalogue_key)
             compiled_plan = compile_test_plan(compiled_catalogue, plan_spec)
@@ -379,7 +452,12 @@ class PlanBuilderForm(forms.Form):
             raise forms.ValidationError(f"Plan validation failed: {error}", code="invalid_plan") from error
 
         selected_endpoint_ids = tuple(_endpoint_id(endpoint) for endpoint in plan_spec.implemented_endpoints)
-        endpoint_options = _endpoint_options_for_catalogue(compiled_catalogue, selected_endpoint_ids)
+        selected_capability_values = _capability_values_from_plan_spec(plan_spec)
+        endpoint_options = _endpoint_options_for_catalogue(
+            compiled_catalogue,
+            selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+        )
         self.runtime_input_prompts = _runtime_prompts_from_trace(compiled_plan, data=self.data if self.is_bound else {})
         self.preview = _build_preview(
             config=config,
@@ -446,6 +524,7 @@ class PlanBuilderForm(forms.Form):
         catalogue: TestCatalogue,
         endpoint_options: tuple[CatalogueEndpointOption, ...],
         selected_endpoint_ids: tuple[str, ...],
+        selected_capability_values: tuple[str, ...],
     ) -> TestPlanSpec:
         """Read an imported plan spec or build one from guided endpoint fields.
 
@@ -454,6 +533,8 @@ class PlanBuilderForm(forms.Form):
             catalogue: Catalogue selected by guided standard/version/API fields.
             endpoint_options: Endpoint options available for ``catalogue``.
             selected_endpoint_ids: Endpoint option ids submitted by the form.
+            selected_capability_values: Endpoint capability checkbox values
+                submitted by the form.
 
         Returns:
             Parsed plan spec.
@@ -472,6 +553,10 @@ class PlanBuilderForm(forms.Form):
         if unknown_ids:
             unknown_list = ", ".join(sorted(unknown_ids))
             raise forms.ValidationError(f"Unknown implemented endpoint id(s): {unknown_list}", code="invalid_endpoint")
+        _validate_selected_capability_values(
+            endpoint_options=endpoint_options,
+            selected_capability_values=selected_capability_values,
+        )
 
         raw_plan_spec = _guided_plan_spec_object(
             catalogue=catalogue,
@@ -568,13 +653,24 @@ def guided_flow_context(form: PlanBuilderForm) -> dict[str, object]:
         options, runtime prompts, and generated JSON previews.
     """
     selected_catalogue = _selected_catalogue_for_form(form)
-    selected_endpoint_ids = tuple(_raw_form_values(form, "implemented_endpoint_ids"))
-    endpoint_options = _endpoint_options_for_catalogue(selected_catalogue, selected_endpoint_ids)
+    if form.preview is None:
+        selected_endpoint_ids = tuple(_raw_form_values(form, "implemented_endpoint_ids"))
+        selected_capability_values = tuple(_raw_form_values(form, "implemented_endpoint_capabilities"))
+    else:
+        selected_endpoint_ids = form.preview.selected_endpoint_ids
+        selected_capability_values = _capability_values_from_plan_spec(form.preview.plan_spec)
+    endpoint_options = _endpoint_options_for_catalogue(
+        selected_catalogue,
+        selected_endpoint_ids,
+        selected_capability_values=selected_capability_values,
+    )
     prompts = form.runtime_input_prompts
     if not prompts:
-        prompts = _runtime_prompts_for_endpoint_ids(
+        prompts = _runtime_prompts_for_endpoint_selection(
             catalogue=selected_catalogue,
             selected_endpoint_ids=selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+            security_profile=_security_profile_from_raw_form(form),
             data=form.data if form.is_bound else {},
         )
     return {
@@ -638,18 +734,7 @@ def _build_preview(
     Returns:
         Complete plan preview for rendering and launch.
     """
-    rows = tuple(
-        PlanTestCaseRow(
-            id=test_case.test_case_id,
-            name=test_case.name,
-            role=test_case.role,
-            mandatory=test_case.mandatory,
-            request_count=len(test_case.request_steps),
-            assertion_count=len(test_case.assertions),
-            compliance_scope=test_case.compliance_scope,
-        )
-        for test_case in compiled_plan.test_cases
-    )
+    rows = _build_plan_rows(compiled_plan)
     launch_blockers = _launch_blockers(compiled_plan)
     return PlanPreview(
         config=config,
@@ -744,20 +829,41 @@ def _security_profile_from_cleaned_data(cleaned_data: dict[str, object]) -> Secu
     return cast(SecurityProfile, value if value in {"fapi1-advanced", "fapi2"} else "fapi1-advanced")
 
 
+def _security_profile_from_raw_form(form: forms.Form) -> SecurityProfile:
+    """Return the selected security profile from raw form data.
+
+    Args:
+        form: Bound or unbound form whose selector should be inspected.
+
+    Returns:
+        Selected profile, defaulting to ``"fapi1-advanced"``.
+    """
+    value = _raw_form_value(form, "guided_security_profile")
+    return cast(SecurityProfile, value if value in {"fapi1-advanced", "fapi2"} else "fapi1-advanced")
+
+
 def _endpoint_options_for_catalogue(
     catalogue: TestCatalogue,
     selected_endpoint_ids: Iterable[str],
+    *,
+    selected_capability_values: Iterable[str] = (),
 ) -> tuple[CatalogueEndpointOption, ...]:
     """Build endpoint options for a catalogue.
 
     Args:
         catalogue: Catalogue whose endpoint applicability refs should be shown.
         selected_endpoint_ids: Endpoint option ids currently selected.
+        selected_capability_values: Endpoint capability checkbox values
+            currently selected.
 
     Returns:
         De-duplicated endpoint options grouped by resource label then path.
     """
     selected = set(selected_endpoint_ids)
+    selected_capability_ids = _selected_capability_values_by_endpoint(
+        selected_capability_values,
+        strict=False,
+    )
     refs: dict[EndpointRef, CatalogueEndpointOption] = {}
     for test_case in catalogue.test_cases:
         for endpoint_ref in test_case.applicability.endpoint_refs:
@@ -770,6 +876,7 @@ def _endpoint_options_for_catalogue(
                 operation_id=_operation_id(catalogue.key.api, endpoint_ref),
             )
             option_id = _endpoint_id(endpoint)
+            selected_ids_for_endpoint = selected_capability_ids.get(option_id, set())
             refs[endpoint_ref] = CatalogueEndpointOption(
                 id=option_id,
                 standard=catalogue.key.standard,
@@ -779,44 +886,169 @@ def _endpoint_options_for_catalogue(
                 path=endpoint.path,
                 resource_group=endpoint.resource_group,
                 operation_id=endpoint.operation_id,
+                capabilities=_capability_options_for_endpoint(
+                    catalogue=catalogue,
+                    endpoint_ref=endpoint_ref,
+                    endpoint_id=option_id,
+                    selected_capability_ids=selected_ids_for_endpoint,
+                ),
                 selected=option_id in selected,
             )
     return tuple(sorted(refs.values(), key=lambda option: (option.resource_group, option.path, option.method)))
 
 
-def _runtime_prompts_for_endpoint_ids(
+def _capability_options_for_endpoint(
+    *,
+    catalogue: TestCatalogue,
+    endpoint_ref: EndpointRef,
+    endpoint_id: str,
+    selected_capability_ids: set[str],
+) -> tuple[EndpointCapabilityOption, ...]:
+    """Build capability options for one endpoint option.
+
+    Args:
+        catalogue: Catalogue containing capability definitions.
+        endpoint_ref: Endpoint reference owning the rendered options.
+        endpoint_id: Browser endpoint option id.
+        selected_capability_ids: Explicitly submitted capability ids for the
+            endpoint.
+
+    Returns:
+        Capability options in catalogue definition order.
+    """
+    return tuple(
+        EndpointCapabilityOption(
+            value=_capability_selection_value(endpoint_id=endpoint_id, capability_id=capability.capability_id),
+            endpoint_id=endpoint_id,
+            capability_id=capability.capability_id,
+            label=capability.label,
+            description=capability.description,
+            required=capability.required,
+            selected=capability.required or capability.capability_id in selected_capability_ids,
+        )
+        for capability in catalogue.capabilities
+        if endpoint_ref in capability.endpoint_refs
+    )
+
+
+def _runtime_prompts_for_endpoint_selection(
     *,
     catalogue: TestCatalogue,
     selected_endpoint_ids: Iterable[str],
+    selected_capability_values: Iterable[str],
+    security_profile: SecurityProfile,
     data: Mapping[str, object],
 ) -> tuple[RuntimeInputPrompt, ...]:
-    """Build runtime prompts for currently selected endpoint ids.
+    """Build runtime prompts for currently selected endpoints and capabilities.
 
     Args:
         catalogue: Catalogue selected by the form.
         selected_endpoint_ids: Endpoint option ids selected by the participant.
+        selected_capability_values: Capability checkbox values selected by the
+            participant.
+        security_profile: Security profile selected by the participant.
         data: Raw form data used to redisplay submitted runtime values.
 
     Returns:
         De-duplicated runtime input prompts in catalogue order.
     """
-    selected_refs = {
-        EndpointRef(method=cast(HttpMethod, option.method), path=option.path)
-        for option in _endpoint_options_for_catalogue(catalogue, selected_endpoint_ids)
-        if option.id in set(selected_endpoint_ids)
-    }
+    selected_ids = set(selected_endpoint_ids)
+    selected_options = _endpoint_options_for_catalogue(
+        catalogue,
+        selected_ids,
+        selected_capability_values=selected_capability_values,
+    )
+    selected_refs = _selected_refs_from_options(selected_options, selected_ids=selected_ids)
+    selected_capabilities_by_ref = _selected_capability_ids_by_ref(selected_options, selected_ids=selected_ids)
     requirements: list[RuntimeInputRequirement] = []
-    seen: set[str] = set()
+    seen: dict[str, RuntimeInputRequirement] = {}
     for test_case in catalogue.test_cases:
+        if not test_case.applicability.security_profiles.applies_to(security_profile):
+            continue
         endpoint_refs = set(test_case.applicability.endpoint_refs)
         if endpoint_refs and not endpoint_refs.issubset(selected_refs):
             continue
+        if not _test_case_capabilities_are_selected(test_case, selected_capabilities_by_ref):
+            continue
         for requirement in test_case.runtime_input_requirements:
-            if requirement.input_id in seen:
+            existing = seen.get(requirement.input_id)
+            if existing is None:
+                seen[requirement.input_id] = requirement
+                requirements.append(requirement)
                 continue
-            seen.add(requirement.input_id)
-            requirements.append(requirement)
+            if existing != requirement:
+                raise forms.ValidationError(
+                    f"Runtime input '{requirement.input_id}' has conflicting catalogue requirements",
+                    code="invalid_runtime_input",
+                )
     return tuple(_runtime_prompt(requirement, data=data) for requirement in requirements)
+
+
+def _selected_refs_from_options(
+    endpoint_options: Iterable[CatalogueEndpointOption],
+    *,
+    selected_ids: set[str],
+) -> set[EndpointRef]:
+    """Return selected endpoint refs from rendered endpoint options.
+
+    Args:
+        endpoint_options: Endpoint options built for the current catalogue.
+        selected_ids: Selected endpoint option ids.
+
+    Returns:
+        Exact endpoint refs selected by the participant.
+    """
+    return {
+        EndpointRef(method=cast(HttpMethod, option.method), path=option.path)
+        for option in endpoint_options
+        if option.id in selected_ids
+    }
+
+
+def _selected_capability_ids_by_ref(
+    endpoint_options: Iterable[CatalogueEndpointOption],
+    *,
+    selected_ids: set[str],
+) -> dict[EndpointRef, set[str]]:
+    """Return selected capability ids keyed by endpoint ref.
+
+    Args:
+        endpoint_options: Endpoint options with capability selection state.
+        selected_ids: Selected endpoint option ids.
+
+    Returns:
+        Selected required and optional capability ids by endpoint reference.
+    """
+    selected: dict[EndpointRef, set[str]] = {}
+    for option in endpoint_options:
+        if option.id not in selected_ids:
+            continue
+        endpoint_ref = EndpointRef(method=cast(HttpMethod, option.method), path=option.path)
+        selected[endpoint_ref] = {capability.capability_id for capability in option.capabilities if capability.selected}
+    return selected
+
+
+def _test_case_capabilities_are_selected(
+    test_case: CatalogueTestCase,
+    selected_capabilities_by_ref: Mapping[EndpointRef, set[str]],
+) -> bool:
+    """Return whether a catalogue test case's required capabilities are selected.
+
+    Args:
+        test_case: Catalogue test case being evaluated.
+        selected_capabilities_by_ref: Selected capabilities by endpoint ref.
+
+    Returns:
+        True when every required capability is selected for at least one of the
+        test case's endpoint refs.
+    """
+    required_ids = set(test_case.applicability.required_capability_ids)
+    if not required_ids:
+        return True
+    selected_ids: set[str] = set()
+    for endpoint_ref in test_case.applicability.endpoint_refs:
+        selected_ids.update(selected_capabilities_by_ref.get(endpoint_ref, set()))
+    return required_ids.issubset(selected_ids)
 
 
 def _runtime_prompts_from_trace(
@@ -990,6 +1222,17 @@ def _guided_plan_spec_object(
                 "method": option.method,
                 "path": option.path,
                 "resourceGroup": option.resource_group,
+                **(
+                    {
+                        "capabilities": [
+                            capability.capability_id
+                            for capability in option.capabilities
+                            if capability.selected and not capability.required
+                        ]
+                    }
+                    if any(capability.selected and not capability.required for capability in option.capabilities)
+                    else {}
+                ),
                 **({"operationId": option.operation_id} if option.operation_id is not None else {}),
             }
             for option in endpoint_options
@@ -1022,6 +1265,7 @@ def _plan_spec_to_json_object(plan_spec: TestPlanSpec, *, compiled_plan: Compile
                 "method": endpoint.method,
                 "path": endpoint.path,
                 "resourceGroup": endpoint.resource_group,
+                **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
                 **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
             }
             for endpoint in plan_spec.implemented_endpoints
@@ -1049,6 +1293,114 @@ def _plan_spec_to_json_object(plan_spec: TestPlanSpec, *, compiled_plan: Compile
     }
 
 
+def _build_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow, ...]:
+    """Build rich read-only preview rows for generated catalogue cases.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to render.
+
+    Returns:
+        Template-ready generated plan rows in execution order.
+    """
+    decisions = {decision.test_case_id: decision for decision in compiled_plan.traceability.applicability_decisions}
+    selected_capabilities = _selected_capability_labels_by_id(compiled_plan)
+    rows: list[PlanTestCaseRow] = []
+    for test_case in compiled_plan.test_cases:
+        source, source_detail = _test_case_source(
+            test_case,
+            decisions[test_case.test_case_id],
+            selected_capabilities,
+        )
+        rows.append(
+            PlanTestCaseRow(
+                id=test_case.test_case_id,
+                name=test_case.name,
+                role=test_case.role,
+                phase=_test_case_phase(test_case),
+                source=source,
+                source_detail=source_detail,
+                mandatory=test_case.mandatory,
+                dependencies=test_case.dependencies,
+                request_count=len(test_case.request_steps),
+                assertion_count=len(test_case.assertions),
+                runtime_requirements=tuple(
+                    PlanRuntimeRequirement(
+                        input_id=requirement.input_id,
+                        label=requirement.label,
+                        required=requirement.required,
+                        sensitive=requirement.sensitive,
+                    )
+                    for requirement in test_case.runtime_input_requirements
+                ),
+                request_step_ids=tuple(request_step.step_id for request_step in test_case.request_steps),
+                assertion_summaries=tuple(assertion.description for assertion in test_case.assertions),
+                compliance_scope=test_case.compliance_scope,
+            )
+        )
+    return tuple(rows)
+
+
+def _selected_capability_labels_by_id(compiled_plan: CompiledTestPlan) -> dict[str, tuple[str, bool]]:
+    """Return selected capability labels and required flags by capability id.
+
+    Args:
+        compiled_plan: Compiled plan whose traceability carries capability selections.
+
+    Returns:
+        Mapping from capability id to display label and required flag.
+    """
+    return {
+        capability.capability_id: (capability.label, capability.required)
+        for capability in compiled_plan.traceability.selected_capabilities
+    }
+
+
+def _test_case_source(
+    test_case: CatalogueTestCase,
+    decision: ApplicabilityDecision,
+    selected_capabilities: Mapping[str, tuple[str, bool]],
+) -> tuple[str, str]:
+    """Describe why a generated test case appears in the compiled preview.
+
+    Args:
+        test_case: Generated catalogue test case.
+        decision: Compiler traceability decision for the test case.
+        selected_capabilities: Selected capability labels and required flags by id.
+
+    Returns:
+        Pair of short source label and detailed source context.
+    """
+    if decision.dependency_of and decision.reason == "included as dependency":
+        return "Automatic dependency", f"Required by {', '.join(decision.dependency_of)}"
+    if not test_case.applicability.endpoint_refs:
+        if test_case.role in {"setup", "token", "consent"}:
+            return "Setup coverage", "Generated automatically for the selected security profile"
+        if test_case.role == "security":
+            return "Security coverage", "Generated automatically for the selected security profile"
+        return "Catalogue coverage", "Generated automatically for the selected security profile"
+    if test_case.applicability.required_capability_ids:
+        labels = [
+            selected_capabilities.get(capability_id, (capability_id, False))
+            for capability_id in test_case.applicability.required_capability_ids
+        ]
+        source = "Required capability" if all(required for _, required in labels) else "Selected capability"
+        return source, ", ".join(label for label, _ in labels)
+    endpoints = ", ".join(f"{endpoint.method} {endpoint.path}" for endpoint in test_case.applicability.endpoint_refs)
+    return "Selected endpoint", endpoints
+
+
+def _test_case_phase(test_case: CatalogueTestCase) -> str:
+    """Return the preview phase for a generated catalogue test case.
+
+    Args:
+        test_case: Generated catalogue test case.
+
+    Returns:
+        ``"setup"`` for setup/security/token cases, otherwise ``"execution"``.
+    """
+    return "setup" if test_case.role in {"setup", "security", "token"} else "execution"
+
+
 def _exportable_runtime_inputs(plan_spec: TestPlanSpec, *, compiled_plan: CompiledTestPlan) -> JsonObject:
     """Return non-sensitive runtime inputs for plan-spec export.
 
@@ -1065,6 +1417,110 @@ def _exportable_runtime_inputs(plan_spec: TestPlanSpec, *, compiled_plan: Compil
     return {
         input_id: value for input_id, value in plan_spec.runtime_inputs.items() if input_id not in sensitive_input_ids
     }
+
+
+def _capability_selection_value(*, endpoint_id: str, capability_id: str) -> str:
+    """Return the form value for an endpoint capability checkbox.
+
+    Args:
+        endpoint_id: Endpoint option id owning the capability.
+        capability_id: Catalogue capability id selected under the endpoint.
+
+    Returns:
+        Stable compound checkbox value.
+    """
+    return f"{endpoint_id}{_CAPABILITY_VALUE_SEPARATOR}{capability_id}"
+
+
+def _capability_values_from_plan_spec(plan_spec: TestPlanSpec) -> tuple[str, ...]:
+    """Return endpoint capability checkbox values selected by a plan spec.
+
+    Args:
+        plan_spec: Parsed plan spec whose endpoint capability declarations
+            should be reflected in the guided UI.
+
+    Returns:
+        Compound endpoint/capability checkbox values in plan-spec order.
+    """
+    values: list[str] = []
+    for endpoint in plan_spec.implemented_endpoints:
+        endpoint_id = _endpoint_id(endpoint)
+        values.extend(
+            _capability_selection_value(endpoint_id=endpoint_id, capability_id=capability_id)
+            for capability_id in endpoint.capability_ids
+        )
+    return tuple(values)
+
+
+def _selected_capability_values_by_endpoint(
+    values: Iterable[str],
+    *,
+    strict: bool,
+) -> dict[str, set[str]]:
+    """Decode selected capability values into endpoint-scoped ids.
+
+    Args:
+        values: Compound endpoint/capability checkbox values.
+        strict: Whether malformed values should raise a form validation error.
+
+    Returns:
+        Mapping of endpoint option ids to selected capability ids.
+
+    Raises:
+        ValidationError: If ``strict`` is true and a submitted value is malformed.
+    """
+    selected: dict[str, set[str]] = {}
+    for value in values:
+        if _CAPABILITY_VALUE_SEPARATOR not in value:
+            if strict:
+                raise forms.ValidationError("Endpoint capability values are malformed", code="invalid_capability")
+            continue
+        endpoint_id, capability_id = value.split(_CAPABILITY_VALUE_SEPARATOR, maxsplit=1)
+        if not endpoint_id or not capability_id:
+            if strict:
+                raise forms.ValidationError("Endpoint capability values are malformed", code="invalid_capability")
+            continue
+        selected.setdefault(endpoint_id, set()).add(capability_id)
+    return selected
+
+
+def _validate_selected_capability_values(
+    *,
+    endpoint_options: tuple[CatalogueEndpointOption, ...],
+    selected_capability_values: tuple[str, ...],
+) -> None:
+    """Validate selected capability checkbox values against rendered options.
+
+    Args:
+        endpoint_options: Endpoint options available for the selected catalogue.
+        selected_capability_values: Submitted endpoint capability checkbox values.
+
+    Raises:
+        ValidationError: If a capability belongs to an unknown endpoint or is not
+            available on the submitted endpoint.
+    """
+    selected_by_endpoint = _selected_capability_values_by_endpoint(selected_capability_values, strict=True)
+    options_by_id = {option.id: option for option in endpoint_options}
+    for endpoint_id, capability_ids in selected_by_endpoint.items():
+        option = options_by_id.get(endpoint_id)
+        if option is None:
+            raise forms.ValidationError(
+                f"Unknown endpoint capability endpoint id: {endpoint_id}",
+                code="invalid_capability",
+            )
+        if not option.selected:
+            raise forms.ValidationError(
+                f"Capability selected for unselected endpoint: {option.method} {option.path}",
+                code="invalid_capability",
+            )
+        available_ids = {capability.capability_id for capability in option.capabilities}
+        unknown_ids = sorted(capability_ids - available_ids)
+        if unknown_ids:
+            unknown_list = ", ".join(unknown_ids)
+            raise forms.ValidationError(
+                f"Unknown capability id(s) for {option.method} {option.path}: {unknown_list}",
+                code="invalid_capability",
+            )
 
 
 def _cleaned_endpoint_ids(value: object) -> tuple[str, ...]:

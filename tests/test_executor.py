@@ -20,7 +20,7 @@ from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.context import ExecutionContext, RequestRecord, ResponseRecord, RuntimeConfig, record_step
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
 from conformance.masking import MASKED_VALUE
 from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
@@ -2846,7 +2846,8 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
     assert result.status == "passed"
     result_json = result.to_json_object()
     assert "suite" not in result_json
-    assert result_json["catalogue"]["generatedTestCaseIds"] == ["ais-accounts-list"]
+    catalogue_evidence = cast(JsonObject, result_json["catalogue"])
+    assert catalogue_evidence["generatedTestCaseIds"] == ["ais-accounts-list"]
     details = cast("dict[str, Any]", result.steps[0].details)
     assert details["catalogue"] == {
         "testCaseId": "ais-accounts-list",

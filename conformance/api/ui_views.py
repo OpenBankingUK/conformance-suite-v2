@@ -297,6 +297,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "log_event_count": _log_event_count(record),
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
+        "catalogue_trace_summary": _catalogue_trace_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
         "step_progress": step_progress,
         "step_progress_counts": _step_progress_counts(step_progress),
@@ -957,6 +958,39 @@ def _plan_summary(result: JsonObject | None) -> JsonObject | None:
     return None
 
 
+def _catalogue_trace_summary(result: JsonObject | None) -> dict[str, object] | None:
+    """Extract compact catalogue traceability fields from completed result JSON.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        Summary fields for run-detail rendering, or ``None`` when the result
+        does not contain compiled catalogue evidence.
+    """
+    if result is None:
+        return None
+    catalogue = result.get("catalogue")
+    if not isinstance(catalogue, dict):
+        return None
+    generated_cases = catalogue.get("generatedTestCaseIds")
+    selected_endpoints = catalogue.get("selectedEndpoints")
+    selected_capabilities = catalogue.get("selectedCapabilities")
+    non_certifying_reasons = catalogue.get("nonCertifyingReasons")
+    return {
+        "standard": catalogue.get("standard") if isinstance(catalogue.get("standard"), str) else "-",
+        "version": catalogue.get("version") if isinstance(catalogue.get("version"), str) else "-",
+        "api": catalogue.get("api") if isinstance(catalogue.get("api"), str) else "-",
+        "catalogueVersion": (
+            catalogue.get("catalogueVersion") if isinstance(catalogue.get("catalogueVersion"), str) else "-"
+        ),
+        "generatedCount": len(generated_cases) if isinstance(generated_cases, list) else 0,
+        "endpointCount": len(selected_endpoints) if isinstance(selected_endpoints, list) else 0,
+        "capabilityCount": len(selected_capabilities) if isinstance(selected_capabilities, list) else 0,
+        "nonCertifyingReasons": non_certifying_reasons if isinstance(non_certifying_reasons, list) else [],
+    }
+
+
 def _certification_eligibility(result: JsonObject | None) -> str | None:
     """Extract a certification eligibility label from completed result JSON.
 
@@ -997,6 +1031,7 @@ def preview_step_counts(preview: PlanPreview) -> dict[str, int]:
         "total": len(preview.rows),
         "generated": len(preview.rows),
         "endpoints": len(preview.selected_endpoint_ids),
+        "capabilities": len(preview.compiled_plan.traceability.selected_capabilities),
         "runtime_inputs": len(preview.runtime_input_prompts),
         "optional": sum(1 for row in preview.rows if not row.mandatory),
         "mandatory": sum(1 for row in preview.rows if row.mandatory),

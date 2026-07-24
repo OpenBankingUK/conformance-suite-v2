@@ -12,12 +12,17 @@ The supported workflow is:
 1. Open the browser plan builder at `/plan/`.
 2. Select the standard, version, API family, and security profile.
 3. Tick the implemented endpoints grouped by resource area.
-4. Provide the runtime values required by those endpoints.
-5. Preview the generated catalogue plan, then launch the run.
+4. Review the endpoint capabilities shown inline on each selected endpoint card.
+   Required capabilities are checked and locked; optional capabilities are
+   unchecked until the participant declares that behaviour as implemented.
+5. Provide the runtime values required by the selected endpoints and
+   capabilities.
+6. Preview the generated catalogue plan, then launch the run.
 
-The UI shows generated test counts and certification status by default. The
-generated tests and applicability decisions are available in the audit details,
-but are hidden by default so the participant journey stays endpoint-led.
+The UI shows generated tests, counts, source traceability, runtime/auth
+requirements, launch blockers, and certification status after preview. Generated
+tests are read-only: participants cannot select exact generated tests. Lower-level
+request and assertion details stay collapsed under audit details.
 
 ## CLI plan-spec execution
 
@@ -29,8 +34,8 @@ uv run python main.py path/to/config.json --plan-spec path/to/plan-spec.json
 
 The config carries environment, TLS, OAuth, signing, output, and optional
 approved-release-policy settings. The plan spec carries the catalogue key,
-security profile, implemented endpoints, runtime input values or references,
-and any assertion overrides.
+security profile, implemented endpoints, selected endpoint capabilities, runtime
+input values or references, and any assertion overrides.
 
 ```json
 {
@@ -45,7 +50,8 @@ and any assertion overrides.
     {
       "method": "GET",
       "path": "/open-banking/v4.0/aisp/accounts",
-      "resourceGroup": "Accounts"
+      "resourceGroup": "Accounts",
+      "capabilities": []
     }
   ],
   "runtimeInputs": {
@@ -54,10 +60,13 @@ and any assertion overrides.
 }
 ```
 
-`config.testSuite`, public `--manifest`, public `--deselect`, REST `manifest`,
-and REST `deselectStepIds` are intentionally rejected. Mandatory applicable
-catalogue tests cannot be arbitrarily deselected. Assertion overrides are
-recorded and make the run non-certifying.
+Required endpoint capabilities may be omitted from exported specs because the
+compiler selects them automatically for implemented endpoints. Optional
+capabilities must be listed under their endpoint to generate implementation-
+dependent tests. `config.testSuite`, public `--manifest`, public `--deselect`,
+REST `manifest`, and REST `deselectStepIds` are intentionally rejected.
+Mandatory applicable catalogue tests cannot be arbitrarily deselected. Assertion
+overrides are import-only, recorded, and make the run non-certifying.
 
 ## Browser and REST launch
 
@@ -81,10 +90,18 @@ same model in `POST /api/runs/`:
 }
 ```
 
+Browser exports are secret-safe: the generated plan spec preserves endpoint and
+capability scope plus non-sensitive runtime references, but omits tokens, private
+keys, client secrets, certificates, and other sensitive runtime values. Launch
+still uses the sensitive in-form values submitted in the same browser session.
+
 Run detail, result downloads, and NDJSON execution logs keep the existing
-masking and evidence behaviour. Manual PSU authorisation handoff URLs remain
-transient browser state; persisted artifacts mask credentials, tokens, request
-objects, client assertions, detached JWS values, and sensitive headers.
+masking and evidence behaviour. Result JSON includes catalogue traceability for
+selected endpoints, selected capabilities, generated test-case IDs, applicability
+decisions, runtime input snapshots with sensitive values omitted, and
+non-certifying reasons. Manual PSU authorisation handoff URLs remain transient
+browser state; persisted artifacts mask credentials, tokens, request objects,
+client assertions, detached JWS values, and sensitive headers.
 
 ## Bundled catalogues
 
@@ -99,8 +116,10 @@ The bundled catalogue registry currently covers the legacy FCS baseline for:
 | `open-banking` | `v4.0` | `cvrp` |
 
 Each catalogue case carries traceability back to the relevant legacy FCS
-coverage in its compliance scope. The hand-maintained mapping lives in
-`docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
+coverage in its compliance scope. Each catalogue can also define endpoint-scoped
+capabilities that explain baseline and optional implementation coverage without
+turning generated tests into participant selections. The hand-maintained mapping
+lives in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
 
 ## Outputs and exit codes
 

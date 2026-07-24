@@ -1,10 +1,29 @@
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import cast
 
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.results import CheckStatus, StepResult
+from conformance.catalogue import (
+    AssertionOverride,
+    CatalogueAssertion,
+    CatalogueKey,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    CompiledTestPlan,
+    EndpointCapability,
+    EndpointRef,
+    ImplementedEndpoint,
+    RuntimeInputRequirement,
+    SecurityProfileApplicability,
+    TestCaseApplicability,
+    TestCatalogue,
+    TestPlanSpec,
+    compile_test_plan,
+)
+from conformance.json_types import JsonObject
+from conformance.results import CheckStatus, StepResult, build_smoke_check_result
 
 
 @pytest.mark.unit
@@ -95,6 +114,57 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
         "mandatorySelected": 1,
         "mandatoryDeselected": 0,
     }
+
+
+@pytest.mark.unit
+def test_catalogue_result_serializes_capability_traceability_and_safe_runtime_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compiled catalogue result evidence includes capability traceability without secrets."""
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    compiled_plan = _compiled_capability_plan()
+
+    rendered = build_smoke_check_result(
+        "env",
+        [StepResult(name="accounts-balances-request", status="passed", message="ok", mandatory=True)],
+        started_at=datetime.now(UTC),
+        approved_release_policy=_approved_policy("1.0.0"),
+        certification_coverage="complete",
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=compiled_plan.traceability.non_certifying_reasons,
+    ).to_json_object()
+
+    catalogue = rendered["catalogue"]
+    eligibility = rendered["certificationEligibility"]
+    assert isinstance(catalogue, dict)
+    assert isinstance(eligibility, dict)
+    assert catalogue["selectedEndpoints"] == [
+        {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts",
+            "resourceGroup": "Accounts",
+            "capabilities": ["accounts.balances"],
+        }
+    ]
+    selected_capabilities = cast("list[JsonObject]", catalogue["selectedCapabilities"])
+    assert [capability["capabilityId"] for capability in selected_capabilities] == [
+        "accounts.read",
+        "accounts.balances",
+    ]
+    applicability_decisions = cast("list[JsonObject]", catalogue["applicabilityDecisions"])
+    assert applicability_decisions[0]["reason"] == (
+        "applicable to selected profile, implemented endpoints, and selected capabilities"
+    )
+    runtime_snapshot = cast("list[JsonObject]", catalogue["runtimeInputSnapshot"])
+    assert runtime_snapshot[0]["value"] == "https://resource.example.com"
+    assert "value" not in runtime_snapshot[1]
+    assert catalogue["nonCertifyingReasons"] == [
+        "Assertion override supplied for accounts-balances.status-200: diagnostic import"
+    ]
+    assert eligibility["eligible"] is False
+    assert eligibility["reason"] == "Assertion override supplied for accounts-balances.status-200: diagnostic import"
 
 
 @pytest.mark.unit
@@ -463,8 +533,7 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
 
     monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
     steps = [
-        StepResult(name=f"mandatory-{index}", status="passed", message="passed", mandatory=True)
-        for index in range(11)
+        StepResult(name=f"mandatory-{index}", status="passed", message="passed", mandatory=True) for index in range(11)
     ]
 
     rendered = build_smoke_check_result(
@@ -483,6 +552,91 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     assert block["reason"] == "Manifest is not marked as complete certification coverage"
     assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
     assert "suite" not in rendered
+
+
+def _compiled_capability_plan() -> CompiledTestPlan:
+    """Build a compiled catalogue plan with required and optional capabilities.
+
+    Returns:
+        Compiled test plan with endpoint capability traceability and a
+        non-certifying assertion override.
+    """
+    endpoint = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    catalogue = TestCatalogue(
+        key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+        catalogue_version="test.capabilities.1",
+        capabilities=(
+            EndpointCapability(
+                capability_id="accounts.read",
+                label="Read accounts",
+                description="Required account-list baseline capability.",
+                required=True,
+                endpoint_refs=(endpoint,),
+            ),
+            EndpointCapability(
+                capability_id="accounts.balances",
+                label="Read account balances",
+                description="Optional balances capability for accounts.",
+                required=False,
+                endpoint_refs=(endpoint,),
+            ),
+        ),
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="accounts-balances",
+                name="Read account balances",
+                role="resource",
+                compliance_scope=("legacy-fcs-script:accounts-balances",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    endpoint_refs=(endpoint,),
+                    required_capability_ids=("accounts.read", "accounts.balances"),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(
+                    RuntimeInputRequirement("resourceBaseUrl", "url", "Resource base URL"),
+                    RuntimeInputRequirement("accessToken", "string", "Access token", sensitive=True),
+                ),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="accounts-balances-request",
+                        name="GET account balances",
+                        method="GET",
+                        path="/open-banking/v4.0/aisp/accounts",
+                        runtime_input_refs=("resourceBaseUrl", "accessToken"),
+                    ),
+                ),
+                assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+            ),
+        ),
+    )
+    return compile_test_plan(
+        catalogue,
+        TestPlanSpec(
+            schema_version="v1",
+            catalogue_key=catalogue.key,
+            security_profile="fapi1-advanced",
+            implemented_endpoints=(
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts",
+                    resource_group="Accounts",
+                    capability_ids=("accounts.balances",),
+                ),
+            ),
+            runtime_inputs={
+                "resourceBaseUrl": "https://resource.example.com",
+                "accessToken": "secret-access-token",
+            },
+            assertion_overrides=(
+                AssertionOverride(
+                    test_case_id="accounts-balances",
+                    assertion_id="status-200",
+                    reason="diagnostic import",
+                ),
+            ),
+        ),
+    )
 
 
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:

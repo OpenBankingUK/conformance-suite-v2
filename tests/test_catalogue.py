@@ -11,6 +11,7 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueRequestStep,
     CatalogueTestCase,
+    EndpointCapability,
     EndpointRef,
     ImplementedEndpoint,
     RuntimeInputRequirement,
@@ -35,6 +36,7 @@ def _case(
     test_case_id: str,
     *,
     endpoint_refs: tuple[EndpointRef, ...] = (),
+    capability_ids: tuple[str, ...] = (),
     dependencies: tuple[str, ...] = (),
     mandatory: bool = True,
     runtime_requirements: tuple[RuntimeInputRequirement, ...] = (),
@@ -47,6 +49,7 @@ def _case(
         applicability=TestCaseApplicability(
             security_profiles=_profile("all"),
             endpoint_refs=endpoint_refs,
+            required_capability_ids=capability_ids,
         ),
         mandatory=mandatory,
         dependencies=dependencies,
@@ -102,6 +105,21 @@ def _spec(
     )
 
 
+def _capability(
+    capability_id: str,
+    *,
+    endpoint_refs: tuple[EndpointRef, ...] = (EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts"),),
+    required: bool = False,
+) -> EndpointCapability:
+    return EndpointCapability(
+        capability_id=capability_id,
+        label=capability_id.replace(".", " ").title(),
+        description=f"{capability_id} implementation support",
+        required=required,
+        endpoint_refs=endpoint_refs,
+    )
+
+
 @pytest.mark.unit
 def test_compile_selects_applicable_endpoint_cases_and_dependencies() -> None:
     setup_case = _case("setup-discovery")
@@ -123,6 +141,119 @@ def test_compile_selects_applicable_endpoint_cases_and_dependencies() -> None:
     assert setup_decision.selected is True
     assert setup_decision.dependency_of == ("accounts-read",)
     assert compiled.certifying is True
+
+
+@pytest.mark.unit
+def test_compile_selects_required_endpoint_capability_when_omitted() -> None:
+    account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    account_case = _case(
+        "accounts-read",
+        endpoint_refs=(account_ref,),
+        capability_ids=("accounts.read",),
+    )
+    catalogue = TestCatalogue(
+        key=CATALOGUE_KEY,
+        catalogue_version="2026.7.0",
+        test_cases=(account_case,),
+        capabilities=(_capability("accounts.read", required=True),),
+    )
+
+    compiled = compile_test_plan(catalogue, _spec())
+
+    assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read"]
+    assert compiled.traceability.selected_capabilities[0].capability_id == "accounts.read"
+    assert compiled.traceability.selected_capabilities[0].required is True
+
+
+@pytest.mark.unit
+def test_compile_excludes_optional_capability_case_when_omitted() -> None:
+    account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    account_case = _case("accounts-read", endpoint_refs=(account_ref,))
+    balances_case = _case(
+        "accounts-balances",
+        endpoint_refs=(account_ref,),
+        capability_ids=("accounts.balances",),
+    )
+    catalogue = TestCatalogue(
+        key=CATALOGUE_KEY,
+        catalogue_version="2026.7.0",
+        test_cases=(account_case, balances_case),
+        capabilities=(_capability("accounts.balances"),),
+    )
+
+    compiled = compile_test_plan(catalogue, _spec())
+
+    assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read"]
+    assert compiled.traceability.applicability_decisions[1].reason == (
+        "required capability not selected: accounts.balances"
+    )
+
+
+@pytest.mark.unit
+def test_compile_selects_optional_capability_case_when_declared() -> None:
+    account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    account_case = _case("accounts-read", endpoint_refs=(account_ref,))
+    balances_case = _case(
+        "accounts-balances",
+        endpoint_refs=(account_ref,),
+        capability_ids=("accounts.balances",),
+    )
+    endpoint = ImplementedEndpoint(
+        method="GET",
+        path="/open-banking/v4.0/aisp/accounts",
+        resource_group="Accounts",
+        capability_ids=("accounts.balances",),
+    )
+    catalogue = TestCatalogue(
+        key=CATALOGUE_KEY,
+        catalogue_version="2026.7.0",
+        test_cases=(account_case, balances_case),
+        capabilities=(_capability("accounts.balances"),),
+    )
+
+    compiled = compile_test_plan(catalogue, _spec(endpoints=(endpoint,)))
+
+    assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read", "accounts-balances"]
+    assert compiled.traceability.selected_capabilities[0].capability_id == "accounts.balances"
+    assert compiled.traceability.selected_capabilities[0].required is False
+
+
+@pytest.mark.unit
+def test_compile_rejects_unknown_selected_capability() -> None:
+    endpoint = ImplementedEndpoint(
+        method="GET",
+        path="/open-banking/v4.0/aisp/accounts",
+        resource_group="Accounts",
+        capability_ids=("accounts.unknown",),
+    )
+
+    with pytest.raises(CatalogueError, match="unknown capability 'accounts.unknown'"):
+        compile_test_plan(_catalogue(_case("accounts-read")), _spec(endpoints=(endpoint,)))
+
+
+@pytest.mark.unit
+def test_compile_rejects_capability_that_does_not_apply_to_endpoint() -> None:
+    endpoint = ImplementedEndpoint(
+        method="GET",
+        path="/open-banking/v4.0/aisp/accounts",
+        resource_group="Accounts",
+        capability_ids=("balances.read",),
+    )
+    catalogue = TestCatalogue(
+        key=CATALOGUE_KEY,
+        catalogue_version="2026.7.0",
+        test_cases=(_case("accounts-read"),),
+        capabilities=(
+            _capability(
+                "balances.read",
+                endpoint_refs=(EndpointRef(method="GET", path="/open-banking/v4.0/aisp/balances"),),
+            ),
+        ),
+    )
+
+    expected_error = "does not apply to implemented endpoint GET /open-banking/v4.0/aisp/accounts"
+    with pytest.raises(CatalogueError, match=expected_error):
+        compile_test_plan(catalogue, _spec(endpoints=(endpoint,)))
 
 
 @pytest.mark.unit
@@ -262,6 +393,7 @@ def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
                 "path": "/open-banking/v4.0/aisp/accounts/",
                 "resourceGroup": "Accounts",
                 "operationId": "GetAccounts",
+                "capabilities": ["accounts.balances"],
             }
         ],
         "runtimeInputs": {"resourceBaseUrl": "https://rs.example.com"},
@@ -280,8 +412,29 @@ def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
     assert spec.catalogue_key == CATALOGUE_KEY
     assert spec.implemented_endpoints[0].method == "GET"
     assert spec.implemented_endpoints[0].path == "/open-banking/v4.0/aisp/accounts"
+    assert spec.implemented_endpoints[0].capability_ids == ("accounts.balances",)
     assert spec.deselected_test_case_ids == ("optional-accounts-extension",)
     assert spec.assertion_overrides[0].assertion_id == "status-200"
+
+
+@pytest.mark.unit
+def test_parse_test_plan_spec_rejects_duplicate_endpoint_capability_selection() -> None:
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+        "securityProfile": "fapi1-advanced",
+        "implementedEndpoints": [
+            {
+                "method": "GET",
+                "path": "/accounts",
+                "resourceGroup": "Accounts",
+                "capabilities": ["accounts.balances", "accounts.balances"],
+            }
+        ],
+    }
+
+    with pytest.raises(CatalogueError, match="duplicates capability 'accounts.balances'"):
+        parse_test_plan_spec(raw_spec)
 
 
 @pytest.mark.unit

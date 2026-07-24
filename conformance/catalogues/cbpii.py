@@ -7,6 +7,7 @@ from conformance.catalogue import (
     CatalogueKey,
     CatalogueRequestStep,
     CatalogueTestCase,
+    EndpointCapability,
     EndpointRef,
     RuntimeInputRequirement,
     SecurityProfileApplicability,
@@ -30,6 +31,51 @@ _CBPII_CONSENT_DELETE = EndpointRef(
     method="DELETE",
     path="/open-banking/v4.0/cbpii/funds-confirmation-consents/{consentId}",
 )
+
+_CBPII_CONSENT_CREATE_CAPABILITY = EndpointCapability(
+    capability_id="cbpii.funds-confirmation-consents.create",
+    label="Create funds confirmation consent",
+    description="Baseline support for creating CBPII funds-confirmation consents.",
+    required=True,
+    endpoint_refs=(_CBPII_CONSENT_CREATE,),
+)
+"""Baseline capability for the CBPII consent-creation endpoint."""
+
+_CBPII_CONSENT_EXPIRATION_FORMATS_CAPABILITY = EndpointCapability(
+    capability_id="cbpii.funds-confirmation-consents.expiration-date-time-formats",
+    label="Support funds confirmation consent expirationDateTime formats",
+    description="Optional support for alternate expirationDateTime formats on consent creation.",
+    required=False,
+    endpoint_refs=(_CBPII_CONSENT_CREATE,),
+)
+"""Optional capability for consent-expiration format variants on creation."""
+
+_CBPII_CONSENT_GET_CAPABILITY = EndpointCapability(
+    capability_id="cbpii.funds-confirmation-consents.read",
+    label="Get funds confirmation consent",
+    description="Baseline support for retrieving CBPII funds-confirmation consents.",
+    required=True,
+    endpoint_refs=(_CBPII_CONSENT_GET,),
+)
+"""Baseline capability for the CBPII consent-retrieval endpoint."""
+
+_CBPII_FUNDS_CONFIRMATION_CREATE_CAPABILITY = EndpointCapability(
+    capability_id="cbpii.funds-confirmations.create",
+    label="Create funds confirmation",
+    description="Baseline support for creating CBPII funds confirmations.",
+    required=True,
+    endpoint_refs=(_CBPII_FUNDS_CONFIRMATION_CREATE,),
+)
+"""Baseline capability for the CBPII funds-confirmation creation endpoint."""
+
+_CBPII_CONSENT_DELETE_CAPABILITY = EndpointCapability(
+    capability_id="cbpii.funds-confirmation-consents.delete",
+    label="Delete funds confirmation consent",
+    description="Baseline support for deleting CBPII funds-confirmation consents.",
+    required=True,
+    endpoint_refs=(_CBPII_CONSENT_DELETE,),
+)
+"""Baseline capability for the CBPII consent-deletion endpoint."""
 
 _ALL_PROFILES = SecurityProfileApplicability(profiles=("all",))
 
@@ -90,6 +136,13 @@ _UNIQUE_CBPII_REFERENCE = RuntimeInputRequirement(
 CBPII_FCS_CATALOGUE = TestCatalogue(
     key=CBPII_CATALOGUE_KEY,
     catalogue_version=CBPII_CATALOGUE_VERSION,
+    capabilities=(
+        _CBPII_CONSENT_CREATE_CAPABILITY,
+        _CBPII_CONSENT_EXPIRATION_FORMATS_CAPABILITY,
+        _CBPII_CONSENT_GET_CAPABILITY,
+        _CBPII_FUNDS_CONFIRMATION_CREATE_CAPABILITY,
+        _CBPII_CONSENT_DELETE_CAPABILITY,
+    ),
     test_cases=(
         CatalogueTestCase(
             test_case_id="cbpii-consent-create-core",
@@ -108,6 +161,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_CONSENT_CREATE,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.create",),
             ),
             mandatory=True,
             runtime_input_requirements=(
@@ -183,6 +237,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_CONSENT_CREATE,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.create",),
             ),
             mandatory=True,
             runtime_input_requirements=(
@@ -236,6 +291,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_CONSENT_CREATE,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.expiration-date-time-formats",),
             ),
             mandatory=True,
             runtime_input_requirements=(
@@ -275,7 +331,11 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                 "legacy_asserts:OB3GLOAssertOn200|OB3GLOFAPIHeader|OB3GLOAssertContentType|"
                 "OB3DOPAssertAuthorised|OB3DOPAssertAuthorisedV4",
             ),
-            applicability=TestCaseApplicability(security_profiles=_ALL_PROFILES, endpoint_refs=(_CBPII_CONSENT_GET,)),
+            applicability=TestCaseApplicability(
+                security_profiles=_ALL_PROFILES,
+                endpoint_refs=(_CBPII_CONSENT_GET,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.read",),
+            ),
             mandatory=True,
             dependencies=("cbpii-consent-create-core",),
             runtime_input_requirements=(
@@ -319,6 +379,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_FUNDS_CONFIRMATION_CREATE,),
+                required_capability_ids=("cbpii.funds-confirmations.create",),
             ),
             mandatory=True,
             dependencies=("cbpii-consent-create-core",),
@@ -365,6 +426,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_CONSENT_DELETE,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.delete",),
             ),
             mandatory=True,
             dependencies=("cbpii-consent-create-core",),
@@ -403,6 +465,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
             applicability=TestCaseApplicability(
                 security_profiles=_ALL_PROFILES,
                 endpoint_refs=(_CBPII_CONSENT_DELETE,),
+                required_capability_ids=("cbpii.funds-confirmation-consents.delete",),
             ),
             mandatory=True,
             runtime_input_requirements=(

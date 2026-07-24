@@ -385,9 +385,20 @@ def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject
                 "method": endpoint.method,
                 "path": endpoint.path,
                 "resourceGroup": endpoint.resource_group,
+                **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
                 **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
             }
             for endpoint in traceability.selected_endpoints
+        ],
+        "selectedCapabilities": [
+            {
+                "method": capability.method,
+                "path": capability.path,
+                "capabilityId": capability.capability_id,
+                "label": capability.label,
+                "required": capability.required,
+            }
+            for capability in traceability.selected_capabilities
         ],
         "applicabilityDecisions": [
             {

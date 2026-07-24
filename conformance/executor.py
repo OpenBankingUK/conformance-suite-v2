@@ -1109,9 +1109,7 @@ def _run_manifest_v1(
         approved_release_policy=approved_release_policy,
         certification_coverage=manifest.certification_coverage,
         compiled_plan=compiled_plan,
-        non_certifying_reasons=(
-            compiled_plan.traceability.non_certifying_reasons if compiled_plan is not None else ()
-        ),
+        non_certifying_reasons=(compiled_plan.traceability.non_certifying_reasons if compiled_plan is not None else ()),
     )
 
 

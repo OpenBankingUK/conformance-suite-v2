@@ -65,12 +65,15 @@ def _ais_accounts_endpoint_id() -> str:
 def _plan_form_data(
     *,
     endpoint_ids: list[str] | None = None,
+    capability_values: list[str] | None = None,
     runtime_inputs: dict[str, str] | None = None,
 ) -> dict[str, object]:
     """Build form data for plan preview and launch requests.
 
     Args:
         endpoint_ids: Implemented endpoint ids submitted by checkboxes.
+        capability_values: Endpoint capability checkbox values submitted by
+            endpoint cards.
         runtime_inputs: Runtime input id/value strings to submit.
 
     Returns:
@@ -84,6 +87,7 @@ def _plan_form_data(
         "guided_api": "ais",
         "guided_security_profile": "fapi1-advanced",
         "implemented_endpoint_ids": endpoint_ids or [],
+        "implemented_endpoint_capabilities": capability_values or [],
     }
     for input_id, value in (runtime_inputs or {}).items():
         data[f"runtime_input__{input_id}"] = value
@@ -130,15 +134,22 @@ class TestPlanBuilderUi:
         assert "Test plan builder" in content
         assert "Catalogue endpoint selection" in content
         assert "Implemented endpoints" in content
+        assert "implemented_endpoint_capabilities" in content
+        assert "Required" in content
+        assert "Optional" in content
+        assert "ais.transactions.date-range-filtering" in content
         assert "/open-banking/v4.0/aisp/accounts" in content
         assert "Plan spec JSON" in content
+        assert "Advanced JSON import/export" in content
         assert "Bundled suite" not in content
         assert "Manifest JSON" not in content
         assert "Model bank example" not in content
+        assert "selected_step_ids" not in content
+        assert "deselect_step_ids" not in content
         assert "hx-post" not in content
 
-    def test_preview_post_renders_generated_counts_and_hidden_audit_details(self) -> None:
-        """POST /plan/preview/ renders generated catalogue counts and collapsed audit details."""
+    def test_preview_post_renders_rich_read_only_generated_plan(self) -> None:
+        """POST /plan/preview/ renders read-only generated catalogue rows."""
         response = Client().post("/plan/preview/", data=_valid_plan_form_data())
 
         assert response.status_code == 200
@@ -146,11 +157,16 @@ class TestPlanBuilderUi:
         assert "Open Banking v4.0 AIS" in content
         assert "Generated tests" in content
         assert "Implemented endpoints" in content
+        assert "Selected capabilities" in content
         assert "Certification plan eligible" in content
-        assert "<details class=\"audit\">" in content
-        assert "Audit generated tests and traceability" in content
+        assert "Generated plan preview" in content
+        assert "Secret-safe plan spec export" in content
+        assert "Selected endpoint" in content
+        assert "Runtime/auth" in content
+        assert "Audit details" in content
         assert "ais-at-accounts-list-200" in content
-        assert '"accessToken"' not in content.split("Generated plan spec", maxsplit=1)[1]
+        assert "selected_step_ids" not in content
+        assert '"accessToken"' not in content.split("Secret-safe plan spec export", maxsplit=1)[1]
 
     def test_preview_post_returns_400_for_missing_runtime_input(self) -> None:
         """Missing selected-endpoint runtime data renders validation errors with HTTP 400."""
@@ -164,6 +180,51 @@ class TestPlanBuilderUi:
         assert "Required runtime input" in content
         assert "AIS resource server base URL" in content
         assert "AIS access token" in content
+
+    def test_preview_post_warns_for_imported_assertion_overrides(self) -> None:
+        """Imported assertion overrides render as prominent non-certifying warnings."""
+        raw_plan_spec: dict[str, JsonValue] = {
+            "schemaVersion": "v1",
+            "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+            "securityProfile": "fapi1-advanced",
+            "implementedEndpoints": [
+                {
+                    "method": "GET",
+                    "path": "/open-banking/v4.0/aisp/accounts",
+                    "resourceGroup": "Accounts",
+                }
+            ],
+            "runtimeInputs": {
+                "resourceBaseUrl": "https://resource.example.com",
+                "accessToken": "secret-access-token",
+            },
+            "assertionOverrides": [
+                {
+                    "testCaseId": "ais-at-accounts-list-200",
+                    "assertionId": "status-200",
+                    "reason": "participant diagnostic import",
+                }
+            ],
+        }
+
+        response = Client().post(
+            "/plan/preview/",
+            data={
+                "config_json": json.dumps(VALID_CONFIG),
+                "plan_spec_json": json.dumps(raw_plan_spec),
+                "guided_standard": "open-banking",
+                "guided_spec_version": "v4.0",
+                "guided_api": "ais",
+                "implemented_endpoint_ids": [],
+                "implemented_endpoint_capabilities": [],
+            },
+        )
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Certification plan ineligible" in content
+        assert "Non-certifying imported override" in content
+        assert "participant diagnostic import" in content
 
     @patch("conformance.api.ui_views.start_run")
     def test_launch_post_starts_compiled_catalogue_run(self, mock_start_run: Mock) -> None:
@@ -262,6 +323,32 @@ class TestRunDetailUi:
                 "status": "passed",
                 "summary": {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0},
                 "plan": {"selectedSteps": 1, "deselectedSteps": 0, "mandatorySelected": 1, "mandatoryDeselected": 0},
+                "catalogue": {
+                    "standard": "open-banking",
+                    "version": "v4.0",
+                    "api": "ais",
+                    "catalogueVersion": "2026.07.legacy-fcs-ais-at.1",
+                    "generatedTestCaseIds": ["ais-at-accounts-list-200"],
+                    "selectedEndpoints": [
+                        {
+                            "method": "GET",
+                            "path": "/open-banking/v4.0/aisp/accounts",
+                            "resourceGroup": "Accounts",
+                        }
+                    ],
+                    "selectedCapabilities": [
+                        {
+                            "method": "GET",
+                            "path": "/open-banking/v4.0/aisp/accounts",
+                            "capabilityId": "ais.accounts.list.core",
+                            "label": "AIS accounts list baseline coverage",
+                            "required": True,
+                        }
+                    ],
+                    "applicabilityDecisions": [],
+                    "runtimeInputSnapshot": [],
+                    "nonCertifyingReasons": [],
+                },
                 "certificationEligibility": {"eligible": True},
                 "steps": [
                     {
@@ -290,6 +377,9 @@ class TestRunDetailUi:
         assert "ais-at-accounts-list-200-request" in content
         assert "passed" in content
         assert "Certification" in content
+        assert "Catalogue traceability" in content
+        assert "2026.07.legacy-fcs-ais-at.1" in content
+        assert "Selected capabilities" in content
 
     def test_run_detail_returns_404_for_unknown_run(self) -> None:
         """Unknown run detail pages return 404."""
