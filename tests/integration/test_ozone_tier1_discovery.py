@@ -42,9 +42,8 @@ _INTEGRATION_HTTP_TIMEOUT_SECONDS = 30.0
 def _v1_discovery_manifest(discovery_url: str) -> dict[str, JsonValue]:
     """Build a v1 manifest dict for a discovery-only smoke flow.
 
-    Mirrors the discovery step of ``config/manifest-v1-openid-jwks-example.json``
-    but parameterises the URL so it can be sourced from environment
-    configuration rather than a hardcoded value.
+    Uses an inline manifest shape so integration coverage does not depend on
+    participant-facing example files.
 
     Args:
         discovery_url: Absolute HTTPS URL of the OpenID discovery endpoint.

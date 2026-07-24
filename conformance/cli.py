@@ -10,6 +10,8 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
+from conformance.catalogue import CatalogueError, compile_test_plan, parse_test_plan_spec
+from conformance.catalogue_registry import resolve_catalogue
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -17,19 +19,16 @@ from conformance.execution_log import (
     new_run_id,
     warn_if_developer_mode,
 )
-from conformance.executor import run_manifest
+from conformance.executor import run_compiled_test_plan
 from conformance.http import build_json_http_client
-from conformance.manifest import ManifestError, load_manifest
 from conformance.model_bank_config import ConfigError, load_model_bank_config
 from conformance.runner import run_model_bank_smoke_check
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check (model-bank smoke check or manifest run).
+    """Run a conformance check from config and an optional plan spec.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -41,18 +40,10 @@ def run(argv: Sequence[str] | None = None) -> int:
     """
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", type=Path, help="Path to the model-bank JSON config")
-    parser.add_argument("--manifest", type=Path, help="Optional manifest JSON file (v0 or v1) to execute")
     parser.add_argument(
-        "--deselect",
-        action="append",
-        default=[],
-        metavar="STEP_ID",
-        help=(
-            "Deselect a v1 manifest step from the default test plan. Repeatable. "
-            "Deselected steps do not run and produce no step result. Deselecting "
-            "a mandatory step flips certificationEligibility to ineligible. "
-            "Only valid with --manifest or a config-selected testSuite."
-        ),
+        "--plan-spec",
+        type=Path,
+        help="Optional catalogue plan-spec JSON file to compile and execute",
     )
     try:
         args = parser.parse_args(argv)
@@ -67,10 +58,6 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Config error: %s", error)
         return 2
 
-    if args.deselect and args.manifest is None and config.test_suite is None:
-        logger.error("--deselect requires --manifest or config.testSuite")
-        return 2
-
     run_id = new_run_id()
     execution_logger = BufferedExecutionLogger(run_id=run_id)
     logger_sink = PsuAuthorizationUrlConsoleLogger(
@@ -79,33 +66,21 @@ def run(argv: Sequence[str] | None = None) -> int:
         stderr=sys.stderr,
     )
 
-    suite_metadata: SuiteMetadata | None = None
-    if args.manifest is None and config.test_suite is None:
+    if args.plan_spec is None:
         result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
     else:
-        if args.manifest is None:
-            suite_selection = config.test_suite
-            if suite_selection is None:
-                logger.error("No manifest or config.testSuite available to run")
-                return 2
-            try:
-                resolved_suite = resolve_suite(suite_selection)
-            except SuiteCatalogError as error:
-                logger.error("Suite catalog error: %s", error)
-                return 2
-            manifest = resolved_suite.manifest
-            suite_metadata = resolved_suite.metadata
-        else:
-            try:
-                manifest = load_manifest(args.manifest)
-            except ManifestError as error:
-                logger.error("Manifest error: %s", error)
-                return 2
-
         try:
-            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(args.deselect)
-        except ValueError as error:
-            logger.error("Plan error: %s", error)
+            raw_spec = json.loads(args.plan_spec.read_text(encoding="utf-8"))
+            plan_spec = parse_test_plan_spec(raw_spec)
+            compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+        except json.JSONDecodeError as error:
+            logger.error("Plan-spec JSON error: %s", error.msg)
+            return 2
+        except OSError as error:
+            logger.error("Unable to read plan spec: %s", error)
+            return 2
+        except CatalogueError as error:
+            logger.error("Plan-spec error: %s", error)
             return 2
 
         http_client = build_json_http_client(
@@ -115,12 +90,13 @@ def run(argv: Sequence[str] | None = None) -> int:
             client_private_key_path=config.tls.client_private_key_path,
         )
         try:
-            result = run_manifest(
-                manifest,
+            result = run_compiled_test_plan(
+                compiled_plan,
+                runtime_inputs=plan_spec.runtime_inputs,
+                runtime_input_base_dir=args.plan_spec.parent,
                 environment=config.environment,
                 client=http_client,
                 execution_logger=logger_sink,
-                plan=plan,
                 run_id=run_id,
                 auth_session_store=auth_session_store,
                 runtime_config=RuntimeConfig(
@@ -140,7 +116,6 @@ def run(argv: Sequence[str] | None = None) -> int:
                 mtls_client_configured=(
                     config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
                 ),
-                suite_metadata=suite_metadata,
                 approved_release_policy=config.approved_release_policy,
             )
         finally:
@@ -161,12 +136,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Unable to write execution log to %s: %s", config.execution_log_path, error)
         return 3
 
-    if args.manifest is not None:
-        run_label = f"Manifest run ({args.manifest})"
-    elif suite_metadata is not None:
-        run_label = f"Suite run ({suite_metadata.label})"
-    else:
-        run_label = "Model-bank smoke check"
+    run_label = f"Catalogue plan run ({args.plan_spec})" if args.plan_spec is not None else "Model-bank smoke check"
     if result.status == "passed":
         logger.info(
             "%s passed; wrote %s and %s",

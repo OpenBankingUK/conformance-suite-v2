@@ -11,11 +11,11 @@ from typing import TYPE_CHECKING, Literal
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
-from conformance.suite_catalog import SuiteMetadata
 from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_tool_version
 
 if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
+    from conformance.catalogue import CompiledTestPlan
     from conformance.test_plan import TestPlan
 
 CheckStatus = Literal["passed", "failed", "warn", "skipped"]
@@ -100,9 +100,6 @@ class SmokeCheckResult:
             self-assess whether the report's tool version is eligible for
             certification submission. ``None`` means the report explicitly
             marks the check as not supplied.
-        suite_metadata: Optional catalog metadata for config-resolved suite
-            runs. Omitted for legacy smoke checks and explicit manifest runs
-            so their public result shape remains stable.
         certification_coverage: Whether the manifest used for this run declares
             full certification coverage (``complete``) or is intentionally
             partial / non-certifying (``partial``). Defaults to ``partial`` for
@@ -110,6 +107,10 @@ class SmokeCheckResult:
             certification eligibility model. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            metadata should be embedded in the generated report.
+        non_certifying_reasons: Additional catalogue-plan reasons that block
+            certification eligibility even when mandatory executed steps pass.
     """
 
     environment: str
@@ -120,8 +121,9 @@ class SmokeCheckResult:
     plan_summary: Mapping[str, int] | None = None
     deselected_mandatory_step_ids: tuple[str, ...] = ()
     approved_release_policy: ApprovedReleasePolicy | None = None
-    suite_metadata: SuiteMetadata | None = None
     certification_coverage: CertificationCoverage = "partial"
+    compiled_plan: CompiledTestPlan | None = None
+    non_certifying_reasons: tuple[str, ...] = ()
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -150,13 +152,14 @@ class SmokeCheckResult:
                 approved_release_policy=self.approved_release_policy,
                 tool_version=tool_version,
                 certification_coverage=self.certification_coverage,
+                non_certifying_reasons=self.non_certifying_reasons,
             ),
             "steps": [step.to_json_object() for step in self.steps],
         }
-        if self.suite_metadata is not None:
-            body["suite"] = self.suite_metadata.to_json_object()
         if self.plan_summary is not None:
             body["plan"] = dict(self.plan_summary)
+        if self.compiled_plan is not None:
+            body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan)
         return body
 
 
@@ -167,8 +170,9 @@ def build_smoke_check_result(
     started_at: datetime,
     plan: TestPlan | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
-    suite_metadata: SuiteMetadata | None = None,
     certification_coverage: CertificationCoverage = "partial",
+    compiled_plan: CompiledTestPlan | None = None,
+    non_certifying_reasons: tuple[str, ...] = (),
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -185,15 +189,16 @@ def build_smoke_check_result(
             generated report's participant-side certification self-assessment.
             Omit when no approved-release policy was supplied with the
             participant config.
-        suite_metadata: Optional catalog metadata for a config-resolved suite
-            run. Omit for smoke checks and explicit manifest runs to preserve
-            their existing result shape.
         certification_coverage: Whether the manifest declares full certification
             coverage (``complete``) or is intentionally partial / non-certifying
             (``partial``). Defaults to ``"partial"`` so non-manifest callers and
             v0 manifest callers are safe by default. A ``partial`` value blocks
             ``certificationEligibility.eligible`` even when all mandatory steps
             pass and the tool version is approved.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            metadata should be embedded in the top-level ``catalogue`` block.
+        non_certifying_reasons: Additional catalogue-plan reasons that should
+            block certification eligibility.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -218,8 +223,9 @@ def build_smoke_check_result(
         plan_summary=plan_summary,
         deselected_mandatory_step_ids=deselected_mandatory,
         approved_release_policy=approved_release_policy,
-        suite_metadata=suite_metadata,
         certification_coverage=certification_coverage,
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=non_certifying_reasons,
     )
 
 
@@ -230,6 +236,7 @@ def _build_eligibility(
     approved_release_policy: ApprovedReleasePolicy | None = None,
     tool_version: str,
     certification_coverage: CertificationCoverage = "partial",
+    non_certifying_reasons: tuple[str, ...] = (),
 ) -> JsonObject:
     """Build the ``certificationEligibility`` block for the result file.
 
@@ -282,6 +289,8 @@ def _build_eligibility(
             Defaults to ``"partial"`` for backwards-compatible callers that do not
             supply a manifest. A ``partial`` value blocks eligibility and adds a
             stable reason string so the blocker is machine-readable.
+        non_certifying_reasons: Additional compiled-plan reasons that block
+            certification eligibility.
 
     Returns:
         JSON object containing the boolean ``eligible`` flag, per-status
@@ -333,6 +342,7 @@ def _build_eligibility(
         reasons.append("No mandatory steps declared")
     if certification_coverage != "complete":
         reasons.append("Manifest is not marked as complete certification coverage")
+    reasons.extend(non_certifying_reasons)
     if approved_release_policy is not None and not approved_release_policy.is_tool_version_approved(tool_version):
         reasons.append(f"Tool version is not in the approved-release policy: {tool_version}")
     if approved_release_policy is None:
@@ -348,6 +358,59 @@ def _build_eligibility(
         block["reason"] = reasons[0]
         block["reasons"] = reasons
     return block
+
+
+def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject:
+    """Convert compiled catalogue traceability into report JSON.
+
+    Args:
+        compiled_plan: Compiled catalogue plan that drove execution.
+
+    Returns:
+        JSON object containing catalogue identity, selected endpoints,
+        generated test cases, runtime-input trace, applicability decisions,
+        and certification planning status.
+    """
+    traceability = compiled_plan.traceability
+    return {
+        "standard": traceability.catalogue_key.standard,
+        "version": traceability.catalogue_key.version,
+        "api": traceability.catalogue_key.api,
+        "catalogueVersion": traceability.catalogue_version,
+        "securityProfile": traceability.security_profile,
+        "certifying": compiled_plan.certifying,
+        "generatedTestCaseIds": list(traceability.generated_test_case_ids),
+        "selectedEndpoints": [
+            {
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "resourceGroup": endpoint.resource_group,
+                **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
+            }
+            for endpoint in traceability.selected_endpoints
+        ],
+        "applicabilityDecisions": [
+            {
+                "testCaseId": decision.test_case_id,
+                "selected": decision.selected,
+                "reason": decision.reason,
+                "dependencyOf": list(decision.dependency_of),
+            }
+            for decision in traceability.applicability_decisions
+        ],
+        "runtimeInputSnapshot": [
+            {
+                "inputId": runtime_input.input_id,
+                "inputType": runtime_input.input_type,
+                "required": runtime_input.required,
+                "sensitive": runtime_input.sensitive,
+                "provided": runtime_input.provided,
+                **({"value": runtime_input.value} if runtime_input.value is not None else {}),
+            }
+            for runtime_input in traceability.runtime_input_snapshot
+        ],
+        "nonCertifyingReasons": list(traceability.non_certifying_reasons),
+    }
 
 
 def _build_approved_release_eligibility(

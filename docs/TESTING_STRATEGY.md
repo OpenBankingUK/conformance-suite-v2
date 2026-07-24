@@ -1,218 +1,117 @@
 # Testing Strategy
 
-## Table of Contents
+## Framework recommendation
 
-- [Testing Strategy](#testing-strategy)
-  - [Table of Contents](#table-of-contents)
-  - [Framework Recommendation](#framework-recommendation)
-    - [Recommendation: pytest ecosystem](#recommendation-pytest-ecosystem)
-  - [Test Categories](#test-categories)
-    - [1. Unit \& Application Tests](#1-unit--application-tests)
-    - [2. Integration Tests](#2-integration-tests)
-    - [3. End-to-End Tests (Model Bank Endpoint Testing)](#3-end-to-end-tests-model-bank-endpoint-testing)
-    - [4. Result File Assertion Pattern](#4-result-file-assertion-pattern)
-  - [Test Markers](#test-markers)
-  - [Code Quality Tools](#code-quality-tools)
-  - [Coverage Targets](#coverage-targets)
-  - [Group-Aware Scheduling Cases](#group-aware-scheduling-cases)
-  - [Certification Validator Cases](#certification-validator-cases)
+Use `pytest` with `pytest-django`. It supports fast unit tests, Django view/form
+tests, CLI result-file assertions, and selective live-network tiers.
 
----
+## Test categories
 
-## Framework Recommendation
+| Category | Marker | Scope |
+| --- | --- | --- |
+| Unit | `unit` | Parser/compiler logic, result serialization, CLI/config validation, isolated helpers. |
+| Integration | `integration` | Django client/API/UI flows and offline executor integration with mocked HTTP. |
+| Ozone | `ozone` | Live-network Ozone checks gated by environment variables. |
+| E2E | `e2e` | Container-level runs that assert on structured result files. |
 
-### Recommendation: pytest ecosystem
+`make test` excludes live Ozone and E2E by default. Live Ozone tests live under
+`tests/integration/` and skip cleanly when their tier-specific environment
+variables are absent.
 
-**pytest** with **pytest-django** is the recommended choice. It is the de facto standard for Django testing, surpasses Django's built-in `TestCase` runner in flexibility, and critically supports the CLI-runnable / result-file pattern required by this project.
+## Result-file assertion pattern
 
----
+E2E and CLI-facing tests must assert on structured result files, not incidental
+side effects. Result JSON assertions should cover:
 
-## Test Categories
+- `summary` totals and statuses.
+- `catalogue` traceability for compiled plan runs.
+- `certificationEligibility` reasons.
+- Masked request, response, token, signing, and PSU evidence.
 
-### 1. Unit & Application Tests
+## Catalogue regression coverage
 
-Test isolated business logic, Django views, models, and form/serialiser validation.
+The catalogue model is the participant-facing contract. Keep focused coverage
+for:
 
-| Package | Role |
-|---|---|
-| `pytest` | Primary test runner |
-| `pytest-django` | Django settings, DB fixtures, test client |
-| `pytest-cov` | Coverage reporting (XML + terminal) |
-| `pytest-xdist` | Parallel execution (`-n auto`) |
-| `factory_boy` | Realistic, repeatable test data factories |
-| `faker` | Fake data generation (via factory_boy) |
+- Plan-spec parsing and unknown-field rejection.
+- Duplicate catalogue/test/request/assertion ID detection.
+- Applicability filtering by catalogue key, profile, and implemented endpoint.
+- Dependency inclusion and deterministic ordering.
+- Runtime input requirement validation and sensitive-value snapshots.
+- Assertion override non-certifying behaviour.
+- Bundled catalogue registry coverage for AIS, PIS, CBPII, VRP, and cVRP.
+- Legacy FCS provenance in compliance-scope traceability.
 
-### 2. Integration Tests
-
-Test HTTP request/response cycles against the running Django app, including HTMX interactions.
-
-| Package | Role |
-|---|---|
-| `pytest-django` | `client` and `rf` fixtures, `live_server` |
-| `httpx` | ASGI test transport for async-compatible requests |
-| `respx` | Mock external HTTP calls deterministically |
-
-**Live-network Ozone integration tests** live under `tests/integration/` and carry the `ozone` marker (distinct from the existing `integration` marker, which is reserved for offline tests that need the Django test client or DB). They are gated on tier-specific environment variables via `tests/_ozone.py::requires_ozone(tier)` — for example, tier 1 (OpenID discovery against the real Ozone host) requires `OZONE_DISCOVERY_URL`. Tests skip cleanly with a self-documenting reason when env vars are absent and never silently pass. `make test` (and therefore `make check`) excludes the `ozone` marker so default runs stay offline while still exercising the offline Django integration tests; `make integration` runs the live-network tier when env vars are set. In CI, the `Ozone Integration` workflow (`.github/workflows/ozone-integration.yml`) runs the tier on every PR (surfacing pytest output on the PR check page), nightly on a schedule, and on manual `workflow_dispatch`, sourcing `OZONE_DISCOVERY_URL` from the repository-level `vars.OZONE_DISCOVERY_URL` variable. The workflow is non-blocking for PR merges; fork PRs without variable access skip with a notice rather than fail. When tier 2 introduces mTLS material, the workflow will move to a scoped GitHub Environment to add audit/branch-scoping guarantees. See [`ai/plans/2026-05-28-ozone-integration-tiers.md`](../ai/plans/2026-05-28-ozone-integration-tiers.md) for the full tier definition.
-
-### 3. End-to-End Tests (Model Bank Endpoint Testing)
-
-The application is run as a Docker container with a config file pointing to a model bank. The container executes, writes a structured result file, and exits. The E2E test suite:
-
-1. Builds and starts the Docker container via `testcontainers-python`
-2. Passes a config pointing to the target model bank
-3. Waits for container exit
-4. Reads and asserts on the result file
-
-E2E tests run on **all PRs to `develop` and `main`**, and on pushes to `release/**` branches. Running E2E on every feature and bugfix merge catches integration issues early, rather than surfacing them at release time.
-
-| Package | Role |
-|---|---|
-| `testcontainers` | Programmatically start/stop Docker containers in tests |
-| `pytest-asyncio` | Async test support if container orchestration is async |
-| `pytest-json-report` | Structured JSON test output for CI artifact assertion |
-
-### 4. Result File Assertion Pattern
-
-The application produces a result file (e.g. `results.json`) on each run. The test pipeline can assert on it in two ways:
-
-**In-process** (preferred for unit/integration):
-```python
-# tests/e2e/test_result_output.py
-import json
-import pytest
-from pathlib import Path
-
-@pytest.mark.e2e
-def test_conformance_results(run_conformance_tool):
-    result_path = run_conformance_tool(config="config/model-bank-test.yaml")
-    report = json.loads(Path(result_path).read_text())
-
-    assert report["summary"]["total"] > 0
-    assert report["summary"]["failed"] == 0, f"Failures: {report['failures']}"
-```
-
-**In CI** (post-container run):
-```bash
-uv run pytest tests/e2e/ -p no:django -m e2e --json-report --json-report-file=e2e-results.json
-```
-
----
-
-## Test Markers
-
-Define custom markers in `pyproject.toml` to separate test tiers:
-
-```toml
-[tool.pytest.ini_options]
-markers = [
-    "unit: fast, isolated unit tests",
-    "integration: tests requiring the Django test client or DB",
-    "ozone: live-network Ozone conformance tier tests (gated on tier env vars; require network access)",
-    "e2e: full end-to-end tests requiring Docker and a model bank",
-]
-```
-
-Run selectively:
-```bash
-# Unit only (fast, no DB)
-uv run pytest -m unit
-
-# All except E2E and live-network Ozone tiers (matches `make test`;
-# the CI `test` job uses `-m "not e2e"` and relies on the
-# `requires_ozone()` skipif gates to keep the ozone tier dormant when
-# its environment variables are absent).
-uv run pytest -m "not e2e and not ozone"
-
-# E2E only (requires model bank config — see .github/workflows/e2e.yml)
-uv run pytest -p no:django -m e2e
-```
-
----
-
-## Code Quality Tools
-
-| Tool | Role | Config |
-|---|---|---|
-| `ruff` | Linting + import sorting (replaces flake8, isort, pyupgrade) | `pyproject.toml` |
-| `mypy` | Static type checking | `pyproject.toml` |
-| `ruff format` | Formatting (replaces black) | `pyproject.toml` |
-
----
-
-## Coverage Targets
-
-| Context | Minimum Coverage |
-|---|---|
-| Unit + integration (`not e2e`) | 80% |
-| Critical security paths | 100% (enforced via `# pragma: no cover` policy) |
-
-Coverage is enforced via `fail_under = 80` in `[tool.coverage.report]` in `pyproject.toml`. Reports are uploaded as CI artifacts.
-
-## Group-Aware Scheduling Cases
-
-Group-aware v1 manifest execution introduces setup/execution phases and independent execution groups. Coverage should remain focused and deterministic:
-
-- `tests/test_manifest.py`: verify parser defaults (`phase="execution"`, `group="default"`), accepted values, and validation failures for invalid `phase`/`group` on both HTTP and `psu-authorization` steps.
-- `tests/test_execution_schedule.py`: verify schedule derivation from `Manifest + TestPlan` (selected setup steps, selected execution steps grouped by id, deselected steps excluded, deterministic manifest-order output).
-- `tests/test_executor.py`: verify setup runs before execution, same-group sequencing is preserved, independent groups continue after a failure in another group, and final result ordering remains manifest-deterministic under concurrency.
-- `tests/test_executor.py`: verify execution-group worker pool sizing remains bounded by the internal cap and still uses exact group count when below the cap.
-- `tests/test_plan_builder.py` and `tests/test_ui_views.py`: verify participant-facing previews expose `phase` and `group` metadata so scheduling is visible before launch.
-
-Recommended focused run while iterating on scheduling semantics:
-
-```bash
-DJANGO_DEBUG=true uv run pytest tests/test_manifest.py tests/test_execution_schedule.py tests/test_executor.py tests/test_plan_builder.py tests/test_ui_views.py -v
-```
-
-Concurrency assertions should avoid timing-sensitive sleeps where possible. Prefer explicit synchronisation (`threading.Event`, barriers, or controlled fakes) and assert invariants (order inside a group, cross-group continuation, deterministic merged result order) rather than wall-clock duration.
-
-## TestPlan / Mandatory-Deselection Cases
-
-The `TestPlan` model (PRD Participant Story #4) introduces three behaviours that **must** stay covered by the unit suite:
-
-- **Default plan from a v1 manifest** — every mandatory or non-optional step is `selected=True`; explicitly optional steps are `selected=False`. v0 manifests yield an empty plan (no selection concept exists pre-v1). See `tests/test_test_plan.py`.
-- **Deselection semantics** — `with_deselection()` is idempotent, raises `ValueError` for unknown step ids, and never mutates the receiver. The executor must skip deselected steps without producing a `StepResult` and must emit exactly one `step-deselected` log event per deselected entry **before** any `step-started`. See `tests/test_executor.py` (`TestPlan deselection` section).
-- **Mandatory-deselection eligibility** — whenever the plan reports `mandatoryDeselected > 0`, `certificationEligibility.eligible` must be `false` with reason `"Mandatory steps were deselected from the plan"`, taking precedence over `"No mandatory steps declared"`, failed-step, and skipped-step reasons. The top-level `plan` block must surface stable counts (`totalSteps`, `selectedSteps`, `deselectedSteps`, `mandatorySelected`, `mandatoryDeselected`). See `tests/test_results.py`.
-
-The CLI and REST surfaces are covered by `tests/test_cli.py` (`--deselect` flag) and `tests/test_api.py` (`deselectStepIds` field) — both assert input validation (unknown ids, missing manifest) and a successful happy path.
-
-## Certification Validator Cases
-
-The OBL-side certification validator is covered as a separate internal-tool surface, not through the participant runner CLI:
-
-- `tests/test_results.py` verifies generated reports include top-level `metadata.reportVersion`, `tool.version`, and the participant-side `certificationEligibility.approvedRelease` self-assessment while preserving existing result and plan semantics. It covers approved versions, unapproved versions, absent policies, multiple blocking reasons, and mandatory-deselection reason precedence.
-- `tests/test_version.py` verifies `CONFORMANCE_TOOL_VERSION` override, `pyproject.toml` fallback, and the `0+unknown` fallback.
-- `tests/test_approved_releases.py` verifies shared approved-release policy parsing and loading rules used by both participant report generation and OBL-side validation.
-- `tests/test_model_bank_config.py` verifies `approvedReleasePolicyPath` config loading, missing files, path containment, malformed policy JSON, and type validation.
-- `tests/test_certification_validator.py` verifies approved-release policy parsing wrappers, mandatory `passed`/`warn` acceptance, mandatory `failed`/`skipped`/missing rejection, malformed report rejection, and Confluence summary rendering.
-- `tests/test_certification_cli.py` verifies CLI exit codes for valid reports, validation failures, invalid inputs, and summary-output write failures.
-
-Run the focused validator suite while iterating:
-
-```bash
-DJANGO_DEBUG=true uv run pytest tests/test_results.py tests/test_version.py tests/test_approved_releases.py tests/test_model_bank_config.py tests/test_certification_validator.py tests/test_certification_cli.py -v
-```
-
-## v4 AIS Slice Iteration
-
-The bundled `ais-certification-slice` spans config validation, bundled-manifest resolution, array-index placeholder resolution, token exchange, consent creation, account-scoped AIS resource assertions for accounts, balances, and transactions, launch surfaces, and certification eligibility. A focused offline iteration loop for this slice is:
+Primary tests:
 
 ```bash
 DJANGO_DEBUG=true uv run pytest \
-  tests/test_model_bank_config.py \
-  tests/test_context.py \
-  tests/test_suite_catalog.py \
-  tests/test_manifest.py \
+  tests/test_catalogue.py \
+  tests/test_catalogue_ais.py \
+  tests/test_catalogue_pis.py \
+  tests/test_catalogue_cbpii.py \
+  tests/test_catalogue_vrp.py \
+  tests/test_catalogue_registry.py \
+  -m unit -v
+```
+
+## Execution/API/CLI/UI compiled-plan coverage
+
+Compiled catalogue plans execute through the existing hardened executor path.
+Regression coverage should prove that replacing public manifests did not weaken:
+
+- HTTP execution, status/header/body assertions, and response-schema assertions.
+- PSU authorisation handoff and headless test helpers.
+- FAPI signing, token endpoint auth policy, detached JWS signing, and mTLS checks.
+- Masking in result JSON, NDJSON logs, browser downloads, and API log snapshots.
+- CLI `--plan-spec` validation and rejection of public `--manifest`.
+- REST `planSpec` validation and rejection of public `manifest`/`deselectStepIds`.
+- Browser implemented-endpoint selection, preview counts, launch, and hidden audit details.
+
+Focused run:
+
+```bash
+DJANGO_DEBUG=true uv run pytest \
+  tests/test_catalogue_integration.py \
   tests/test_executor.py \
-  tests/test_masking.py \
+  tests/test_results.py \
   tests/test_cli.py \
   tests/test_api.py \
   tests/test_plan_builder.py \
   tests/test_ui_views.py \
-  tests/test_results.py \
-  tests/test_certification_validator.py \
-  tests/test_certification_cli.py \
   -m "unit or integration" -v
 ```
 
-Keep live Ozone coverage gated behind the existing `ozone` marker and required environment variables. Until the target v4.0 environment is confirmed, local proof for this slice remains the mocked/offline suite above plus the final `make check` run.
+## Certification validator coverage
+
+The OBL-side validator is an internal-tool surface. It intentionally still
+accepts the manifest representation used for the original run and an independent
+approved-release policy.
+
+Focused run:
+
+```bash
+DJANGO_DEBUG=true uv run pytest \
+  tests/test_results.py \
+  tests/test_version.py \
+  tests/test_approved_releases.py \
+  tests/test_model_bank_config.py \
+  tests/test_certification_validator.py \
+  tests/test_certification_cli.py \
+  -v
+```
+
+Coverage must include approved versions, unapproved versions, absent policies,
+mandatory passed/warn acceptance, mandatory failed/skipped/missing rejection,
+malformed report rejection, and Confluence summary rendering.
+
+## Code quality and coverage targets
+
+| Tool | Role |
+| --- | --- |
+| `ruff` | Linting, import sorting, and formatting checks. |
+| `mypy` | Strict static type checking. |
+| `pytest-cov` | Coverage reporting and 80% minimum enforcement. |
+| `detect-secrets` | Secret scanning through the pre-commit hook and CI. |
+
+Run selectively while iterating, then run `make check` before pushing.

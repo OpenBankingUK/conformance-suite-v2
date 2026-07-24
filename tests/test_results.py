@@ -4,9 +4,7 @@ from typing import cast
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.model_bank_config import SuiteSelection
 from conformance.results import CheckStatus, StepResult
-from conformance.suite_catalog import resolve_suite
 
 
 @pytest.mark.unit
@@ -405,19 +403,11 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
 
 @pytest.mark.unit
 def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps() -> None:
-    """Bundled AIS slice keeps mandatory accounting stable for result evidence."""
+    """Mandatory accounting remains stable for mixed manifest step outcomes."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
 
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-slice",
-        )
-    )
     status_by_step: dict[str, CheckStatus] = {
         "openid-discovery": "passed",
         "jwks-fetch": "warn",
@@ -431,20 +421,19 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     }
     steps = [
         StepResult(
-            name=step.id,
-            status=status_by_step[step.id],
-            message=step.id,
-            mandatory=step.mandatory,
+            name=step_id,
+            status=status,
+            message=step_id,
+            mandatory=True,
         )
-        for step in resolved.manifest.steps
+        for step_id, status in status_by_step.items()
     ]
 
     block = build_smoke_check_result(
         "env",
         steps,
         started_at=datetime.now(UTC),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
+        certification_coverage="partial",
     ).to_json_object()["certificationEligibility"]
 
     assert isinstance(block, dict)
@@ -466,25 +455,16 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
 def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Passing baseline mandatory steps still cannot certify while coverage is partial."""
+    """Passing mandatory manifest steps still cannot certify while coverage is partial."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
     from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
 
     monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-baseline",
-        )
-    )
     steps = [
-        StepResult(name=step.id, status="passed", message=step.id, mandatory=step.mandatory)
-        for step in resolved.manifest.steps
-        if step.mandatory
+        StepResult(name=f"mandatory-{index}", status="passed", message="passed", mandatory=True)
+        for index in range(11)
     ]
 
     rendered = build_smoke_check_result(
@@ -492,8 +472,7 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
         steps,
         started_at=datetime.now(UTC),
         approved_release_policy=_approved_policy("1.0.0"),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
+        certification_coverage="partial",
     ).to_json_object()
 
     block = rendered["certificationEligibility"]
@@ -503,15 +482,7 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     assert block["mandatoryPassed"] == 11
     assert block["reason"] == "Manifest is not marked as complete certification coverage"
     assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "ais-certification-baseline",
-    }
+    assert "suite" not in rendered
 
 
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -579,7 +550,7 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
 
 @pytest.mark.unit
 def test_suite_metadata_absent_when_not_supplied() -> None:
-    """Smoke checks and explicit manifest runs omit the suite metadata block."""
+    """Generated reports omit the removed legacy suite metadata block."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
@@ -592,45 +563,6 @@ def test_suite_metadata_absent_when_not_supplied() -> None:
     ).to_json_object()
 
     assert "suite" not in rendered
-
-
-@pytest.mark.unit
-def test_suite_metadata_serialized_when_supplied() -> None:
-    """Config-resolved suite runs expose safe catalog metadata in results."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-    from conformance.suite_catalog import SuiteMetadata
-
-    started = datetime.now(UTC)
-    metadata = SuiteMetadata(
-        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        api="ais",
-        suite="discovery-jwks",
-        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        description="Smoke-level discovery and JWKS checks.",
-    )
-
-    rendered = build_smoke_check_result(
-        "env",
-        [StepResult(name="x", status="passed", message="ok")],
-        started_at=started,
-        suite_metadata=metadata,
-    ).to_json_object()
-
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "discovery-jwks",
-    }
 
 
 # ─── Packet B: certification coverage gating ─────────────────────────────────

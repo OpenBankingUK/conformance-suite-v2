@@ -20,7 +20,7 @@ on:
       config_file:
         description: "Path to test config file (relative to repo root)"
         required: false
-        default: "config/e2e-default.yaml"
+        default: "tests/fixtures/e2e-default.yaml"
         type: string
       test_filter:
         description: "Optional pytest -k expression to filter tests"
@@ -84,7 +84,7 @@ jobs:
           # Use workflow_dispatch input if manually triggered, otherwise fall back
           # to the repository-level variable set in GitHub settings.
           OB_MODEL_BANK_URL: ${{ inputs.model_bank_url || vars.E2E_MODEL_BANK_URL }}
-          OB_CONFIG_FILE: ${{ inputs.config_file || 'config/e2e-default.yaml' }}
+          OB_CONFIG_FILE: ${{ inputs.config_file || 'tests/fixtures/e2e-default.yaml' }}
           OB_TEST_IMAGE: ob-conformance-tool:e2e-${{ github.sha }}
           OB_TEST_FILTER: ${{ inputs.test_filter }}
         run: |

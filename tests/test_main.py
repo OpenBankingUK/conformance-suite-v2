@@ -15,7 +15,7 @@ def test_main_returns_cli_exit_code(monkeypatch: pytest.MonkeyPatch) -> None:
 
     monkeypatch.setattr(main_module, "run", fake_run)
 
-    exit_code = main_module.main(["config/model-bank-example.json"])
+    exit_code = main_module.main(["config.json"])
 
     assert exit_code == 3
-    assert received_argv == [["config/model-bank-example.json"]]
+    assert received_argv == [["config.json"]]

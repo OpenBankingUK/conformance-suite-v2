@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from django.http import HttpRequest, HttpResponse, HttpResponseNotFound, JsonResponse
@@ -55,8 +56,8 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
     """Validate the submitted plan and launch a browser-supported run.
 
     Args:
-        request: The incoming browser POST request with config, manifest,
-            and step selection values.
+        request: The incoming browser POST request with config, plan spec, and
+            implemented endpoint/runtime-data values.
 
     Returns:
         A redirect to the run detail page when launch succeeds, or an HTML
@@ -81,9 +82,9 @@ def plan_launch(request: HttpRequest) -> HttpResponse:
     try:
         status_body = start_run(
             config=preview.config,
-            manifest=preview.manifest,
-            plan=preview.selected_plan,
-            suite_metadata=preview.suite_metadata,
+            compiled_plan=preview.compiled_plan,
+            runtime_inputs=preview.plan_spec.runtime_inputs,
+            runtime_input_base_dir=Path.cwd(),
             browser_psu_prompts=True,
         )
     except RunConflictError as error:
@@ -989,13 +990,15 @@ def preview_step_counts(preview: PlanPreview) -> dict[str, int]:
         preview: Validated participant plan preview.
 
     Returns:
-        Counts used by templates to summarise selected, optional, and
-        certification-impacting steps.
+        Counts used by templates to summarise endpoint-selected generated
+        catalogue tests.
     """
     return {
         "total": len(preview.rows),
-        "selected": len(preview.selected_plan.selected_step_ids()),
-        "optional": sum(1 for row in preview.rows if row.optional),
+        "generated": len(preview.rows),
+        "endpoints": len(preview.selected_endpoint_ids),
+        "runtime_inputs": len(preview.runtime_input_prompts),
+        "optional": sum(1 for row in preview.rows if not row.mandatory),
         "mandatory": sum(1 for row in preview.rows if row.mandatory),
-        "mandatory_deselected": len(preview.selected_plan.deselected_mandatory_step_ids()),
+        "mandatory_deselected": 0,
     }
