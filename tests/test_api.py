@@ -248,6 +248,7 @@ class TestRunStore:
         certification_eligibility = result["certificationEligibility"]
         assert isinstance(certification_eligibility, dict)
         assert certification_eligibility["eligible"] is False
+        assert certification_eligibility["reason"] == "Development-mode run is not certification evidence"
         reasons = certification_eligibility["reasons"]
         assert isinstance(reasons, list)
         assert "Development-mode run is not certification evidence" in reasons
@@ -264,6 +265,7 @@ class TestRunStore:
         eligibility = result["certificationEligibility"]
         assert isinstance(eligibility, dict)
         assert eligibility["eligible"] is False
+        assert eligibility["reason"] == "Development-mode run is not certification evidence"
         assert result["metadata"] == {"executionMode": "development"}
 
     def test_get_run_returns_snapshot_not_live_reference(self) -> None:

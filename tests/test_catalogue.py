@@ -614,6 +614,24 @@ def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -
 
 
 @pytest.mark.unit
+def test_parse_canonical_plan_document_requires_business_data_and_metadata() -> None:
+    """Canonical parser enforces required empty-object sections without relying on JSON Schema."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+        "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+        "resourceGroups": ["AIS"],
+    }
+
+    with pytest.raises(CatalogueError, match="testPlan.businessTestData is required"):
+        parse_test_plan_document(raw_spec)
+
+    raw_spec["businessTestData"] = {}
+    with pytest.raises(CatalogueError, match="testPlan.metadata is required"):
+        parse_test_plan_document(raw_spec)
+
+
+@pytest.mark.unit
 def test_canonical_resource_group_shorthand_expands_to_catalogue_endpoints() -> None:
     """A canonical resource-group string selects all endpoints in that catalogue group."""
     account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")

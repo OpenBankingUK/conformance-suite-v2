@@ -244,9 +244,9 @@ def mark_development_result_evidence(validation_result: JsonObject, result_objec
     raw_reasons = eligibility.get("reasons")
     reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
     if reason not in reasons:
-        reasons.append(reason)
+        reasons.insert(0, reason)
     eligibility["eligible"] = False
-    eligibility["reason"] = reasons[0]
+    eligibility["reason"] = reason
     eligibility["reasons"] = reasons
 
 

@@ -1856,11 +1856,9 @@ def _parse_canonical_business_test_data(raw_plan: Mapping[str, JsonValue]) -> Js
         Deep-copied business test data object.
 
     Raises:
-        CatalogueError: If ``businessTestData`` is present but not an object.
+        CatalogueError: If ``businessTestData`` is missing or not an object.
     """
-    if "businessTestData" not in raw_plan:
-        return {}
-    return _copy_json_mapping(_json_object(raw_plan["businessTestData"], location="testPlan.businessTestData"))
+    return _copy_json_mapping(_required_object(raw_plan, "businessTestData", location="testPlan"))
 
 
 def _parse_canonical_metadata(raw_plan: Mapping[str, JsonValue]) -> JsonObject:
@@ -1873,11 +1871,9 @@ def _parse_canonical_metadata(raw_plan: Mapping[str, JsonValue]) -> JsonObject:
         Deep-copied metadata object.
 
     Raises:
-        CatalogueError: If ``metadata`` is present but not an object.
+        CatalogueError: If ``metadata`` is missing or not an object.
     """
-    if "metadata" not in raw_plan:
-        return {}
-    return _copy_json_mapping(_json_object(raw_plan["metadata"], location="testPlan.metadata"))
+    return _copy_json_mapping(_required_object(raw_plan, "metadata", location="testPlan"))
 
 
 def _parse_canonical_resource_groups(
