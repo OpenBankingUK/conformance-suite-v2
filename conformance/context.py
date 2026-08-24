@@ -399,6 +399,7 @@ _ALLOWED_CONFIG_PLACEHOLDERS = (
     "${config.oauth.authorizationEndpoint}",
     "${config.oauth.issuer}",
     "${config.oauth.tokenEndpoint}",
+    "${config.oauth.openBankingIntentId}",
     "${config.oauth.resourceBaseUrl}",
     "${config.oauth.responseType}",
     "${config.oauth.requestObjectSigningAlg}",

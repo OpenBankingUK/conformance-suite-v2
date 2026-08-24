@@ -36,6 +36,9 @@ _RESPONSE_SIGNATURE_REGISTRY = JWSRegistry(
 )
 """JWS registry accepting Open Banking critical protected headers."""
 
+_REQUIRED_CRITICAL_HEADERS = frozenset({"b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN})
+"""Protected headers that must be listed as critical for Open Banking response JWS."""
+
 
 class ResponseSignatureValidationError(ValueError):
     """Raised when a response ``x-jws-signature`` header cannot be validated."""
@@ -159,15 +162,16 @@ def _validate_protected_header(protected_header: Mapping[str, JsonValue]) -> Res
     content_type = protected_header.get("cty")
     if content_type is not None and content_type not in {"json", "application/json"}:
         raise ResponseSignatureValidationError("x-jws-signature cty must be json or application/json when supplied")
-    b64_header = protected_header.get("b64")
-    if b64_header is not None and b64_header is not False:
-        raise ResponseSignatureValidationError("x-jws-signature b64 must be false when supplied")
+    if protected_header.get("b64") is not False:
+        raise ResponseSignatureValidationError("x-jws-signature b64 must be false")
     crit_header = protected_header.get("crit")
-    if crit_header is not None:
-        if not isinstance(crit_header, list) or not all(isinstance(item, str) for item in crit_header):
-            raise ResponseSignatureValidationError("x-jws-signature crit must be a string array when supplied")
-        if b64_header is False and "b64" not in crit_header:
-            raise ResponseSignatureValidationError("x-jws-signature crit must include b64 when b64 is false")
+    if not isinstance(crit_header, list) or not all(isinstance(item, str) for item in crit_header):
+        raise ResponseSignatureValidationError("x-jws-signature crit must be a string array")
+    missing_critical_headers = sorted(_REQUIRED_CRITICAL_HEADERS - set(crit_header))
+    if missing_critical_headers:
+        raise ResponseSignatureValidationError(
+            "x-jws-signature crit must include: " + ", ".join(missing_critical_headers)
+        )
     issued_at = protected_header.get(_OPEN_BANKING_IAT)
     if not isinstance(issued_at, int | float) or isinstance(issued_at, bool):
         raise ResponseSignatureValidationError(f"x-jws-signature {_OPEN_BANKING_IAT} must be a JSON number")

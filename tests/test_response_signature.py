@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import json
 from typing import cast
 
 import pytest
@@ -62,6 +64,21 @@ def _signed_response(payload: bytes) -> tuple[str, JsonObject]:
     return jws.detach_content(compact_jws), cast(JsonObject, {"keys": [public_key]})
 
 
+def _detached_signature_with_header(protected_header: JsonObject) -> str:
+    """Build a detached compact JWS shell with a caller-supplied header.
+
+    Args:
+        protected_header: Protected JWS header to encode into the first compact
+            JWS segment.
+
+    Returns:
+        Detached compact JWS string suitable for header-validation tests.
+    """
+    protected_bytes = json.dumps(protected_header, separators=(",", ":")).encode("utf-8")
+    protected_segment = base64.urlsafe_b64encode(protected_bytes).rstrip(b"=").decode("ascii")
+    return f"{protected_segment}..signature"
+
+
 @pytest.mark.unit
 def test_validate_ob_response_signature_accepts_matching_jwks_key() -> None:
     """A detached response JWS validates against the matching JWKS key."""
@@ -98,3 +115,40 @@ def test_validate_ob_response_signature_requires_matching_kid() -> None:
 
     with pytest.raises(ResponseSignatureValidationError, match="does not contain a key"):
         validate_ob_response_signature(signature=signature, payload=payload, jwks={"keys": []})
+
+
+@pytest.mark.unit
+def test_validate_ob_response_signature_requires_unencoded_payload_header() -> None:
+    """Open Banking response signatures must declare RFC 7797 unencoded payloads."""
+    signature = _detached_signature_with_header(
+        {
+            "alg": "PS256",
+            "kid": "response-key",
+            "crit": ["b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN],
+            _OPEN_BANKING_IAT: 1_774_120_000,
+            _OPEN_BANKING_ISS: "0015800001041RHAAY",
+            _OPEN_BANKING_TAN: "openbanking.org.uk",
+        }
+    )
+
+    with pytest.raises(ResponseSignatureValidationError, match="b64 must be false"):
+        validate_ob_response_signature(signature=signature, payload=b"{}", jwks={"keys": []})
+
+
+@pytest.mark.unit
+def test_validate_ob_response_signature_requires_critical_ob_headers() -> None:
+    """Critical headers must include b64 and Open Banking signature parameters."""
+    signature = _detached_signature_with_header(
+        {
+            "alg": "PS256",
+            "kid": "response-key",
+            "b64": False,
+            "crit": ["b64"],
+            _OPEN_BANKING_IAT: 1_774_120_000,
+            _OPEN_BANKING_ISS: "0015800001041RHAAY",
+            _OPEN_BANKING_TAN: "openbanking.org.uk",
+        }
+    )
+
+    with pytest.raises(ResponseSignatureValidationError, match="crit must include:"):
+        validate_ob_response_signature(signature=signature, payload=b"{}", jwks={"keys": []})

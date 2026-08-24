@@ -302,8 +302,9 @@ class TestResolvePlaceholdersHappyPaths:
         """Environment is no longer an allowed runtime placeholder."""
         ctx = _runtime_config_context()
 
-        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder"):
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder") as exc_info:
             resolve_placeholders("env=${config.environment}", ctx)
+        assert "${config.oauth.openBankingIntentId}" in str(exc_info.value)
 
     def test_resolves_config_oauth_client_id(self) -> None:
         ctx = _oauth_context()
