@@ -564,6 +564,31 @@ def test_legacy_v2_to_canonical_export_rejects_missing_discovery_url() -> None:
 
 
 @pytest.mark.unit
+def test_legacy_v2_to_canonical_export_omits_empty_mtls_block() -> None:
+    """Legacy TLS config without recognised fields does not emit empty mTLS metadata."""
+    document = parse_test_plan_document(
+        {
+            "schemaVersion": "v2",
+            "scheme": "open-banking-uk",
+            "specification": "read-write",
+            "version": "4.0.1",
+            "securityProfile": "fapi1-advanced",
+            "scope": {"resourceGroups": []},
+            "config": {
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "tls": {},
+            },
+        }
+    )
+
+    assert isinstance(document, PlanDocumentV2)
+    exported = plan_document_to_json_object(document)
+    security_environment = exported["securityEnvironment"]
+    assert isinstance(security_environment, dict)
+    assert "mtls" not in security_environment
+
+
+@pytest.mark.unit
 def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -> None:
     """Canonical PRD-shaped test plans derive runner config and runtime inputs."""
     raw_spec: dict[str, JsonValue] = {

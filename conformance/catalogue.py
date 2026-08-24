@@ -2767,8 +2767,8 @@ def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, Js
     _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundleRef")
     _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificateRef")
     _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyRef")
-    mtls["enabled"] = "certificateRef" in mtls and "privateKeyRef" in mtls
     if mtls:
+        mtls["enabled"] = "certificateRef" in mtls and "privateKeyRef" in mtls
         security_environment["mtls"] = mtls
 
 

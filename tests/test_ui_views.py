@@ -925,6 +925,24 @@ class TestBuilderWizardUi:
         assert isinstance(metadata, dict)
         assert metadata["aspspName"] == "Example Bank"
 
+    def test_import_rejects_legacy_v2_without_discovery_url(self) -> None:
+        """Legacy v2 imports must include discovery URL before canonical export/review."""
+        client = Client()
+        plan_document = {
+            "schemaVersion": "v2",
+            "scheme": "open-banking-uk",
+            "specification": "read-write",
+            "version": "4.0.1",
+            "securityProfile": "fapi1-advanced",
+            "scope": {"resourceGroups": []},
+            "config": {},
+        }
+
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+
+        assert response.status_code == 400
+        assert "Legacy v2 imports must include config.discoveryUrl" in response.content.decode("utf-8")
+
 
 @pytest.mark.integration
 class TestPlanBuilderUi:
