@@ -30,6 +30,7 @@ from conformance.catalogue import (
 from conformance.catalogue_registry import supported_catalogues
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.test_plan_validation import safe_test_plan_snapshot
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 _SCHEME_LABELS = {"open-banking-uk": "Open Banking UK"}
@@ -1978,7 +1979,20 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
     document = parse_test_plan_document(raw_document)
     if not isinstance(document, PlanDocumentV2):
         raise CatalogueError("Builder drafts must produce a v2 plan document")
-    return document
+    return PlanDocumentV2(
+        schema_version=document.schema_version,
+        scheme=document.scheme,
+        specification=document.specification,
+        version=document.version,
+        security_profile=document.security_profile,
+        resource_groups=document.resource_groups,
+        config=document.config,
+        runtime_inputs=document.runtime_inputs,
+        security_environment=_merged_plan_context(draft.security_environment, document.security_environment),
+        business_test_data=_merged_plan_context(draft.business_test_data, document.business_test_data),
+        metadata=_copy_json_mapping(draft.metadata),
+        execution_mode=draft.execution_mode,
+    )
 
 
 def draft_scope_from_plan_document(
@@ -2001,6 +2015,18 @@ def draft_scope_from_plan_document(
         resource_group_id = _resource_group_id(api) if api is not None else resource_group.resource_group_id
         if resource_group_id not in resource_group_ids:
             resource_group_ids.append(resource_group_id)
+        if resource_group.select_all:
+            hierarchy = catalogue_scope_hierarchy(
+                PlanDocumentBoundary(document.scheme, document.specification, document.version),
+                selected_resource_group_ids=(resource_group_id,),
+            )
+            endpoint_ids.extend(
+                endpoint.id
+                for group in hierarchy.resource_groups
+                for endpoint in group.endpoints
+                if group.id == resource_group_id
+            )
+            continue
         for endpoint in resource_group.endpoints:
             endpoint_ref = EndpointRef(method=endpoint.method, path=endpoint.path)
             endpoint_id = _endpoint_id_for_resource_group_endpoint(
@@ -2042,7 +2068,7 @@ def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[W
     Raises:
         CatalogueError: If endpoint scope cannot be compiled.
     """
-    if not any(resource_group.endpoints for resource_group in document.resource_groups):
+    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
         return ()
     boundary_requirements = _runtime_requirements_for_boundary(
         PlanDocumentBoundary(document.scheme, document.specification, document.version)
@@ -2169,10 +2195,7 @@ def plan_document_to_export_json(
     exported = plan_document_to_json_object(document)
     if include_secrets:
         return exported
-    config_value = exported.get("config")
-    if isinstance(config_value, dict):
-        exported["config"] = _safe_export_config(config_value, set(sensitive_runtime_input_ids))
-    return exported
+    return safe_test_plan_snapshot(document, sensitive_runtime_input_ids=sensitive_runtime_input_ids)
 
 
 def _endpoint_options_for_catalogue(
@@ -2990,12 +3013,42 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
         CatalogueError: If serialisation or parsing unexpectedly produces a
             non-v2 plan document.
     """
-    raw_document = plan_document_to_json_object(document)
-    raw_document["config"] = _copy_json_mapping(config)
-    parsed = parse_test_plan_document(raw_document)
-    if not isinstance(parsed, PlanDocumentV2):
-        raise CatalogueError("Expected v2 plan document")
-    return parsed
+    return PlanDocumentV2(
+        schema_version=document.schema_version,
+        scheme=document.scheme,
+        specification=document.specification,
+        version=document.version,
+        security_profile=document.security_profile,
+        resource_groups=document.resource_groups,
+        config=_copy_json_mapping(config),
+        runtime_inputs=_runtime_input_values_from_config(config),
+        security_environment=document.security_environment,
+        business_test_data=document.business_test_data,
+        metadata=document.metadata,
+        execution_mode=document.execution_mode,
+    )
+
+
+def _merged_plan_context(
+    imported_context: Mapping[str, JsonValue],
+    derived_context: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Return imported plan context updated with non-empty derived values.
+
+    Args:
+        imported_context: Canonical context preserved from imported plan JSON.
+        derived_context: Context derived from the current editable config.
+
+    Returns:
+        Merged context where current form/config values override imported values
+        while blank derived strings do not erase imported metadata.
+    """
+    merged = _copy_json_mapping(imported_context)
+    for key, value in derived_context.items():
+        if isinstance(value, str) and not value:
+            continue
+        merged[key] = _copy_json_value(value)
+    return merged
 
 
 def _config_with_runtime_placeholders(
@@ -3706,6 +3759,8 @@ def _selected_endpoint_api_ids(document: PlanDocumentV2) -> frozenset[str]:
     api_ids: set[str] = set()
     for resource_group in document.resource_groups:
         group_api = _api_from_resource_group_id(resource_group.resource_group_id)
+        if resource_group.select_all and group_api is not None:
+            api_ids.add(group_api)
         for endpoint in resource_group.endpoints:
             endpoint_api = _api_from_endpoint_path(endpoint.path)
             if endpoint_api is not None:
@@ -3738,9 +3793,16 @@ def _api_from_resource_group_id(resource_group_id: str) -> str | None:
         resource_group_id: Resource-group id from a v2 plan document.
 
     Returns:
-        API-family prefix when the id uses the builder ``api.slug`` shape,
-        otherwise ``None``.
+        API-family id when the resource group is canonical, high-level, or uses
+        the legacy builder ``api.slug`` shape; otherwise ``None``.
     """
+    canonical_lookup = {"AIS": "ais", "PIS": "pis", "CBPII": "cbpii", "VRP": "vrp"}
+    if resource_group_id in canonical_lookup:
+        return canonical_lookup[resource_group_id]
+    high_level_lookup = {metadata.group_id: api for api, metadata in _RESOURCE_GROUP_METADATA_BY_API.items()}
+    high_level_api = high_level_lookup.get(resource_group_id)
+    if high_level_api is not None:
+        return high_level_api
     api, separator, _slug_value = resource_group_id.partition(".")
     return api if separator and api else None
 

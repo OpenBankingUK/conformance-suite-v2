@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import copy
 from collections.abc import Iterable, Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from types import MappingProxyType
 from typing import ClassVar, Literal, cast
 
@@ -18,6 +18,9 @@ class CatalogueError(ValueError):
 
 type SecurityProfile = Literal["all", "fapi1-advanced", "fapi2"]
 """Security profile selectors supported by catalogue applicability rules."""
+
+type PlanExecutionMode = Literal["certification", "development"]
+"""Execution modes supported by JSON-first Open Banking test plans."""
 
 type HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 """HTTP methods accepted for implemented endpoints and catalogue request steps."""
@@ -57,6 +60,53 @@ _V2_READ_WRITE_VERSION_MAP = {"4.0": "v4.0", "4.0.0": "v4.0", "4.0.1": "v4.0"}
 
 _V2_READ_WRITE_DISPLAY_VERSIONS = ("4.0.1", "4.0.0", "4.0")
 """Preferred display order for compile-ready Read/Write v2 versions."""
+
+_CANONICAL_PLAN_SCHEMA_VERSION = "1.0"
+"""Current JSON-first test-plan schema version."""
+
+_CANONICAL_OBL_READ_WRITE_FAMILY = "OBL_READ_WRITE"
+"""Canonical PRD family value for Open Banking UK Read/Write plans."""
+
+_CANONICAL_RESOURCE_GROUPS_BY_API = {
+    "ais": ("AIS", "account-and-transaction", "Account and Transaction"),
+    "pis": ("PIS", "payment-initiation", "Payment Initiation"),
+    "cbpii": ("CBPII", "confirmation-of-funds", "Confirmation of Funds"),
+    "vrp": ("VRP", "variable-recurring-payments", "Variable Recurring Payments"),
+}
+"""Canonical, builder, and display identifiers for Open Banking resource groups."""
+
+_RESOURCE_GROUP_API_BY_CANONICAL_ID = {
+    canonical_id: api for api, (canonical_id, _builder_id, _label) in _CANONICAL_RESOURCE_GROUPS_BY_API.items()
+}
+"""Lookup from canonical resource group ids to internal catalogue API families."""
+
+_RESOURCE_GROUP_API_BY_BUILDER_ID = {
+    builder_id: api for api, (_canonical_id, builder_id, _label) in _CANONICAL_RESOURCE_GROUPS_BY_API.items()
+}
+"""Lookup from builder resource group ids to internal catalogue API families."""
+
+_SUPPORTED_PLAN_EXECUTION_MODES = {"certification", "development"}
+"""Execution modes accepted by canonical JSON test plans."""
+
+_MODEL_BANK_CONFIG_KEYS = {
+    "discoveryUrl",
+    "timeoutSeconds",
+    "followUp",
+    "tls",
+    "fapiSigning",
+    "resultOutputPath",
+    "executionLogPath",
+    "approvedReleasePolicyPath",
+    "oauth",
+    "resourceServer",
+    "clientCredentials",
+    "openBanking",
+    "ais",
+    "pis",
+    "cbpii",
+    "conditionalProperties",
+}
+"""Executable model-bank config keys derivable from a canonical test plan."""
 
 
 @dataclass(frozen=True)
@@ -359,16 +409,19 @@ class PlanResourceGroup:
         resource_group_id: Stable user-facing resource-group identifier.
         label: Optional display label imported from a UI-built plan.
         endpoints: Endpoint selections declared inside this resource group.
+        select_all: Whether this group was declared by canonical shorthand and
+            should expand to every catalogue endpoint for the group.
     """
 
     resource_group_id: str
     label: str | None
     endpoints: tuple[PlanDocumentEndpoint, ...]
+    select_all: bool = False
 
 
 @dataclass(frozen=True)
 class PlanDocumentV2:
-    """Shared v2 plan document used by UI import/export, API, and CLI.
+    """Shared JSON-first plan document used by UI import/export, API, and CLI.
 
     Attributes:
         schema_version: Shared plan-document schema version.
@@ -384,12 +437,19 @@ class PlanDocumentV2:
         config: Raw execution/config section preserved for import/export.
         runtime_inputs: Runtime values derived from ``config`` for catalogue
             compilation and execution.
+        security_environment: Canonical security environment section from the
+            PRD document.
+        business_test_data: Canonical resource-group-specific business data
+            section from the PRD document.
+        metadata: Optional participant/export metadata, such as ASPSP and brand.
+        execution_mode: Whether the plan is intended for strict certification
+            execution or relaxed development/debug execution.
     """
 
     # Class starts with "Plan" and is production code, but keep pytest explicit.
     __test__: ClassVar[bool] = False
 
-    schema_version: Literal["v2"]
+    schema_version: str
     scheme: str
     specification: str
     version: str
@@ -397,6 +457,10 @@ class PlanDocumentV2:
     resource_groups: tuple[PlanResourceGroup, ...]
     config: Mapping[str, JsonValue]
     runtime_inputs: Mapping[str, JsonValue]
+    security_environment: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
+    business_test_data: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
+    metadata: Mapping[str, JsonValue] = field(default_factory=lambda: MappingProxyType({}))
+    execution_mode: PlanExecutionMode = "certification"
 
 
 @dataclass(frozen=True)
@@ -600,46 +664,50 @@ def parse_test_plan_document(raw_spec: object) -> ParsedPlanDocument:
     schema_version = _required_string(spec, "schemaVersion", location="planSpec")
     if schema_version == "v1":
         return parse_test_plan_spec(spec)
+    if schema_version == _CANONICAL_PLAN_SCHEMA_VERSION:
+        return _parse_canonical_plan_document(spec)
     if schema_version == "v2":
         return _parse_plan_document_v2(spec)
-    raise CatalogueError("planSpec.schemaVersion must be one of: v1, v2")
+    raise CatalogueError("planSpec.schemaVersion must be one of: 1.0, v1, v2")
 
 
 def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
-    """Serialise a v2 shared plan document to exportable JSON.
+    """Serialise a shared plan document to the canonical PRD JSON shape.
 
     Args:
-        document: Parsed v2 plan document to serialise.
+        document: Parsed plan document to serialise.
 
     Returns:
-        JSON object preserving the shared v2 plan-document shape.
+        JSON object preserving the canonical JSON-first test-plan shape.
     """
     return {
-        "schemaVersion": document.schema_version,
-        "scheme": document.scheme,
-        "specification": document.specification,
-        "version": document.version,
-        "securityProfile": document.security_profile,
-        "scope": {
-            "resourceGroups": [
-                {
-                    "id": resource_group.resource_group_id,
-                    **({"label": resource_group.label} if resource_group.label is not None else {}),
-                    "endpoints": [
-                        {
-                            "method": endpoint.method,
-                            "path": endpoint.path,
-                            **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
-                            **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
-                        }
-                        for endpoint in resource_group.endpoints
-                    ],
-                }
-                for resource_group in document.resource_groups
-            ]
+        "schemaVersion": _CANONICAL_PLAN_SCHEMA_VERSION,
+        "specification": {
+            "family": _canonical_family_for_plan_document(document),
+            "version": document.version,
+            "profile": _canonical_security_profile(document.security_profile),
         },
-        "config": {key: _copy_json_value(value) for key, value in document.config.items()},
+        "executionMode": document.execution_mode,
+        "securityEnvironment": _security_environment_for_export(document),
+        "resourceGroups": [
+            _canonical_resource_group_for_export(resource_group) for resource_group in document.resource_groups
+        ],
+        "businessTestData": _business_test_data_for_export(document),
+        "metadata": {key: _copy_json_value(value) for key, value in document.metadata.items()},
     }
+
+
+def model_bank_config_from_plan_document(document: PlanDocumentV2) -> JsonObject:
+    """Extract executable model-bank config fields from a test plan document.
+
+    Args:
+        document: Parsed JSON-first test plan document.
+
+    Returns:
+        Model-bank config JSON object accepted by
+        :func:`conformance.model_bank_config.parse_model_bank_config`.
+    """
+    return {key: _copy_json_value(value) for key, value in document.config.items() if key in _MODEL_BANK_CONFIG_KEYS}
 
 
 def supported_plan_document_boundaries(catalogues: Iterable[TestCatalogue]) -> tuple[PlanDocumentBoundary, ...]:
@@ -835,7 +903,7 @@ def _compile_plan_document_v2(document: PlanDocumentV2, catalogues: Iterable[Tes
             compilation is invalid.
     """
     candidate_catalogues = _candidate_catalogues_for_plan_document_v2(document, tuple(catalogues))
-    implemented_endpoints = _implemented_endpoints_from_plan_document_v2(document)
+    implemented_endpoints = _implemented_endpoints_from_plan_document_v2(document, candidate_catalogues)
     if not implemented_endpoints:
         raise CatalogueError("planSpec.scope.resourceGroups must select at least one endpoint")
 
@@ -917,17 +985,26 @@ def _internal_catalogue_version_for_plan_boundary(boundary: PlanDocumentBoundary
     return catalogue_version
 
 
-def _implemented_endpoints_from_plan_document_v2(document: PlanDocumentV2) -> tuple[ImplementedEndpoint, ...]:
+def _implemented_endpoints_from_plan_document_v2(
+    document: PlanDocumentV2,
+    catalogues: tuple[TestCatalogue, ...],
+) -> tuple[ImplementedEndpoint, ...]:
     """Flatten v2 resource-group endpoints into compiler endpoint declarations.
 
     Args:
         document: Parsed v2 plan document.
+        catalogues: Catalogue areas available for expanding group-level
+            shorthand selections.
 
     Returns:
         Implemented endpoint declarations in plan-document order.
     """
     endpoints: list[ImplementedEndpoint] = []
+    catalogues_by_api = {catalogue.key.api: catalogue for catalogue in catalogues}
     for resource_group in document.resource_groups:
+        if resource_group.select_all:
+            endpoints.extend(_all_endpoints_for_resource_group(resource_group, catalogues_by_api=catalogues_by_api))
+            continue
         for endpoint in resource_group.endpoints:
             endpoints.append(
                 ImplementedEndpoint(
@@ -939,6 +1016,64 @@ def _implemented_endpoints_from_plan_document_v2(document: PlanDocumentV2) -> tu
                 )
             )
     return tuple(endpoints)
+
+
+def _all_endpoints_for_resource_group(
+    resource_group: PlanResourceGroup,
+    *,
+    catalogues_by_api: Mapping[str, TestCatalogue],
+) -> tuple[ImplementedEndpoint, ...]:
+    """Expand a resource-group shorthand to every endpoint in its catalogue.
+
+    Args:
+        resource_group: Resource group whose shorthand selection is being
+            compiled.
+        catalogues_by_api: Candidate catalogues keyed by internal API family.
+
+    Returns:
+        Implemented endpoint declarations for all endpoint refs in catalogue
+        order.
+
+    Raises:
+        CatalogueError: If the resource group cannot be mapped to a catalogue.
+    """
+    api = _api_for_plan_resource_group_id(resource_group.resource_group_id)
+    if api is None or api not in catalogues_by_api:
+        raise CatalogueError(f"No catalogue area owns resource group '{resource_group.resource_group_id}'")
+    endpoints: list[ImplementedEndpoint] = []
+    for endpoint_ref in _ordered_catalogue_endpoint_refs(catalogues_by_api[api]):
+        endpoints.append(
+            ImplementedEndpoint(
+                method=endpoint_ref.method,
+                path=endpoint_ref.path,
+                resource_group=resource_group.resource_group_id,
+            )
+        )
+    return tuple(endpoints)
+
+
+def _ordered_catalogue_endpoint_refs(catalogue: TestCatalogue) -> tuple[EndpointRef, ...]:
+    """Return catalogue endpoint refs in deterministic catalogue order.
+
+    Args:
+        catalogue: Catalogue whose endpoint refs should be enumerated.
+
+    Returns:
+        De-duplicated endpoint refs in test-case then capability order.
+    """
+    endpoint_refs: list[EndpointRef] = []
+    seen: set[EndpointRef] = set()
+    for test_case in catalogue.test_cases:
+        for endpoint_ref in test_case.applicability.endpoint_refs:
+            if endpoint_ref not in seen:
+                seen.add(endpoint_ref)
+                endpoint_refs.append(endpoint_ref)
+    for capability in catalogue.capabilities:
+        for endpoint_ref in capability.endpoint_refs:
+            if endpoint_ref not in seen:
+                seen.add(endpoint_ref)
+                endpoint_refs.append(endpoint_ref)
+    return tuple(endpoint_refs)
 
 
 def _partition_implemented_endpoints_by_catalogue(
@@ -1029,8 +1164,8 @@ def _catalogue_index_for_resource_group(
         CatalogueError: If the resource group names an API family that is not
             available in the selected v2 boundary.
     """
-    api, separator, _slug_value = resource_group.partition(".")
-    if not separator or not api:
+    api = _api_for_plan_resource_group_id(resource_group)
+    if api is None:
         return None
     catalogue_index = catalogue_indexes_by_api.get(api)
     if catalogue_index is None:
@@ -1464,8 +1599,753 @@ def _parse_catalogue_key(raw_key: Mapping[str, JsonValue]) -> CatalogueKey:
     )
 
 
+def _parse_canonical_plan_document(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
+    """Parse a PRD JSON-first test plan document.
+
+    Args:
+        spec: Raw test-plan JSON object with ``schemaVersion`` already
+            identified as ``"1.0"``.
+
+    Returns:
+        Parsed shared plan document with compiler-facing fields derived from the
+        canonical Open Banking test-plan sections.
+
+    Raises:
+        CatalogueError: If the canonical document is malformed or unsupported.
+    """
+    _reject_unknown_keys(
+        spec,
+        allowed_keys={
+            "schemaVersion",
+            "specification",
+            "securityEnvironment",
+            "resourceGroups",
+            "businessTestData",
+            "metadata",
+            "executionMode",
+        },
+        location="testPlan",
+    )
+    raw_specification = _required_object(spec, "specification", location="testPlan")
+    boundary, security_profile = _parse_canonical_specification(raw_specification)
+    execution_mode = _parse_execution_mode(spec)
+    security_environment = _parse_canonical_security_environment(
+        _required_object(spec, "securityEnvironment", location="testPlan")
+    )
+    business_test_data = _parse_canonical_business_test_data(spec)
+    metadata = _parse_canonical_metadata(spec)
+    config = _canonical_plan_config(
+        security_environment=security_environment,
+        business_test_data=business_test_data,
+    )
+    return PlanDocumentV2(
+        schema_version=_CANONICAL_PLAN_SCHEMA_VERSION,
+        scheme=boundary.scheme,
+        specification=boundary.specification,
+        version=boundary.version,
+        security_profile=security_profile,
+        resource_groups=_parse_canonical_resource_groups(spec, location="testPlan"),
+        config=MappingProxyType(config),
+        runtime_inputs=MappingProxyType(_runtime_inputs_from_plan_config(config)),
+        security_environment=MappingProxyType(security_environment),
+        business_test_data=MappingProxyType(business_test_data),
+        metadata=MappingProxyType(metadata),
+        execution_mode=execution_mode,
+    )
+
+
+def _parse_canonical_specification(
+    raw_specification: Mapping[str, JsonValue],
+) -> tuple[PlanDocumentBoundary, SecurityProfile]:
+    """Parse the canonical ``specification`` section.
+
+    Args:
+        raw_specification: Raw ``testPlan.specification`` object.
+
+    Returns:
+        Compiler boundary and security-profile pair.
+
+    Raises:
+        CatalogueError: If the specification family, profile, or version is not
+            supported.
+    """
+    _reject_unknown_keys(
+        raw_specification,
+        allowed_keys={"family", "version", "profile", "securityProfile"},
+        location="testPlan.specification",
+    )
+    family = _required_string(raw_specification, "family", location="testPlan.specification")
+    if family != _CANONICAL_OBL_READ_WRITE_FAMILY:
+        raise CatalogueError(f"testPlan.specification.family must be {_CANONICAL_OBL_READ_WRITE_FAMILY}")
+    version = _required_string(raw_specification, "version", location="testPlan.specification")
+    boundary = PlanDocumentBoundary(
+        scheme=_V2_OPEN_BANKING_UK_SCHEME,
+        specification=_V2_READ_WRITE_SPECIFICATION,
+        version=version,
+    )
+    _internal_catalogue_version_for_plan_boundary(boundary)
+    raw_profile = raw_specification.get("profile", raw_specification.get("securityProfile"))
+    security_profile = _parse_canonical_security_profile(raw_profile, location="testPlan.specification.profile")
+    return boundary, security_profile
+
+
+def _parse_canonical_security_profile(value: JsonValue | None, *, location: str) -> SecurityProfile:
+    """Parse a canonical or compiler-native security profile.
+
+    Args:
+        value: Raw security profile value, or ``None`` to use the default.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Compiler security-profile value.
+
+    Raises:
+        CatalogueError: If the supplied profile is not supported.
+    """
+    if value is None:
+        return "fapi1-advanced"
+    if not isinstance(value, str) or not value.strip():
+        raise CatalogueError(f"{location} must be a non-empty string when present")
+    normalized = value.strip()
+    profile_map = {
+        "FAPI1_ADVANCED": "fapi1-advanced",
+        "FAPI2": "fapi2",
+        "ALL": "all",
+        "fapi1-advanced": "fapi1-advanced",
+        "fapi2": "fapi2",
+        "all": "all",
+    }
+    mapped = profile_map.get(normalized)
+    if mapped is None:
+        supported = ", ".join(sorted(profile_map))
+        raise CatalogueError(f"{location} must be one of: {supported}")
+    return cast("SecurityProfile", mapped)
+
+
+def _parse_execution_mode(raw_plan: Mapping[str, JsonValue]) -> PlanExecutionMode:
+    """Parse a canonical test-plan execution mode.
+
+    Args:
+        raw_plan: Raw top-level test-plan object.
+
+    Returns:
+        Parsed execution mode, defaulting to ``"certification"``.
+
+    Raises:
+        CatalogueError: If the mode is present but unsupported.
+    """
+    value = raw_plan.get("executionMode")
+    if value is None:
+        return "certification"
+    if not isinstance(value, str) or value not in _SUPPORTED_PLAN_EXECUTION_MODES:
+        supported = ", ".join(sorted(_SUPPORTED_PLAN_EXECUTION_MODES))
+        raise CatalogueError(f"testPlan.executionMode must be one of: {supported}")
+    return cast("PlanExecutionMode", value)
+
+
+def _parse_canonical_security_environment(raw_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Parse the canonical ``securityEnvironment`` section.
+
+    Args:
+        raw_environment: Raw security environment object.
+
+    Returns:
+        Deep-copied security environment object.
+
+    Raises:
+        CatalogueError: If required fields or known nested fields are malformed.
+    """
+    _reject_unknown_keys(
+        raw_environment,
+        allowed_keys={
+            "name",
+            "discoveryUrl",
+            "issuer",
+            "authorizationEndpoint",
+            "tokenEndpoint",
+            "jwksUri",
+            "clientAuthMethod",
+            "signingAlgorithm",
+            "mtls",
+            "clientId",
+            "redirectUri",
+            "openBankingIntentId",
+            "resourceBaseUrl",
+            "responseType",
+            "acrValuesSupported",
+            "signingCertificateRef",
+            "signingPrivateKeyRef",
+            "signingKeyId",
+            "clientAssertionIssuer",
+            "clientAssertionSubject",
+            "tppSignatureIssuer",
+            "tppSignatureTan",
+            "caBundleRef",
+            "xFapiFinancialId",
+            "sendXFapiCustomerIpAddress",
+            "xFapiCustomerIpAddress",
+            "timeoutSeconds",
+        },
+        location="testPlan.securityEnvironment",
+    )
+    discovery_url = _required_string(raw_environment, "discoveryUrl", location="testPlan.securityEnvironment")
+    try:
+        validate_https_url(discovery_url, label="testPlan.securityEnvironment.discoveryUrl")
+    except HttpsUrlValidationError as error:
+        raise CatalogueError(str(error)) from error
+    parsed = _copy_json_mapping(raw_environment)
+    if "mtls" in parsed:
+        _parse_canonical_mtls(_json_object(parsed["mtls"], location="testPlan.securityEnvironment.mtls"))
+    if "clientAuthMethod" in parsed:
+        _parse_canonical_client_auth_method(parsed["clientAuthMethod"])
+    if "acrValuesSupported" in parsed:
+        _parse_string_array_value(
+            parsed["acrValuesSupported"],
+            location="testPlan.securityEnvironment.acrValuesSupported",
+        )
+    return parsed
+
+
+def _parse_canonical_mtls(raw_mtls: Mapping[str, JsonValue]) -> None:
+    """Validate the canonical ``securityEnvironment.mtls`` object.
+
+    Args:
+        raw_mtls: Raw mTLS object from the canonical plan.
+
+    Raises:
+        CatalogueError: If known mTLS fields are malformed.
+    """
+    _reject_unknown_keys(
+        raw_mtls,
+        allowed_keys={"enabled", "certificateRef", "privateKeyRef", "caBundleRef", "certificatePathRoot"},
+        location="testPlan.securityEnvironment.mtls",
+    )
+    enabled = raw_mtls.get("enabled")
+    if enabled is not None and not isinstance(enabled, bool):
+        raise CatalogueError("testPlan.securityEnvironment.mtls.enabled must be a JSON boolean")
+    for key in ("certificateRef", "privateKeyRef", "caBundleRef", "certificatePathRoot"):
+        value = raw_mtls.get(key)
+        if value is not None and (not isinstance(value, str) or not value.strip()):
+            raise CatalogueError(f"testPlan.securityEnvironment.mtls.{key} must be a non-empty string when present")
+
+
+def _parse_canonical_client_auth_method(value: JsonValue) -> None:
+    """Validate a canonical client authentication method.
+
+    Args:
+        value: Raw ``clientAuthMethod`` value.
+
+    Raises:
+        CatalogueError: If the auth method is not supported by the local runner.
+    """
+    if not isinstance(value, str) or not value.strip():
+        raise CatalogueError("testPlan.securityEnvironment.clientAuthMethod must be a non-empty string when present")
+    if value not in {"private_key_jwt", "tls_client_auth"}:
+        raise CatalogueError(
+            "testPlan.securityEnvironment.clientAuthMethod must be one of: private_key_jwt, tls_client_auth"
+        )
+
+
+def _parse_canonical_business_test_data(raw_plan: Mapping[str, JsonValue]) -> JsonObject:
+    """Parse the canonical ``businessTestData`` section.
+
+    Args:
+        raw_plan: Raw top-level test-plan object.
+
+    Returns:
+        Deep-copied business test data object.
+
+    Raises:
+        CatalogueError: If ``businessTestData`` is present but not an object.
+    """
+    if "businessTestData" not in raw_plan:
+        return {}
+    return _copy_json_mapping(_json_object(raw_plan["businessTestData"], location="testPlan.businessTestData"))
+
+
+def _parse_canonical_metadata(raw_plan: Mapping[str, JsonValue]) -> JsonObject:
+    """Parse optional canonical plan metadata.
+
+    Args:
+        raw_plan: Raw top-level test-plan object.
+
+    Returns:
+        Deep-copied metadata object.
+
+    Raises:
+        CatalogueError: If ``metadata`` is present but not an object.
+    """
+    if "metadata" not in raw_plan:
+        return {}
+    return _copy_json_mapping(_json_object(raw_plan["metadata"], location="testPlan.metadata"))
+
+
+def _parse_canonical_resource_groups(
+    raw_plan: Mapping[str, JsonValue],
+    *,
+    location: str,
+) -> tuple[PlanResourceGroup, ...]:
+    """Parse canonical resource group declarations.
+
+    Args:
+        raw_plan: Raw top-level canonical test-plan object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Resource-group declarations suitable for compilation.
+
+    Raises:
+        CatalogueError: If resource groups are missing, malformed, or duplicated.
+    """
+    raw_groups = raw_plan.get("resourceGroups")
+    if not isinstance(raw_groups, list):
+        raise CatalogueError(f"{location}.resourceGroups must be an array")
+    groups: list[PlanResourceGroup] = []
+    seen_ids: set[str] = set()
+    for index, raw_group in enumerate(raw_groups):
+        group_location = f"{location}.resourceGroups[{index}]"
+        group = (
+            _parse_canonical_resource_group_object(raw_group, location=group_location)
+            if isinstance(raw_group, dict)
+            else _parse_canonical_resource_group_string(raw_group, location=group_location)
+        )
+        if group.resource_group_id in seen_ids:
+            raise CatalogueError(f"{group_location} duplicates resource group '{group.resource_group_id}'")
+        seen_ids.add(group.resource_group_id)
+        groups.append(group)
+    return tuple(groups)
+
+
+def _parse_canonical_resource_group_string(raw_group: JsonValue, *, location: str) -> PlanResourceGroup:
+    """Parse a canonical resource group shorthand value.
+
+    Args:
+        raw_group: Raw resource group value from ``resourceGroups``.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Resource-group declaration that expands to all endpoints in the group.
+
+    Raises:
+        CatalogueError: If the group id is not a supported Open Banking group.
+    """
+    if not isinstance(raw_group, str) or not raw_group.strip():
+        raise CatalogueError(f"{location} must be a non-empty string or JSON object")
+    return _canonical_group_for_id(raw_group.strip(), location=location, select_all=True)
+
+
+def _parse_canonical_resource_group_object(
+    raw_group: Mapping[str, JsonValue],
+    *,
+    location: str,
+) -> PlanResourceGroup:
+    """Parse a detailed canonical resource group declaration.
+
+    Args:
+        raw_group: Raw resource group object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Resource-group declaration with endpoint selections.
+
+    Raises:
+        CatalogueError: If the group id or endpoints are malformed.
+    """
+    _reject_unknown_keys(raw_group, allowed_keys={"id", "label", "endpoints"}, location=location)
+    group = _canonical_group_for_id(_required_string(raw_group, "id", location=location), location=location)
+    seen_refs: set[EndpointRef] = set()
+    raw_endpoints = _optional_object_array(raw_group, "endpoints", location=location)
+    endpoints = tuple(
+        _parse_plan_document_v2_endpoint(raw_endpoint, location=f"{location}.endpoints[{index}]", seen_refs=seen_refs)
+        for index, raw_endpoint in enumerate(raw_endpoints)
+    )
+    return PlanResourceGroup(
+        resource_group_id=group.resource_group_id,
+        label=_optional_string(raw_group, "label", location=location) or group.label,
+        endpoints=endpoints,
+        select_all=not endpoints,
+    )
+
+
+def _canonical_group_for_id(group_id: str, *, location: str, select_all: bool = False) -> PlanResourceGroup:
+    """Return a resource-group declaration for a canonical or legacy group id.
+
+    Args:
+        group_id: Resource group identifier from a plan document.
+        location: Dot-path location string used in error messages.
+        select_all: Whether the declaration should expand to all group
+            endpoints during compilation.
+
+    Returns:
+        Normalised resource-group declaration.
+
+    Raises:
+        CatalogueError: If the group id is not a supported resource group.
+    """
+    api = _api_for_plan_resource_group_id(group_id)
+    if api is None or api not in _CANONICAL_RESOURCE_GROUPS_BY_API:
+        supported = ", ".join(sorted(_RESOURCE_GROUP_API_BY_CANONICAL_ID))
+        raise CatalogueError(f"{location} must be one of: {supported}")
+    _canonical_id, builder_id, label = _CANONICAL_RESOURCE_GROUPS_BY_API[api]
+    return PlanResourceGroup(resource_group_id=builder_id, label=label, endpoints=(), select_all=select_all)
+
+
+def _canonical_plan_config(
+    *,
+    security_environment: Mapping[str, JsonValue],
+    business_test_data: Mapping[str, JsonValue],
+) -> JsonObject:
+    """Build executable model-bank config from canonical plan sections.
+
+    Args:
+        security_environment: Parsed canonical security environment.
+        business_test_data: Parsed canonical resource-group business data.
+
+    Returns:
+        Config object accepted by the existing model-bank runner.
+    """
+    config = _config_from_security_environment(security_environment)
+    config.update(_config_from_business_test_data(business_test_data))
+    return config
+
+
+def _config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Map canonical security environment fields to executable config.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        Model-bank config fields derived from the canonical security section.
+    """
+    config: JsonObject = {"discoveryUrl": _copy_json_value(security_environment["discoveryUrl"])}
+    _copy_optional_top_level_value(
+        config,
+        security_environment,
+        source_key="timeoutSeconds",
+        target_key="timeoutSeconds",
+    )
+    oauth = _oauth_config_from_security_environment(security_environment)
+    if oauth:
+        config["oauth"] = oauth
+    fapi_signing = _fapi_signing_config_from_security_environment(security_environment)
+    if fapi_signing:
+        config["fapiSigning"] = fapi_signing
+    tls = _tls_config_from_security_environment(security_environment)
+    if tls:
+        config["tls"] = tls
+    resource_server = _resource_server_config_from_security_environment(security_environment)
+    if resource_server:
+        config["resourceServer"] = resource_server
+    open_banking = _open_banking_config_from_security_environment(security_environment)
+    if open_banking:
+        config["openBanking"] = open_banking
+    return config
+
+
+def _oauth_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Return OAuth config fields derived from canonical security metadata.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        OAuth config object, or an empty object when OAuth client fields are
+        absent.
+    """
+    oauth: JsonObject = {}
+    _copy_optional_top_level_value(oauth, security_environment, source_key="clientId", target_key="clientId")
+    _copy_optional_top_level_value(oauth, security_environment, source_key="redirectUri", target_key="redirectUri")
+    _copy_optional_top_level_value(
+        oauth,
+        security_environment,
+        source_key="authorizationEndpoint",
+        target_key="authorizationEndpoint",
+    )
+    _copy_optional_top_level_value(oauth, security_environment, source_key="issuer", target_key="issuer")
+    _copy_optional_top_level_value(oauth, security_environment, source_key="tokenEndpoint", target_key="tokenEndpoint")
+    _copy_optional_top_level_value(
+        oauth,
+        security_environment,
+        source_key="openBankingIntentId",
+        target_key="openBankingIntentId",
+    )
+    _copy_optional_top_level_value(
+        oauth,
+        security_environment,
+        source_key="resourceBaseUrl",
+        target_key="resourceBaseUrl",
+    )
+    _copy_optional_top_level_value(oauth, security_environment, source_key="responseType", target_key="responseType")
+    _copy_optional_top_level_value(
+        oauth,
+        security_environment,
+        source_key="acrValuesSupported",
+        target_key="acrValuesSupported",
+    )
+    _copy_optional_top_level_value(
+        oauth,
+        security_environment,
+        source_key="signingAlgorithm",
+        target_key="requestObjectSigningAlg",
+    )
+    if oauth and ("clientId" not in oauth or "redirectUri" not in oauth):
+        return {}
+    return oauth
+
+
+def _fapi_signing_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Return FAPI signing config fields from canonical security metadata.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        FAPI signing config object, or an empty object when no signing reference
+        fields are supplied.
+    """
+    signing: JsonObject = {}
+    _copy_optional_top_level_value(
+        signing,
+        security_environment,
+        source_key="signingCertificateRef",
+        target_key="signingCertificatePath",
+    )
+    _copy_optional_top_level_value(
+        signing,
+        security_environment,
+        source_key="signingPrivateKeyRef",
+        target_key="signingPrivateKeyPath",
+    )
+    _copy_optional_top_level_value(signing, security_environment, source_key="signingKeyId", target_key="kid")
+    _copy_optional_top_level_value(
+        signing,
+        security_environment,
+        source_key="clientAssertionIssuer",
+        target_key="clientAssertionIssuer",
+    )
+    _copy_optional_top_level_value(
+        signing,
+        security_environment,
+        source_key="clientAssertionSubject",
+        target_key="clientAssertionSubject",
+    )
+    _copy_optional_top_level_value(
+        signing,
+        security_environment,
+        source_key="clientAuthMethod",
+        target_key="tokenEndpointAuthMethod",
+    )
+    raw_mtls = security_environment.get("mtls")
+    if isinstance(raw_mtls, dict):
+        _copy_optional_top_level_value(
+            signing,
+            raw_mtls,
+            source_key="certificatePathRoot",
+            target_key="certificatePathRoot",
+        )
+    required_fields = {
+        "signingCertificatePath",
+        "signingPrivateKeyPath",
+        "kid",
+        "clientAssertionIssuer",
+        "clientAssertionSubject",
+        "tokenEndpointAuthMethod",
+    }
+    return signing if required_fields.issubset(signing) else {}
+
+
+def _tls_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Return TLS config fields from canonical mTLS certificate references.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        TLS config object, or an empty object when no mTLS references are supplied.
+    """
+    raw_mtls = security_environment.get("mtls")
+    mtls = raw_mtls if isinstance(raw_mtls, dict) else {}
+    tls: JsonObject = {}
+    _copy_optional_top_level_value(tls, mtls, source_key="certificatePathRoot", target_key="certificatePathRoot")
+    _copy_optional_top_level_value(tls, mtls, source_key="caBundleRef", target_key="caBundlePath")
+    _copy_optional_top_level_value(tls, mtls, source_key="certificateRef", target_key="clientCertificatePath")
+    _copy_optional_top_level_value(tls, mtls, source_key="privateKeyRef", target_key="clientPrivateKeyPath")
+    return tls
+
+
+def _resource_server_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Return resource-server config fields from canonical security metadata.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        Resource-server config object, or an empty object when absent.
+    """
+    resource_server: JsonObject = {}
+    _copy_optional_top_level_value(
+        resource_server,
+        security_environment,
+        source_key="resourceBaseUrl",
+        target_key="baseUrl",
+    )
+    _copy_optional_top_level_value(
+        resource_server,
+        security_environment,
+        source_key="xFapiFinancialId",
+        target_key="xFapiFinancialId",
+    )
+    _copy_optional_top_level_value(
+        resource_server,
+        security_environment,
+        source_key="sendXFapiCustomerIpAddress",
+        target_key="sendXFapiCustomerIpAddress",
+    )
+    _copy_optional_top_level_value(
+        resource_server,
+        security_environment,
+        source_key="xFapiCustomerIpAddress",
+        target_key="xFapiCustomerIpAddress",
+    )
+    return resource_server
+
+
+def _open_banking_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
+    """Return Open Banking signature config from canonical security metadata.
+
+    Args:
+        security_environment: Canonical ``securityEnvironment`` object.
+
+    Returns:
+        Open Banking signature config object, or an empty object when absent.
+    """
+    open_banking: JsonObject = {}
+    _copy_optional_top_level_value(
+        open_banking,
+        security_environment,
+        source_key="tppSignatureIssuer",
+        target_key="tppSignatureIssuer",
+    )
+    _copy_optional_top_level_value(
+        open_banking,
+        security_environment,
+        source_key="tppSignatureTan",
+        target_key="tppSignatureTan",
+    )
+    return open_banking
+
+
+def _config_from_business_test_data(business_test_data: Mapping[str, JsonValue]) -> JsonObject:
+    """Map canonical business test data to executable config sections.
+
+    Args:
+        business_test_data: Canonical ``businessTestData`` object.
+
+    Returns:
+        Model-bank config fields derived from the canonical business data.
+    """
+    config: JsonObject = {}
+    ais = _business_section_object(business_test_data, "ais")
+    if ais:
+        config["ais"] = _ais_config_from_business_data(ais)
+    for key in ("pis", "cbpii", "inputs", "runtimeInputs", "conditionalProperties"):
+        value = business_test_data.get(key)
+        if value is not None:
+            config[key] = _copy_json_value(value)
+    return config
+
+
+def _business_section_object(business_test_data: Mapping[str, JsonValue], key: str) -> JsonObject:
+    """Return a copied business test-data subsection.
+
+    Args:
+        business_test_data: Canonical business test-data object.
+        key: Resource group key to inspect.
+
+    Returns:
+        Copied JSON object for the section, or an empty object when absent.
+
+    Raises:
+        CatalogueError: If the section is present but not an object.
+    """
+    value = business_test_data.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise CatalogueError(f"testPlan.businessTestData.{key} must be a JSON object")
+    return _copy_json_mapping(value)
+
+
+def _ais_config_from_business_data(ais_data: Mapping[str, JsonValue]) -> JsonObject:
+    """Return executable AIS config from canonical AIS business data.
+
+    Args:
+        ais_data: Canonical ``businessTestData.ais`` object.
+
+    Returns:
+        AIS config object accepted by runtime-input derivation.
+    """
+    ais_config = _copy_json_mapping(ais_data)
+    raw_account_ids = ais_config.pop("accountIds", None)
+    if raw_account_ids is not None:
+        ais_config["resourceIds"] = {"accountIds": _account_id_objects(raw_account_ids)}
+    return ais_config
+
+
+def _account_id_objects(raw_account_ids: JsonValue) -> list[JsonValue]:
+    """Return canonical account id data in legacy executable config shape.
+
+    Args:
+        raw_account_ids: Canonical ``businessTestData.ais.accountIds`` value.
+
+    Returns:
+        Array of account-id objects for executable AIS config.
+
+    Raises:
+        CatalogueError: If the value is not an array of strings or objects.
+    """
+    if not isinstance(raw_account_ids, list):
+        raise CatalogueError("testPlan.businessTestData.ais.accountIds must be an array")
+    account_ids: list[JsonValue] = []
+    for index, raw_account_id in enumerate(raw_account_ids):
+        if isinstance(raw_account_id, str) and raw_account_id.strip():
+            account_ids.append({"accountId": raw_account_id.strip()})
+            continue
+        if isinstance(raw_account_id, dict):
+            account_ids.append(_copy_json_mapping(cast("Mapping[str, JsonValue]", raw_account_id)))
+            continue
+        raise CatalogueError(
+            f"testPlan.businessTestData.ais.accountIds[{index}] must be a non-empty string or JSON object"
+        )
+    return account_ids
+
+
+def _copy_optional_top_level_value(
+    target: JsonObject,
+    source: Mapping[str, JsonValue],
+    *,
+    source_key: str,
+    target_key: str,
+) -> None:
+    """Copy one optional non-empty value between JSON objects.
+
+    Args:
+        target: Mutable destination object.
+        source: Source object.
+        source_key: Source field name.
+        target_key: Destination field name.
+    """
+    value = source.get(source_key)
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    target[target_key] = _copy_json_value(value)
+
+
 def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
-    """Parse a v2 shared plan document.
+    """Parse a legacy v2 shared plan document.
 
     Args:
         spec: Raw plan-spec JSON object with ``schemaVersion`` already
@@ -1497,6 +2377,10 @@ def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
         resource_groups=_parse_plan_document_v2_resource_groups(_required_object(spec, "scope", location="planSpec")),
         config=MappingProxyType(config),
         runtime_inputs=MappingProxyType(_runtime_inputs_from_plan_config(config)),
+        security_environment=MappingProxyType(_security_environment_from_plan_config(config)),
+        business_test_data=MappingProxyType(_business_test_data_from_plan_config(config)),
+        metadata=MappingProxyType({}),
+        execution_mode="certification",
     )
 
 
@@ -1591,6 +2475,367 @@ def _parse_plan_document_v2_endpoint(
         operation_id=_optional_string(raw_endpoint, "operationId", location=location),
         capability_ids=_parse_endpoint_capability_ids(raw_endpoint, location=location),
     )
+
+
+def _canonical_family_for_plan_document(document: PlanDocumentV2) -> str:
+    """Return the canonical standards family for a parsed plan document.
+
+    Args:
+        document: Parsed plan document.
+
+    Returns:
+        Canonical PRD standards family value.
+    """
+    if document.scheme == _V2_OPEN_BANKING_UK_SCHEME and document.specification == _V2_READ_WRITE_SPECIFICATION:
+        return _CANONICAL_OBL_READ_WRITE_FAMILY
+    return f"{document.scheme}:{document.specification}"
+
+
+def _canonical_security_profile(security_profile: SecurityProfile) -> str:
+    """Return a canonical display value for a compiler security profile.
+
+    Args:
+        security_profile: Compiler security-profile selector.
+
+    Returns:
+        Canonical profile value used in exported plan JSON.
+    """
+    profile_map = {
+        "fapi1-advanced": "FAPI1_ADVANCED",
+        "fapi2": "FAPI2",
+        "all": "ALL",
+    }
+    return profile_map[security_profile]
+
+
+def _security_environment_for_export(document: PlanDocumentV2) -> JsonObject:
+    """Return canonical security environment export data.
+
+    Args:
+        document: Parsed plan document.
+
+    Returns:
+        Security environment object in canonical PRD shape.
+    """
+    if document.security_environment:
+        return {key: _copy_json_value(value) for key, value in document.security_environment.items()}
+    return _security_environment_from_plan_config(document.config)
+
+
+def _business_test_data_for_export(document: PlanDocumentV2) -> JsonObject:
+    """Return canonical business test-data export data.
+
+    Args:
+        document: Parsed plan document.
+
+    Returns:
+        Business test-data object in canonical PRD shape.
+    """
+    if document.business_test_data:
+        return {key: _copy_json_value(value) for key, value in document.business_test_data.items()}
+    return _business_test_data_from_plan_config(document.config)
+
+
+def _canonical_resource_group_for_export(resource_group: PlanResourceGroup) -> JsonValue:
+    """Return one canonical resource-group export entry.
+
+    Args:
+        resource_group: Parsed resource group selected in the plan.
+
+    Returns:
+        A shorthand resource-group string when the group selects all endpoints,
+        otherwise a detailed object preserving endpoint selections.
+    """
+    group_id = _canonical_resource_group_id(resource_group.resource_group_id)
+    if resource_group.select_all:
+        return group_id
+    exported: JsonObject = {
+        "id": group_id,
+        **({"label": resource_group.label} if resource_group.label is not None else {}),
+        "endpoints": [
+            {
+                "method": endpoint.method,
+                "path": endpoint.path,
+                **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
+                **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
+            }
+            for endpoint in resource_group.endpoints
+        ],
+    }
+    return exported
+
+
+def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Build canonical security metadata from legacy executable config.
+
+    Args:
+        config: Model-bank config section preserved by a plan document.
+
+    Returns:
+        Canonical security environment object.
+    """
+    security_environment: JsonObject = {
+        "discoveryUrl": _copy_json_value(config["discoveryUrl"]) if "discoveryUrl" in config else ""
+    }
+    _copy_optional_top_level_value(
+        security_environment,
+        config,
+        source_key="timeoutSeconds",
+        target_key="timeoutSeconds",
+    )
+    oauth = config.get("oauth")
+    if isinstance(oauth, dict):
+        _copy_optional_top_level_value(security_environment, oauth, source_key="issuer", target_key="issuer")
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="authorizationEndpoint",
+            target_key="authorizationEndpoint",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="tokenEndpoint",
+            target_key="tokenEndpoint",
+        )
+        _copy_optional_top_level_value(security_environment, oauth, source_key="clientId", target_key="clientId")
+        _copy_optional_top_level_value(security_environment, oauth, source_key="redirectUri", target_key="redirectUri")
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="openBankingIntentId",
+            target_key="openBankingIntentId",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="resourceBaseUrl",
+            target_key="resourceBaseUrl",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="responseType",
+            target_key="responseType",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="acrValuesSupported",
+            target_key="acrValuesSupported",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            oauth,
+            source_key="requestObjectSigningAlg",
+            target_key="signingAlgorithm",
+        )
+    fapi_signing = config.get("fapiSigning")
+    if isinstance(fapi_signing, dict):
+        _copy_optional_top_level_value(
+            security_environment,
+            fapi_signing,
+            source_key="tokenEndpointAuthMethod",
+            target_key="clientAuthMethod",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            fapi_signing,
+            source_key="signingCertificatePath",
+            target_key="signingCertificateRef",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            fapi_signing,
+            source_key="signingPrivateKeyPath",
+            target_key="signingPrivateKeyRef",
+        )
+        _copy_optional_top_level_value(security_environment, fapi_signing, source_key="kid", target_key="signingKeyId")
+        _copy_optional_top_level_value(
+            security_environment,
+            fapi_signing,
+            source_key="clientAssertionIssuer",
+            target_key="clientAssertionIssuer",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            fapi_signing,
+            source_key="clientAssertionSubject",
+            target_key="clientAssertionSubject",
+        )
+    _merge_mtls_export(security_environment, config)
+    resource_server = config.get("resourceServer")
+    if isinstance(resource_server, dict):
+        _copy_optional_top_level_value(
+            security_environment,
+            resource_server,
+            source_key="baseUrl",
+            target_key="resourceBaseUrl",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            resource_server,
+            source_key="xFapiFinancialId",
+            target_key="xFapiFinancialId",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            resource_server,
+            source_key="sendXFapiCustomerIpAddress",
+            target_key="sendXFapiCustomerIpAddress",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            resource_server,
+            source_key="xFapiCustomerIpAddress",
+            target_key="xFapiCustomerIpAddress",
+        )
+    open_banking = config.get("openBanking")
+    if isinstance(open_banking, dict):
+        _copy_optional_top_level_value(
+            security_environment,
+            open_banking,
+            source_key="tppSignatureIssuer",
+            target_key="tppSignatureIssuer",
+        )
+        _copy_optional_top_level_value(
+            security_environment,
+            open_banking,
+            source_key="tppSignatureTan",
+            target_key="tppSignatureTan",
+        )
+    return security_environment
+
+
+def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, JsonValue]) -> None:
+    """Merge legacy TLS config into canonical ``mtls`` export metadata.
+
+    Args:
+        security_environment: Mutable security environment export object.
+        config: Model-bank config section preserved by a plan document.
+    """
+    tls = config.get("tls")
+    if not isinstance(tls, dict):
+        return
+    mtls: JsonObject = {}
+    _copy_optional_top_level_value(mtls, tls, source_key="certificatePathRoot", target_key="certificatePathRoot")
+    _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundleRef")
+    _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificateRef")
+    _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyRef")
+    mtls["enabled"] = "certificateRef" in mtls and "privateKeyRef" in mtls
+    if mtls:
+        security_environment["mtls"] = mtls
+
+
+def _business_test_data_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Build canonical business test data from legacy executable config.
+
+    Args:
+        config: Model-bank config section preserved by a plan document.
+
+    Returns:
+        Canonical business test-data object.
+    """
+    business_test_data: JsonObject = {}
+    ais = config.get("ais")
+    if isinstance(ais, dict):
+        business_test_data["ais"] = _ais_business_data_from_config(ais)
+    for key in ("pis", "cbpii", "vrp", "inputs", "runtimeInputs", "conditionalProperties"):
+        value = config.get(key)
+        if value is not None:
+            business_test_data[key] = _copy_json_value(value)
+    top_level_runtime_inputs = {
+        key: _copy_json_value(value)
+        for key, value in config.items()
+        if key not in _MODEL_BANK_CONFIG_KEYS | {"inputs", "runtimeInputs"} and not isinstance(value, dict | list)
+    }
+    if top_level_runtime_inputs and "runtimeInputs" not in business_test_data:
+        business_test_data["runtimeInputs"] = top_level_runtime_inputs
+    return business_test_data
+
+
+def _ais_business_data_from_config(ais_config: Mapping[str, JsonValue]) -> JsonObject:
+    """Return canonical AIS business test data from executable config.
+
+    Args:
+        ais_config: Legacy AIS config object.
+
+    Returns:
+        Canonical AIS business data object.
+    """
+    ais_data = _copy_json_mapping(ais_config)
+    raw_resource_ids = ais_data.pop("resourceIds", None)
+    if isinstance(raw_resource_ids, dict):
+        raw_account_ids = raw_resource_ids.get("accountIds")
+        if isinstance(raw_account_ids, list):
+            account_ids: list[JsonValue] = []
+            for raw_account_id in raw_account_ids:
+                if isinstance(raw_account_id, dict) and isinstance(raw_account_id.get("accountId"), str):
+                    account_ids.append(raw_account_id["accountId"])
+                else:
+                    account_ids.append(_copy_json_value(raw_account_id))
+            ais_data["accountIds"] = account_ids
+        else:
+            ais_data["resourceIds"] = _copy_json_mapping(raw_resource_ids)
+    return ais_data
+
+
+def _canonical_resource_group_id(resource_group_id: str) -> str:
+    """Return a canonical resource-group id for exports.
+
+    Args:
+        resource_group_id: Internal, legacy, or canonical resource-group id.
+
+    Returns:
+        Canonical PRD resource-group id.
+    """
+    api = _api_for_plan_resource_group_id(resource_group_id)
+    if api is None:
+        return resource_group_id
+    return _CANONICAL_RESOURCE_GROUPS_BY_API.get(api, (resource_group_id, resource_group_id, resource_group_id))[0]
+
+
+def _api_for_plan_resource_group_id(resource_group_id: str) -> str | None:
+    """Return the internal API family for a resource-group id.
+
+    Args:
+        resource_group_id: Canonical, high-level builder, or legacy resource
+            group id.
+
+    Returns:
+        Internal catalogue API family, or ``None`` when the id is not recognised.
+    """
+    canonical_api = _RESOURCE_GROUP_API_BY_CANONICAL_ID.get(resource_group_id)
+    if canonical_api is not None:
+        return canonical_api
+    builder_api = _RESOURCE_GROUP_API_BY_BUILDER_ID.get(resource_group_id)
+    if builder_api is not None:
+        return builder_api
+    api, separator, _slug_value = resource_group_id.partition(".")
+    return api if separator and api else None
+
+
+def _parse_string_array_value(value: JsonValue, *, location: str) -> tuple[str, ...]:
+    """Parse an arbitrary JSON value as an array of non-empty strings.
+
+    Args:
+        value: Raw JSON value to parse.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of stripped string values.
+
+    Raises:
+        CatalogueError: If the value is not an array of non-empty strings.
+    """
+    if not isinstance(value, list):
+        raise CatalogueError(f"{location} must be a JSON array")
+    parsed: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise CatalogueError(f"{location}[{index}] must be a non-empty string")
+        parsed.append(item.strip())
+    return tuple(parsed)
 
 
 def _parse_security_profile(value: str, *, location: str) -> SecurityProfile:

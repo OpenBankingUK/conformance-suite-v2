@@ -11,7 +11,7 @@ import pytest
 from django.test import Client
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.api.run_lifecycle import BrowserParticipantActionLogger
+from conformance.api.run_lifecycle import BrowserParticipantActionLogger, _attach_plan_evidence
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunPlanStep, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
 from conformance.catalogue import (
@@ -28,6 +28,7 @@ from conformance.catalogue import (
     compile_test_plan,
 )
 from conformance.execution_log import BufferedExecutionLogger
+from conformance.json_types import JsonObject
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -221,6 +222,34 @@ class TestRunStore:
         assert "plannedSteps" not in status_json
         assert "planned_steps" not in status_json
         assert "discovery" not in json.dumps(status_json)
+
+    def test_plan_snapshot_and_validation_are_attached_to_result_evidence(self) -> None:
+        """Launch-time plan evidence is copied into completed result JSON."""
+        store = RunStore()
+        record = store.create_run(
+            plan_snapshot={"schemaVersion": "1.0", "businessTestData": {}},
+            validation_result={"schemaVersion": "1.0", "executionMode": "development", "valid": True, "issues": []},
+        )
+        result: JsonObject = {
+            "metadata": {"reportVersion": "test"},
+            "certificationEligibility": {"eligible": True},
+        }
+
+        _attach_plan_evidence(result, record)
+
+        assert result["testPlanSnapshot"] == {"schemaVersion": "1.0", "businessTestData": {}}
+        test_plan_validation = result["testPlanValidation"]
+        assert isinstance(test_plan_validation, dict)
+        assert test_plan_validation["valid"] is True
+        metadata = result["metadata"]
+        assert isinstance(metadata, dict)
+        assert metadata["executionMode"] == "development"
+        certification_eligibility = result["certificationEligibility"]
+        assert isinstance(certification_eligibility, dict)
+        assert certification_eligibility["eligible"] is False
+        reasons = certification_eligibility["reasons"]
+        assert isinstance(reasons, list)
+        assert "Development-mode run is not certification evidence" in reasons
 
     def test_get_run_returns_snapshot_not_live_reference(self) -> None:
         store = RunStore()
@@ -860,6 +889,55 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args.args[3] == {}
         assert mock_execute.call_args.args[5:] == (None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_run_from_canonical_json_test_plan(self, mock_execute: Mock) -> None:
+        """REST API accepts the PRD schemaVersion 1.0 test-plan body directly."""
+        client = Client()
+        body = {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+            },
+            "securityEnvironment": {
+                "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                "resourceBaseUrl": "https://resource.example.com",
+            },
+            "resourceGroups": [
+                {
+                    "id": "AIS",
+                    "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
+                }
+            ],
+            "businessTestData": {"inputs": {"accessToken": {"value": "secret-access-token"}}},
+            "metadata": {"aspspName": "Example Bank"},
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 201
+        data = response.json()
+        assert data["status"] == "pending"
+        record = run_store.get_run(data["id"])
+        assert record is not None
+        assert record.plan_snapshot is not None
+        assert record.plan_snapshot["schemaVersion"] == "1.0"
+        business_data = record.plan_snapshot["businessTestData"]
+        assert isinstance(business_data, dict)
+        inputs = business_data["inputs"]
+        assert isinstance(inputs, dict)
+        access_token = inputs["accessToken"]
+        assert isinstance(access_token, dict)
+        assert access_token["value"] == ""
+        assert "secret-access-token" not in json.dumps(record.plan_snapshot)
+        assert record.validation_result is not None
+        assert record.validation_result["valid"] is True
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
 
     @patch("conformance.api.views.resolve_catalogue")
     @patch("conformance.api.run_lifecycle._execute_run")

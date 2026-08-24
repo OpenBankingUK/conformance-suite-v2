@@ -23,7 +23,7 @@ The supported workflow is:
    discovery URL next, OAuth/FAPI/security settings after discovery metadata is
    available, and generated runtime artifacts last. Domain-specific fields
    appear only for the selected endpoint scope.
-7. Review the generated v2 plan document, export reusable JSON, or launch the
+7. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
    run.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
@@ -31,102 +31,105 @@ requirements, launch blockers, and certification status after preview. Generated
 tests are read-only: participants cannot select exact generated tests. Lower-level
 request and assertion details stay collapsed under audit details.
 
-## CLI plan-spec execution
+## CLI plan execution
 
-The CLI accepts participant config plus a shared plan document JSON file:
+The preferred CLI path accepts a canonical JSON-first test plan that contains
+the specification, security environment, resource groups, business test data,
+and reporting metadata in one portable document:
 
 ```bash
-uv run python main.py path/to/config.json --plan-spec path/to/plan-spec.json
+uv run python main.py --test-plan path/to/test-plan.json
 ```
 
-The config carries discovery, TLS, OAuth, signing, resource-server header,
-scope-relevant AIS/PIS/CBPII business defaults, conditional-property, output,
-and optional approved-release-policy settings. Browser discovery can prefill
-OAuth/FAPI values from OpenID metadata, but exported JSON includes the final
-accepted config values without recording
-whether they came from discovery or manual entry. The
-preferred v2 plan document carries the scheme/specification/version boundary,
-security profile, nested resource groups, implemented endpoints, selected
-endpoint capabilities, grouped config defaults, and remaining runtime inputs or
-references. A single Read/Write v2 plan can span AIS, PIS, CBPII, and VRP
-catalogue areas. cVRP is not exposed under the Open Banking UK Read/Write
-boundary for now.
+Browser discovery can prefill OAuth/FAPI values from OpenID metadata, but
+exported JSON includes only the final accepted values without recording whether
+they came from discovery or manual entry. A single Read/Write plan can span AIS,
+PIS, CBPII, and VRP catalogue areas when those groups use one security
+environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
+UK Read/Write boundary for now.
 
 ```json
 {
-  "schemaVersion": "v2",
-  "scheme": "open-banking-uk",
-  "specification": "read-write",
-  "version": "4.0.1",
-  "securityProfile": "fapi1-advanced",
-  "scope": {
-    "resourceGroups": [
-      {
-        "id": "account-and-transaction",
-        "label": "Account and Transaction",
-        "endpoints": [
-          {
-            "method": "GET",
-            "path": "/open-banking/v4.0/aisp/accounts"
-          }
-        ]
-      }
-    ]
+  "schemaVersion": "1.0",
+  "specification": {
+    "family": "OBL_READ_WRITE",
+    "version": "4.0.1",
+    "profile": "FAPI1_ADVANCED"
   },
-  "config": {
-    "resourceServer": {"baseUrl": "https://resource.example.com"},
-    "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
+  "executionMode": "certification",
+  "securityEnvironment": {
+    "name": "Primary Authorization Server",
+    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+    "clientAuthMethod": "private_key_jwt",
+    "signingAlgorithm": "PS256",
+    "resourceBaseUrl": "https://resource.example.com",
+    "mtls": {
+      "enabled": true,
+      "certificateRef": "transport-cert.pem"
+    }
+  },
+  "resourceGroups": ["AIS"],
+  "businessTestData": {
+    "ais": {"accountIds": ["account-123"]},
+    "inputs": {"accessToken": {"value": "token-reference-or-local-debug-value"}}
+  },
+  "metadata": {
+    "aspspName": "Example Bank",
+    "brandName": "Example Retail",
+    "environmentName": "Sandbox"
   }
 }
 ```
 
-Required endpoint capabilities may be omitted from exported documents because
-the compiler selects them automatically for implemented endpoints. Optional
-capabilities must be listed under their endpoint to generate implementation-
-dependent tests. The lower-level v1 per-catalogue plan spec remains accepted by
-CLI/API for compatibility, but the browser import/export flow uses v2 shared
-plan documents. `config.testSuite`, public `--manifest`, public `--deselect`,
-REST `manifest`, and REST `deselectStepIds` are intentionally rejected.
-Mandatory applicable catalogue tests cannot be arbitrarily deselected. v1
-assertion overrides are import-only, recorded, and make the run non-certifying.
+`resourceGroups` accepts either shorthand group names such as `"AIS"` or detailed
+objects with explicit endpoint/capability selections for builder exports. Required
+endpoint capabilities may be omitted because the compiler selects them
+automatically for implemented endpoints. Optional capabilities must be listed
+under their endpoint to generate implementation-dependent tests. The lower-level
+v1 per-catalogue plan spec and legacy v2 shared plan document remain accepted by
+older CLI/API paths for compatibility, but the browser import/export flow emits
+schemaVersion `1.0` plans. `config.testSuite`, public `--manifest`, public
+`--deselect`, REST `manifest`, and REST `deselectStepIds` are intentionally
+rejected. Mandatory applicable catalogue tests cannot be arbitrarily deselected.
+v1 assertion overrides are import-only, recorded, and make the run
+non-certifying.
 
 ## Browser and REST launch
 
-The browser wizard imports, exports, reviews, and launches the same v2 plan
-document that the catalogue compiler accepts through CLI and REST. The REST run
-creation endpoint accepts the document under `planSpec` in `POST /api/runs/`:
+The browser wizard imports, exports, reviews, and launches the same canonical
+test plan that the catalogue compiler accepts through CLI and REST. The REST run
+creation endpoint accepts the canonical document directly, or under `testPlan`,
+in `POST /api/runs/`:
 
 ```json
 {
-  "config": {
-    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration"
+  "schemaVersion": "1.0",
+  "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+  "securityEnvironment": {
+    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+    "resourceBaseUrl": "https://resource.example.com"
   },
-  "planSpec": {
-    "schemaVersion": "v2",
-    "scheme": "open-banking-uk",
-    "specification": "read-write",
-    "version": "4.0.1",
-    "securityProfile": "fapi1-advanced",
-    "scope": {"resourceGroups": []},
-    "config": {}
-  }
+  "resourceGroups": ["AIS"],
+  "businessTestData": {},
+  "metadata": {}
 }
 ```
 
-Browser exports are secret-safe by default: the generated v2 plan document
-preserves endpoint and capability scope plus non-sensitive runtime references,
-but writes secret-bearing strings as empty strings. A separate
+Browser exports are secret-safe by default: the generated schemaVersion `1.0`
+test plan preserves resource-group, endpoint, capability, business-data, and
+non-sensitive runtime references, but writes secret-bearing strings as empty strings. A separate
 export-with-secrets action is available for local power-user workflows. Launch
 still uses the sensitive values retained in the same browser session or supplied
 inline by direct CLI/API submission.
 
 Run detail, result downloads, and NDJSON execution logs keep the existing
-masking and evidence behaviour. Result JSON includes catalogue traceability for
-selected endpoints, selected capabilities, generated test-case IDs, applicability
-decisions, runtime input snapshots with sensitive values omitted, and
-non-certifying reasons. Manual PSU authorisation handoff URLs remain transient
-browser state; persisted artifacts mask credentials, tokens, request objects,
-client assertions, detached JWS values, and sensitive headers.
+masking and evidence behaviour. Result JSON includes the safe test-plan snapshot,
+the shared validation outcome, catalogue traceability for selected endpoints,
+selected capabilities, generated test-case IDs, applicability decisions, runtime
+input snapshots with sensitive values omitted, and non-certifying reasons. Manual
+PSU authorisation handoff URLs remain transient browser state; persisted
+artifacts mask credentials, tokens, request objects, client assertions, detached
+JWS values, and sensitive headers.
 
 ## Bundled catalogues
 

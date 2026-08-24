@@ -11,7 +11,7 @@ from uuid import uuid4
 
 from django.contrib.sessions.backends.base import SessionBase
 
-from conformance.catalogue import SecurityProfile
+from conformance.catalogue import PlanExecutionMode, SecurityProfile
 from conformance.json_types import JsonObject, JsonValue
 
 _LOGGER = logging.getLogger(__name__)
@@ -47,6 +47,14 @@ class BuilderDraft:
             endpoint option id.
         config: Draft v2 plan-document ``config`` object retained for review,
             import/export, and launch.
+        security_environment: Canonical security environment metadata preserved
+            from imported JSON-first plans when it is not represented directly
+            by executable config fields.
+        business_test_data: Canonical business test data preserved from imported
+            JSON-first plans when it is not represented directly by executable
+            config fields.
+        metadata: Optional participant/export metadata retained with the plan.
+        execution_mode: Canonical execution mode retained with the plan.
         discovery_metadata: Session-only non-secret discovery helper state used
             to prefill later config steps without exporting raw metadata.
         created_at: UTC ISO timestamp for draft creation.
@@ -62,6 +70,10 @@ class BuilderDraft:
     endpoint_ids: tuple[str, ...]
     endpoint_capability_ids: Mapping[str, tuple[str, ...]]
     config: Mapping[str, JsonValue]
+    security_environment: Mapping[str, JsonValue]
+    business_test_data: Mapping[str, JsonValue]
+    metadata: Mapping[str, JsonValue]
+    execution_mode: PlanExecutionMode
     discovery_metadata: Mapping[str, JsonValue]
     created_at: str
     updated_at: str
@@ -84,6 +96,10 @@ class BuilderDraft:
             endpoint_ids=(),
             endpoint_capability_ids={},
             config={},
+            security_environment={},
+            business_test_data={},
+            metadata={},
+            execution_mode="certification",
             discovery_metadata={},
             created_at=timestamp,
             updated_at=timestamp,
@@ -123,6 +139,10 @@ class BuilderDraft:
             endpoint_ids=_string_tuple(raw_value.get("endpointIds")),
             endpoint_capability_ids=_string_tuple_mapping(raw_value.get("endpointCapabilityIds")),
             config=_config_object(raw_value.get("config")),
+            security_environment=_json_object(raw_value.get("securityEnvironment")),
+            business_test_data=_json_object(raw_value.get("businessTestData")),
+            metadata=_json_object(raw_value.get("metadata")),
+            execution_mode=_execution_mode(raw_value.get("executionMode")),
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
             created_at=created_at,
             updated_at=updated_at,
@@ -149,6 +169,10 @@ class BuilderDraft:
             endpoint_ids=self.endpoint_ids,
             endpoint_capability_ids=self.endpoint_capability_ids,
             config=self.config,
+            security_environment=self.security_environment,
+            business_test_data=self.business_test_data,
+            metadata=self.metadata,
+            execution_mode=self.execution_mode,
             discovery_metadata=self.discovery_metadata,
             created_at=self.created_at,
             updated_at=_utc_timestamp(),
@@ -184,6 +208,10 @@ class BuilderDraft:
                 endpoint_id: tuple(capability_ids) for endpoint_id, capability_ids in endpoint_capability_ids.items()
             },
             config=self.config,
+            security_environment=self.security_environment,
+            business_test_data=self.business_test_data,
+            metadata=self.metadata,
+            execution_mode=self.execution_mode,
             discovery_metadata=self.discovery_metadata,
             created_at=self.created_at,
             updated_at=_utc_timestamp(),
@@ -209,6 +237,50 @@ class BuilderDraft:
             endpoint_ids=self.endpoint_ids,
             endpoint_capability_ids=self.endpoint_capability_ids,
             config=_config_object(config),
+            security_environment=self.security_environment,
+            business_test_data=self.business_test_data,
+            metadata=self.metadata,
+            execution_mode=self.execution_mode,
+            discovery_metadata=self.discovery_metadata,
+            created_at=self.created_at,
+            updated_at=_utc_timestamp(),
+        )
+
+    def with_plan_context(
+        self,
+        *,
+        security_environment: Mapping[str, JsonValue],
+        business_test_data: Mapping[str, JsonValue],
+        metadata: Mapping[str, JsonValue],
+        execution_mode: PlanExecutionMode,
+    ) -> BuilderDraft:
+        """Return a copy with canonical plan-only context saved.
+
+        Args:
+            security_environment: Canonical security environment metadata from
+                an imported plan.
+            business_test_data: Canonical business test data from an imported
+                plan.
+            metadata: Optional participant/export metadata from an imported plan.
+            execution_mode: Canonical execution mode from an imported plan.
+
+        Returns:
+            Updated draft with a refreshed ``updated_at`` timestamp.
+        """
+        return BuilderDraft(
+            draft_id=self.draft_id,
+            scheme=self.scheme,
+            specification=self.specification,
+            version=self.version,
+            security_profile=self.security_profile,
+            resource_group_ids=self.resource_group_ids,
+            endpoint_ids=self.endpoint_ids,
+            endpoint_capability_ids=self.endpoint_capability_ids,
+            config=self.config,
+            security_environment=_json_object(security_environment),
+            business_test_data=_json_object(business_test_data),
+            metadata=_json_object(metadata),
+            execution_mode=execution_mode,
             discovery_metadata=self.discovery_metadata,
             created_at=self.created_at,
             updated_at=_utc_timestamp(),
@@ -234,6 +306,10 @@ class BuilderDraft:
             endpoint_ids=self.endpoint_ids,
             endpoint_capability_ids=self.endpoint_capability_ids,
             config=self.config,
+            security_environment=self.security_environment,
+            business_test_data=self.business_test_data,
+            metadata=self.metadata,
+            execution_mode=self.execution_mode,
             discovery_metadata=_json_object(discovery_metadata),
             created_at=self.created_at,
             updated_at=_utc_timestamp(),
@@ -258,6 +334,10 @@ class BuilderDraft:
                 for endpoint_id, capability_ids in self.endpoint_capability_ids.items()
             },
             "config": _config_object(self.config),
+            "securityEnvironment": _json_object(self.security_environment),
+            "businessTestData": _json_object(self.business_test_data),
+            "metadata": _json_object(self.metadata),
+            "executionMode": self.execution_mode,
             "discoveryMetadata": _json_object(self.discovery_metadata),
             "createdAt": self.created_at,
             "updatedAt": self.updated_at,
@@ -420,6 +500,18 @@ def _config_object(value: object) -> JsonObject:
     config = _json_object(value)
     config.pop("environment", None)
     return config
+
+
+def _execution_mode(value: object) -> PlanExecutionMode:
+    """Return a persisted execution mode or the default certification mode.
+
+    Args:
+        value: Raw value decoded from the Django session.
+
+    Returns:
+        Canonical execution mode.
+    """
+    return "development" if value == "development" else "certification"
 
 
 def _is_json_value(value: object) -> bool:

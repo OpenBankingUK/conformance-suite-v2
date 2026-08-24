@@ -143,15 +143,15 @@
         <section class="panel" aria-labelledby="import-plan-heading">
             <div>
                 <h2 id="import-plan-heading">Import test plan</h2>
-                <p class="muted">Paste a reusable v2 plan document, review the generated summary, then launch or edit it.</p>
+                <p class="muted">Paste a reusable schemaVersion 1.0 test plan, review the generated summary, then launch or edit it.</p>
             </div>
             <a class="button secondary" href="{% url 'builder-import' %}">Import test plan</a>
         </section>
 
         <section class="panel" aria-labelledby="existing-builder-heading">
             <div>
-                <h2 id="existing-builder-heading">Current endpoint builder</h2>
-                <p class="muted">The existing single-page builder remains available while the new wizard is built out.</p>
+                <h2 id="existing-builder-heading">Raw JSON-capable builder</h2>
+                <p class="muted">Open the advanced builder when you need direct JSON input alongside guided endpoint choices.</p>
             </div>
             <a class="button secondary" href="{% url 'plan-builder' %}">Open current builder</a>
         </section>

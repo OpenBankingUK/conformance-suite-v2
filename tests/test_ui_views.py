@@ -615,11 +615,12 @@ class TestBuilderWizardUi:
         assert "&quot;value&quot;: &quot;&quot;" in content
         draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
         safe_export = client.get(f"/builder/{draft_id}/export.json")
-        assert safe_export.json()["config"]["resourceServer"]["baseUrl"] == "https://resource.example.com"
-        assert safe_export.json()["config"]["ais"]["resourceIds"]["accountIds"][0]["accountId"] == ""
-        assert "pis" not in safe_export.json()["config"]
-        assert "cbpii" not in safe_export.json()["config"]
-        assert "conditionalProperties" not in safe_export.json()["config"]
+        assert safe_export.json()["schemaVersion"] == "1.0"
+        assert safe_export.json()["securityEnvironment"]["resourceBaseUrl"] == "https://resource.example.com"
+        assert safe_export.json()["businessTestData"]["ais"]["accountIds"][0] == ""
+        assert "pis" not in safe_export.json()["businessTestData"]
+        assert "cbpii" not in safe_export.json()["businessTestData"]
+        assert "conditionalProperties" not in safe_export.json()["businessTestData"]
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_discovery_metadata_prefills_security_and_exports_accepted_values(
@@ -699,13 +700,13 @@ class TestBuilderWizardUi:
         runtime_response = client.post(security_save["Location"], data={"runtime_input__accessToken": "token-value"})
         draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
 
-        exported = client.get(f"/builder/{draft_id}/export.json").json()["config"]
+        exported = client.get(f"/builder/{draft_id}/export.json").json()["securityEnvironment"]
 
-        assert exported["oauth"]["issuer"] == "https://auth.example.com"
-        assert exported["oauth"]["authorizationEndpoint"] == "https://auth.example.com/authorize"
-        assert exported["oauth"]["tokenEndpoint"] == "https://auth.example.com/token"
-        assert exported["oauth"]["requestObjectSigningAlg"] == "PS256"
-        assert exported["resourceServer"]["baseUrl"] == "https://resource.example.com"
+        assert exported["issuer"] == "https://auth.example.com"
+        assert exported["authorizationEndpoint"] == "https://auth.example.com/authorize"
+        assert exported["tokenEndpoint"] == "https://auth.example.com/token"
+        assert exported["signingAlgorithm"] == "PS256"
+        assert exported["resourceBaseUrl"] == "https://resource.example.com"
         assert "token_endpoint_auth_methods_supported" not in json.dumps(exported)
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
@@ -841,38 +842,40 @@ class TestBuilderWizardUi:
         assert "JWKS check" not in content
 
     @patch("conformance.api.ui_views.start_run")
-    def test_import_review_export_and_launch_uses_v2_document(self, mock_start_run: Mock) -> None:
-        """Imported v2 plans open in review, export safely, and launch compiled state."""
+    def test_import_review_export_and_launch_uses_canonical_test_plan(self, mock_start_run: Mock) -> None:
+        """Imported JSON-first plans open in review, export safely, and launch compiled state."""
         mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
         client = Client()
         plan_document = {
-            "schemaVersion": "v2",
-            "scheme": "open-banking-uk",
-            "specification": "read-write",
-            "version": "4.0.1",
-            "securityProfile": "fapi1-advanced",
-            "scope": {
-                "resourceGroups": [
-                    {
-                        "id": "ais.accounts",
-                        "label": "Accounts",
-                        "endpoints": [
-                            {
-                                "method": "GET",
-                                "path": "/open-banking/v4.0/aisp/accounts",
-                            }
-                        ],
-                    }
-                ]
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
             },
-            "config": {
-                "environment": "test-env",
+            "executionMode": "development",
+            "securityEnvironment": {
                 "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resourceBaseUrl": "https://resource.example.com",
+            },
+            "resourceGroups": [
+                {
+                    "id": "AIS",
+                    "label": "Accounts",
+                    "endpoints": [
+                        {
+                            "method": "GET",
+                            "path": "/open-banking/v4.0/aisp/accounts",
+                        }
+                    ],
+                }
+            ],
+            "businessTestData": {
                 "inputs": {
-                    "resourceBaseUrl": {"value": "https://resource.example.com"},
                     "accessToken": {"value": "secret-access-token"},
                 },
             },
+            "metadata": {"aspspName": "Example Bank"},
         }
 
         import_response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
@@ -897,12 +900,12 @@ class TestBuilderWizardUi:
         assert secret_export.status_code == 200
         assert safe_export["Cache-Control"] == "no-store"
         assert secret_export["Cache-Control"] == "no-store"
-        assert "environment" not in safe_export.json()["config"]
-        assert "environment" not in secret_export.json()["config"]
-        assert safe_export.json()["scope"]["resourceGroups"][0]["id"] == "account-and-transaction"
-        assert safe_export.json()["config"]["inputs"]["accessToken"]["value"] == ""
+        assert "environment" not in json.dumps(safe_export.json())
+        assert "environment" not in json.dumps(secret_export.json())
+        assert safe_export.json()["resourceGroups"][0]["id"] == "AIS"
+        assert safe_export.json()["businessTestData"]["inputs"]["accessToken"]["value"] == ""
         assert "secret-access-token" not in safe_export.content.decode("utf-8")
-        assert secret_export.json()["config"]["inputs"]["accessToken"]["value"] == "secret-access-token"
+        assert secret_export.json()["businessTestData"]["inputs"]["accessToken"]["value"] == "secret-access-token"
 
         launch_response = client.post(f"/builder/{draft_id}/launch/")
 
@@ -913,6 +916,14 @@ class TestBuilderWizardUi:
         assert "ais-at-accounts-list-200" in compiled_plan.traceability.generated_test_case_ids
         assert runtime_inputs["accessToken"] == "secret-access-token"
         assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
+        validation_result = mock_start_run.call_args.kwargs["validation_result"]
+        assert isinstance(validation_result, dict)
+        assert validation_result["executionMode"] == "development"
+        plan_snapshot = mock_start_run.call_args.kwargs["plan_snapshot"]
+        assert isinstance(plan_snapshot, dict)
+        metadata = plan_snapshot["metadata"]
+        assert isinstance(metadata, dict)
+        assert metadata["aspspName"] == "Example Bank"
 
 
 @pytest.mark.integration

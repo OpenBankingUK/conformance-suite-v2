@@ -67,18 +67,18 @@
     <header>
         <div>
             <h1>Import test plan</h1>
-            <div class="muted">Open a reusable v2 plan document into review</div>
+            <div class="muted">Open a reusable JSON-first test plan into review</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="import-heading">
         <h2 id="import-heading">Plan JSON</h2>
-        <p class="helper">Paste a v2 plan document with scheme/specification/version, scope, security profile, and config. Imported secrets are retained only in this browser session and are masked in review.</p>
+        <p class="helper">Paste a schemaVersion 1.0 test plan with specification, security environment, resource groups, business test data, and metadata. Imported secrets are retained only in this browser session and are masked in review.</p>
         {% if import_error %}<div class="message error">{{ import_error }}</div>{% endif %}
         <form method="post" action="{% url 'builder-import' %}">
             {% csrf_token %}
-            <label for="id_plan_json">v2 plan document JSON</label>
+            <label for="id_plan_json">Test plan JSON</label>
             <textarea id="id_plan_json" name="plan_json" spellcheck="false">{{ plan_json }}</textarea>
             <div class="actions">
                 <a class="button secondary" href="{% url 'home' %}">Cancel</a>

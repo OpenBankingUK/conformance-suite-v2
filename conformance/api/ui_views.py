@@ -61,6 +61,7 @@ from conformance.catalogue import (
     PlanDocumentV2,
     compile_test_plan_document,
     parse_test_plan_document,
+    plan_document_to_json_object,
 )
 from conformance.catalogue_registry import supported_catalogues
 from conformance.execution_log import ExecutionEvent
@@ -68,6 +69,11 @@ from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.ozone_client import OzoneClientError, OzoneModelBankClient
+from conformance.test_plan_validation import (
+    TestPlanValidationError,
+    prepare_test_plan_for_run,
+    validate_test_plan_for_load,
+)
 
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
@@ -547,9 +553,12 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             status=400,
         )
     try:
+        validation_result = validate_test_plan_for_load(raw_document)
+        if not validation_result.valid:
+            raise CatalogueError(validation_result.summary_message())
         parsed_document = parse_test_plan_document(raw_document)
         if not isinstance(parsed_document, PlanDocumentV2):
-            raise CatalogueError("Browser import currently accepts v2 shared plan documents only")
+            raise CatalogueError("Browser import currently accepts shared JSON-first plan documents only")
         runtime_input_prompts_for_plan_document(parsed_document)
     except CatalogueError as error:
         return render(
@@ -574,6 +583,12 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             endpoint_capability_ids=capability_ids,
         )
         .with_config(config=parsed_document.config)
+        .with_plan_context(
+            security_environment=parsed_document.security_environment,
+            business_test_data=parsed_document.business_test_data,
+            metadata=parsed_document.metadata,
+            execution_mode=parsed_document.execution_mode,
+        )
     )
     draft_store.save(imported_draft)
     return redirect("builder-review", draft_id=draft.draft_id)
@@ -659,16 +674,17 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
 
     try:
-        config = parse_model_bank_config(model_bank_config_from_plan_config(state.document.config), base_dir=Path.cwd())
-        compiled_plan = compile_test_plan_document(state.document, supported_catalogues())
+        prepared = prepare_test_plan_for_run(plan_document_to_json_object(state.document), base_dir=Path.cwd())
         status_body = start_run(
-            config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs=state.document.runtime_inputs,
+            config=prepared.config,
+            compiled_plan=prepared.compiled_plan,
+            runtime_inputs=prepared.runtime_inputs,
             runtime_input_base_dir=Path.cwd(),
             browser_psu_prompts=True,
+            plan_snapshot=prepared.snapshot,
+            validation_result=prepared.validation.to_json_object(),
         )
-    except (CatalogueError, ConfigError) as error:
+    except (CatalogueError, ConfigError, TestPlanValidationError) as error:
         return render(
             request,
             "conformance/builder_review.html",
@@ -1374,7 +1390,10 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
         if boundary_blocker is not None:
             blockers.append(boundary_blocker)
         blockers.extend(f"Required runtime input '{prompt.input_id}' is missing." for prompt in missing_prompts)
-        if not any(resource_group.endpoints for resource_group in document.resource_groups):
+        has_selected_scope = any(
+            resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
+        )
+        if not has_selected_scope:
             if boundary_blocker is None:
                 blockers.append("Select at least one implemented endpoint before launch.")
             safe_export = plan_document_to_export_json(
@@ -1453,9 +1472,14 @@ def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
     """
     document = state.document
     resource_group_count = len(document.resource_groups) if document is not None else 0
-    endpoint_count = (
-        sum(len(resource_group.endpoints) for resource_group in document.resource_groups) if document is not None else 0
-    )
+    if state.compiled_plan is not None:
+        endpoint_count = len(state.compiled_plan.traceability.selected_endpoints)
+    else:
+        endpoint_count = (
+            sum(len(resource_group.endpoints) for resource_group in document.resource_groups)
+            if document is not None
+            else 0
+        )
     capability_count = (
         len(state.compiled_plan.traceability.selected_capabilities) if state.compiled_plan is not None else 0
     )
@@ -1491,7 +1515,7 @@ def _builder_review_phase_counts(rows: tuple[PlanTestCaseRow, ...]) -> dict[str,
 
 
 def _masked_review_config_json(state: _BuilderReviewState) -> str:
-    """Return masked config JSON for the review summary.
+    """Return masked canonical test-plan JSON for the review summary.
 
     Args:
         state: Computed builder review state.
@@ -1501,15 +1525,13 @@ def _masked_review_config_json(state: _BuilderReviewState) -> str:
     """
     if state.document is None or state.compiled_plan is None:
         return ""
-    safe_config = plan_document_to_export_json(
+    safe_plan = plan_document_to_export_json(
         state.document,
         sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
         include_secrets=False,
-    ).get("config")
-    if not isinstance(safe_config, dict):
-        return ""
-    masked_config = _replace_empty_secret_markers(safe_config)
-    return json.dumps(masked_config, indent=2, sort_keys=True)
+    )
+    masked_plan = _replace_empty_secret_markers(safe_plan)
+    return json.dumps(masked_plan, indent=2, sort_keys=True)
 
 
 def _replace_empty_secret_markers(value: JsonValue) -> JsonValue:
@@ -1618,6 +1640,7 @@ def _run_context(record: RunRecord) -> dict[str, object]:
         "result_summary": _result_summary(record.result),
         "plan_summary": _plan_summary(record.result),
         "catalogue_trace_summary": _catalogue_trace_summary(record.result),
+        "test_plan_validation_summary": _test_plan_validation_summary(record.result),
         "certification_eligibility": _certification_eligibility(record.result),
         "step_progress": step_progress,
         "step_progress_counts": _step_progress_counts(step_progress),
@@ -2308,6 +2331,31 @@ def _catalogue_trace_summary(result: JsonObject | None) -> dict[str, object] | N
         "endpointCount": len(selected_endpoints) if isinstance(selected_endpoints, list) else 0,
         "capabilityCount": len(selected_capabilities) if isinstance(selected_capabilities, list) else 0,
         "nonCertifyingReasons": non_certifying_reasons if isinstance(non_certifying_reasons, list) else [],
+    }
+
+
+def _test_plan_validation_summary(result: JsonObject | None) -> dict[str, object] | None:
+    """Extract compact test-plan validation fields from completed result JSON.
+
+    Args:
+        result: Structured run result JSON, or ``None`` before completion.
+
+    Returns:
+        Summary fields for run-detail rendering, or ``None`` when the result
+        does not contain test-plan validation evidence.
+    """
+    if result is None:
+        return None
+    validation = result.get("testPlanValidation")
+    if not isinstance(validation, dict):
+        return None
+    issues = validation.get("issues")
+    return {
+        "schemaVersion": validation.get("schemaVersion") if isinstance(validation.get("schemaVersion"), str) else "-",
+        "executionMode": validation.get("executionMode") if isinstance(validation.get("executionMode"), str) else "-",
+        "valid": validation.get("valid") is True,
+        "issueCount": len(issues) if isinstance(issues, list) else 0,
+        "issues": issues if isinstance(issues, list) else [],
     }
 
 

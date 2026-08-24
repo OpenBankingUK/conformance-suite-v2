@@ -472,6 +472,7 @@ def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
 
 @pytest.mark.unit
 def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> None:
+    """Legacy v2 plan documents serialize back to the canonical JSON-first shape."""
     raw_spec: dict[str, JsonValue] = {
         "schemaVersion": "v2",
         "scheme": "open-banking-uk",
@@ -512,31 +513,122 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
     assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
     assert document.runtime_inputs["accessToken"] == "secret-access-token"
     assert plan_document_to_json_object(document) == {
-        "schemaVersion": "v2",
-        "scheme": "open-banking-uk",
-        "specification": "read-write",
-        "version": "4.0.1",
-        "securityProfile": "fapi1-advanced",
-        "scope": {
-            "resourceGroups": [
-                {
-                    "id": "ais.accounts",
-                    "label": "Accounts",
-                    "endpoints": [
-                        {
-                            "method": "GET",
-                            "path": "/open-banking/v4.0/aisp/accounts",
-                            "capabilities": ["ais.accounts.list.core"],
-                        }
-                    ],
-                }
-            ]
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
         },
-        "config": {
-            "resourceBaseUrl": "https://rs.example.com",
+        "executionMode": "certification",
+        "securityEnvironment": {"discoveryUrl": ""},
+        "resourceGroups": [
+            {
+                "id": "AIS",
+                "label": "Accounts",
+                "endpoints": [
+                    {
+                        "method": "GET",
+                        "path": "/open-banking/v4.0/aisp/accounts",
+                        "capabilities": ["ais.accounts.list.core"],
+                    }
+                ],
+            }
+        ],
+        "businessTestData": {
+            "runtimeInputs": {"resourceBaseUrl": "https://rs.example.com"},
             "inputs": {"accessToken": {"value": "secret-access-token"}},
         },
+        "metadata": {},
     }
+
+
+@pytest.mark.unit
+def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -> None:
+    """Canonical PRD-shaped test plans derive runner config and runtime inputs."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+        },
+        "securityEnvironment": {
+            "name": "Primary Authorization Server",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "clientAuthMethod": "private_key_jwt",
+            "signingAlgorithm": "PS256",
+            "resourceBaseUrl": "https://rs.example.com",
+            "mtls": {"enabled": True, "certificateRef": "transport.pem"},
+        },
+        "resourceGroups": ["AIS"],
+        "businessTestData": {
+            "ais": {
+                "accountIds": ["account-123"],
+                "transactionFromDate": "2026-01-01T00:00:00Z",
+            },
+            "inputs": {"accessToken": {"value": "secret-access-token"}},
+        },
+        "metadata": {"aspspName": "Example Bank", "brandName": "Example Retail"},
+        "executionMode": "development",
+    }
+
+    document = parse_test_plan_document(raw_spec)
+
+    assert isinstance(document, PlanDocumentV2)
+    assert document.schema_version == "1.0"
+    assert document.execution_mode == "development"
+    assert document.security_profile == "fapi1-advanced"
+    assert document.resource_groups[0].resource_group_id == "account-and-transaction"
+    assert document.resource_groups[0].select_all is True
+    assert document.config["discoveryUrl"] == "https://auth.example.com/.well-known/openid-configuration"
+    assert document.config["resourceServer"] == {"baseUrl": "https://rs.example.com"}
+    ais_config = document.config["ais"]
+    assert isinstance(ais_config, dict)
+    resource_ids = ais_config["resourceIds"]
+    assert isinstance(resource_ids, dict)
+    assert resource_ids["accountIds"] == [{"accountId": "account-123"}]
+    assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
+    assert document.runtime_inputs["consentedAccountId"] == "account-123"
+    assert document.runtime_inputs["accessToken"] == "secret-access-token"
+
+
+@pytest.mark.unit
+def test_canonical_resource_group_shorthand_expands_to_catalogue_endpoints() -> None:
+    """A canonical resource-group string selects all endpoints in that catalogue group."""
+    account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    balance_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/balances")
+    catalogue = _catalogue(
+        _case(
+            "accounts-read",
+            endpoint_refs=(account_ref,),
+            runtime_requirements=(RuntimeInputRequirement("resourceBaseUrl", "url", "Resource server base URL"),),
+        ),
+        _case(
+            "balances-read",
+            endpoint_refs=(balance_ref,),
+            runtime_requirements=(RuntimeInputRequirement("resourceBaseUrl", "url", "Resource server base URL"),),
+        ),
+    )
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://rs.example.com",
+        },
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+    document = parse_test_plan_document(raw_spec)
+
+    compiled = compile_test_plan_document(document, (catalogue,))
+
+    assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read", "balances-read"]
+    assert [endpoint.path for endpoint in compiled.traceability.selected_endpoints] == [
+        "/open-banking/v4.0/aisp/accounts",
+        "/open-banking/v4.0/aisp/balances",
+    ]
 
 
 @pytest.mark.unit
