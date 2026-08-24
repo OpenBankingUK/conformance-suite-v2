@@ -763,12 +763,11 @@ def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
                 "request": {
                     "method": "POST",
                     "url": "${config.discoveryUrl}",
-                    "headers": {"X-Environment": "${config.environment}"},
+                    "headers": {"X-Discovery": "${config.discoveryUrl}"},
                     "body": {
                         "encoding": "json",
                         "value": {
                             "discovery": "${config.discoveryUrl}",
-                            "environment": "${config.environment}",
                         },
                     },
                 },
@@ -781,7 +780,7 @@ def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
 
     step = cast("ManifestStep", manifest.steps[0])
     assert step.request.url == "${config.discoveryUrl}"
-    assert step.request.headers == {"X-Environment": "${config.environment}"}
+    assert step.request.headers == {"X-Discovery": "${config.discoveryUrl}"}
 
 
 @pytest.mark.unit

@@ -32,7 +32,7 @@ def run_model_bank_smoke_check(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     logger_sink.emit(
         "run-started",
-        payload={"environment": config.environment, "mode": "model-bank-smoke-check"},
+        payload={"mode": "model-bank-smoke-check"},
     )
     started_at = datetime.now(UTC)
     steps: list[StepResult] = []
@@ -78,7 +78,6 @@ def run_model_bank_smoke_check(
                     payload={"status": "failed", "message": str(error)},
                 )
                 return _finalise(
-                    config.environment,
                     steps,
                     started_at=started_at,
                     logger_sink=logger_sink,
@@ -108,7 +107,6 @@ def run_model_bank_smoke_check(
 
             if config.follow_up_mode == "discovery_only":
                 return _finalise(
-                    config.environment,
                     steps,
                     started_at=started_at,
                     logger_sink=logger_sink,
@@ -143,7 +141,6 @@ def run_model_bank_smoke_check(
                     payload={"status": "failed", "message": str(error)},
                 )
                 return _finalise(
-                    config.environment,
                     steps,
                     started_at=started_at,
                     logger_sink=logger_sink,
@@ -173,7 +170,6 @@ def run_model_bank_smoke_check(
                 payload={"status": "passed", "statusCode": jwks_response.status_code, "keyCount": key_count},
             )
             return _finalise(
-                config.environment,
                 steps,
                 started_at=started_at,
                 logger_sink=logger_sink,
@@ -188,7 +184,6 @@ def run_model_bank_smoke_check(
 
 
 def _finalise(
-    environment: str,
     steps: list[StepResult],
     *,
     started_at: datetime,
@@ -198,7 +193,6 @@ def _finalise(
     """Build the aggregate result and emit the terminating ``run-completed`` event.
 
     Args:
-        environment: Environment name copied into the result file.
         steps: Ordered step results collected by the smoke-check run.
         started_at: UTC timestamp captured before execution began.
         logger_sink: Execution-log sink that receives the ``run-completed`` event.
@@ -209,7 +203,6 @@ def _finalise(
         Aggregate smoke-check result returned to the caller.
     """
     result = build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
         approved_release_policy=approved_release_policy,

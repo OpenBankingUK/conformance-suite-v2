@@ -169,6 +169,54 @@ PIS_PAYMENT_CAPABILITIES = (
 )
 """Catalogue-owned implementation features represented by the legacy PIS catalogue."""
 
+_RESPONSE_SIGNATURE_SCRIPT_IDS = frozenset(
+    {
+        "OB-301-DOP-100100",
+        "OB-301-DOP-100300",
+        "OB-301-DOP-100400",
+        "OB-301-DOP-100500",
+        "OB-301-DOP-100600",
+        "OB-301-DOP-100700",
+        "OB-301-DOP-100900",
+        "OB-301-DOP-101100",
+        "OB-301-DOP-101101",
+        "OB-301-DOP-101200",
+        "OB-301-DOP-101300",
+        "OB-301-DOP-101400",
+        "OB-301-DOP-101401",
+        "OB-301-DOP-101500",
+        "OB-301-DOP-1015001",
+        "OB-301-DOP-1015002",
+        "OB-301-DOP-1015003",
+        "OB-301-DOP-101700",
+        "OB-301-DOP-101900",
+        "OB-301-DOP-102100",
+        "OB-301-DOP-102200",
+        "OB-301-DOP-102300",
+        "OB-400-DOP-100100",
+        "OB-400-DOP-100300",
+        "OB-400-DOP-100400",
+        "OB-400-DOP-100500",
+        "OB-400-DOP-100600",
+        "OB-400-DOP-100700",
+        "OB-400-DOP-100900",
+        "OB-400-DOP-101100",
+        "OB-400-DOP-101101",
+        "OB-400-DOP-101200",
+        "OB-400-DOP-101300",
+        "OB-400-DOP-101400",
+        "OB-400-DOP-101401",
+        "OB-400-DOP-101500",
+        "OB-400-DOP-101503",
+        "OB-400-DOP-101700",
+        "OB-400-DOP-101900",
+        "OB-400-DOP-102100",
+        "OB-400-DOP-102200",
+        "OB-400-DOP-102300",
+    }
+)
+"""Legacy PIS script ids whose responses required JWS signature validation."""
+
 
 def _legacy_compliance_scope(
     *,
@@ -352,6 +400,7 @@ def _build_case(
             ),
         ),
         assertions=assertions,
+        response_signature_required=bool(_RESPONSE_SIGNATURE_SCRIPT_IDS.intersection((*scripts_31, *scripts_40))),
     )
 
 

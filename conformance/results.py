@@ -83,7 +83,6 @@ class SmokeCheckResult:
     """Complete result for a model-bank smoke-check execution.
 
     Attributes:
-        environment: Environment name copied from the input config.
         status: Aggregate pass/fail outcome across all steps.
         started_at: UTC timestamp when execution started.
         finished_at: UTC timestamp when execution finished.
@@ -113,7 +112,6 @@ class SmokeCheckResult:
             certification eligibility even when mandatory executed steps pass.
     """
 
-    environment: str
     status: CheckStatus
     started_at: datetime
     finished_at: datetime
@@ -135,7 +133,6 @@ class SmokeCheckResult:
         body: JsonObject = {
             "metadata": {"reportVersion": REPORT_METADATA_VERSION},
             "tool": {"version": tool_version},
-            "environment": self.environment,
             "status": self.status,
             "startedAt": self.started_at.isoformat(),
             "finishedAt": self.finished_at.isoformat(),
@@ -164,7 +161,6 @@ class SmokeCheckResult:
 
 
 def build_smoke_check_result(
-    environment: str,
     steps: list[StepResult],
     *,
     started_at: datetime,
@@ -177,7 +173,6 @@ def build_smoke_check_result(
     """Build an aggregate smoke-check result from collected step outcomes.
 
     Args:
-        environment: Environment name copied from the input config.
         steps: Ordered mutable list of step outcomes collected by the runner.
         started_at: UTC timestamp captured before execution began.
         plan: Optional :class:`TestPlan` that drove this run. When supplied,
@@ -215,7 +210,6 @@ def build_smoke_check_result(
         plan_summary = plan.summary()
         deselected_mandatory = tuple(plan.deselected_mandatory_step_ids())
     return SmokeCheckResult(
-        environment=environment,
         status=status,
         started_at=started_at,
         finished_at=finished_at,

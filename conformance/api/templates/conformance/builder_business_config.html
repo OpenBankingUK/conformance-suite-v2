@@ -1,0 +1,227 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Business configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
+        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2, h3 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.1rem; }
+        h3 { font-size: 1rem; }
+        .panel, .config-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .config-card { margin-top: 14px; background: #fbfcfe; }
+        .muted, .helper { color: var(--muted); }
+        .helper { font-size: 0.9rem; }
+        .step-id, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86rem; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .field-row { margin-top: 12px; }
+        label { display: block; font-weight: 650; margin-bottom: 8px; }
+        input, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
+        textarea { min-height: 130px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        details { margin-top: 12px; }
+        summary { cursor: pointer; font-weight: 650; color: var(--accent); }
+        .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
+        .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
+        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Business configuration</h1>
+            <div class="muted">Step 3 of the guided builder</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="business-heading">
+        <h2 id="business-heading">Business and request defaults</h2>
+        <p class="helper">These fields are generated from the endpoints selected on the previous page. Communication, security, and runtime artifacts come later.</p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
+        {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+
+        <form method="post" action="{% url 'builder-config' draft.draft_id %}">
+            {% csrf_token %}
+
+            {% if config_visibility.show_ais %}
+                <section class="config-card" aria-labelledby="ais-business-heading">
+                    <h3 id="ais-business-heading">Account and Transaction</h3>
+                    <div class="grid field-row">
+                        <div>
+                            <label for="{{ form.ais_consented_account_id.id_for_label }}">Consented account identifier</label>
+                            {{ form.ais_consented_account_id.errors }}
+                            <input id="{{ form.ais_consented_account_id.id_for_label }}" name="ais_consented_account_id" type="text" value="{{ form.ais_consented_account_id.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.ais_transaction_from_date.id_for_label }}">Transaction from date</label>
+                            {{ form.ais_transaction_from_date.errors }}
+                            <input id="{{ form.ais_transaction_from_date.id_for_label }}" name="ais_transaction_from_date" type="text" value="{{ form.ais_transaction_from_date.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.ais_transaction_to_date.id_for_label }}">Transaction to date</label>
+                            {{ form.ais_transaction_to_date.errors }}
+                            <input id="{{ form.ais_transaction_to_date.id_for_label }}" name="ais_transaction_to_date" type="text" value="{{ form.ais_transaction_to_date.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
+                    <details>
+                        <summary>Advanced AIS resource IDs JSON</summary>
+                        <p class="helper">When supplied, this JSON object overrides the friendly account identifier field.</p>
+                        {{ form.ais_resource_ids_json.errors }}
+                        <textarea id="{{ form.ais_resource_ids_json.id_for_label }}" name="ais_resource_ids_json" spellcheck="false">{{ form.ais_resource_ids_json.value|default_if_none:'' }}</textarea>
+                    </details>
+                </section>
+            {% endif %}
+
+            {% if config_visibility.show_pis %}
+                <section class="config-card" aria-labelledby="pis-business-heading">
+                    <h3 id="pis-business-heading">Payment Initiation</h3>
+                    <div class="grid three field-row">
+                        <div>
+                            <label for="{{ form.pis_creditor_account_scheme_name.id_for_label }}">Domestic creditor account scheme</label>
+                            {{ form.pis_creditor_account_scheme_name.errors }}
+                            <input id="{{ form.pis_creditor_account_scheme_name.id_for_label }}" name="pis_creditor_account_scheme_name" type="text" value="{{ form.pis_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_creditor_account_identification.id_for_label }}">Domestic creditor account identification</label>
+                            {{ form.pis_creditor_account_identification.errors }}
+                            <input id="{{ form.pis_creditor_account_identification.id_for_label }}" name="pis_creditor_account_identification" type="text" value="{{ form.pis_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_creditor_account_name.id_for_label }}">Domestic creditor account name</label>
+                            {{ form.pis_creditor_account_name.errors }}
+                            <input id="{{ form.pis_creditor_account_name.id_for_label }}" name="pis_creditor_account_name" type="text" value="{{ form.pis_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_instructed_amount_amount.id_for_label }}">Instructed amount</label>
+                            {{ form.pis_instructed_amount_amount.errors }}
+                            <input id="{{ form.pis_instructed_amount_amount.id_for_label }}" name="pis_instructed_amount_amount" type="text" value="{{ form.pis_instructed_amount_amount.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_instructed_amount_currency.id_for_label }}">Instructed amount currency</label>
+                            {{ form.pis_instructed_amount_currency.errors }}
+                            <input id="{{ form.pis_instructed_amount_currency.id_for_label }}" name="pis_instructed_amount_currency" type="text" value="{{ form.pis_instructed_amount_currency.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_currency_of_transfer.id_for_label }}">Currency of transfer</label>
+                            {{ form.pis_currency_of_transfer.errors }}
+                            <input id="{{ form.pis_currency_of_transfer.id_for_label }}" name="pis_currency_of_transfer" type="text" value="{{ form.pis_currency_of_transfer.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_requested_execution_date_time.id_for_label }}">Requested execution date/time</label>
+                            {{ form.pis_requested_execution_date_time.errors }}
+                            <input id="{{ form.pis_requested_execution_date_time.id_for_label }}" name="pis_requested_execution_date_time" type="text" value="{{ form.pis_requested_execution_date_time.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_first_payment_date_time.id_for_label }}">First payment date/time</label>
+                            {{ form.pis_first_payment_date_time.errors }}
+                            <input id="{{ form.pis_first_payment_date_time.id_for_label }}" name="pis_first_payment_date_time" type="text" value="{{ form.pis_first_payment_date_time.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_payment_frequency.id_for_label }}">Payment frequency</label>
+                            {{ form.pis_payment_frequency.errors }}
+                            <input id="{{ form.pis_payment_frequency.id_for_label }}" name="pis_payment_frequency" type="text" value="{{ form.pis_payment_frequency.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_standing_order_frequency_type.id_for_label }}">Standing-order frequency type</label>
+                            {{ form.pis_standing_order_frequency_type.errors }}
+                            <input id="{{ form.pis_standing_order_frequency_type.id_for_label }}" name="pis_standing_order_frequency_type" type="text" value="{{ form.pis_standing_order_frequency_type.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}">Standing-order frequency point in time</label>
+                            {{ form.pis_standing_order_frequency_point_in_time.errors }}
+                            <input id="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}" name="pis_standing_order_frequency_point_in_time" type="text" value="{{ form.pis_standing_order_frequency_point_in_time.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
+                    <details>
+                        <summary>Advanced PIS JSON fallbacks</summary>
+                        <p class="helper">When supplied, these JSON objects override their friendly field groups.</p>
+                        <div class="grid field-row">
+                            <div>
+                                <label for="{{ form.pis_creditor_account_json.id_for_label }}">Domestic creditor account JSON</label>
+                                {{ form.pis_creditor_account_json.errors }}
+                                <textarea id="{{ form.pis_creditor_account_json.id_for_label }}" name="pis_creditor_account_json" spellcheck="false">{{ form.pis_creditor_account_json.value|default_if_none:'' }}</textarea>
+                            </div>
+                            <div>
+                                <label for="{{ form.pis_international_creditor_account_json.id_for_label }}">International creditor account JSON</label>
+                                {{ form.pis_international_creditor_account_json.errors }}
+                                <textarea id="{{ form.pis_international_creditor_account_json.id_for_label }}" name="pis_international_creditor_account_json" spellcheck="false">{{ form.pis_international_creditor_account_json.value|default_if_none:'' }}</textarea>
+                            </div>
+                            <div>
+                                <label for="{{ form.pis_instructed_amount_json.id_for_label }}">Instructed amount JSON</label>
+                                {{ form.pis_instructed_amount_json.errors }}
+                                <textarea id="{{ form.pis_instructed_amount_json.id_for_label }}" name="pis_instructed_amount_json" spellcheck="false">{{ form.pis_instructed_amount_json.value|default_if_none:'' }}</textarea>
+                            </div>
+                            <div>
+                                <label for="{{ form.pis_standing_order_frequency_json.id_for_label }}">Standing-order frequency JSON</label>
+                                {{ form.pis_standing_order_frequency_json.errors }}
+                                <textarea id="{{ form.pis_standing_order_frequency_json.id_for_label }}" name="pis_standing_order_frequency_json" spellcheck="false">{{ form.pis_standing_order_frequency_json.value|default_if_none:'' }}</textarea>
+                            </div>
+                            <div>
+                                <label for="{{ form.conditional_properties_json.id_for_label }}">Conditional properties JSON</label>
+                                {{ form.conditional_properties_json.errors }}
+                                <textarea id="{{ form.conditional_properties_json.id_for_label }}" name="conditional_properties_json" spellcheck="false">{{ form.conditional_properties_json.value|default_if_none:'' }}</textarea>
+                            </div>
+                        </div>
+                    </details>
+                </section>
+            {% endif %}
+
+            {% if config_visibility.show_cbpii %}
+                <section class="config-card" aria-labelledby="cbpii-business-heading">
+                    <h3 id="cbpii-business-heading">Confirmation of Funds</h3>
+                    <div class="grid three field-row">
+                        <div>
+                            <label for="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}">Debtor account scheme</label>
+                            {{ form.cbpii_debtor_account_scheme_name.errors }}
+                            <input id="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}" name="cbpii_debtor_account_scheme_name" type="text" value="{{ form.cbpii_debtor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.cbpii_debtor_account_identification.id_for_label }}">Debtor account identification</label>
+                            {{ form.cbpii_debtor_account_identification.errors }}
+                            <input id="{{ form.cbpii_debtor_account_identification.id_for_label }}" name="cbpii_debtor_account_identification" type="text" value="{{ form.cbpii_debtor_account_identification.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div>
+                            <label for="{{ form.cbpii_debtor_account_name.id_for_label }}">Debtor account name</label>
+                            {{ form.cbpii_debtor_account_name.errors }}
+                            <input id="{{ form.cbpii_debtor_account_name.id_for_label }}" name="cbpii_debtor_account_name" type="text" value="{{ form.cbpii_debtor_account_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
+                    <details>
+                        <summary>Advanced CBPII debtor account JSON</summary>
+                        {{ form.cbpii_debtor_account_json.errors }}
+                        <textarea id="{{ form.cbpii_debtor_account_json.id_for_label }}" name="cbpii_debtor_account_json" spellcheck="false">{{ form.cbpii_debtor_account_json.value|default_if_none:'' }}</textarea>
+                    </details>
+                </section>
+            {% endif %}
+
+            {% if not config_visibility.show_business_defaults %}
+                <section class="config-card">
+                    <h3>No business defaults required</h3>
+                    <p class="helper">The selected endpoint scope does not expose first-class business/request defaults yet. Continue to discovery settings.</p>
+                </section>
+            {% endif %}
+
+            <div class="actions">
+                <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Back to endpoints</a>
+                <button type="submit">Continue to discovery</button>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

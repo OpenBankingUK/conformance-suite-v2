@@ -21,7 +21,7 @@ Event taxonomy (``type`` field):
     run-started, run-completed,
     step-started, step-completed, step-deselected,
     request-sent, response-received,
-    assertion-evaluated,
+    assertion-evaluated, response-signature-validated, response-signature-invalid,
     auth-session-registered, auth-callback-received,
     psu-authorization-url, psu-authorization-redirect-received,
     placeholder-error, application-error.
@@ -55,6 +55,8 @@ EventType = Literal[
     "request-sent",
     "response-received",
     "assertion-evaluated",
+    "response-signature-validated",
+    "response-signature-invalid",
     "auth-session-registered",
     "auth-callback-received",
     "psu-authorization-url",

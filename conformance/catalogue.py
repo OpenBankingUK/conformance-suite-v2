@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from types import MappingProxyType
 from typing import ClassVar, Literal, cast
 
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
 
@@ -39,6 +39,24 @@ _SUPPORTED_HTTP_METHODS: set[str] = {"GET", "POST", "PUT", "PATCH", "DELETE"}
 
 _SUPPORTED_RUNTIME_INPUT_TYPES: set[str] = {"string", "number", "boolean", "json", "url", "file_reference"}
 """Runtime input type names accepted in catalogue test cases."""
+
+_V2_OPEN_BANKING_UK_SCHEME = "open-banking-uk"
+"""User-facing v2 scheme identifier for Open Banking UK catalogues."""
+
+_V2_READ_WRITE_SPECIFICATION = "read-write"
+"""User-facing v2 specification identifier for Open Banking Read/Write."""
+
+_V2_OPEN_BANKING_INTERNAL_STANDARD = "open-banking"
+"""Internal catalogue standard name backing the Open Banking UK v2 scheme."""
+
+_V2_READ_WRITE_API_FAMILIES = ("ais", "pis", "cbpii", "vrp")
+"""Open Banking catalogue API families that can contribute to one Read/Write v2 plan."""
+
+_V2_READ_WRITE_VERSION_MAP = {"4.0": "v4.0", "4.0.0": "v4.0", "4.0.1": "v4.0"}
+"""Map user-facing Read/Write versions to bundled catalogue versions."""
+
+_V2_READ_WRITE_DISPLAY_VERSIONS = ("4.0.1", "4.0.0", "4.0")
+"""Preferred display order for compile-ready Read/Write v2 versions."""
 
 
 @dataclass(frozen=True)
@@ -229,6 +247,8 @@ class CatalogueTestCase:
         runtime_input_requirements: Runtime inputs needed by this case.
         request_steps: Executable request skeletons owned by this case.
         assertions: Locked catalogue assertions evaluated for this case.
+        response_signature_required: Whether this case requires response
+            ``x-jws-signature`` validation for legacy FCS parity.
     """
 
     test_case_id: str
@@ -241,6 +261,7 @@ class CatalogueTestCase:
     runtime_input_requirements: tuple[RuntimeInputRequirement, ...] = ()
     request_steps: tuple[CatalogueRequestStep, ...] = ()
     assertions: tuple[CatalogueAssertion, ...] = ()
+    response_signature_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -310,6 +331,93 @@ class TestPlanSpec:
     runtime_inputs: Mapping[str, JsonValue]
     deselected_test_case_ids: tuple[str, ...] = ()
     assertion_overrides: tuple[AssertionOverride, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlanDocumentEndpoint:
+    """Endpoint selection nested inside a v2 shared plan document.
+
+    Attributes:
+        method: HTTP method implemented by the participant.
+        path: Absolute standards path implemented by the participant.
+        operation_id: Optional standards/OpenAPI operation identifier.
+        capability_ids: Endpoint-scoped capabilities declared for this
+            endpoint in the containing resource-group context.
+    """
+
+    method: HttpMethod
+    path: str
+    operation_id: str | None = None
+    capability_ids: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class PlanResourceGroup:
+    """Resource-group scope nested inside a v2 shared plan document.
+
+    Attributes:
+        resource_group_id: Stable user-facing resource-group identifier.
+        label: Optional display label imported from a UI-built plan.
+        endpoints: Endpoint selections declared inside this resource group.
+    """
+
+    resource_group_id: str
+    label: str | None
+    endpoints: tuple[PlanDocumentEndpoint, ...]
+
+
+@dataclass(frozen=True)
+class PlanDocumentV2:
+    """Shared v2 plan document used by UI import/export, API, and CLI.
+
+    Attributes:
+        schema_version: Shared plan-document schema version.
+        scheme: User-facing standards scheme, for example
+            ``"open-banking-uk"``.
+        specification: User-facing specification, for example
+            ``"read-write"``.
+        version: User-facing specification version, for example ``"4.0.1"``.
+        security_profile: Security profile selected for catalogue
+            applicability.
+        resource_groups: Selected resource groups with nested endpoints and
+            endpoint-scoped capabilities.
+        config: Raw execution/config section preserved for import/export.
+        runtime_inputs: Runtime values derived from ``config`` for catalogue
+            compilation and execution.
+    """
+
+    # Class starts with "Plan" and is production code, but keep pytest explicit.
+    __test__: ClassVar[bool] = False
+
+    schema_version: Literal["v2"]
+    scheme: str
+    specification: str
+    version: str
+    security_profile: SecurityProfile
+    resource_groups: tuple[PlanResourceGroup, ...]
+    config: Mapping[str, JsonValue]
+    runtime_inputs: Mapping[str, JsonValue]
+
+
+@dataclass(frozen=True)
+class PlanDocumentBoundary:
+    """User-facing v2 plan-document catalogue boundary.
+
+    Attributes:
+        scheme: Standards scheme selected by a participant.
+        specification: Standards specification family selected under the
+            scheme.
+        version: Specification version selected under the specification
+            family.
+    """
+
+    scheme: str
+    specification: str
+    version: str
+
+
+type ParsedPlanDocument = TestPlanSpec | PlanDocumentV2
+"""Parsed shared plan input accepted by API and CLI compilation paths."""
 
 
 @dataclass(frozen=True)
@@ -475,6 +583,148 @@ def parse_test_plan_spec(raw_spec: object) -> TestPlanSpec:
     )
 
 
+def parse_test_plan_document(raw_spec: object) -> ParsedPlanDocument:
+    """Parse a decoded shared plan document.
+
+    Args:
+        raw_spec: Decoded JSON value expected to match a supported plan
+            document schema.
+
+    Returns:
+        Parsed v1 plan spec or v2 shared plan document.
+
+    Raises:
+        CatalogueError: If the decoded value is malformed or unsupported.
+    """
+    spec = _json_object(raw_spec, location="planSpec")
+    schema_version = _required_string(spec, "schemaVersion", location="planSpec")
+    if schema_version == "v1":
+        return parse_test_plan_spec(spec)
+    if schema_version == "v2":
+        return _parse_plan_document_v2(spec)
+    raise CatalogueError("planSpec.schemaVersion must be one of: v1, v2")
+
+
+def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
+    """Serialise a v2 shared plan document to exportable JSON.
+
+    Args:
+        document: Parsed v2 plan document to serialise.
+
+    Returns:
+        JSON object preserving the shared v2 plan-document shape.
+    """
+    return {
+        "schemaVersion": document.schema_version,
+        "scheme": document.scheme,
+        "specification": document.specification,
+        "version": document.version,
+        "securityProfile": document.security_profile,
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": resource_group.resource_group_id,
+                    **({"label": resource_group.label} if resource_group.label is not None else {}),
+                    "endpoints": [
+                        {
+                            "method": endpoint.method,
+                            "path": endpoint.path,
+                            **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
+                            **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
+                        }
+                        for endpoint in resource_group.endpoints
+                    ],
+                }
+                for resource_group in document.resource_groups
+            ]
+        },
+        "config": {key: _copy_json_value(value) for key, value in document.config.items()},
+    }
+
+
+def supported_plan_document_boundaries(catalogues: Iterable[TestCatalogue]) -> tuple[PlanDocumentBoundary, ...]:
+    """Return v2 plan boundaries backed by the supplied catalogues.
+
+    Args:
+        catalogues: Candidate catalogues available to parser/compiler callers.
+
+    Returns:
+        User-facing scheme/specification/version boundaries that have at least
+        one backing bundled catalogue area.
+    """
+    internal_versions = {
+        catalogue.key.version
+        for catalogue in catalogues
+        if catalogue.key.standard == _V2_OPEN_BANKING_INTERNAL_STANDARD
+        and catalogue.key.api in _V2_READ_WRITE_API_FAMILIES
+    }
+    return tuple(
+        PlanDocumentBoundary(
+            scheme=_V2_OPEN_BANKING_UK_SCHEME,
+            specification=_V2_READ_WRITE_SPECIFICATION,
+            version=version,
+        )
+        for version in _V2_READ_WRITE_DISPLAY_VERSIONS
+        if _V2_READ_WRITE_VERSION_MAP[version] in internal_versions
+    )
+
+
+def catalogue_areas_for_plan_document_boundary(
+    boundary: PlanDocumentBoundary,
+    catalogues: Iterable[TestCatalogue],
+) -> tuple[TestCatalogue, ...]:
+    """Return catalogue areas backing a user-facing v2 plan boundary.
+
+    Args:
+        boundary: User-facing scheme/specification/version boundary selected by
+            the participant.
+        catalogues: Candidate catalogues available to the caller.
+
+    Returns:
+        Catalogue areas that can contribute endpoints to the boundary.
+
+    Raises:
+        CatalogueError: If the boundary is unsupported or has no backing
+            catalogue areas.
+    """
+    catalogue_version = _internal_catalogue_version_for_plan_boundary(boundary)
+    candidates = tuple(
+        catalogue
+        for catalogue in catalogues
+        if catalogue.key.standard == _V2_OPEN_BANKING_INTERNAL_STANDARD
+        and catalogue.key.version == catalogue_version
+        and catalogue.key.api in _V2_READ_WRITE_API_FAMILIES
+    )
+    if not candidates:
+        raise CatalogueError(
+            f"No catalogues are available for {boundary.scheme}/{boundary.specification}/{boundary.version}"
+        )
+    return candidates
+
+
+def compile_test_plan_document(document: ParsedPlanDocument, catalogues: Iterable[TestCatalogue]) -> CompiledTestPlan:
+    """Compile a parsed shared plan document against available catalogues.
+
+    Args:
+        document: Parsed v1 or v2 plan document.
+        catalogues: Catalogue set available to the caller.
+
+    Returns:
+        Compiled executable plan, using aggregate traceability for v2 plans
+        spanning multiple Read/Write catalogue areas.
+
+    Raises:
+        CatalogueError: If the document cannot be resolved or compiled against
+            the supplied catalogues.
+    """
+    available_catalogues = tuple(catalogues)
+    if isinstance(document, TestPlanSpec):
+        return compile_test_plan(
+            _resolve_catalogue_from_collection(document.catalogue_key, available_catalogues), document
+        )
+    return _compile_plan_document_v2(document, available_catalogues)
+
+
 def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledTestPlan:
     """Compile a participant plan spec into a deterministic catalogue plan.
 
@@ -544,6 +794,479 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         traceability=traceability,
         certifying=not non_certifying_reasons,
     )
+
+
+def _resolve_catalogue_from_collection(key: CatalogueKey, catalogues: Iterable[TestCatalogue]) -> TestCatalogue:
+    """Resolve a catalogue key from an explicit catalogue collection.
+
+    Args:
+        key: Catalogue key requested by a v1 plan spec.
+        catalogues: Candidate catalogues available to the caller.
+
+    Returns:
+        Matching catalogue.
+
+    Raises:
+        CatalogueError: If no supplied catalogue matches ``key``.
+    """
+    available_catalogues = tuple(catalogues)
+    for catalogue in available_catalogues:
+        if catalogue.key == key:
+            return catalogue
+    supported = ", ".join(
+        f"{catalogue.key.standard}/{catalogue.key.version}/{catalogue.key.api}" for catalogue in available_catalogues
+    )
+    requested = f"{key.standard}/{key.version}/{key.api}"
+    raise CatalogueError(f"Unsupported catalogue: {requested}. Supported catalogues: {supported}")
+
+
+def _compile_plan_document_v2(document: PlanDocumentV2, catalogues: Iterable[TestCatalogue]) -> CompiledTestPlan:
+    """Compile a v2 shared plan document across owning catalogues.
+
+    Args:
+        document: Parsed v2 plan document.
+        catalogues: Candidate catalogues available to the caller.
+
+    Returns:
+        Aggregate compiled plan with merged test cases and traceability.
+
+    Raises:
+        CatalogueError: If the v2 boundary, endpoint ownership, or per-area
+            compilation is invalid.
+    """
+    candidate_catalogues = _candidate_catalogues_for_plan_document_v2(document, tuple(catalogues))
+    implemented_endpoints = _implemented_endpoints_from_plan_document_v2(document)
+    if not implemented_endpoints:
+        raise CatalogueError("planSpec.scope.resourceGroups must select at least one endpoint")
+
+    compiled_plans: list[CompiledTestPlan] = []
+    for catalogue, endpoints in _partition_implemented_endpoints_by_catalogue(
+        implemented_endpoints, candidate_catalogues
+    ):
+        area_spec = TestPlanSpec(
+            schema_version="v1",
+            catalogue_key=catalogue.key,
+            security_profile=document.security_profile,
+            implemented_endpoints=endpoints,
+            runtime_inputs=document.runtime_inputs,
+        )
+        compiled_plans.append(compile_test_plan(catalogue, area_spec))
+
+    return _merge_compiled_plan_documents_v2(document, tuple(compiled_plans), implemented_endpoints)
+
+
+def _candidate_catalogues_for_plan_document_v2(
+    document: PlanDocumentV2,
+    catalogues: tuple[TestCatalogue, ...],
+) -> tuple[TestCatalogue, ...]:
+    """Return catalogue areas matching a v2 plan boundary.
+
+    Args:
+        document: Parsed v2 plan document.
+        catalogues: Candidate catalogues available to the caller.
+
+    Returns:
+        Catalogue areas that can contribute to the requested v2 boundary.
+
+    Raises:
+        CatalogueError: If the v2 scheme/specification/version is unsupported.
+    """
+    return catalogue_areas_for_plan_document_boundary(
+        PlanDocumentBoundary(scheme=document.scheme, specification=document.specification, version=document.version),
+        catalogues,
+    )
+
+
+def _internal_catalogue_version_for_plan_document_v2(document: PlanDocumentV2) -> str:
+    """Resolve the internal catalogue version for a v2 plan boundary.
+
+    Args:
+        document: Parsed v2 plan document.
+
+    Returns:
+        Internal catalogue version key.
+
+    Raises:
+        CatalogueError: If the v2 boundary is unsupported.
+    """
+    return _internal_catalogue_version_for_plan_boundary(
+        PlanDocumentBoundary(scheme=document.scheme, specification=document.specification, version=document.version)
+    )
+
+
+def _internal_catalogue_version_for_plan_boundary(boundary: PlanDocumentBoundary) -> str:
+    """Resolve the internal catalogue version for a v2 plan boundary.
+
+    Args:
+        boundary: User-facing scheme/specification/version boundary.
+
+    Returns:
+        Internal catalogue version key.
+
+    Raises:
+        CatalogueError: If the v2 boundary is unsupported.
+    """
+    if boundary.scheme != _V2_OPEN_BANKING_UK_SCHEME:
+        raise CatalogueError(f"planSpec.scheme must be {_V2_OPEN_BANKING_UK_SCHEME}")
+    if boundary.specification != _V2_READ_WRITE_SPECIFICATION:
+        raise CatalogueError(f"planSpec.specification must be {_V2_READ_WRITE_SPECIFICATION}")
+    catalogue_version = _V2_READ_WRITE_VERSION_MAP.get(boundary.version)
+    if catalogue_version is None:
+        supported_versions = ", ".join(sorted(_V2_READ_WRITE_VERSION_MAP))
+        raise CatalogueError(f"planSpec.version must be one of: {supported_versions}")
+    return catalogue_version
+
+
+def _implemented_endpoints_from_plan_document_v2(document: PlanDocumentV2) -> tuple[ImplementedEndpoint, ...]:
+    """Flatten v2 resource-group endpoints into compiler endpoint declarations.
+
+    Args:
+        document: Parsed v2 plan document.
+
+    Returns:
+        Implemented endpoint declarations in plan-document order.
+    """
+    endpoints: list[ImplementedEndpoint] = []
+    for resource_group in document.resource_groups:
+        for endpoint in resource_group.endpoints:
+            endpoints.append(
+                ImplementedEndpoint(
+                    method=endpoint.method,
+                    path=endpoint.path,
+                    resource_group=resource_group.resource_group_id,
+                    operation_id=endpoint.operation_id,
+                    capability_ids=endpoint.capability_ids,
+                )
+            )
+    return tuple(endpoints)
+
+
+def _partition_implemented_endpoints_by_catalogue(
+    endpoints: tuple[ImplementedEndpoint, ...],
+    catalogues: tuple[TestCatalogue, ...],
+) -> tuple[tuple[TestCatalogue, tuple[ImplementedEndpoint, ...]], ...]:
+    """Partition implemented endpoints by the catalogue area that owns them.
+
+    Args:
+        endpoints: Flattened endpoint declarations from a v2 plan document.
+        catalogues: Candidate catalogues for the selected boundary.
+
+    Returns:
+        Catalogue/endpoints pairs in catalogue order.
+
+    Raises:
+        CatalogueError: If an endpoint has no owning catalogue or is ambiguous.
+    """
+    endpoint_refs_by_catalogue = tuple(_catalogue_endpoint_refs(catalogue) for catalogue in catalogues)
+    catalogue_indexes_by_api = {catalogue.key.api: index for index, catalogue in enumerate(catalogues)}
+    endpoints_by_catalogue_index: dict[int, list[ImplementedEndpoint]] = {}
+    seen_refs_by_catalogue_index: dict[int, set[EndpointRef]] = {}
+    for endpoint in endpoints:
+        endpoint_ref = EndpointRef(method=endpoint.method, path=endpoint.path)
+        resource_group_index = _catalogue_index_for_resource_group(
+            endpoint.resource_group,
+            catalogue_indexes_by_api=catalogue_indexes_by_api,
+        )
+        if resource_group_index is not None:
+            if endpoint_ref not in endpoint_refs_by_catalogue[resource_group_index]:
+                raise CatalogueError(
+                    f"Resource group '{endpoint.resource_group}' does not contain endpoint "
+                    f"{endpoint.method} {endpoint.path}"
+                )
+            _append_partitioned_endpoint(
+                endpoints_by_catalogue_index,
+                seen_refs_by_catalogue_index,
+                catalogue_index=resource_group_index,
+                endpoint=endpoint,
+                endpoint_ref=endpoint_ref,
+                catalogue=catalogues[resource_group_index],
+            )
+            continue
+
+        owner_indexes = tuple(
+            index for index, endpoint_refs in enumerate(endpoint_refs_by_catalogue) if endpoint_ref in endpoint_refs
+        )
+        if not owner_indexes:
+            raise CatalogueError(f"No catalogue area owns endpoint {endpoint.method} {endpoint.path}")
+        if len(owner_indexes) > 1:
+            owner_keys = ", ".join(catalogues[index].key.api for index in owner_indexes)
+            raise CatalogueError(
+                f"Endpoint {endpoint.method} {endpoint.path} is ambiguous across catalogues: {owner_keys}"
+            )
+        _append_partitioned_endpoint(
+            endpoints_by_catalogue_index,
+            seen_refs_by_catalogue_index,
+            catalogue_index=owner_indexes[0],
+            endpoint=endpoint,
+            endpoint_ref=endpoint_ref,
+            catalogue=catalogues[owner_indexes[0]],
+        )
+
+    return tuple(
+        (catalogue, tuple(endpoints_by_catalogue_index[index]))
+        for index, catalogue in enumerate(catalogues)
+        if index in endpoints_by_catalogue_index
+    )
+
+
+def _catalogue_index_for_resource_group(
+    resource_group: str,
+    *,
+    catalogue_indexes_by_api: Mapping[str, int],
+) -> int | None:
+    """Return the catalogue index indicated by a v2 resource-group id.
+
+    Args:
+        resource_group: Resource-group id from the v2 plan document.
+        catalogue_indexes_by_api: Mapping of API-family ids to catalogue
+            positions in the selected boundary.
+
+    Returns:
+        Catalogue position when the resource group uses the ``api.slug`` shape,
+        otherwise ``None`` so legacy/non-builder ids use endpoint ownership.
+
+    Raises:
+        CatalogueError: If the resource group names an API family that is not
+            available in the selected v2 boundary.
+    """
+    api, separator, _slug_value = resource_group.partition(".")
+    if not separator or not api:
+        return None
+    catalogue_index = catalogue_indexes_by_api.get(api)
+    if catalogue_index is None:
+        available_apis = ", ".join(sorted(catalogue_indexes_by_api))
+        raise CatalogueError(
+            f"Resource group '{resource_group}' is not available for this plan boundary. "
+            f"Available API families: {available_apis}"
+        )
+    return catalogue_index
+
+
+def _append_partitioned_endpoint(
+    endpoints_by_catalogue_index: dict[int, list[ImplementedEndpoint]],
+    seen_refs_by_catalogue_index: dict[int, set[EndpointRef]],
+    *,
+    catalogue_index: int,
+    endpoint: ImplementedEndpoint,
+    endpoint_ref: EndpointRef,
+    catalogue: TestCatalogue,
+) -> None:
+    """Append an endpoint to one catalogue partition, rejecting duplicates.
+
+    Args:
+        endpoints_by_catalogue_index: Mutable partition accumulator.
+        seen_refs_by_catalogue_index: Endpoint refs already added per catalogue
+            partition.
+        catalogue_index: Index of the owning catalogue.
+        endpoint: Implemented endpoint declaration being partitioned.
+        endpoint_ref: Method/path reference for duplicate checks.
+        catalogue: Owning catalogue used in error messages.
+
+    Raises:
+        CatalogueError: If the same endpoint is selected twice for one
+            catalogue area.
+    """
+    seen_refs = seen_refs_by_catalogue_index.setdefault(catalogue_index, set())
+    if endpoint_ref in seen_refs:
+        raise CatalogueError(
+            f"planSpec scope duplicates implemented endpoint {endpoint.method} {endpoint.path} "
+            f"in catalogue area {catalogue.key.api}"
+        )
+    seen_refs.add(endpoint_ref)
+    endpoints_by_catalogue_index.setdefault(catalogue_index, []).append(endpoint)
+
+
+def _catalogue_endpoint_refs(catalogue: TestCatalogue) -> set[EndpointRef]:
+    """Return endpoint refs owned by a catalogue.
+
+    Args:
+        catalogue: Catalogue whose endpoint coverage should be indexed.
+
+    Returns:
+        Endpoint refs referenced by test-case applicability or capabilities.
+    """
+    endpoint_refs: set[EndpointRef] = set()
+    for test_case in catalogue.test_cases:
+        endpoint_refs.update(test_case.applicability.endpoint_refs)
+    for capability in catalogue.capabilities:
+        endpoint_refs.update(capability.endpoint_refs)
+    return endpoint_refs
+
+
+def _merge_compiled_plan_documents_v2(
+    document: PlanDocumentV2,
+    compiled_plans: tuple[CompiledTestPlan, ...],
+    implemented_endpoints: tuple[ImplementedEndpoint, ...],
+) -> CompiledTestPlan:
+    """Merge per-catalogue compiled plans into one v2 compiled graph.
+
+    Args:
+        document: Parsed v2 plan document that produced the per-catalogue
+            compiled plans.
+        compiled_plans: Per-catalogue compiler outputs.
+        implemented_endpoints: Flattened endpoint declarations from the plan.
+
+    Returns:
+        Aggregate compiled test plan.
+
+    Raises:
+        CatalogueError: If compiled plans cannot be merged safely.
+    """
+    aggregate_key = CatalogueKey(standard=document.scheme, version=document.version, api=document.specification)
+    test_cases = _merge_compiled_test_cases(compiled_plans)
+    runtime_snapshot = _merge_runtime_input_snapshots(compiled_plans)
+    non_certifying_reasons = tuple(
+        reason for compiled_plan in compiled_plans for reason in compiled_plan.traceability.non_certifying_reasons
+    )
+    generated_test_case_ids = tuple(case.test_case_id for case in test_cases)
+    traceability = CompilerTraceability(
+        catalogue_key=aggregate_key,
+        catalogue_version=_aggregate_catalogue_version(compiled_plans),
+        security_profile=document.security_profile,
+        selected_endpoints=implemented_endpoints,
+        selected_capabilities=tuple(
+            capability
+            for compiled_plan in compiled_plans
+            for capability in compiled_plan.traceability.selected_capabilities
+        ),
+        applicability_decisions=tuple(
+            decision
+            for compiled_plan in compiled_plans
+            for decision in compiled_plan.traceability.applicability_decisions
+        ),
+        generated_test_case_ids=generated_test_case_ids,
+        runtime_input_snapshot=runtime_snapshot,
+        non_certifying_reasons=non_certifying_reasons,
+    )
+    return CompiledTestPlan(
+        catalogue_key=aggregate_key,
+        catalogue_version=traceability.catalogue_version,
+        security_profile=document.security_profile,
+        test_cases=test_cases,
+        traceability=traceability,
+        certifying=all(compiled_plan.certifying for compiled_plan in compiled_plans),
+    )
+
+
+def _merge_compiled_test_cases(compiled_plans: tuple[CompiledTestPlan, ...]) -> tuple[CatalogueTestCase, ...]:
+    """Merge compiled test cases and reject duplicate ids.
+
+    Args:
+        compiled_plans: Per-catalogue compiler outputs.
+
+    Returns:
+        Test cases in catalogue compilation order.
+
+    Raises:
+        CatalogueError: If two catalogue areas emit the same test-case id.
+    """
+    merged_cases: list[CatalogueTestCase] = []
+    seen_case_ids: set[str] = set()
+    for compiled_plan in compiled_plans:
+        for test_case in compiled_plan.test_cases:
+            if test_case.test_case_id in seen_case_ids:
+                raise CatalogueError(
+                    f"Compiled test case id '{test_case.test_case_id}' is duplicated across catalogues"
+                )
+            seen_case_ids.add(test_case.test_case_id)
+            merged_cases.append(test_case)
+    return tuple(merged_cases)
+
+
+def _aggregate_catalogue_version(compiled_plans: tuple[CompiledTestPlan, ...]) -> str:
+    """Build aggregate catalogue-version evidence for a v2 compiled plan.
+
+    Args:
+        compiled_plans: Per-catalogue compiler outputs.
+
+    Returns:
+        Stable semicolon-delimited catalogue-version summary.
+    """
+    return "; ".join(
+        f"{compiled_plan.traceability.catalogue_key.api}:{compiled_plan.catalogue_version}"
+        for compiled_plan in compiled_plans
+    )
+
+
+def _merge_runtime_input_snapshots(compiled_plans: tuple[CompiledTestPlan, ...]) -> tuple[RuntimeInputTrace, ...]:
+    """Merge trace-safe runtime input snapshots across catalogue areas.
+
+    Args:
+        compiled_plans: Per-catalogue compiler outputs.
+
+    Returns:
+        Runtime input traces de-duplicated by input id in first-use order.
+
+    Raises:
+        CatalogueError: If catalogue areas disagree on runtime input types or
+            incompatible non-sensitive values.
+    """
+    traces: list[RuntimeInputTrace] = []
+    positions: dict[str, int] = {}
+    for compiled_plan in compiled_plans:
+        for trace in compiled_plan.traceability.runtime_input_snapshot:
+            position = positions.get(trace.input_id)
+            if position is None:
+                positions[trace.input_id] = len(traces)
+                traces.append(trace)
+                continue
+            traces[position] = _merge_runtime_input_trace(traces[position], trace)
+    return tuple(traces)
+
+
+def _merge_runtime_input_trace(existing: RuntimeInputTrace, incoming: RuntimeInputTrace) -> RuntimeInputTrace:
+    """Merge two trace entries for the same runtime input id.
+
+    Args:
+        existing: Existing trace entry in the aggregate snapshot.
+        incoming: New trace entry from another catalogue area.
+
+    Returns:
+        Merged trace entry.
+
+    Raises:
+        CatalogueError: If the two trace entries are incompatible.
+    """
+    if existing.input_type != incoming.input_type:
+        raise CatalogueError(f"Runtime input '{existing.input_id}' has conflicting catalogue types")
+    sensitive = existing.sensitive or incoming.sensitive
+    value = _merged_runtime_input_trace_value(existing, incoming, sensitive=sensitive)
+    return RuntimeInputTrace(
+        input_id=existing.input_id,
+        input_type=existing.input_type,
+        required=existing.required or incoming.required,
+        sensitive=sensitive,
+        provided=existing.provided or incoming.provided,
+        value=value,
+    )
+
+
+def _merged_runtime_input_trace_value(
+    existing: RuntimeInputTrace,
+    incoming: RuntimeInputTrace,
+    *,
+    sensitive: bool,
+) -> JsonValue | None:
+    """Merge trace-safe values for the same runtime input id.
+
+    Args:
+        existing: Existing trace entry in the aggregate snapshot.
+        incoming: New trace entry from another catalogue area.
+        sensitive: Whether the merged trace must suppress the value.
+
+    Returns:
+        Merged trace value, or ``None`` when absent or sensitive.
+
+    Raises:
+        CatalogueError: If two non-sensitive traces expose different values.
+    """
+    if sensitive:
+        return None
+    if existing.value is None:
+        return _copy_json_value(incoming.value) if incoming.value is not None else None
+    if incoming.value is None or existing.value == incoming.value:
+        return _copy_json_value(existing.value)
+    raise CatalogueError(f"Runtime input '{existing.input_id}' has conflicting trace values")
 
 
 def _json_object(raw_value: object, *, location: str) -> dict[str, JsonValue]:
@@ -670,6 +1393,30 @@ def _optional_object_array(
     return tuple(_json_object(item, location=f"{location}.{key}[{index}]") for index, item in enumerate(value))
 
 
+def _required_object_array(
+    raw_object: Mapping[str, JsonValue],
+    key: str,
+    *,
+    location: str,
+) -> tuple[dict[str, JsonValue], ...]:
+    """Extract a required array of JSON objects.
+
+    Args:
+        raw_object: Parent JSON object.
+        key: Field name to extract.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of JSON objects.
+
+    Raises:
+        CatalogueError: If the field is absent or not an array of JSON objects.
+    """
+    if key not in raw_object:
+        raise CatalogueError(f"{location}.{key} is required")
+    return _optional_object_array(raw_object, key, location=location)
+
+
 def _parse_optional_string_array(raw_object: Mapping[str, JsonValue], key: str, *, location: str) -> tuple[str, ...]:
     """Extract an optional array of non-empty strings.
 
@@ -714,6 +1461,135 @@ def _parse_catalogue_key(raw_key: Mapping[str, JsonValue]) -> CatalogueKey:
         standard=_required_string(raw_key, "standard", location="planSpec.catalogue"),
         version=_required_string(raw_key, "version", location="planSpec.catalogue"),
         api=_required_string(raw_key, "api", location="planSpec.catalogue"),
+    )
+
+
+def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
+    """Parse a v2 shared plan document.
+
+    Args:
+        spec: Raw plan-spec JSON object with ``schemaVersion`` already
+            identified as ``"v2"``.
+
+    Returns:
+        Parsed v2 plan document with nested scope and derived runtime inputs.
+
+    Raises:
+        CatalogueError: If the v2 document is malformed.
+    """
+    _reject_unknown_keys(
+        spec,
+        allowed_keys={"schemaVersion", "scheme", "specification", "version", "securityProfile", "scope", "config"},
+        location="planSpec",
+    )
+    raw_config = _required_object(spec, "config", location="planSpec")
+    config = _copy_json_mapping(raw_config)
+    config.pop("environment", None)
+    return PlanDocumentV2(
+        schema_version="v2",
+        scheme=_required_string(spec, "scheme", location="planSpec"),
+        specification=_required_string(spec, "specification", location="planSpec"),
+        version=_required_string(spec, "version", location="planSpec"),
+        security_profile=_parse_security_profile(
+            _required_string(spec, "securityProfile", location="planSpec"),
+            location="planSpec.securityProfile",
+        ),
+        resource_groups=_parse_plan_document_v2_resource_groups(_required_object(spec, "scope", location="planSpec")),
+        config=MappingProxyType(config),
+        runtime_inputs=MappingProxyType(_runtime_inputs_from_plan_config(config)),
+    )
+
+
+def _parse_plan_document_v2_resource_groups(raw_scope: Mapping[str, JsonValue]) -> tuple[PlanResourceGroup, ...]:
+    """Parse v2 scope resource groups.
+
+    Args:
+        raw_scope: Raw ``scope`` JSON object from a v2 plan document.
+
+    Returns:
+        Parsed resource groups with nested endpoint declarations.
+
+    Raises:
+        CatalogueError: If resource groups or nested endpoints are malformed.
+    """
+    _reject_unknown_keys(raw_scope, allowed_keys={"resourceGroups"}, location="planSpec.scope")
+    resource_groups: list[PlanResourceGroup] = []
+    seen_group_ids: set[str] = set()
+    for index, raw_group in enumerate(_required_object_array(raw_scope, "resourceGroups", location="planSpec.scope")):
+        location = f"planSpec.scope.resourceGroups[{index}]"
+        resource_group = _parse_plan_document_v2_resource_group(raw_group, location=location)
+        if resource_group.resource_group_id in seen_group_ids:
+            raise CatalogueError(f"{location}.id duplicates resource group '{resource_group.resource_group_id}'")
+        seen_group_ids.add(resource_group.resource_group_id)
+        resource_groups.append(resource_group)
+    return tuple(resource_groups)
+
+
+def _parse_plan_document_v2_resource_group(
+    raw_group: Mapping[str, JsonValue],
+    *,
+    location: str,
+) -> PlanResourceGroup:
+    """Parse one v2 resource-group declaration.
+
+    Args:
+        raw_group: Raw resource-group JSON object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed resource group.
+
+    Raises:
+        CatalogueError: If the resource group or endpoints are malformed.
+    """
+    _reject_unknown_keys(raw_group, allowed_keys={"id", "label", "endpoints"}, location=location)
+    seen_refs: set[EndpointRef] = set()
+    endpoints = tuple(
+        _parse_plan_document_v2_endpoint(raw_endpoint, location=f"{location}.endpoints[{index}]", seen_refs=seen_refs)
+        for index, raw_endpoint in enumerate(_required_object_array(raw_group, "endpoints", location=location))
+    )
+    return PlanResourceGroup(
+        resource_group_id=_required_string(raw_group, "id", location=location),
+        label=_optional_string(raw_group, "label", location=location),
+        endpoints=endpoints,
+    )
+
+
+def _parse_plan_document_v2_endpoint(
+    raw_endpoint: Mapping[str, JsonValue],
+    *,
+    location: str,
+    seen_refs: set[EndpointRef],
+) -> PlanDocumentEndpoint:
+    """Parse one v2 endpoint declaration.
+
+    Args:
+        raw_endpoint: Raw endpoint JSON object.
+        location: Dot-path location string used in error messages.
+        seen_refs: Endpoint refs already declared elsewhere in the document.
+
+    Returns:
+        Parsed endpoint declaration.
+
+    Raises:
+        CatalogueError: If the endpoint is malformed or duplicated.
+    """
+    _reject_unknown_keys(
+        raw_endpoint, allowed_keys={"method", "path", "operationId", "capabilities"}, location=location
+    )
+    method = _parse_http_method(
+        _required_string(raw_endpoint, "method", location=location), location=f"{location}.method"
+    )
+    path = _parse_absolute_path(_required_string(raw_endpoint, "path", location=location), location=f"{location}.path")
+    endpoint_ref = EndpointRef(method=method, path=path)
+    if endpoint_ref in seen_refs:
+        raise CatalogueError(f"{location} duplicates implemented endpoint {method} {path}")
+    seen_refs.add(endpoint_ref)
+    return PlanDocumentEndpoint(
+        method=method,
+        path=path,
+        operation_id=_optional_string(raw_endpoint, "operationId", location=location),
+        capability_ids=_parse_endpoint_capability_ids(raw_endpoint, location=location),
     )
 
 
@@ -858,6 +1734,259 @@ def _parse_runtime_inputs(raw_spec: Mapping[str, JsonValue]) -> dict[str, JsonVa
     return {key: _copy_json_value(value) for key, value in raw_inputs.items()}
 
 
+def _runtime_inputs_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Derive compiler runtime inputs from a v2 plan ``config`` section.
+
+    Args:
+        config: Raw v2 config mapping preserved by the plan document.
+
+    Returns:
+        Flat runtime-input mapping for catalogue compilation and execution.
+
+    Raises:
+        CatalogueError: If structured runtime-input config fields are malformed.
+    """
+    runtime_inputs: JsonObject = {}
+    for key, value in config.items():
+        if key in {"inputs", "runtimeInputs"} or isinstance(value, dict | list):
+            continue
+        runtime_inputs[key] = _copy_json_value(value)
+
+    _merge_structured_runtime_inputs(runtime_inputs, config)
+
+    if "runtimeInputs" in config:
+        raw_runtime_inputs = _json_object(config["runtimeInputs"], location="planSpec.config.runtimeInputs")
+        for input_id, value in raw_runtime_inputs.items():
+            _merge_plan_config_runtime_input(runtime_inputs, input_id, value, location="planSpec.config.runtimeInputs")
+
+    if "inputs" in config:
+        raw_inputs = _json_object(config["inputs"], location="planSpec.config.inputs")
+        for input_id, raw_value in raw_inputs.items():
+            value = _runtime_value_from_plan_config_input(raw_value)
+            _merge_plan_config_runtime_input(runtime_inputs, input_id, value, location="planSpec.config.inputs")
+
+    return runtime_inputs
+
+
+def _merge_structured_runtime_inputs(runtime_inputs: JsonObject, config: Mapping[str, JsonValue]) -> None:
+    """Merge runtime inputs derived from structured v2 config sections.
+
+    Args:
+        runtime_inputs: Mutable runtime-input mapping being built.
+        config: Raw v2 plan ``config`` object.
+
+    Raises:
+        CatalogueError: If a derived value conflicts with another config value.
+    """
+    resource_server = _optional_runtime_config_object(config, "resourceServer")
+    if resource_server is not None:
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "resourceBaseUrl",
+            resource_server.get("baseUrl"),
+            location="planSpec.config.resourceServer.baseUrl",
+        )
+
+    oauth = _optional_runtime_config_object(config, "oauth")
+    if oauth is not None:
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "resourceBaseUrl",
+            oauth.get("resourceBaseUrl"),
+            location="planSpec.config.oauth.resourceBaseUrl",
+        )
+
+    ais = _optional_runtime_config_object(config, "ais")
+    if ais is not None:
+        resource_ids = _optional_nested_runtime_config_object(ais, "resourceIds")
+        if resource_ids is not None:
+            account_id = _first_object_string(resource_ids.get("accountIds"), "accountId")
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "consentedAccountId",
+                account_id,
+                location="planSpec.config.ais.resourceIds.accountIds[0].accountId",
+            )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "fromBookingDateTime",
+            ais.get("transactionFromDate"),
+            location="planSpec.config.ais.transactionFromDate",
+        )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "toBookingDateTime",
+            ais.get("transactionToDate"),
+            location="planSpec.config.ais.transactionToDate",
+        )
+
+    cbpii = _optional_runtime_config_object(config, "cbpii")
+    if cbpii is not None:
+        debtor_account = _optional_nested_runtime_config_object(cbpii, "debtorAccount")
+        if debtor_account is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "debtorAccountSchemeName",
+                debtor_account.get("schemeName"),
+                location="planSpec.config.cbpii.debtorAccount.schemeName",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "debtorAccountIdentification",
+                debtor_account.get("identification"),
+                location="planSpec.config.cbpii.debtorAccount.identification",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "debtorAccountName",
+                debtor_account.get("name"),
+                location="planSpec.config.cbpii.debtorAccount.name",
+            )
+
+
+def _optional_runtime_config_object(config: Mapping[str, JsonValue], key: str) -> Mapping[str, JsonValue] | None:
+    """Return an optional structured runtime config object.
+
+    Args:
+        config: Raw v2 plan ``config`` object.
+        key: Section key to inspect.
+
+    Returns:
+        The nested object, or ``None`` when absent.
+
+    Raises:
+        CatalogueError: If the section is present but not an object.
+    """
+    value = config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise CatalogueError(f"planSpec.config.{key} must be a JSON object")
+    return value
+
+
+def _optional_nested_runtime_config_object(
+    config: Mapping[str, JsonValue],
+    key: str,
+) -> Mapping[str, JsonValue] | None:
+    """Return an optional nested runtime config object.
+
+    Args:
+        config: Parent structured config object.
+        key: Nested key to inspect.
+
+    Returns:
+        The nested object, or ``None`` when absent.
+
+    Raises:
+        CatalogueError: If the section is present but not an object.
+    """
+    value = config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise CatalogueError(f"Structured config field '{key}' must be a JSON object")
+    return value
+
+
+def _first_object_string(value: JsonValue | None, key: str) -> str | None:
+    """Return a string field from the first object in an array.
+
+    Args:
+        value: Candidate JSON array.
+        key: Object key to extract from the first entry.
+
+    Returns:
+        The string value, or ``None`` when no suitable value is present.
+
+    Raises:
+        CatalogueError: If the supplied value is not an array of JSON objects.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        raise CatalogueError(f"Structured config field '{key}' source must be a JSON array")
+    if not value:
+        return None
+    first = value[0]
+    if not isinstance(first, dict):
+        raise CatalogueError(f"Structured config field '{key}' source must contain JSON objects")
+    raw_value = first.get(key)
+    if raw_value is None:
+        return None
+    if not isinstance(raw_value, str):
+        raise CatalogueError(f"Structured config field '{key}' must be a string")
+    return raw_value
+
+
+def _merge_optional_structured_runtime_input(
+    runtime_inputs: JsonObject,
+    input_id: str,
+    value: JsonValue | None,
+    *,
+    location: str,
+) -> None:
+    """Merge a structured runtime input when a value is present.
+
+    Args:
+        runtime_inputs: Mutable runtime-input mapping being built.
+        input_id: Runtime input id to merge.
+        value: Candidate JSON value.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        CatalogueError: If the value conflicts with another config value.
+    """
+    if value is None:
+        return
+    if isinstance(value, str) and not value.strip():
+        return
+    _merge_plan_config_runtime_input(runtime_inputs, input_id, value, location=location)
+
+
+def _merge_plan_config_runtime_input(
+    runtime_inputs: JsonObject,
+    input_id: str,
+    value: JsonValue,
+    *,
+    location: str,
+) -> None:
+    """Merge one runtime input derived from v2 config.
+
+    Args:
+        runtime_inputs: Mutable derived runtime-input mapping.
+        input_id: Runtime input identifier to merge.
+        value: JSON value supplied for the runtime input.
+        location: Dot-path location string used in error messages.
+
+    Raises:
+        CatalogueError: If the same runtime input is supplied with conflicting
+            values in multiple config locations.
+    """
+    if not input_id.strip():
+        raise CatalogueError(f"{location} contains an empty runtime input id")
+    copied_value = _copy_json_value(value)
+    existing = runtime_inputs.get(input_id)
+    if input_id in runtime_inputs and existing != copied_value:
+        raise CatalogueError(f"{location}.{input_id} conflicts with another config value")
+    runtime_inputs[input_id] = copied_value
+
+
+def _runtime_value_from_plan_config_input(raw_value: JsonValue) -> JsonValue:
+    """Extract an executable runtime value from a v2 ``config.inputs`` entry.
+
+    Args:
+        raw_value: Raw value from ``config.inputs``.
+
+    Returns:
+        Direct runtime value, or the explicit ``value`` field when the input
+        uses an object wrapper.
+    """
+    if isinstance(raw_value, dict) and "value" in raw_value:
+        return _copy_json_value(raw_value["value"])
+    return _copy_json_value(raw_value)
+
+
 def _parse_assertion_overrides(raw_overrides: Iterable[Mapping[str, JsonValue]]) -> tuple[AssertionOverride, ...]:
     """Parse assertion override declarations from a plan spec.
 
@@ -898,6 +2027,18 @@ def _copy_json_value(value: JsonValue) -> JsonValue:
         Independent JSON value copy.
     """
     return copy.deepcopy(value)
+
+
+def _copy_json_mapping(value: Mapping[str, JsonValue]) -> JsonObject:
+    """Deep-copy a JSON object mapping.
+
+    Args:
+        value: JSON object mapping to copy.
+
+    Returns:
+        Independent JSON object.
+    """
+    return {key: _copy_json_value(item) for key, item in value.items()}
 
 
 def _catalogue_cases_by_id(catalogue: TestCatalogue) -> dict[str, CatalogueTestCase]:

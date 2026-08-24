@@ -34,8 +34,14 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.catalogue import CatalogueError, compile_test_plan, parse_test_plan_spec
-from conformance.catalogue_registry import resolve_catalogue
+from conformance.catalogue import (
+    CatalogueError,
+    TestPlanSpec,
+    compile_test_plan,
+    compile_test_plan_document,
+    parse_test_plan_document,
+)
+from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
 from conformance.json_types import JsonObject
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 
@@ -221,10 +227,10 @@ def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
     The request body must be a JSON object with required ``config`` and
-    ``planSpec`` keys. The plan spec is compiled against the bundled catalogue
-    before the asynchronous run starts, so participants receive immediate
-    feedback for unsupported catalogues, unknown endpoints, missing runtime
-    inputs, or invalid assertion overrides.
+    ``planSpec`` keys. The v1 or v2 plan spec is compiled against the bundled
+    catalogues before the asynchronous run starts, so participants receive
+    immediate feedback for unsupported catalogues, unknown endpoints, missing
+    runtime inputs, or invalid assertion overrides.
     The run executes asynchronously in a background thread; the response
     returns immediately with the run ID and status.
 
@@ -275,8 +281,14 @@ def create_run(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
 
     try:
-        plan_spec = parse_test_plan_spec(raw_plan_spec)
-        compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+        plan_document = parse_test_plan_document(raw_plan_spec)
+        if isinstance(plan_document, TestPlanSpec):
+            plan_spec = plan_document
+            compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+            runtime_inputs = plan_spec.runtime_inputs
+        else:
+            compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
+            runtime_inputs = plan_document.runtime_inputs
     except CatalogueError as error:
         return JsonResponse({"error": f"Plan-spec validation failed: {error}"}, status=400)
 
@@ -284,7 +296,7 @@ def create_run(request: HttpRequest) -> JsonResponse:
         response_body = start_run(
             config=config,
             compiled_plan=compiled_plan,
-            runtime_inputs=plan_spec.runtime_inputs,
+            runtime_inputs=runtime_inputs,
             runtime_input_base_dir=Path.cwd(),
         )
     except RunConflictError as error:

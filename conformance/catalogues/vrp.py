@@ -351,6 +351,31 @@ _BLUEPRINTS: tuple[_LegacyCaseBlueprint, ...] = (
 )
 """Legacy VRP/cVRP operation coverage blueprints mapped into the catalogue model."""
 
+_RESPONSE_SIGNATURE_SCRIPT_IDS = frozenset(
+    {
+        "OB-301-VRP-100100",
+        "OB-301-VRP-100101",
+        "OB-301-VRP-100600",
+        "OB-301-VRP-100601",
+        "OB-301-VRP-100610",
+        "OB-301-VRP-100650",
+        "OB-301-VRP-10670",
+        "OB-301-VRP-100700",
+        "OB-301-VRP-100701",
+        "OB-301-VRP-101100",
+        "OB-301-VRP-101200",
+        "OB-400-VRP-100100",
+        "OB-400-VRP-100600",
+        "OB-400-VRP-100610",
+        "OB-400-VRP-100650",
+        "OB-400-VRP-10170",
+        "OB-400-VRP-100700",
+        "OB-400-VRP-101100",
+        "OB-400-VRP-101200",
+    }
+)
+"""Legacy VRP script ids whose responses required JWS signature validation."""
+
 
 def _legacy_manifest_scope_entry(manifest_path: str, script_id: str) -> str:
     """Build a stable compliance-scope entry for a legacy manifest script.
@@ -509,6 +534,12 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
             ),
         ),
         assertions=_build_assertions(blueprint.assertion_ids),
+        response_signature_required=any(
+            script_id in _RESPONSE_SIGNATURE_SCRIPT_IDS
+            for _manifest_path, script_id in (
+                blueprint.legacy_vrp_sources if family == "vrp" else blueprint.legacy_cvrp_sources
+            )
+        ),
     )
 
 

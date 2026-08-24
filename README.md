@@ -9,15 +9,22 @@ conformance-suite repository. It is not the official released suite.
 Participants no longer select checked-in suites, manifests, or config examples.
 The supported workflow is:
 
-1. Open the browser plan builder at `/plan/`.
-2. Select the standard, version, API family, and security profile.
-3. Tick the implemented endpoints grouped by resource area.
-4. Review the endpoint capabilities shown inline on each selected endpoint card.
+1. Open the browser main menu at `/`.
+2. Choose **Create a new test plan with builder** or **Import test plan**.
+3. For a new plan, select the scheme, specification, and version. The page then
+   shows resource groups only when the selected specification defines them, such
+   as Read/Write Account and Transaction or Payment Initiation.
+4. Select implemented endpoints inside the chosen resource groups when the
+   selected specification is catalogue-backed.
+5. Review the endpoint capabilities shown inline on each selected endpoint card.
    Required capabilities are checked and locked; optional capabilities are
    unchecked until the participant declares that behaviour as implemented.
-5. Provide the runtime values required by the selected endpoints and
-   capabilities.
-6. Preview the generated catalogue plan, then launch the run.
+6. Provide config through staged pages: business/request defaults first,
+   discovery URL next, OAuth/FAPI/security settings after discovery metadata is
+   available, and generated runtime artifacts last. Domain-specific fields
+   appear only for the selected endpoint scope.
+7. Review the generated v2 plan document, export reusable JSON, or launch the
+   run.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
 requirements, launch blockers, and certification status after preview. Generated
@@ -26,74 +33,92 @@ request and assertion details stay collapsed under audit details.
 
 ## CLI plan-spec execution
 
-The CLI accepts participant config plus a plan-spec JSON file:
+The CLI accepts participant config plus a shared plan document JSON file:
 
 ```bash
 uv run python main.py path/to/config.json --plan-spec path/to/plan-spec.json
 ```
 
-The config carries environment, TLS, OAuth, signing, output, and optional
-approved-release-policy settings. The plan spec carries the catalogue key,
-security profile, implemented endpoints, selected endpoint capabilities, runtime
-input values or references, and any assertion overrides.
+The config carries discovery, TLS, OAuth, signing, resource-server header,
+scope-relevant AIS/PIS/CBPII business defaults, conditional-property, output,
+and optional approved-release-policy settings. Browser discovery can prefill
+OAuth/FAPI values from OpenID metadata, but exported JSON includes the final
+accepted config values without recording
+whether they came from discovery or manual entry. The
+preferred v2 plan document carries the scheme/specification/version boundary,
+security profile, nested resource groups, implemented endpoints, selected
+endpoint capabilities, grouped config defaults, and remaining runtime inputs or
+references. A single Read/Write v2 plan can span AIS, PIS, CBPII, and VRP
+catalogue areas. cVRP is not exposed under the Open Banking UK Read/Write
+boundary for now.
 
 ```json
 {
-  "schemaVersion": "v1",
-  "catalogue": {
-    "standard": "open-banking",
-    "version": "v4.0",
-    "api": "ais"
-  },
+  "schemaVersion": "v2",
+  "scheme": "open-banking-uk",
+  "specification": "read-write",
+  "version": "4.0.1",
   "securityProfile": "fapi1-advanced",
-  "implementedEndpoints": [
-    {
-      "method": "GET",
-      "path": "/open-banking/v4.0/aisp/accounts",
-      "resourceGroup": "Accounts",
-      "capabilities": []
-    }
-  ],
-  "runtimeInputs": {
-    "resourceBaseUrl": "https://resource.example.com"
+  "scope": {
+    "resourceGroups": [
+      {
+        "id": "account-and-transaction",
+        "label": "Account and Transaction",
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts"
+          }
+        ]
+      }
+    ]
+  },
+  "config": {
+    "resourceServer": {"baseUrl": "https://resource.example.com"},
+    "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
   }
 }
 ```
 
-Required endpoint capabilities may be omitted from exported specs because the
-compiler selects them automatically for implemented endpoints. Optional
+Required endpoint capabilities may be omitted from exported documents because
+the compiler selects them automatically for implemented endpoints. Optional
 capabilities must be listed under their endpoint to generate implementation-
-dependent tests. `config.testSuite`, public `--manifest`, public `--deselect`,
+dependent tests. The lower-level v1 per-catalogue plan spec remains accepted by
+CLI/API for compatibility, but the browser import/export flow uses v2 shared
+plan documents. `config.testSuite`, public `--manifest`, public `--deselect`,
 REST `manifest`, and REST `deselectStepIds` are intentionally rejected.
-Mandatory applicable catalogue tests cannot be arbitrarily deselected. Assertion
-overrides are import-only, recorded, and make the run non-certifying.
+Mandatory applicable catalogue tests cannot be arbitrarily deselected. v1
+assertion overrides are import-only, recorded, and make the run non-certifying.
 
 ## Browser and REST launch
 
-The browser plan builder posts a `planSpec` and config through the same
-catalogue compiler used by the CLI. The REST run creation endpoint accepts the
-same model in `POST /api/runs/`:
+The browser wizard imports, exports, reviews, and launches the same v2 plan
+document that the catalogue compiler accepts through CLI and REST. The REST run
+creation endpoint accepts the document under `planSpec` in `POST /api/runs/`:
 
 ```json
 {
   "config": {
-    "environment": "ozone-model-bank",
     "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration"
   },
   "planSpec": {
-    "schemaVersion": "v1",
-    "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+    "schemaVersion": "v2",
+    "scheme": "open-banking-uk",
+    "specification": "read-write",
+    "version": "4.0.1",
     "securityProfile": "fapi1-advanced",
-    "implementedEndpoints": [],
-    "runtimeInputs": {}
+    "scope": {"resourceGroups": []},
+    "config": {}
   }
 }
 ```
 
-Browser exports are secret-safe: the generated plan spec preserves endpoint and
-capability scope plus non-sensitive runtime references, but omits tokens, private
-keys, client secrets, certificates, and other sensitive runtime values. Launch
-still uses the sensitive in-form values submitted in the same browser session.
+Browser exports are secret-safe by default: the generated v2 plan document
+preserves endpoint and capability scope plus non-sensitive runtime references,
+but writes secret-bearing strings as empty strings. A separate
+export-with-secrets action is available for local power-user workflows. Launch
+still uses the sensitive values retained in the same browser session or supplied
+inline by direct CLI/API submission.
 
 Run detail, result downloads, and NDJSON execution logs keep the existing
 masking and evidence behaviour. Result JSON includes catalogue traceability for
@@ -113,13 +138,16 @@ The bundled catalogue registry currently covers the legacy FCS baseline for:
 | `open-banking` | `v4.0` | `pis` |
 | `open-banking` | `v4.0` | `cbpii` |
 | `open-banking` | `v4.0` | `vrp` |
-| `open-banking` | `v4.0` | `cvrp` |
 
 Each catalogue case carries traceability back to the relevant legacy FCS
 coverage in its compliance scope. Each catalogue can also define endpoint-scoped
 capabilities that explain baseline and optional implementation coverage without
 turning generated tests into participant selections. The hand-maintained mapping
 lives in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
+
+The browser catalogue selector also lists Dynamic Client Registration v3.4 as a
+selector-only example. It deliberately hides Read/Write resource groups and
+blocks continuation until DCR catalogue coverage is implemented.
 
 ## Outputs and exit codes
 

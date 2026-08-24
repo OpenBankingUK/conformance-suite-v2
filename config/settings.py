@@ -153,6 +153,16 @@ DATABASES = {
     }
 }
 
+SESSION_ENGINE = os.environ.get("DJANGO_SESSION_ENGINE", "django.contrib.sessions.backends.file")
+"""Server-side session backend used by browser wizard drafts.
+
+The default avoids requiring local SQLite migrations before `make dev` while
+keeping imported plan secrets out of browser-visible signed-cookie sessions.
+"""
+
+SESSION_FILE_PATH = os.environ.get("DJANGO_SESSION_FILE_PATH")
+"""Optional directory for Django's file-backed session data."""
+
 
 # Password validation
 # https://docs.djangoproject.com/en/6.0/ref/settings/#auth-password-validators

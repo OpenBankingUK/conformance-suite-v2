@@ -10,8 +10,14 @@ from collections.abc import Sequence
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.catalogue import CatalogueError, compile_test_plan, parse_test_plan_spec
-from conformance.catalogue_registry import resolve_catalogue
+from conformance.catalogue import (
+    CatalogueError,
+    TestPlanSpec,
+    compile_test_plan,
+    compile_test_plan_document,
+    parse_test_plan_document,
+)
+from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -71,8 +77,14 @@ def run(argv: Sequence[str] | None = None) -> int:
     else:
         try:
             raw_spec = json.loads(args.plan_spec.read_text(encoding="utf-8"))
-            plan_spec = parse_test_plan_spec(raw_spec)
-            compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+            plan_document = parse_test_plan_document(raw_spec)
+            if isinstance(plan_document, TestPlanSpec):
+                plan_spec = plan_document
+                compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+                runtime_inputs = plan_spec.runtime_inputs
+            else:
+                compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
+                runtime_inputs = plan_document.runtime_inputs
         except json.JSONDecodeError as error:
             logger.error("Plan-spec JSON error: %s", error.msg)
             return 2
@@ -92,24 +104,28 @@ def run(argv: Sequence[str] | None = None) -> int:
         try:
             result = run_compiled_test_plan(
                 compiled_plan,
-                runtime_inputs=plan_spec.runtime_inputs,
+                runtime_inputs=runtime_inputs,
                 runtime_input_base_dir=args.plan_spec.parent,
-                environment=config.environment,
                 client=http_client,
                 execution_logger=logger_sink,
                 run_id=run_id,
                 auth_session_store=auth_session_store,
                 runtime_config=RuntimeConfig(
                     discovery_url=config.discovery_url,
-                    environment=config.environment,
                     oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
                     oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
                     oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
                     oauth_authorization_endpoint=(
                         config.oauth.authorization_endpoint if config.oauth is not None else None
                     ),
+                    oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
+                    oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
                     oauth_open_banking_intent_id=(
                         config.oauth.open_banking_intent_id if config.oauth is not None else None
+                    ),
+                    oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
+                    oauth_request_object_signing_alg=(
+                        config.oauth.request_object_signing_alg if config.oauth is not None else None
                     ),
                 ),
                 fapi_signing_config=config.fapi_signing,

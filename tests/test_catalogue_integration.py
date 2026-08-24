@@ -189,6 +189,43 @@ def _plan_spec_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, object]:
     }
 
 
+def _plan_document_v2_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, object]:
+    """Build a v2 shared plan document for CLI/API parsing.
+
+    Args:
+        capabilities: Endpoint-scoped optional capabilities to declare.
+
+    Returns:
+        JSON object using the shared v2 plan-document shape.
+    """
+    endpoint: dict[str, object] = {
+        "method": "GET",
+        "path": "/open-banking/v4.0/aisp/accounts",
+    }
+    if capabilities:
+        endpoint["capabilities"] = list(capabilities)
+    return {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "ais.accounts",
+                    "label": "Accounts",
+                    "endpoints": [endpoint],
+                }
+            ]
+        },
+        "config": {
+            "resourceBaseUrl": "https://rs.example.com",
+            "inputs": {"accessToken": {"value": "secret-access-token"}},
+        },
+    }
+
+
 def _config_json(tmp_path: Path) -> dict[str, object]:
     """Build config JSON for catalogue integration tests.
 
@@ -249,11 +286,9 @@ def test_run_compiled_plan_preserves_masked_evidence_and_catalogue_trace(tmp_pat
             compiled_plan,
             runtime_inputs=_plan_spec().runtime_inputs,
             runtime_input_base_dir=tmp_path,
-            environment="catalogue-env",
             client=client,
             runtime_config=RuntimeConfig(
                 discovery_url="https://auth.example.com/.well-known/openid-configuration",
-                environment="catalogue-env",
             ),
         )
 
@@ -354,6 +389,30 @@ def test_cli_executes_capability_selected_plan_spec(monkeypatch: pytest.MonkeyPa
     ]
 
 
+@pytest.mark.unit
+def test_cli_executes_v2_plan_document(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    config_path = tmp_path / "config.json"
+    plan_path = tmp_path / "plan.json"
+    config_path.write_text(json.dumps(_config_json(tmp_path)), encoding="utf-8")
+    plan_path.write_text(json.dumps(_plan_document_v2_json(capabilities=("accounts.balances",))), encoding="utf-8")
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"Data": {}}, headers={"x-fapi-interaction-id": "interaction-1"})
+
+    monkeypatch.setattr(cli, "supported_catalogues", lambda: (_test_catalogue(),))
+    monkeypatch.setattr(httpx, "Client", _mock_client_factory(handler))
+
+    exit_code = cli.run([str(config_path), "--plan-spec", str(plan_path)])
+
+    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    assert exit_code == 0
+    assert result["catalogue"]["standard"] == "open-banking-uk"
+    assert result["catalogue"]["version"] == "4.0.1"
+    assert result["catalogue"]["api"] == "read-write"
+    assert result["catalogue"]["generatedTestCaseIds"] == ["accounts-read", "accounts-balances"]
+    assert result["catalogue"]["selectedEndpoints"][0]["resourceGroup"] == "ais.accounts"
+
+
 @pytest.mark.integration
 def test_api_create_run_accepts_plan_spec(tmp_path: Path) -> None:
     body = {"config": _config_json(tmp_path), "planSpec": _plan_spec_json()}
@@ -387,6 +446,28 @@ def test_api_create_run_accepts_capability_selected_plan_spec(tmp_path: Path) ->
         "accounts.read",
         "accounts.balances",
     ]
+
+
+@pytest.mark.integration
+def test_api_create_run_accepts_v2_plan_document(tmp_path: Path) -> None:
+    body = {"config": _config_json(tmp_path), "planSpec": _plan_document_v2_json(capabilities=("accounts.balances",))}
+
+    with (
+        patch("conformance.api.views.supported_catalogues", return_value=(_test_catalogue(),)),
+        patch("conformance.api.views.start_run", return_value={"id": "run-1", "status": "pending"}) as start_run_mock,
+    ):
+        response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+    compiled_plan = start_run_mock.call_args.kwargs["compiled_plan"]
+    assert response.status_code == 201
+    assert response.json()["id"] == "run-1"
+    assert compiled_plan.catalogue_key == CatalogueKey(
+        standard="open-banking-uk",
+        version="4.0.1",
+        api="read-write",
+    )
+    assert [case.test_case_id for case in compiled_plan.test_cases] == ["accounts-read", "accounts-balances"]
+    assert start_run_mock.call_args.kwargs["runtime_inputs"]["accessToken"] == "secret-access-token"
 
 
 @pytest.mark.integration

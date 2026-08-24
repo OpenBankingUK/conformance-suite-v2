@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Select test plan endpoints</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --border: #ccd3dc;
+            --text: #1b1f24;
+            --muted: #667085;
+            --accent: #0b6bcb;
+            --danger: #b42318;
+            --success: #1f7a4d;
+            --chip: #eef4ff;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+
+        main {
+            width: min(1120px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 32px 0 48px;
+        }
+
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        h1,
+        h2,
+        h3,
+        h4 {
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+        }
+
+        h3 {
+            font-size: 1rem;
+        }
+
+        h4 {
+            font-size: 0.95rem;
+        }
+
+        .panel,
+        .resource-card,
+        .endpoint-card,
+        .feature-card {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+        }
+
+        .panel {
+            padding: 18px;
+        }
+
+        .muted,
+        .helper {
+            color: var(--muted);
+        }
+
+        .helper {
+            font-size: 0.9rem;
+        }
+
+        .step-id,
+        code {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.86rem;
+        }
+
+        .message,
+        .errorlist {
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin: 0 0 12px;
+        }
+
+        .message.success {
+            border: 1px solid #abefc6;
+            background: #f6fef9;
+            color: var(--success);
+        }
+
+        .message.info {
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: var(--accent);
+        }
+
+        .errorlist {
+            list-style: none;
+            border: 1px solid #fecdca;
+            background: #fffbfa;
+            color: var(--danger);
+        }
+
+        .boundary-summary,
+        .resource-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+        }
+
+        .boundary-summary {
+            margin: 16px 0;
+        }
+
+        .boundary-summary div {
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px;
+            background: #fbfcfe;
+        }
+
+        .resource-grid {
+            margin-top: 14px;
+        }
+
+        .resource-card,
+        .endpoint-card,
+        .feature-card {
+            display: block;
+            padding: 12px;
+        }
+
+        .resource-card.selected,
+        .endpoint-card.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .resource-card input,
+        .endpoint-card input,
+        .feature-card input {
+            margin-right: 8px;
+        }
+
+        .resource-tree {
+            margin-top: 18px;
+            padding-top: 18px;
+            border-top: 1px solid var(--border);
+        }
+
+        .scope-bulk-actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            margin-top: 12px;
+        }
+
+        .endpoint-card {
+            margin-top: 10px;
+        }
+
+        .endpoint-heading {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 12px;
+        }
+
+        .chip {
+            display: inline-block;
+            border-radius: 999px;
+            padding: 2px 8px;
+            background: var(--chip);
+            color: #1849a9;
+            font-size: 0.78rem;
+            font-weight: 650;
+        }
+
+        .features {
+            margin-top: 12px;
+            padding-left: 24px;
+        }
+
+        .feature-card {
+            margin-top: 8px;
+            background: #fbfcfe;
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 18px;
+        }
+
+        button,
+        .button {
+            min-height: 38px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 650;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .button.secondary,
+        button.secondary {
+            background: #ffffff;
+            color: var(--accent);
+        }
+
+        button:disabled {
+            border-color: var(--border);
+            background: #e4e7ec;
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 840px) {
+            header,
+            .boundary-summary,
+            .resource-grid {
+                display: block;
+            }
+
+            .boundary-summary div + div,
+            .resource-card + .resource-card {
+                margin-top: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Select test plan endpoints</h1>
+            <div class="muted">Step 2 of the new guided builder</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="scope-heading">
+        <h2 id="scope-heading">Endpoints and scoped features</h2>
+        <p class="helper">Select endpoint implementations under each resource group chosen on the previous page. Optional and conditional features only appear under selected endpoints.</p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        <div class="boundary-summary" aria-label="Selected catalogue boundary">
+            <div><strong>Scheme</strong><br>{{ draft.scheme }}</div>
+            <div><strong>Specification</strong><br>{{ draft.specification }}</div>
+            <div><strong>Version</strong><br>{{ draft.version }}</div>
+        </div>
+
+        {% if saved %}
+            <div class="message success">Endpoints and scoped features saved.</div>
+        {% endif %}
+        <div class="message info">Next you will add execution configuration and runtime values before reviewing the generated plan.</div>
+
+        <form method="post"
+              action="{% url 'builder-scope' draft.draft_id %}"
+              data-scope-form
+              data-scope-options-url="{% url 'builder-scope-options' draft.draft_id %}"
+              hx-post="{% url 'builder-scope-options' draft.draft_id %}"
+              hx-trigger="change from:input[name='endpoints'], change from:input[name='endpoint_capabilities']"
+              hx-target="#scope-options"
+              hx-swap="outerHTML">
+            {% csrf_token %}
+            {% include "conformance/partials/builder_scope_options.html" %}
+
+            <div class="actions">
+                <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Back to catalogue and resource groups</a>
+                <button type="submit">Continue to configuration</button>
+            </div>
+        </form>
+    </section>
+</main>
+<script>
+    (() => {
+        const form = document.querySelector("[data-scope-form]");
+        if (!form) {
+            return;
+        }
+
+        let activeRequest = null;
+
+        const scopeInputs = new Set(["endpoints", "endpoint_capabilities"]);
+
+        const checkboxInputs = (name) => Array.from(form.querySelectorAll(`input[name='${name}']`))
+            .filter((input) => input instanceof HTMLInputElement);
+
+        const csrfToken = () => {
+            const input = form.querySelector("input[name='csrfmiddlewaretoken']");
+            return input instanceof HTMLInputElement ? input.value : "";
+        };
+
+        const replaceScopeOptions = (html) => {
+            const current = document.querySelector("#scope-options");
+            if (!current) {
+                return;
+            }
+            const parsed = new DOMParser().parseFromString(html, "text/html");
+            const replacement = parsed.querySelector("#scope-options");
+            if (!replacement) {
+                throw new Error("Scope options refresh did not return the expected fragment.");
+            }
+            current.replaceWith(replacement);
+        };
+
+        const refreshScopeOptions = async () => {
+            const current = document.querySelector("#scope-options");
+            if (activeRequest) {
+                activeRequest.abort();
+            }
+            const request = new AbortController();
+            activeRequest = request;
+            if (current) {
+                current.setAttribute("aria-busy", "true");
+            }
+            try {
+                const response = await fetch(form.dataset.scopeOptionsUrl || form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    credentials: "same-origin",
+                    signal: request.signal,
+                    headers: {
+                        "X-CSRFToken": csrfToken(),
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                });
+                if (!response.ok) {
+                    throw new Error(`Scope options refresh failed with HTTP ${response.status}.`);
+                }
+                replaceScopeOptions(await response.text());
+            } catch (error) {
+                if (!(error instanceof DOMException) || error.name !== "AbortError") {
+                    console.error(error);
+                }
+            } finally {
+                const refreshed = document.querySelector("#scope-options");
+                if (refreshed) {
+                    refreshed.removeAttribute("aria-busy");
+                }
+                if (activeRequest === request) {
+                    activeRequest = null;
+                }
+            }
+        };
+
+        form.addEventListener("change", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLInputElement) || !scopeInputs.has(target.name)) {
+                return;
+            }
+            void refreshScopeOptions();
+        });
+
+        form.addEventListener("click", (event) => {
+            const target = event.target;
+            if (!(target instanceof HTMLElement)) {
+                return;
+            }
+            const button = target.closest("[data-endpoint-bulk-action]");
+            if (!(button instanceof HTMLButtonElement)) {
+                return;
+            }
+            const action = button.dataset.endpointBulkAction;
+            const selectEndpoints = action === "select";
+            if (!selectEndpoints && action !== "deselect") {
+                return;
+            }
+            for (const input of checkboxInputs("endpoints")) {
+                input.checked = selectEndpoints;
+            }
+            if (!selectEndpoints) {
+                for (const input of checkboxInputs("endpoint_capabilities")) {
+                    input.checked = false;
+                }
+            }
+            void refreshScopeOptions();
+        });
+    })();
+</script>
+</body>
+</html>

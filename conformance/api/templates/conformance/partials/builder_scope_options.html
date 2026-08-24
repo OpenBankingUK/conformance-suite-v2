@@ -1,0 +1,66 @@
+<section id="scope-options">
+    {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+
+    {% for group in selected_resource_groups %}
+        <input type="hidden" name="resource_groups" value="{{ group.id }}">
+    {% endfor %}
+
+    {% if selected_resource_groups %}
+        <div class="scope-bulk-actions" aria-label="Endpoint bulk actions">
+            <button type="button" class="secondary" data-endpoint-bulk-action="select">Select all endpoints</button>
+            <button type="button" class="secondary" data-endpoint-bulk-action="deselect">Deselect all endpoints</button>
+        </div>
+    {% endif %}
+
+    <div class="endpoint-tree" aria-live="polite">
+        {% if selected_resource_groups %}
+            {% for group in selected_resource_groups %}
+                <section class="resource-tree" aria-labelledby="resource-group-{{ group.id }}">
+                    <h3 id="resource-group-{{ group.id }}">{{ group.label }}</h3>
+
+                    {% for endpoint in group.endpoints %}
+                        <article class="endpoint-card{% if endpoint.selected %} selected{% endif %}">
+                            <div class="endpoint-heading">
+                                <label>
+                                    <input type="checkbox"
+                                           name="endpoints"
+                                           value="{{ endpoint.id }}"
+                                           {% if endpoint.selected %}checked{% endif %}>
+                                    <strong>{{ endpoint.method }} {{ endpoint.display_path }}</strong>
+                                </label>
+                                <span class="chip">{% if endpoint.baseline %}Baseline{% else %}Optional endpoint{% endif %}</span>
+                            </div>
+
+                            {% if endpoint.selected %}
+                                <div class="features">
+                                    <h4>Endpoint features</h4>
+                                    {% for feature in endpoint.features %}
+                                        <label class="feature-card">
+                                            <input type="checkbox"
+                                                   name="endpoint_capabilities"
+                                                   value="{{ feature.value }}"
+                                                   {% if feature.selected %}checked{% endif %}
+                                                   {% if feature.required %}disabled{% endif %}>
+                                            <strong>{{ feature.label }}</strong>
+                                            <span class="chip">{{ feature.kind }}</span>
+                                            <br>
+                                            <span class="helper">{{ feature.description }}</span>
+                                            <br>
+                                            <code>{{ feature.capability_id }}</code>
+                                        </label>
+                                    {% empty %}
+                                        <div class="message info">No endpoint-scoped features are defined for this endpoint yet.</div>
+                                    {% endfor %}
+                                </div>
+                            {% endif %}
+                        </article>
+                    {% empty %}
+                        <div class="message info">No endpoints are currently available for this resource group.</div>
+                    {% endfor %}
+                </section>
+            {% endfor %}
+        {% else %}
+            <div class="message info">No resource groups are selected. Go back to catalogue and resource groups to choose a scope.</div>
+        {% endif %}
+    </div>
+</section>

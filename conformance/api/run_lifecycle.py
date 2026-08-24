@@ -339,15 +339,20 @@ def _execute_run(
             try:
                 runtime_config = RuntimeConfig(
                     discovery_url=config.discovery_url,
-                    environment=config.environment,
                     oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
                     oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
                     oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
                     oauth_authorization_endpoint=(
                         config.oauth.authorization_endpoint if config.oauth is not None else None
                     ),
+                    oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
+                    oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
                     oauth_open_banking_intent_id=(
                         config.oauth.open_banking_intent_id if config.oauth is not None else None
+                    ),
+                    oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
+                    oauth_request_object_signing_alg=(
+                        config.oauth.request_object_signing_alg if config.oauth is not None else None
                     ),
                 )
                 mtls_configured = (
@@ -360,7 +365,6 @@ def _execute_run(
                         compiled_plan,
                         runtime_inputs=runtime_inputs,
                         runtime_input_base_dir=runtime_input_base_dir,
-                        environment=config.environment,
                         client=http_client,
                         execution_logger=logger_sink,
                         run_id=run_id,
@@ -379,7 +383,6 @@ def _execute_run(
                     )
                     result = run_manifest(
                         effective_manifest,
-                        environment=config.environment,
                         client=http_client,
                         execution_logger=logger_sink,
                         plan=effective_plan,

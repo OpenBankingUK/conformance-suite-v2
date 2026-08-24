@@ -12,7 +12,7 @@ from conformance.catalogue_registry import resolve_catalogue, supported_catalogu
 
 @pytest.mark.unit
 def test_supported_catalogues_cover_legacy_fcs_api_families() -> None:
-    """Bundled catalogues expose each legacy FCS API family through plan specs."""
+    """Bundled catalogues expose current Open Banking FCS API families through plan specs."""
     keys = {(catalogue.key.standard, catalogue.key.version, catalogue.key.api) for catalogue in supported_catalogues()}
 
     assert keys == {
@@ -20,7 +20,6 @@ def test_supported_catalogues_cover_legacy_fcs_api_families() -> None:
         ("open-banking", "v4.0", "pis"),
         ("open-banking", "v4.0", "cbpii"),
         ("open-banking", "v4.0", "vrp"),
-        ("open-banking", "v4.0", "cvrp"),
     }
 
 

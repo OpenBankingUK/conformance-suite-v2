@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import copy
 import json
 import math
 from dataclasses import dataclass, field
@@ -13,7 +14,7 @@ from conformance.approved_releases import (
     ApprovedReleasePolicyError,
     load_approved_release_policy,
 )
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 
@@ -57,6 +58,14 @@ class OAuthConfig:
         resource_base_url: Optional HTTPS AIS protected-resource base URL used
             by bundled manifests before manifest-owned Open Banking API paths.
             Callers must not include the ``/open-banking/...`` path prefix.
+        issuer: Optional HTTPS issuer identifier from the OpenID Provider.
+        token_endpoint: Optional HTTPS token endpoint override.
+        response_type: Optional OAuth response type used for PSU
+            authorisation requests.
+        acr_values_supported: ACR values advertised or selected for PSU
+            authorisation requests.
+        request_object_signing_alg: Optional JAR request-object signing
+            algorithm value.
     """
 
     client_id: str
@@ -64,6 +73,58 @@ class OAuthConfig:
     authorization_endpoint: str | None = None
     open_banking_intent_id: str | None = None
     resource_base_url: str | None = None
+    issuer: str | None = None
+    token_endpoint: str | None = None
+    response_type: str | None = None
+    acr_values_supported: tuple[str, ...] = ()
+    request_object_signing_alg: str | None = None
+
+
+@dataclass(frozen=True)
+class ResourceServerConfig:
+    """Resource-server defaults carried by legacy FCS-style config.
+
+    Attributes:
+        base_url: HTTPS protected-resource base URL used by catalogue API
+            runtime inputs.
+        x_fapi_financial_id: Optional ``x-fapi-financial-id`` header value.
+        send_x_fapi_customer_ip_address: Whether resource requests should send
+            ``x-fapi-customer-ip-address`` when a value is configured.
+        x_fapi_customer_ip_address: Optional customer IP header value.
+    """
+
+    base_url: str | None = None
+    x_fapi_financial_id: str | None = None
+    send_x_fapi_customer_ip_address: bool = False
+    x_fapi_customer_ip_address: str | None = None
+
+
+@dataclass(frozen=True)
+class ClientCredentialsConfig:
+    """Secret client-auth values preserved outside safe OAuth placeholders.
+
+    Attributes:
+        client_secret: Optional OAuth client secret for legacy
+            client-secret-based flows. The current FAPI runner does not expose
+            this through ``${config.oauth.*}`` placeholders.
+    """
+
+    client_secret: str | None = None
+
+
+@dataclass(frozen=True)
+class OpenBankingSignatureConfig:
+    """Open Banking detached-signature metadata from legacy FCS config.
+
+    Attributes:
+        tpp_signature_issuer: Optional Open Banking organisation or SSA issuer
+            value used by detached JWS profiles.
+        tpp_signature_tan: Optional trust anchor name used by detached JWS
+            profiles.
+    """
+
+    tpp_signature_issuer: str | None = None
+    tpp_signature_tan: str | None = None
 
 
 @dataclass(frozen=True)
@@ -112,11 +173,29 @@ class FapiSigningConfig:
 
 
 @dataclass(frozen=True)
+class BusinessDefaultsConfig:
+    """Business-domain defaults used to derive request/runtime values.
+
+    Attributes:
+        ais: AIS resource ids and transaction-filter defaults.
+        pis: Payment account, amount, execution date, and standing-order
+            defaults.
+        cbpii: CBPII debtor-account defaults.
+        conditional_properties: Optional or conditional request-property
+            selections carried by the plan config.
+    """
+
+    ais: JsonObject = field(default_factory=dict)
+    pis: JsonObject = field(default_factory=dict)
+    cbpii: JsonObject = field(default_factory=dict)
+    conditional_properties: tuple[JsonValue, ...] = ()
+
+
+@dataclass(frozen=True)
 class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
     Attributes:
-        environment: Human-readable environment name written to the result file.
         discovery_url: HTTPS OpenID Provider discovery document URL.
         timeout_seconds: Per-request timeout for model-bank HTTP calls.
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
@@ -140,9 +219,15 @@ class ModelBankConfig:
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
             certificate root.
+        resource_server: Optional resource-server target/header defaults used
+            by catalogue-driven resource calls.
+        client_credentials: Optional secret client-auth values preserved
+            outside safe placeholder resolution.
+        open_banking: Optional Open Banking detached-signature metadata.
+        business_defaults: AIS, PIS, CBPII, and conditional-property defaults
+            used by the v2 builder and catalogue runtime derivation.
     """
 
-    environment: str
     discovery_url: str
     timeout_seconds: float = 10.0
     follow_up_mode: FollowUpMode = "jwks"
@@ -152,6 +237,10 @@ class ModelBankConfig:
     approved_release_policy: ApprovedReleasePolicy | None = None
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
+    resource_server: ResourceServerConfig | None = None
+    client_credentials: ClientCredentialsConfig | None = None
+    open_banking: OpenBankingSignatureConfig | None = None
+    business_defaults: BusinessDefaultsConfig = field(default_factory=BusinessDefaultsConfig)
 
 
 def load_model_bank_config(config_path: Path) -> ModelBankConfig:
@@ -218,11 +307,17 @@ def parse_model_bank_config(
             "executionLogPath",
             "approvedReleasePolicyPath",
             "oauth",
+            "resourceServer",
+            "clientCredentials",
+            "openBanking",
+            "ais",
+            "pis",
+            "cbpii",
+            "conditionalProperties",
         },
         location="config",
     )
 
-    environment = _required_string(raw_config, "environment")
     discovery_url = _required_https_url(raw_config, "discoveryUrl")
     timeout_seconds = _optional_positive_number(raw_config, "timeoutSeconds", default=10.0)
     follow_up_mode = _parse_follow_up(raw_config)
@@ -242,9 +337,12 @@ def parse_model_bank_config(
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
     fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
+    resource_server = _parse_resource_server_config(raw_config)
+    client_credentials = _parse_client_credentials_config(raw_config)
+    open_banking = _parse_open_banking_config(raw_config)
+    business_defaults = _parse_business_defaults_config(raw_config)
 
     return ModelBankConfig(
-        environment=environment,
         discovery_url=discovery_url,
         timeout_seconds=timeout_seconds,
         follow_up_mode=follow_up_mode,
@@ -254,6 +352,10 @@ def parse_model_bank_config(
         approved_release_policy=approved_release_policy,
         oauth=oauth,
         fapi_signing=fapi_signing,
+        resource_server=resource_server,
+        client_credentials=client_credentials,
+        open_banking=open_banking,
+        business_defaults=business_defaults,
     )
 
 
@@ -333,8 +435,13 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
             "clientId",
             "redirectUri",
             "authorizationEndpoint",
+            "issuer",
+            "tokenEndpoint",
             "openBankingIntentId",
             "resourceBaseUrl",
+            "responseType",
+            "acrValuesSupported",
+            "requestObjectSigningAlg",
         },
         location="oauth",
     )
@@ -342,8 +449,13 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
     client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
     redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
     authorization_endpoint = _optional_https_url_at(raw_oauth, "authorizationEndpoint", location="oauth")
+    issuer = _optional_https_url_at(raw_oauth, "issuer", location="oauth")
+    token_endpoint = _optional_https_url_at(raw_oauth, "tokenEndpoint", location="oauth")
     open_banking_intent_id = _optional_string_at(raw_oauth, "openBankingIntentId", location="oauth")
     resource_base_url = _optional_https_url_at(raw_oauth, "resourceBaseUrl", location="oauth")
+    response_type = _optional_string_at(raw_oauth, "responseType", location="oauth")
+    acr_values_supported = _optional_string_array_at(raw_oauth, "acrValuesSupported", location="oauth")
+    request_object_signing_alg = _optional_string_at(raw_oauth, "requestObjectSigningAlg", location="oauth")
     try:
         validate_oauth_redirect_uri(redirect_uri_str, label="oauth.redirectUri")
     except HttpsUrlValidationError as error:
@@ -355,6 +467,146 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
         authorization_endpoint=authorization_endpoint,
         open_banking_intent_id=open_banking_intent_id,
         resource_base_url=resource_base_url,
+        issuer=issuer,
+        token_endpoint=token_endpoint,
+        response_type=response_type,
+        acr_values_supported=acr_values_supported,
+        request_object_signing_alg=request_object_signing_alg,
+    )
+
+
+def _parse_resource_server_config(raw_config: dict[str, JsonValue]) -> ResourceServerConfig | None:
+    """Parse optional protected-resource target and header defaults.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed resource-server defaults, or ``None`` when the section is
+        omitted.
+
+    Raises:
+        ConfigError: If ``resourceServer`` is not a JSON object, contains
+            unknown keys, or contains invalid field values.
+    """
+    raw_resource_server = raw_config.get("resourceServer")
+    if raw_resource_server is None:
+        return None
+    if not isinstance(raw_resource_server, dict):
+        raise ConfigError("resourceServer must be a JSON object")
+    _reject_unknown_keys(
+        raw_resource_server,
+        allowed_keys={
+            "baseUrl",
+            "xFapiFinancialId",
+            "sendXFapiCustomerIpAddress",
+            "xFapiCustomerIpAddress",
+        },
+        location="resourceServer",
+    )
+
+    return ResourceServerConfig(
+        base_url=_optional_https_url_at(raw_resource_server, "baseUrl", location="resourceServer"),
+        x_fapi_financial_id=_optional_string_at(
+            raw_resource_server,
+            "xFapiFinancialId",
+            location="resourceServer",
+        ),
+        send_x_fapi_customer_ip_address=_optional_boolean_at(
+            raw_resource_server,
+            "sendXFapiCustomerIpAddress",
+            location="resourceServer",
+            default=False,
+        ),
+        x_fapi_customer_ip_address=_optional_string_at(
+            raw_resource_server,
+            "xFapiCustomerIpAddress",
+            location="resourceServer",
+        ),
+    )
+
+
+def _parse_client_credentials_config(raw_config: dict[str, JsonValue]) -> ClientCredentialsConfig | None:
+    """Parse optional secret client-credential values.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed client credentials, or ``None`` when the section is omitted.
+
+    Raises:
+        ConfigError: If ``clientCredentials`` is not a JSON object, contains
+            unknown keys, or contains invalid field values.
+    """
+    raw_credentials = raw_config.get("clientCredentials")
+    if raw_credentials is None:
+        return None
+    if not isinstance(raw_credentials, dict):
+        raise ConfigError("clientCredentials must be a JSON object")
+    _reject_unknown_keys(raw_credentials, allowed_keys={"clientSecret"}, location="clientCredentials")
+
+    return ClientCredentialsConfig(
+        client_secret=_optional_string_at(raw_credentials, "clientSecret", location="clientCredentials")
+    )
+
+
+def _parse_open_banking_config(raw_config: dict[str, JsonValue]) -> OpenBankingSignatureConfig | None:
+    """Parse optional Open Banking signature metadata.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed Open Banking metadata, or ``None`` when the section is omitted.
+
+    Raises:
+        ConfigError: If ``openBanking`` is not a JSON object, contains unknown
+            keys, or contains invalid field values.
+    """
+    raw_open_banking = raw_config.get("openBanking")
+    if raw_open_banking is None:
+        return None
+    if not isinstance(raw_open_banking, dict):
+        raise ConfigError("openBanking must be a JSON object")
+    _reject_unknown_keys(
+        raw_open_banking,
+        allowed_keys={"tppSignatureIssuer", "tppSignatureTan"},
+        location="openBanking",
+    )
+
+    return OpenBankingSignatureConfig(
+        tpp_signature_issuer=_optional_string_at(
+            raw_open_banking,
+            "tppSignatureIssuer",
+            location="openBanking",
+        ),
+        tpp_signature_tan=_optional_string_at(raw_open_banking, "tppSignatureTan", location="openBanking"),
+    )
+
+
+def _parse_business_defaults_config(raw_config: dict[str, JsonValue]) -> BusinessDefaultsConfig:
+    """Parse AIS, PIS, CBPII, and conditional-property defaults.
+
+    Args:
+        raw_config: Top-level raw configuration dictionary from the JSON
+            config file or API request.
+
+    Returns:
+        Parsed business defaults. Omitted sections are represented as empty
+        objects or tuples.
+
+    Raises:
+        ConfigError: If a business-default section has the wrong JSON type.
+    """
+    return BusinessDefaultsConfig(
+        ais=_optional_json_object(raw_config, "ais", location="config"),
+        pis=_optional_json_object(raw_config, "pis", location="config"),
+        cbpii=_optional_json_object(raw_config, "cbpii", location="config"),
+        conditional_properties=_optional_json_array(raw_config, "conditionalProperties", location="config"),
     )
 
 
@@ -635,6 +887,109 @@ def _optional_string_at(raw_config: dict[str, JsonValue], key: str, *, location:
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{location}.{key} must be a non-empty string")
     return value.strip()
+
+
+def _optional_boolean_at(
+    raw_config: dict[str, JsonValue],
+    key: str,
+    *,
+    location: str,
+    default: bool,
+) -> bool:
+    """Extract an optional boolean value from a nested config dict.
+
+    Args:
+        raw_config: Raw nested configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+        default: Value to return when the key is absent.
+
+    Returns:
+        The extracted boolean value, or ``default`` when the key is absent.
+
+    Raises:
+        ConfigError: If the key is present but is not a JSON boolean.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return default
+    if not isinstance(value, bool):
+        raise ConfigError(f"{location}.{key} must be a boolean")
+    return value
+
+
+def _optional_string_array_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> tuple[str, ...]:
+    """Extract an optional array of non-empty strings from a nested config dict.
+
+    Args:
+        raw_config: Raw nested configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        Tuple of stripped string values, or an empty tuple when the key is
+        absent.
+
+    Raises:
+        ConfigError: If the key is present but is not an array of non-empty
+            strings.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ConfigError(f"{location}.{key} must be a JSON array")
+    values: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ConfigError(f"{location}.{key}[{index}] must be a non-empty string")
+        values.append(item.strip())
+    return tuple(values)
+
+
+def _optional_json_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> JsonObject:
+    """Extract an optional JSON object section.
+
+    Args:
+        raw_config: Raw configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        A deep-copied JSON object, or an empty object when the key is absent.
+
+    Raises:
+        ConfigError: If the key is present but is not a JSON object.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return {}
+    if not isinstance(value, dict):
+        raise ConfigError(f"{location}.{key} must be a JSON object")
+    return copy.deepcopy(value)
+
+
+def _optional_json_array(raw_config: dict[str, JsonValue], key: str, *, location: str) -> tuple[JsonValue, ...]:
+    """Extract an optional JSON array section.
+
+    Args:
+        raw_config: Raw configuration dictionary.
+        key: Configuration key to extract.
+        location: Dot-path prefix used in validation error messages.
+
+    Returns:
+        A deep-copied tuple of JSON values, or an empty tuple when the key is
+        absent.
+
+    Raises:
+        ConfigError: If the key is present but is not a JSON array.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return ()
+    if not isinstance(value, list):
+        raise ConfigError(f"{location}.{key} must be a JSON array")
+    return tuple(copy.deepcopy(item) for item in value)
 
 
 def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, default: float) -> float:

@@ -565,7 +565,6 @@ class TestCreateRunEndpoint:
         from conformance.model_bank_config import ModelBankConfig
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -629,7 +628,6 @@ class TestCreateRunEndpoint:
         from conformance.test_plan import TestPlan
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -1493,12 +1491,10 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 2
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1530,12 +1526,10 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 1
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1572,13 +1566,11 @@ class TestExecuteRunDiscardsAuthSessions:
         result_path = tmp_path / "out" / "result.json"
         log_path = tmp_path / "out" / "execution-log.ndjson"
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=result_path,
             execution_log_path=log_path,
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1609,7 +1601,6 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 1
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -1638,12 +1629,10 @@ class TestExecuteRunDiscardsAuthSessions:
         auth_session_store.register(other_run_id)
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1671,12 +1660,10 @@ class TestExecuteRunDiscardsAuthSessions:
         record = run_store.create_run()
         raw_url = "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-state"
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1697,7 +1684,6 @@ class TestExecuteRunDiscardsAuthSessions:
             Returns:
                 The fake successful smoke-check result.
             """
-            assert config.environment == "test-env"
             assert isinstance(execution_logger, BrowserParticipantActionLogger)
             execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": raw_url})
             return fake_result
@@ -1734,7 +1720,6 @@ class TestExecuteRunDiscardsAuthSessions:
             approved_tool_versions=("1.2.3",),
         )
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
             approved_release_policy=approved_release_policy,
@@ -1754,7 +1739,6 @@ class TestExecuteRunDiscardsAuthSessions:
             }
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -1770,5 +1754,4 @@ class TestExecuteRunDiscardsAuthSessions:
         assert mock_run_manifest.call_args is not None
         runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]
         assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
-        assert runtime_config.environment == "test-env"
         assert mock_run_manifest.call_args.kwargs["approved_release_policy"] is approved_release_policy

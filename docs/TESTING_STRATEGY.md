@@ -34,16 +34,20 @@ side effects. Result JSON assertions should cover:
 The catalogue model is the participant-facing contract. Keep focused coverage
 for:
 
-- Plan-spec parsing and unknown-field rejection.
+- Shared plan-document parsing and unknown-field rejection for v1 compatibility
+  specs and v2 browser/API/CLI documents.
 - Duplicate catalogue/test/request/assertion ID detection.
-- Applicability filtering by catalogue key, profile, implemented endpoint, and
-  selected endpoint capabilities.
+- Applicability filtering by catalogue key or v2 boundary, profile,
+  implemented endpoint, and selected endpoint capabilities.
 - Required capability defaulting, optional capability inclusion/exclusion, and
   invalid capability rejection.
 - Dependency inclusion and deterministic ordering.
 - Runtime input requirement validation and sensitive-value snapshots.
 - Assertion override non-certifying behaviour.
-- Bundled catalogue registry coverage for AIS, PIS, CBPII, VRP, and cVRP.
+- Bundled catalogue registry coverage for AIS, PIS, CBPII, and VRP, with
+  retained cVRP catalogue code covered outside the participant-facing registry.
+- Aggregate v2 Read/Write compilation across AIS, PIS, CBPII, and VRP catalogue
+  areas, with cVRP rejected from the Open Banking UK boundary.
 - Legacy FCS provenance in compliance-scope traceability.
 
 Primary tests:
@@ -70,11 +74,16 @@ Regression coverage should prove that replacing public manifests did not weaken:
 - Masking in result JSON, NDJSON logs, browser downloads, and API log snapshots.
 - CLI `--plan-spec` validation and rejection of public `--manifest`.
 - REST `planSpec` validation and rejection of public `manifest`/`deselectStepIds`.
-- Browser implemented-endpoint cards, locked required capabilities, unchecked
-  optional capabilities, capability-triggered runtime prompts, safe plan-spec
-  export, read-only generated plan preview, launch, and collapsed low-level audit
-  details.
-- REST and CLI parity for the same capability-selected plan-spec contract.
+- Browser main menu, session-backed draft creation, scheme/specification/version
+  plus boundary-driven high-level resource-group rendering, selector-only
+  no-resource-group boundaries such as DCR v3.4, endpoint/feature drill-down for
+  selected groups, server-rendered dynamic feature filtering, locked required
+  capabilities, unchecked optional capabilities, grouped config with
+  scope-aware AIS/PIS/CBPII defaults plus resource-server sections,
+  import/review, safe export, explicit export-with-secrets, launch, and
+  collapsed read-only generated-test rows.
+- REST and CLI parity for the same capability-selected v2 plan-document
+  contract.
 - Run-detail rendering of catalogue traceability evidence from completed result
   JSON.
 
@@ -87,6 +96,7 @@ DJANGO_DEBUG=true uv run pytest \
   tests/test_results.py \
   tests/test_cli.py \
   tests/test_api.py \
+  tests/test_builder_wizard.py \
   tests/test_plan_builder.py \
   tests/test_ui_views.py \
   -m "unit or integration" -v

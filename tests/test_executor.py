@@ -14,6 +14,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from joserfc import jwk, jws, jwt
+from joserfc.jws import JWSRegistry
+from joserfc.registry import HeaderParameter
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -21,7 +23,15 @@ from conformance.context import ExecutionContext, RequestRecord, ResponseRecord,
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.manifest import (
+    GeneratedRequestObject,
+    Manifest,
+    ManifestRequest,
+    ManifestStep,
+    PsuAuthorizationStep,
+    ResponseSignaturePolicy,
+    parse_manifest,
+)
 from conformance.masking import MASKED_VALUE
 from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
@@ -76,6 +86,57 @@ def _write_executor_signing_pair(certificate_root: Path, *, stem: str) -> tuple[
         )
     )
     return certificate_path, private_key_path
+
+
+def _response_signature_registry() -> JWSRegistry:
+    """Return a JWS registry that accepts Open Banking protected headers.
+
+    Returns:
+        Registry configured for PS256 response-signature tests.
+    """
+    headers = {
+        **JWSRegistry.default_header_registry,
+        "http://openbanking.org.uk/iat": HeaderParameter("Open Banking issued-at header", "int"),
+        "http://openbanking.org.uk/iss": HeaderParameter("Open Banking issuer header", "str"),
+        "http://openbanking.org.uk/tan": HeaderParameter("Open Banking trust-anchor header", "str"),
+    }
+    return JWSRegistry(header_registry=headers, algorithms=["PS256"])
+
+
+def _signed_response_header(payload: bytes) -> tuple[str, JsonObject]:
+    """Return a valid detached response signature and matching JWKS.
+
+    Args:
+        payload: Exact response bytes to sign.
+
+    Returns:
+        Tuple of ``x-jws-signature`` header and JWKS document.
+    """
+    signing_key = jwk.generate_key("RSA", 2048, private=True, auto_kid=False)
+    public_key = signing_key.as_dict(is_private=False)
+    public_key["kid"] = "response-key"
+    protected = {
+        "alg": "PS256",
+        "kid": "response-key",
+        "b64": False,
+        "crit": [
+            "b64",
+            "http://openbanking.org.uk/iat",
+            "http://openbanking.org.uk/iss",
+            "http://openbanking.org.uk/tan",
+        ],
+        "http://openbanking.org.uk/iat": 1_774_120_000,
+        "http://openbanking.org.uk/iss": "0015800001041RHAAY",
+        "http://openbanking.org.uk/tan": "openbanking.org.uk",
+    }
+    compact_jws = jws.serialize_compact(
+        protected,
+        payload,
+        signing_key,
+        algorithms=["PS256"],
+        registry=_response_signature_registry(),
+    )
+    return jws.detach_content(compact_jws), cast(JsonObject, {"keys": [public_key]})
 
 
 def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
@@ -164,6 +225,119 @@ def manifest_config() -> dict[str, JsonValue]:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_validates_required_response_signature() -> None:
+    """A step with response-signature policy validates against discovery JWKS."""
+    payload = b'{"Data":{"Status":"ACSP"}}'
+    signature, jwks_document = _signed_response_header(payload)
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the protected resource, discovery document, and JWKS.
+
+        Args:
+            request: Incoming mock HTTP request.
+
+        Returns:
+            Mock response for the requested URL.
+        """
+        requested_urls.append(str(request.url))
+        if str(request.url) == "https://rs.example.com/payment":
+            return httpx.Response(
+                201,
+                content=payload,
+                headers={"Content-Type": "application/json", "x-jws-signature": signature},
+            )
+        if str(request.url) == "https://auth.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={"issuer": "https://auth.example.com", "jwks_uri": "https://auth.example.com/jwks"},
+            )
+        if str(request.url) == "https://auth.example.com/jwks":
+            return httpx.Response(200, json=jwks_document)
+        return httpx.Response(404, json={"error": "not found"})
+
+    manifest = Manifest(
+        schema_version="v1",
+        name="response signature",
+        certification_coverage="complete",
+        steps=(
+            ManifestStep(
+                id="signed-response",
+                name="Signed response",
+                request=ManifestRequest(method="POST", url="https://rs.example.com/payment"),
+                assertions=(),
+                response_signature_policy=ResponseSignaturePolicy(source="discovery-jwks"),
+            ),
+        ),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            client=client,
+            runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+        )
+
+    assert result.status == "passed"
+    assert requested_urls == [
+        "https://rs.example.com/payment",
+        "https://auth.example.com/.well-known/openid-configuration",
+        "https://auth.example.com/jwks",
+    ]
+    response_evidence = result.steps[0].details["response"]
+    assert isinstance(response_evidence, dict)
+    assert response_evidence["responseSignature"] == {
+        "status": "passed",
+        "kid": "response-key",
+        "issuer": "0015800001041RHAAY",
+        "trustAnchor": "openbanking.org.uk",
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_fails_when_required_response_signature_missing() -> None:
+    """A step with response-signature policy fails when the response is unsigned."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve an unsigned protected-resource response.
+
+        Args:
+            request: Incoming mock HTTP request.
+
+        Returns:
+            Mock JSON response for the requested URL.
+        """
+        if str(request.url) == "https://rs.example.com/payment":
+            return httpx.Response(201, json={"Data": {"Status": "ACSP"}})
+        return httpx.Response(404, json={"error": "not found"})
+
+    manifest = Manifest(
+        schema_version="v1",
+        name="missing response signature",
+        certification_coverage="complete",
+        steps=(
+            ManifestStep(
+                id="signed-response",
+                name="Signed response",
+                request=ManifestRequest(method="POST", url="https://rs.example.com/payment"),
+                assertions=(),
+                response_signature_policy=ResponseSignaturePolicy(source="discovery-jwks"),
+            ),
+        ),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            client=client,
+            runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+        )
+
+    assert result.status == "failed"
+    assert result.steps[0].message == "Response signature validation failed: x-jws-signature header is missing"
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_failing_step_still_records_context() -> None:
     """A step whose assertions fail still provides context to later steps."""
     raw_manifest: dict[str, JsonValue] = {
@@ -198,7 +372,7 @@ def test_run_manifest_v1_failing_step_still_records_context() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # First step fails assertions but second step still resolves and passes
     assert result.steps[0].status == "failed"
@@ -239,7 +413,7 @@ def test_run_manifest_v1_unresolvable_placeholder_fails_cleanly() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].status == "passed"
@@ -294,7 +468,7 @@ def test_run_manifest_v1_failed_request_skips_dependent_step() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # Aggregate failed because the first step failed.
     assert result.status == "failed"
@@ -350,7 +524,7 @@ def test_run_manifest_v1_skipped_step_triggered_by_header_placeholder() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "failed"
     assert result.steps[1].status == "skipped"
@@ -390,7 +564,7 @@ def test_run_manifest_v1_skipped_step_triggered_by_body_placeholder() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "failed"
     assert result.steps[1].status == "skipped"
@@ -431,7 +605,7 @@ def test_run_manifest_v1_unresolvable_field_still_fails_not_skips() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
@@ -478,7 +652,7 @@ def test_run_manifest_v1_cross_group_placeholder_reference_fails_not_skips() -> 
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert requested_urls == ["https://example.com/alpha"]
     assert result.steps[0].status == "passed"
@@ -520,7 +694,7 @@ def test_run_manifest_v1_run_completes_all_steps_despite_failures() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert [s.status for s in result.steps] == ["passed", "failed", "passed"]
@@ -580,7 +754,7 @@ def test_run_manifest_v1_post_with_body_and_headers() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert len(captured_requests) == 2
@@ -640,7 +814,7 @@ def test_run_manifest_v1_post_resolves_body_placeholders() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
 
@@ -670,7 +844,7 @@ def test_run_manifest_v1_get_unaffected_by_post_changes() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
 
@@ -712,7 +886,7 @@ def test_run_manifest_v1_post_https_validation_on_resolved_url() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[1].status == "failed"
@@ -744,7 +918,7 @@ def test_run_manifest_v1_post_status_agnostic_4xx() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert result.steps[0].status == "passed"
@@ -800,7 +974,7 @@ def test_run_manifest_v1_schema_failure_records_masked_evidence() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     rendered = result.to_json_object()
     rendered_json = json.dumps(rendered)
@@ -880,7 +1054,7 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # First step passes, second step fails due to resolved header validation
     assert result.steps[0].status == "passed"
@@ -934,7 +1108,7 @@ def test_run_manifest_v1_delete_204_passes_http_status_assertion() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert len(captured_requests) == 1
@@ -993,7 +1167,7 @@ def test_run_manifest_v1_post_form_body_sends_urlencoded() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     token_request = captured_requests[1]
@@ -1051,7 +1225,7 @@ def test_run_manifest_v1_form_body_resolves_placeholders_in_values() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     wire_body = captured_requests[1].content.decode("ascii")
@@ -1089,7 +1263,7 @@ def test_run_manifest_v1_form_body_respects_manifest_content_type() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        run_manifest(manifest, environment="test", client=client)
+        run_manifest(manifest, client=client)
 
     assert captured_requests[0].headers["content-type"] == "application/x-www-form-urlencoded; charset=UTF-8"
 
@@ -1137,7 +1311,7 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "passed"
     assert result.steps[0].url == "https://example.com/token"
@@ -1191,7 +1365,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1284,7 +1457,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_rejects_manifest_clie
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1347,7 +1519,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_p
     ) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             execution_logger=execution_logger,
             fapi_signing_config=_executor_signing_config(tmp_path),
@@ -1452,7 +1623,6 @@ def test_run_manifest_reuses_signing_credentials_across_signed_http_steps(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1503,7 +1673,6 @@ def test_run_manifest_v1_unsigned_step_ignores_invalid_signing_credentials(tmp_p
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1558,7 +1727,6 @@ def test_run_manifest_v1_detached_jws_invalid_signing_credentials_fail_the_step(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1621,7 +1789,6 @@ def test_run_manifest_v1_private_key_jwt_invalid_signing_credentials_fail_the_st
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1692,7 +1859,6 @@ def test_run_manifest_v1_tls_client_auth_ignores_invalid_signing_credentials_whe
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
             mtls_client_configured=True,
@@ -1740,7 +1906,6 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             execution_logger=execution_logger,
             fapi_signing_config=signing_config,
@@ -1821,7 +1986,6 @@ def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_p
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1872,7 +2036,6 @@ def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manif
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1921,7 +2084,7 @@ def test_run_manifest_v1_detached_jws_policy_requires_signing_config() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert request_seen is False
@@ -1969,7 +2132,6 @@ def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: P
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -2023,7 +2185,6 @@ def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: P
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
         )
@@ -2077,7 +2238,6 @@ def test_run_manifest_v1_tls_client_auth_policy_dispatches_with_configured_mtls(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
             mtls_client_configured=True,
@@ -2122,7 +2282,7 @@ def test_run_manifest_v1_step_with_warning_emits_warn_when_assertions_pass() -> 
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # Aggregate stays "passed" — WARN does not block certification (PRD).
     assert result.status == "passed"
@@ -2160,7 +2320,7 @@ def test_run_manifest_v1_step_with_warning_still_fails_when_assertion_fails() ->
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].status == "failed"
@@ -2195,7 +2355,7 @@ def test_run_manifest_v1_warn_step_does_not_fail_aggregate_with_passed_step() ->
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert [step.status for step in result.steps] == ["passed", "warn"]
@@ -2234,7 +2394,7 @@ def test_run_manifest_v1_passed_step_includes_masked_request_and_response_eviden
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2279,7 +2439,7 @@ def test_run_manifest_v1_applies_header_and_json_assertions_with_pass_evidence()
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2330,7 +2490,7 @@ def test_run_manifest_v1_failed_step_includes_masked_request_and_response_eviden
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2387,7 +2547,7 @@ def test_run_manifest_v1_masks_sensitive_request_and_response_evidence_by_defaul
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2446,7 +2606,7 @@ def test_run_manifest_v1_developer_mode_keeps_sensitive_result_evidence_unmasked
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2494,7 +2654,7 @@ def test_run_manifest_v1_failed_header_assertion_includes_masked_response_header
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2544,7 +2704,7 @@ def test_run_manifest_v1_failed_step_masks_form_body_credentials() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2580,7 +2740,7 @@ def test_run_manifest_v1_warn_step_includes_evidence() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "warn"
@@ -2622,7 +2782,7 @@ def test_run_manifest_v1_skipped_step_includes_request_evidence_without_response
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     skipped = result.steps[1]
     assert skipped.status == "skipped"
@@ -2668,7 +2828,6 @@ def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             approved_release_policy=approved_policy("1.2.3"),
         )
@@ -2701,7 +2860,7 @@ def test_run_manifest_v0_eligibility_block_reports_no_mandatory_steps() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+        result = run_manifest(manifest, client=client)
 
     block = result.to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
@@ -2729,7 +2888,7 @@ def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
     manifest = parse_manifest(manifest_config())
     execution_logger = BufferedExecutionLogger(run_id="run-x", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(manifest, client=client, execution_logger=execution_logger)
 
     events = execution_logger.events()
     types = [event.type for event in events]
@@ -2838,7 +2997,6 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
             compiled_plan,
             runtime_inputs=spec.runtime_inputs,
             runtime_input_base_dir=tmp_path,
-            environment="test",
             client=client,
             execution_logger=execution_logger,
         )
@@ -2891,7 +3049,7 @@ def test_run_manifest_request_sent_masks_authorization_header() -> None:
 
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     request_events = [event for event in execution_logger.events() if event.type == "request-sent"]
     assert len(request_events) == 1
@@ -2932,7 +3090,7 @@ def test_run_manifest_emits_placeholder_error_event() -> None:
 
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     types = [event.type for event in execution_logger.events()]
     assert "placeholder-error" in types
@@ -2975,7 +3133,7 @@ def test_run_manifest_emits_application_error_on_unexpected_engine_exception(
 
     mock_transport = httpx.MockTransport(lambda _r: httpx.Response(200, json={}))
     with pytest.raises(RuntimeError) as exc_info, httpx.Client(transport=mock_transport) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     assert exc_info.value is expected_error
     types = [event.type for event in execution_logger.events()]
@@ -3027,7 +3185,7 @@ def test_run_manifest_deselected_step_does_not_run_or_produce_result() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["optional-step"])
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     assert requested == ["https://example.com/a"]
     assert [step.name for step in result.steps] == ["mandatory-step"]
@@ -3044,7 +3202,7 @@ def test_run_manifest_emits_step_deselected_before_step_started() -> None:
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger, plan=plan)
+        run_manifest(manifest, client=client, execution_logger=execution_logger, plan=plan)
 
     types = [event.type for event in execution_logger.events()]
     assert types[0] == "run-started"
@@ -3070,7 +3228,7 @@ def test_run_manifest_default_plan_when_none_passed_preserves_legacy_behaviour()
 
     manifest = parse_manifest(_plan_v1_manifest())
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert requested == ["https://example.com/a", "https://example.com/b"]
     assert [step.name for step in result.steps] == ["mandatory-step", "optional-step"]
@@ -3085,7 +3243,7 @@ def test_run_manifest_deselected_mandatory_flips_eligibility() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["mandatory-step"])
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     eligibility = result.to_json_object()["certificationEligibility"]
     assert isinstance(eligibility, dict)
@@ -3104,7 +3262,7 @@ def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest)
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     rendered = result.to_json_object()
     assert rendered["plan"] == {
@@ -3151,7 +3309,7 @@ def test_run_manifest_generates_run_id_when_caller_supplies_none() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
         # No run_id, no auth_session_store — must not raise and must execute the step.
-        result = run_manifest(manifest, environment="env", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert [step.status for step in result.steps] == ["passed"]
@@ -3177,6 +3335,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
+        response_signature_jwks_cache: Any = None,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
         captured["run_id"] = run_id
@@ -3191,6 +3350,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
 
     sentinel_store = _RecordingAuthSessionStore()
@@ -3201,7 +3361,6 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
         run_manifest(
             manifest,
-            environment="env",
             client=client,
             execution_logger=execution_logger,
             auth_session_store=sentinel_store,
@@ -3227,6 +3386,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
+        response_signature_jwks_cache: Any = None,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
         captured["run_id"] = run_id
@@ -3241,6 +3401,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
 
     from conformance import executor as executor_module
@@ -3253,7 +3414,6 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
             run_manifest(
                 manifest,
-                environment="env",
                 client=client,
                 run_id="run-abc",
                 auth_session_store=sentinel_store,
@@ -3394,7 +3554,6 @@ def test_psu_manual_step_prefers_runtime_authorization_endpoint_override() -> No
         context=ExecutionContext(
             config=RuntimeConfig(
                 discovery_url="https://auth.example.com/.well-known/openid-configuration",
-                environment="sandbox",
                 oauth_authorization_endpoint="https://auth.example.com/auth",
             )
         ),
@@ -3822,7 +3981,6 @@ def test_run_manifest_mandatory_psu_timeout_counts_as_mandatory_failed(monkeypat
     with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as client:
         result = run_manifest(
             manifest,
-            environment="env",
             client=client,
             run_id="run-mandatory-psu-timeout",
             auth_session_store=AuthSessionStore(),
@@ -3945,7 +4103,6 @@ def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatc
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="env",
             client=client,
             run_id="run-manual",
             auth_session_store=store,

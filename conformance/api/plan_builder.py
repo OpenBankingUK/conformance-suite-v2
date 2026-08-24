@@ -259,8 +259,6 @@ class PlanBuilderForm(forms.Form):
     Attributes:
         config_json: Textarea containing model-bank config JSON.
         plan_spec_json: Optional textarea containing an exportable plan spec.
-        guided_environment: Structured environment input used when building
-            config from guided browser fields.
         guided_discovery_url: Structured discovery URL input used by the guided
             browser flow.
         guided_standard: Structured selector for the standards namespace.
@@ -288,7 +286,6 @@ class PlanBuilderForm(forms.Form):
 
     config_json: forms.CharField = forms.CharField(label="Config JSON", required=False, widget=forms.Textarea)
     plan_spec_json: forms.CharField = forms.CharField(label="Plan spec JSON", required=False, widget=forms.Textarea)
-    guided_environment: forms.CharField = forms.CharField(label="Environment", required=False)
     guided_discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
     guided_standard: forms.ChoiceField = forms.ChoiceField(label="Standard", required=False)
     guided_spec_version: forms.ChoiceField = forms.ChoiceField(label="Specification version", required=False)
@@ -490,17 +487,13 @@ class PlanBuilderForm(forms.Form):
             )
             return None
 
-        environment = _cleaned_optional_string(cleaned_data.get("guided_environment"))
         discovery_url = _cleaned_optional_string(cleaned_data.get("guided_discovery_url"))
-        if environment is None:
-            self.add_error("guided_environment", "Environment is required for guided config generation.")
         if discovery_url is None:
             self.add_error("guided_discovery_url", "Discovery URL is required for guided config generation.")
         if self.errors:
             return None
 
         raw_config: JsonObject = {
-            "environment": environment or "",
             "discoveryUrl": discovery_url or "",
         }
         raw_oauth = _build_guided_oauth_object(cleaned_data)
@@ -598,6 +591,18 @@ def build_plan_preview(
         selected_endpoint_ids=selected_endpoint_ids,
         runtime_input_prompts=_runtime_prompts_from_trace(compiled_plan, data={}),
     )
+
+
+def compiled_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow, ...]:
+    """Build read-only generated test rows for an already compiled plan.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to render.
+
+    Returns:
+        Template-ready generated plan rows in execution order.
+    """
+    return _build_plan_rows(compiled_plan)
 
 
 def guided_standard_choices() -> tuple[tuple[str, str], ...]:
@@ -1569,7 +1574,6 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
     return any(
         _cleaned_optional_string(cleaned_data.get(field_name)) is not None
         for field_name in (
-            "guided_environment",
             "guided_discovery_url",
             "guided_client_id",
             "guided_redirect_uri",

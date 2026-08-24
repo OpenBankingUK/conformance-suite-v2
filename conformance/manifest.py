@@ -53,6 +53,9 @@ TokenEndpointAuthSource = Literal["fapi-signing"]
 DetachedJwsSource = Literal["fapi-signing"]
 """Source selectors for detached JWS directives on HTTP requests."""
 
+ResponseSignatureSource = Literal["discovery-jwks"]
+"""Source selectors for response JWS verification material."""
+
 AssertionType = Literal["http_status", "json_field", "header", "response_schema"]
 """Assertion discriminators supported by manifest assertions."""
 
@@ -198,6 +201,17 @@ class DetachedJwsPolicy:
     """
 
     source: DetachedJwsSource
+
+
+@dataclass(frozen=True)
+class ResponseSignaturePolicy:
+    """Directive instructing an HTTP step to validate ``x-jws-signature``.
+
+    Attributes:
+        source: Runtime source of verification keys.
+    """
+
+    source: ResponseSignatureSource
 
 
 @dataclass(frozen=True)
@@ -376,6 +390,8 @@ class ManifestStep:
             placeholders without coupling consumers to token step ids.
         produces_token_id: Optional semantic auth requirement id minted by
             this step when its response carries an ``access_token``.
+        response_signature_policy: Optional directive requiring detached
+            response JWS validation against the discovery ``jwks_uri``.
     """
 
     id: str
@@ -390,6 +406,7 @@ class ManifestStep:
     token_endpoint_auth_policy: TokenEndpointAuthPolicy | None = None
     required_token_id: str | None = None
     produces_token_id: str | None = None
+    response_signature_policy: ResponseSignaturePolicy | None = None
 
 
 PsuAuthorizationMode = Literal["manual", "headless"]
@@ -737,7 +754,8 @@ Response direction accepts: ``status_code`` (no sub-segments), ``body.<path>`` (
 """
 
 _CONFIG_PLACEHOLDER_PATTERN = re.compile(
-    r"\$\{config\.(?:discoveryUrl|environment|oauth\.(?:clientId|redirectUri|openBankingIntentId|resourceBaseUrl))\}"
+    r"\$\{config\.(?:discoveryUrl|oauth\.(?:clientId|redirectUri|authorizationEndpoint|issuer|"
+    r"tokenEndpoint|openBankingIntentId|resourceBaseUrl|responseType|requestObjectSigningAlg))\}"
 )
 """Regex matching safe runtime config placeholders accepted in v1 manifests."""
 
@@ -1532,7 +1550,7 @@ def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str
             if token.startswith("${config."):
                 raise ManifestError(
                     f"{location} contains unsupported config placeholder: {token} "
-                    "(allowed: ${config.discoveryUrl}, ${config.environment}, "
+                    "(allowed: ${config.discoveryUrl}, "
                     "${config.oauth.clientId}, ${config.oauth.redirectUri}, "
                     "${config.oauth.openBankingIntentId}, "
                     "${config.oauth.resourceBaseUrl})"

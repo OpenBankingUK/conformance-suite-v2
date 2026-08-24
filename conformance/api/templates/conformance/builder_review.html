@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Review generated test plan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --border: #ccd3dc;
+            --text: #1b1f24;
+            --muted: #667085;
+            --accent: #0b6bcb;
+            --danger: #b42318;
+            --warning: #a15c07;
+            --success: #1f7a4d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+        main { width: min(1180px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2, h3 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.1rem; }
+        h3 { font-size: 1rem; }
+        .panel, .card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .card { background: #fbfcfe; }
+        .muted, .helper { color: var(--muted); }
+        .helper { font-size: 0.9rem; }
+        .step-id, code, textarea { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .step-id, code { font-size: 0.86rem; }
+        .summary-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin: 16px 0; }
+        .count { border: 1px solid var(--border); border-radius: 8px; padding: 12px; background: #fbfcfe; }
+        .count strong { display: block; font-size: 1.25rem; }
+        .message { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.error { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .message.success { border: 1px solid #abefc6; background: #f6fef9; color: var(--success); }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        button, .button {
+            min-height: 38px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 650;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
+        button:disabled { border-color: var(--border); background: #e4e7ec; color: var(--muted); cursor: not-allowed; }
+        textarea {
+            width: 100%;
+            min-height: 240px;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            font-size: 0.9rem;
+            color: var(--text);
+            background: #ffffff;
+        }
+        .table-wrap { overflow-x: auto; margin-top: 12px; }
+        table { width: 100%; min-width: 820px; border-collapse: collapse; }
+        th, td { border-bottom: 1px solid var(--border); padding: 10px; text-align: left; vertical-align: top; }
+        th { color: var(--muted); font-size: 0.84rem; font-weight: 700; text-transform: uppercase; }
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            min-height: 24px;
+            border: 1px solid var(--border);
+            border-radius: 999px;
+            padding: 2px 8px;
+            color: var(--muted);
+            font-size: 0.82rem;
+            font-weight: 650;
+        }
+        details { margin-top: 14px; }
+        details summary { cursor: pointer; font-weight: 700; }
+        @media (max-width: 900px) {
+            header, .summary-grid { display: block; }
+            .count + .count { margin-top: 12px; }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Review generated test plan</h1>
+            <div class="muted">Generated tests are read-only; edit scope or config to change them.</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="review-heading">
+        <h2 id="review-heading">Plan summary</h2>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        {% if review.error %}<div class="message error">{{ review.error }}</div>{% endif %}
+        {% if launch_error %}
+            <div class="message error">
+                {{ launch_error }}
+                {% if active_run_id %}<a href="{% url 'ui-run-detail' active_run_id %}">Open active run</a>{% endif %}
+            </div>
+        {% endif %}
+
+        <div class="summary-grid" aria-label="Generated plan counts">
+            <div class="count"><strong>{{ review_counts.generated }}</strong><span>Generated tests</span></div>
+            <div class="count"><strong>{{ review_counts.resource_groups }}</strong><span>Resource groups</span></div>
+            <div class="count"><strong>{{ review_counts.endpoints }}</strong><span>Endpoints</span></div>
+            <div class="count"><strong>{{ review_counts.capabilities }}</strong><span>Capabilities</span></div>
+            <div class="count"><strong>{{ review_counts.runtime_inputs }}</strong><span>Runtime inputs</span></div>
+            <div class="count"><strong>{{ review_counts.consents }}</strong><span>Expected consent groups</span></div>
+            <div class="count"><strong>{{ review_counts.psu_authorisations }}</strong><span>Expected PSU auths</span></div>
+            <div class="count"><strong>{{ review_phase_counts.setup }} / {{ review_phase_counts.security }} / {{ review_phase_counts.resource }}</strong><span>Setup / security / resource</span></div>
+        </div>
+
+        {% if review.launch_supported %}
+            <div class="message success">Ready to launch from this reviewed plan.</div>
+        {% else %}
+            <div class="message warning">Resolve review blockers before launch.</div>
+        {% endif %}
+        {% for blocker in review.blockers %}
+            <div class="message warning">{{ blocker }}</div>
+        {% endfor %}
+        {% if review.compiled_plan and not review.compiled_plan.certifying %}
+            <div class="message warning">Certification plan ineligible.</div>
+        {% endif %}
+
+        <div class="actions">
+            <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Edit catalogue</a>
+            <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Edit scope</a>
+            <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business config</a>
+            <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Edit discovery</a>
+            <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Edit security</a>
+            <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
+            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
+            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}?include_secrets=1">Export with secrets</a>
+            <form method="post" action="{% url 'builder-launch' draft.draft_id %}">
+                {% csrf_token %}
+                <button type="submit" {% if not review.launch_supported %}disabled{% endif %}>Launch run</button>
+            </form>
+        </div>
+        <p class="helper">{{ review.sensitive_export_warning }}</p>
+    </section>
+
+    {% if masked_config_json %}
+        <section class="panel" aria-labelledby="config-summary-heading">
+            <h2 id="config-summary-heading">Masked config summary</h2>
+            <textarea readonly spellcheck="false">{{ masked_config_json }}</textarea>
+        </section>
+    {% endif %}
+
+    {% if review.safe_export_json %}
+        <section class="panel" aria-labelledby="safe-export-heading">
+            <h2 id="safe-export-heading">Safe export preview</h2>
+            <p class="helper">Safe export keeps the reusable plan shape but writes secret-bearing strings as empty strings.</p>
+            <textarea readonly spellcheck="false">{{ review.safe_export_json }}</textarea>
+        </section>
+    {% endif %}
+
+    <section class="panel" aria-labelledby="generated-tests-heading">
+        <h2 id="generated-tests-heading">Generated test summary</h2>
+        <p class="helper">Exact generated tests are shown for audit only and cannot be selected or deselected here.</p>
+        <details>
+            <summary>Show generated test rows</summary>
+            <div class="table-wrap">
+                <table>
+                    <thead>
+                    <tr>
+                        <th scope="col">Test case</th>
+                        <th scope="col">Source</th>
+                        <th scope="col">Phase</th>
+                        <th scope="col">Requests</th>
+                        <th scope="col">Assertions</th>
+                        <th scope="col">Runtime/auth</th>
+                        <th scope="col">Certification</th>
+                    </tr>
+                    </thead>
+                    <tbody>
+                    {% for row in review.rows %}
+                        <tr>
+                            <td><strong>{{ row.name }}</strong><br><span class="step-id">{{ row.id }}</span></td>
+                            <td><span class="badge">{{ row.source }}</span><br><span class="muted">{{ row.source_detail }}</span></td>
+                            <td><span class="badge">{{ row.phase }}</span><br><span class="muted">{{ row.role }}</span></td>
+                            <td>{{ row.request_count }}</td>
+                            <td>{{ row.assertion_count }}</td>
+                            <td>
+                                {% for requirement in row.runtime_requirements %}
+                                    <div>
+                                        <span class="step-id">{{ requirement.input_id }}</span>
+                                        {% if requirement.required %}<span class="badge">Required</span>{% endif %}
+                                        {% if requirement.sensitive %}<span class="badge">Sensitive</span>{% endif %}
+                                    </div>
+                                {% empty %}
+                                    <span class="muted">No runtime input</span>
+                                {% endfor %}
+                            </td>
+                            <td>{% if row.mandatory %}<span class="badge">Mandatory</span>{% else %}<span class="badge">Optional</span>{% endif %}</td>
+                        </tr>
+                    {% empty %}
+                        <tr><td colspan="7">No generated tests. Select endpoints before launch.</td></tr>
+                    {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </details>
+    </section>
+</main>
+</body>
+</html>

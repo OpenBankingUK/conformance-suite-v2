@@ -106,8 +106,6 @@ class RuntimeConfig:
 
     Attributes:
         discovery_url: OpenID discovery URL from validated participant config.
-        environment: Human-readable environment label from validated
-            participant config.
         oauth_resource_base_url: HTTPS protected-resource base URL for
             ``${config.oauth.resourceBaseUrl}`` placeholder resolution before
             manifest-owned Open Banking API paths. Absent when the participant
@@ -122,19 +120,31 @@ class RuntimeConfig:
         oauth_authorization_endpoint: Optional HTTPS authorisation endpoint
             override for ``${config.oauth.authorizationEndpoint}`` placeholder
             resolution. Absent when the participant config omits the override.
+        oauth_issuer: Optional HTTPS issuer identifier for
+            ``${config.oauth.issuer}`` placeholder resolution.
+        oauth_token_endpoint: Optional HTTPS token endpoint for
+            ``${config.oauth.tokenEndpoint}`` placeholder resolution.
         oauth_open_banking_intent_id: Optional pre-existing Open Banking
             consent id for ``${config.oauth.openBankingIntentId}``
             placeholder resolution. Absent when the participant config omits
             the starter-only override.
+        oauth_response_type: Optional OAuth response type for
+            ``${config.oauth.responseType}`` placeholder resolution.
+        oauth_request_object_signing_alg: Optional request-object signing
+            algorithm for ``${config.oauth.requestObjectSigningAlg}``
+            placeholder resolution.
     """
 
     discovery_url: str
-    environment: str
     oauth_resource_base_url: str | None = None
     oauth_client_id: str | None = None
     oauth_redirect_uri: str | None = None
     oauth_authorization_endpoint: str | None = None
+    oauth_issuer: str | None = None
+    oauth_token_endpoint: str | None = None
     oauth_open_banking_intent_id: str | None = None
+    oauth_response_type: str | None = None
+    oauth_request_object_signing_alg: str | None = None
 
 
 @dataclass(frozen=True)
@@ -301,8 +311,8 @@ def resolve_placeholders(template: str, context: ExecutionContext) -> str:
     ``steps.<id>.request.(method|url)``
     ``steps.<id>.response.(status_code|body.<dot.path>)``
     ``tokens.<token-id>.access_token``
-    ``config.(discoveryUrl|environment)``
-    ``config.oauth.(clientId|redirectUri|authorizationEndpoint|resourceBaseUrl)``
+    ``config.discoveryUrl``
+    ``config.oauth.(clientId|redirectUri|authorizationEndpoint|issuer|tokenEndpoint|openBankingIntentId|resourceBaseUrl|responseType|requestObjectSigningAlg)``
 
     Args:
         template: String potentially containing ``${...}`` placeholders.
@@ -384,11 +394,14 @@ def _resolve_dot_path(dot_path: str, context: ExecutionContext) -> str:
 
 _ALLOWED_CONFIG_PLACEHOLDERS = (
     "${config.discoveryUrl}",
-    "${config.environment}",
     "${config.oauth.clientId}",
     "${config.oauth.redirectUri}",
     "${config.oauth.authorizationEndpoint}",
+    "${config.oauth.issuer}",
+    "${config.oauth.tokenEndpoint}",
     "${config.oauth.resourceBaseUrl}",
+    "${config.oauth.responseType}",
+    "${config.oauth.requestObjectSigningAlg}",
 )
 """Exhaustive allow-list of ``${config.*}`` placeholder paths exposed to manifest steps."""
 
@@ -414,7 +427,7 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
             config sub-section is absent when an ``oauth.*`` field is requested.
     """
     _allowed_str = ", ".join(_ALLOWED_CONFIG_PLACEHOLDERS)
-    is_simple_field = len(segments) == 2 and segments[1] in {"discoveryUrl", "environment"}
+    is_simple_field = len(segments) == 2 and segments[1] == "discoveryUrl"
     is_oauth_field = (
         len(segments) == 3
         and segments[1] == "oauth"
@@ -423,8 +436,12 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
             "clientId",
             "redirectUri",
             "authorizationEndpoint",
+            "issuer",
+            "tokenEndpoint",
             "openBankingIntentId",
             "resourceBaseUrl",
+            "responseType",
+            "requestObjectSigningAlg",
         }
     )
     if not (is_simple_field or is_oauth_field):
@@ -433,9 +450,7 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
         raise PlaceholderResolutionError(f"Runtime config is not available for placeholder: ${{{dot_path}}}")
 
     if is_simple_field:
-        if segments[1] == "discoveryUrl":
-            return context.config.discovery_url
-        return context.config.environment
+        return context.config.discovery_url
 
     # is_oauth_field — segments[2] is an allow-listed non-secret OAuth field.
     sub_field = segments[2]
@@ -459,6 +474,14 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
                 )
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_authorization_endpoint
+    if sub_field == "issuer":
+        if context.config.oauth_issuer is None:
+            raise PlaceholderResolutionError(f"oauth.issuer is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_issuer
+    if sub_field == "tokenEndpoint":
+        if context.config.oauth_token_endpoint is None:
+            raise PlaceholderResolutionError(f"oauth.tokenEndpoint is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_token_endpoint
     if sub_field == "openBankingIntentId":
         if context.config.oauth_open_banking_intent_id is None:
             if context.config.oauth_client_id is not None or context.config.oauth_redirect_uri is not None:
@@ -467,6 +490,16 @@ def _resolve_config_path(segments: list[str], context: ExecutionContext, dot_pat
                 )
             raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")
         return context.config.oauth_open_banking_intent_id
+    if sub_field == "responseType":
+        if context.config.oauth_response_type is None:
+            raise PlaceholderResolutionError(f"oauth.responseType is not available for placeholder: ${{{dot_path}}}")
+        return context.config.oauth_response_type
+    if sub_field == "requestObjectSigningAlg":
+        if context.config.oauth_request_object_signing_alg is None:
+            raise PlaceholderResolutionError(
+                f"oauth.requestObjectSigningAlg is not available for placeholder: ${{{dot_path}}}"
+            )
+        return context.config.oauth_request_object_signing_alg
     # sub_field == "redirectUri"
     if context.config.oauth_redirect_uri is None:
         raise PlaceholderResolutionError(f"OAuth config is not available for placeholder: ${{{dot_path}}}")

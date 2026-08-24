@@ -66,12 +66,20 @@ untracked local files, or deployment secret stores.
 | `DJANGO_SECRET_KEY` | Production only | Django signing key. |
 | `DJANGO_DEBUG` | No | Enables Django debug mode when `"true"`. |
 | `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. |
+| `DJANGO_SESSION_ENGINE` | No | Overrides the default server-side file session backend. |
+| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. |
 | `CONFORMANCE_DEVELOPER_MODE` | No | Disables masking for local engine debugging only. |
 | `CONFORMANCE_TOOL_VERSION` | No | Overrides generated report `tool.version`. |
 
 `make docker` requires production-style configuration and fails fast when
 misconfigured. Local source runs fall back to the project version in
 `pyproject.toml`, then `0+unknown` if no version can be resolved.
+
+Browser wizard drafts use Django sessions. The default session backend is
+server-side file storage, so `make dev` and `make dev-unmasked` do not require
+running Django migrations before creating a builder draft. Do not switch to
+signed-cookie sessions for the builder because imported plan documents may carry
+participant-supplied secret values until launch or explicit export.
 
 ## Catalogue architecture
 
@@ -84,7 +92,7 @@ Core modules:
 | --- | --- |
 | `conformance.catalogue` | Domain model, plan-spec parser, compiler, applicability decisions, traceability model. |
 | `conformance.catalogue_registry` | Registry of bundled catalogues available to CLI, API, and UI. |
-| `conformance.catalogues.*` | Legacy FCS-derived catalogues for AIS, PIS, CBPII, VRP, and cVRP. |
+| `conformance.catalogues.*` | Legacy FCS-derived catalogues for AIS, PIS, CBPII, and VRP. cVRP code is retained for future non-Open-Banking handling but is not bundled. |
 | `conformance.executor.run_compiled_test_plan` | Executes compiled catalogue plans through the existing hardened HTTP/PSU/signing engine. |
 | `conformance.results` | Serializes catalogue traceability and certification reasons in result JSON. |
 
@@ -97,49 +105,84 @@ The compiler includes dependencies automatically, rejects mandatory applicable
 deselection, snapshots runtime inputs without sensitive values, and marks
 assertion overrides as non-certifying.
 
-## Plan-spec contract
+## Shared plan-document contract
 
-Plan specs use schema version `v1`:
+The participant-facing contract is the shared plan document accepted by the
+browser wizard, REST API, and CLI. New browser import/export uses schema version
+`v2`:
 
 ```json
 {
-  "schemaVersion": "v1",
-  "catalogue": {
-    "standard": "open-banking",
-    "version": "v4.0",
-    "api": "ais"
-  },
+  "schemaVersion": "v2",
+  "scheme": "open-banking-uk",
+  "specification": "read-write",
+  "version": "4.0.1",
   "securityProfile": "fapi1-advanced",
-  "implementedEndpoints": [
-    {
-      "method": "GET",
-      "path": "/open-banking/v4.0/aisp/accounts",
-      "resourceGroup": "Accounts",
-      "operationId": "GetAccounts",
-      "capabilities": []
-    }
-  ],
-  "runtimeInputs": {
-    "resourceBaseUrl": "https://resource.example.com"
+  "scope": {
+    "resourceGroups": [
+      {
+        "id": "account-and-transaction",
+        "label": "Account and Transaction",
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts",
+            "operationId": "GetAccounts",
+            "capabilities": []
+          }
+        ]
+      }
+    ]
   },
-  "assertionOverrides": []
+  "config": {
+    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+    "resourceServer": {"baseUrl": "https://resource.example.com"},
+    "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
+  }
 }
 ```
 
-Sensitive runtime values may be supplied to execution, but the compiler's
+The v2 boundary is user-facing: `scheme`, `specification`, and `version` select
+one or more underlying bundled catalogues. The current Open Banking UK
+Read/Write boundary maps to the bundled Open Banking v4.0 AIS, PIS, CBPII, and
+VRP catalogue areas so one plan document can span multiple resource families.
+cVRP is intentionally not exposed under this Open Banking UK boundary for now.
+Dynamic Client Registration v3.4 is currently exposed in the browser selector
+only to demonstrate boundary-specific wizard behaviour; it hides resource groups
+and cannot continue to launch until DCR catalogue coverage is added.
+
+The lower-level schema version `v1` per-catalogue plan spec is still parsed by
+CLI/API compatibility paths. Prefer v2 for browser import/export and for new
+automation that needs a Read/Write plan spanning multiple catalogue areas.
+
+Structured config sections such as `resourceServer`, `ais`, and `cbpii` derive
+exact runtime inputs like `resourceBaseUrl`, `consentedAccountId`, and debtor
+account fields so the browser does not duplicate them as endpoint runtime
+prompts. The browser collects config in stages: business/request defaults,
+discovery, OAuth/FAPI/security, and generated runtime artifacts. Discovery
+metadata can prefill security fields, but only values accepted on the security
+page become part of the exported plan JSON. Sensitive runtime values may still
+be supplied to browser launch, REST, or CLI execution, but the compiler's
 traceability snapshot records only that they were provided.
 
 Keep capability IDs stable and domain-oriented, for example
 `ais.transactions.date-range-filtering`, rather than generated test-case IDs.
-The same `implementedEndpoints[].capabilities` contract is parsed by the UI,
-CLI, and REST API. Exported browser plan specs preserve endpoint/capability
-scope and non-sensitive runtime references only; secret-bearing runtime values
-remain in the current browser submission for launch and must not be written into
-downloadable JSON.
+The same endpoint-scoped `capabilities` contract is parsed by the UI, CLI, and
+REST API. Required capabilities are catalogue-owned baseline coverage and are
+selected automatically for implemented endpoints. Optional capabilities must be
+listed under the matching endpoint context and must not be modelled as generated
+test-case selections.
+
+Browser safe exports preserve endpoint/capability scope and non-sensitive
+runtime references, but write secret-bearing strings as `""`. Imported inline
+secrets stay in the active Django-session draft for review/launch, are masked in
+rendered summaries, and are included in downloaded JSON only through the
+explicit export-with-secrets action.
 
 The CLI accepts `config.json --plan-spec plan-spec.json`. The REST API accepts
-`{"config": {...}, "planSpec": {...}}`. The browser plan builder generates the
-same shape from implemented endpoint selections and runtime prompts.
+`{"config": {...}, "planSpec": {...}}`. The browser builder generates the same
+v2 document from selected boundary, scope, capabilities, and grouped runtime
+prompts.
 
 ## Removed public surfaces
 
@@ -148,7 +191,7 @@ The following surfaces are intentionally not supported:
 | Removed surface | Replacement |
 | --- | --- |
 | Checked-in participant config examples | Browser plan builder and user-supplied config files. |
-| `config.testSuite` | `planSpec.catalogue` plus implemented endpoint selection. |
+| `config.testSuite` | v2 `planSpec` boundary/scope plus endpoint capability selection. |
 | CLI `--manifest` and `--deselect` for participant runs | CLI `--plan-spec`. |
 | REST `manifest` and `deselectStepIds` | REST `planSpec`. |
 | Legacy bundled suite JSON resources | Python catalogue modules under `conformance/catalogues/`. |
@@ -160,20 +203,54 @@ Do not re-expose those internals as participant configuration.
 
 ## Browser plan builder
 
-The `/plan/` flow keeps the guided UX:
+The browser root menu at `/` exposes the new multi-step builder and v2 import
+flow. The legacy single-page builder remains at `/plan/` while the wizard is
+completed.
 
-1. Select standard, version, API family, and security profile.
-2. Select implemented endpoints grouped by resource group.
-3. Review inline capability selectors on selected endpoint cards. Required
-   capabilities are checked and locked; optional capabilities are unchecked until
-   selected.
-4. Provide endpoint/capability-derived runtime inputs.
-5. Preview the read-only generated plan with source traceability, phase,
-   mandatory/certification status, runtime/auth requirements, and launch
-   blockers. Exact generated tests must not become participant-selectable.
-6. Expand low-level request/assertion audit details only when generated test IDs
-   or applicability decisions are needed.
-7. Launch through the shared run lifecycle.
+The new wizard flow is:
+
+1. POST `/builder/new/` to create a session-backed draft.
+2. Select scheme, specification, version, and any boundary-defined high-level
+   resource groups at `/builder/<draft>/catalogue/`. The dynamic fragment at
+   `/builder/<draft>/catalogue/resource-groups/` re-renders the resource-group
+   picker whenever the selected boundary changes. Selector-only boundaries such
+   as DCR v3.4 render an explanatory no-resource-group state instead of
+   continuing into endpoint selection.
+3. Select endpoints and scoped optional capabilities at
+   `/builder/<draft>/scope/`. The server-rendered fragment at
+   `/builder/<draft>/scope/options/` shows only endpoints from the selected AIS,
+   PIS, CBPII, or VRP groups and reveals capabilities only for selected
+   endpoints.
+4. Enter business/request defaults at `/builder/<draft>/config/`. AIS, PIS,
+   CBPII, and VRP fields render only when selected endpoints need that domain.
+   Known account, amount, date, and frequency shapes use friendly fields with
+   advanced JSON fallbacks.
+5. Enter the `.well-known/openid-configuration` URL at
+   `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
+   lookup, records non-secret helper metadata and JWKS diagnostics in the draft,
+   and allows manual continuation when the lookup fails.
+6. Enter OAuth/FAPI/security and resource-server settings at
+   `/builder/<draft>/config/security/`. Discovery-derived values are editable
+   prefilled fields; the token-endpoint-auth-method selector remains the tool's
+   supported list while discovery-supported methods are shown as metadata.
+7. Enter generated runtime artifacts such as tokens, token file references,
+   consent ids, payment ids, and idempotency keys at
+   `/builder/<draft>/config/runtime/`.
+8. Review the generated plan at `/builder/<draft>/review/`, including summary
+   counts, masked config, launch blockers, safe export preview, and collapsed
+   generated-test rows.
+9. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+   local secret-bearing JSON with `?include_secrets=1`, or launch through
+   `/builder/<draft>/launch/`.
+
+Imported v2 plans enter through `/builder/import/` and go straight to the same
+review page. Missing secret-capable runtime inputs do not block import; the
+review page shows launch blockers and edit links back to the appropriate wizard
+steps.
+
+Generated tests are always read-only. Scope changes happen by editing resource
+groups, endpoints, and capabilities; the review page must not expose generated
+test-case checkboxes or deselection controls.
 
 Browser posts remain Django-form mediated and CSRF-protected. Run detail and log
 downloads continue to use the same masking boundary as CLI/API execution. Run

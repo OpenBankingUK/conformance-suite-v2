@@ -78,7 +78,6 @@ def test_model_bank_result_includes_report_metadata(monkeypatch: pytest.MonkeyPa
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
@@ -98,7 +97,6 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
     plan = TestPlan(entries=(TestPlanEntry(step_id="a", mandatory=True, optional=False, selected=True),))
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="a", status="passed", message="ok", mandatory=True)],
         started_at=started,
         plan=plan,
@@ -127,7 +125,6 @@ def test_catalogue_result_serializes_capability_traceability_and_safe_runtime_sn
     compiled_plan = _compiled_capability_plan()
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="accounts-balances-request", status="passed", message="ok", mandatory=True)],
         started_at=datetime.now(UTC),
         approved_release_policy=_approved_policy("1.0.0"),
@@ -182,7 +179,6 @@ def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.
         StepResult(name="opt", status="failed", message="boom", mandatory=False),
     ]
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
@@ -211,7 +207,6 @@ def test_eligibility_block_warn_on_mandatory_is_non_blocking(monkeypatch: pytest
         StepResult(name="m2", status="warn", message="deprecated", mandatory=True),
     ]
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
@@ -234,7 +229,7 @@ def test_eligibility_block_failed_mandatory_blocks_with_reason() -> None:
         StepResult(name="m1", status="failed", message="boom", mandatory=True),
         StepResult(name="m2", status="passed", message="ok", mandatory=True),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["mandatoryFailed"] == 1
@@ -252,7 +247,7 @@ def test_eligibility_block_skipped_mandatory_blocks_with_reason() -> None:
     steps = [
         StepResult(name="m1", status="skipped", message="prereq failed", mandatory=True),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert "skipped" in str(block["reason"])
@@ -267,7 +262,7 @@ def test_eligibility_block_no_mandatory_means_not_eligible() -> None:
 
     started = datetime.now(UTC)
     steps = [StepResult(name="opt", status="passed", message="ok", mandatory=False)]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["mandatoryTotal"] == 0
@@ -286,7 +281,6 @@ def test_eligibility_approves_tool_version_listed_in_policy(monkeypatch: pytest.
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("4.5.6"),
@@ -319,7 +313,6 @@ def test_eligibility_rejects_tool_version_absent_from_policy(monkeypatch: pytest
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("9.9.9"),
@@ -350,7 +343,6 @@ def test_eligibility_rejects_absent_approved_release_policy(monkeypatch: pytest.
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         certification_coverage="complete",
@@ -379,7 +371,6 @@ def test_eligibility_collects_multiple_blocking_reasons(monkeypatch: pytest.Monk
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [
             StepResult(name="m1", status="failed", message="boom", mandatory=True),
             StepResult(name="m2", status="skipped", message="prereq failed", mandatory=True),
@@ -429,9 +420,7 @@ def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["m"])
     started = datetime.now(UTC)
 
-    block = build_smoke_check_result("env", [], started_at=started, plan=plan).to_json_object()[
-        "certificationEligibility"
-    ]
+    block = build_smoke_check_result([], started_at=started, plan=plan).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["reason"] == "Mandatory steps were deselected from the plan"
@@ -457,7 +446,6 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="opt", status="passed", message="ok")],
         started_at=started,
         plan=plan,
@@ -500,7 +488,6 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     ]
 
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=datetime.now(UTC),
         certification_coverage="partial",
@@ -537,7 +524,6 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     ]
 
     rendered = build_smoke_check_result(
-        "env",
         steps,
         started_at=datetime.now(UTC),
         approved_release_policy=_approved_policy("1.0.0"),
@@ -671,7 +657,6 @@ def test_plan_block_shape_stable() -> None:
     )
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="a", status="passed", message="ok", mandatory=True)],
         started_at=started,
         plan=plan,
@@ -695,7 +680,6 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
 
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
@@ -711,7 +695,6 @@ def test_suite_metadata_absent_when_not_supplied() -> None:
 
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
@@ -739,7 +722,6 @@ def test_eligibility_partial_coverage_blocks_even_when_all_mandatory_pass(monkey
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("1.0.0"),
@@ -764,7 +746,6 @@ def test_eligibility_partial_coverage_reason_precedes_missing_policy(monkeypatch
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         certification_coverage="partial",
@@ -796,7 +777,6 @@ def test_eligibility_default_coverage_is_partial(monkeypatch: pytest.MonkeyPatch
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("1.0.0"),
@@ -821,7 +801,6 @@ def test_eligibility_coverage_block_present_in_json_output(monkeypatch: pytest.M
 
     for coverage in ("partial", "complete"):
         block = build_smoke_check_result(
-            "env",
             [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
             started_at=started,
             approved_release_policy=_approved_policy("1.0.0"),
@@ -864,7 +843,6 @@ def test_eligibility_smoke_suite_manifests_are_partial(monkeypatch: pytest.Monke
         ]
         started = datetime.now(UTC)
         block = build_smoke_check_result(
-            "env",
             steps,
             started_at=started,
             approved_release_policy=_approved_policy("1.0.0"),

@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Choose test plan catalogue</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --border: #ccd3dc;
+            --text: #1b1f24;
+            --muted: #667085;
+            --accent: #0b6bcb;
+            --danger: #b42318;
+            --success: #1f7a4d;
+        }
+
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+
+        main {
+            width: min(880px, calc(100% - 32px));
+            margin: 0 auto;
+            padding: 32px 0 48px;
+        }
+
+        header {
+            display: flex;
+            align-items: end;
+            justify-content: space-between;
+            gap: 16px;
+            margin-bottom: 18px;
+        }
+
+        h1,
+        h2,
+        h3 {
+            margin: 0;
+            line-height: 1.2;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+        }
+
+        h2 {
+            font-size: 1.1rem;
+        }
+
+        h3 {
+            margin-top: 22px;
+            font-size: 1rem;
+        }
+
+        .panel {
+            background: var(--panel);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 18px;
+        }
+
+        .muted,
+        .helper {
+            color: var(--muted);
+        }
+
+        .helper {
+            font-size: 0.9rem;
+        }
+
+        .step-id {
+            font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            font-size: 0.86rem;
+        }
+
+        label {
+            display: block;
+            font-weight: 650;
+            margin-bottom: 8px;
+        }
+
+        select {
+            width: 100%;
+            min-height: 42px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 10px 12px;
+            font: inherit;
+            color: var(--text);
+            background: #fbfcfe;
+        }
+
+        .field-grid {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 16px;
+        }
+
+        .resource-grid {
+            display: grid;
+            grid-template-columns: repeat(2, minmax(0, 1fr));
+            gap: 12px;
+            margin-top: 14px;
+        }
+
+        .resource-card {
+            display: block;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 12px;
+            background: #ffffff;
+        }
+
+        .resource-card.selected {
+            border-color: var(--accent);
+            box-shadow: 0 0 0 1px var(--accent);
+        }
+
+        .resource-card input {
+            margin-right: 8px;
+        }
+
+        .message,
+        .errorlist {
+            border-radius: 6px;
+            padding: 10px 12px;
+            margin: 0 0 12px;
+        }
+
+        .message.success {
+            border: 1px solid #abefc6;
+            background: #f6fef9;
+            color: var(--success);
+        }
+
+        .message.info {
+            border: 1px solid #bfdbfe;
+            background: #eff6ff;
+            color: var(--accent);
+        }
+
+        .errorlist {
+            list-style: none;
+            border: 1px solid #fecdca;
+            background: #fffbfa;
+            color: var(--danger);
+        }
+
+        .actions {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 18px;
+        }
+
+        button,
+        .button {
+            min-height: 38px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 650;
+            text-decoration: none;
+            cursor: pointer;
+        }
+
+        .button.secondary,
+        button.secondary {
+            background: #ffffff;
+            color: var(--accent);
+        }
+
+        button:disabled {
+            border-color: var(--border);
+            background: #e4e7ec;
+            color: var(--muted);
+            cursor: not-allowed;
+        }
+
+        @media (max-width: 760px) {
+            header,
+            .field-grid,
+            .resource-grid {
+                display: block;
+            }
+
+            .field-grid > div + div,
+            .resource-card + .resource-card {
+                margin-top: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Choose test plan catalogue</h1>
+            <div class="muted">Step 1 of the new guided builder</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="catalogue-boundary-heading">
+        <h2 id="catalogue-boundary-heading">Scheme, specification, version, and resource groups</h2>
+        <p class="helper">Select the catalogue boundary first. Resource groups appear only for specifications that define them.</p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        {% if saved %}
+            <div class="message success">Catalogue boundary and resource groups saved.</div>
+        {% endif %}
+        <div class="message info">Choose the catalogue boundary and resource groups first; endpoints and scoped features are selected on the next step.</div>
+        {% if catalogue_boundary_blocker %}
+            <div class="message info">{{ catalogue_boundary_blocker }}</div>
+        {% endif %}
+
+        <form method="post"
+              action="{% url 'builder-catalogue-boundary' draft.draft_id %}"
+              data-boundary-form
+              data-resource-groups-url="{% url 'builder-catalogue-resource-groups' draft.draft_id %}">
+            {% csrf_token %}
+            {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+
+            <div class="field-grid">
+                <div>
+                    <label for="{{ form.scheme.id_for_label }}">Scheme</label>
+                    {{ form.scheme.errors }}
+                    <select id="{{ form.scheme.id_for_label }}" name="scheme" data-scheme-select>
+                        {% for value,label in form.scheme.field.choices %}
+                            <option value="{{ value }}" {% if form.scheme.value == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="{{ form.specification.id_for_label }}">Specification</label>
+                    {{ form.specification.errors }}
+                    <select id="{{ form.specification.id_for_label }}" name="specification" data-specification-select>
+                        {% for option in specification_options %}
+                            <option value="{{ option.value }}"
+                                    data-scheme="{{ option.scheme }}"
+                                    {% if form.specification.value == option.value %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div>
+                    <label for="{{ form.version.id_for_label }}">Version</label>
+                    {{ form.version.errors }}
+                    <select id="{{ form.version.id_for_label }}" name="version" data-version-select>
+                        {% for option in version_options %}
+                            <option value="{{ option.value }}"
+                                    data-scheme="{{ option.scheme }}"
+                                    data-specification="{{ option.specification }}"
+                                    {% if form.version.value == option.value %}selected{% endif %}>{{ option.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            {% include "conformance/partials/builder_catalogue_resource_groups.html" %}
+
+            <div class="actions">
+                <a class="button secondary" href="{% url 'home' %}">Cancel</a>
+                <button type="submit" data-continue-button>Continue to endpoints</button>
+            </div>
+        </form>
+    </section>
+</main>
+
+<script>
+    (() => {
+        const form = document.querySelector("[data-boundary-form]");
+        if (!form) {
+            return;
+        }
+        const scheme = form.querySelector("[data-scheme-select]");
+        const specification = form.querySelector("[data-specification-select]");
+        const version = form.querySelector("[data-version-select]");
+        const continueButton = form.querySelector("[data-continue-button]");
+        let activeRequest = null;
+
+        const selectFirstVisible = (select) => {
+            const selected = select.selectedOptions[0];
+            if (selected && !selected.hidden && !selected.disabled) {
+                return;
+            }
+            const firstVisible = Array.from(select.options).find((option) => !option.hidden && !option.disabled);
+            if (firstVisible) {
+                firstVisible.selected = true;
+            }
+        };
+
+        const csrfToken = () => {
+            const input = form.querySelector("input[name='csrfmiddlewaretoken']");
+            return input instanceof HTMLInputElement ? input.value : "";
+        };
+
+        const updateContinueState = () => {
+            const section = document.querySelector("#catalogue-resource-groups");
+            if (!(continueButton instanceof HTMLButtonElement) || !section) {
+                return;
+            }
+            const selectorOnly = section.dataset.selectorOnly === "true";
+            const requiresResourceGroups = section.dataset.requiresResourceGroups === "true";
+            const selectedResourceGroups = form.querySelectorAll("input[name='resource_groups']:checked").length;
+            continueButton.disabled = selectorOnly || (requiresResourceGroups && selectedResourceGroups === 0);
+        };
+
+        const syncResourceCardState = (target) => {
+            if (!(target instanceof HTMLInputElement) || target.name !== "resource_groups") {
+                return;
+            }
+            const card = target.closest(".resource-card");
+            if (card) {
+                card.classList.toggle("selected", target.checked);
+            }
+            updateContinueState();
+        };
+
+        const replaceResourceGroups = (html) => {
+            const current = document.querySelector("#catalogue-resource-groups");
+            if (!current) {
+                return;
+            }
+            const parsed = new DOMParser().parseFromString(html, "text/html");
+            const replacement = parsed.querySelector("#catalogue-resource-groups");
+            if (!replacement) {
+                throw new Error("Resource-group refresh did not return the expected fragment.");
+            }
+            current.replaceWith(replacement);
+            updateContinueState();
+        };
+
+        const refreshResourceGroups = async () => {
+            const current = document.querySelector("#catalogue-resource-groups");
+            if (activeRequest) {
+                activeRequest.abort();
+            }
+            const request = new AbortController();
+            activeRequest = request;
+            if (current) {
+                current.setAttribute("aria-busy", "true");
+            }
+            try {
+                const response = await fetch(form.dataset.resourceGroupsUrl || form.action, {
+                    method: "POST",
+                    body: new FormData(form),
+                    credentials: "same-origin",
+                    signal: request.signal,
+                    headers: {
+                        "X-CSRFToken": csrfToken(),
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                });
+                if (!response.ok) {
+                    throw new Error(`Resource-group refresh failed with HTTP ${response.status}.`);
+                }
+                replaceResourceGroups(await response.text());
+            } catch (error) {
+                if (!(error instanceof DOMException) || error.name !== "AbortError") {
+                    console.error(error);
+                }
+            } finally {
+                const refreshed = document.querySelector("#catalogue-resource-groups");
+                if (refreshed) {
+                    refreshed.removeAttribute("aria-busy");
+                }
+                if (activeRequest === request) {
+                    activeRequest = null;
+                }
+            }
+        };
+
+        const syncOptions = () => {
+            const selectedScheme = scheme.value;
+            Array.from(specification.options).forEach((option) => {
+                const available = option.dataset.scheme === selectedScheme;
+                option.hidden = !available;
+                option.disabled = !available;
+            });
+            selectFirstVisible(specification);
+
+            const selectedSpecification = specification.value;
+            Array.from(version.options).forEach((option) => {
+                const available = option.dataset.scheme === selectedScheme && option.dataset.specification === selectedSpecification;
+                option.hidden = !available;
+                option.disabled = !available;
+            });
+            selectFirstVisible(version);
+        };
+
+        const syncBoundaryAndRefreshGroups = () => {
+            syncOptions();
+            void refreshResourceGroups();
+        };
+
+        scheme.addEventListener("change", syncBoundaryAndRefreshGroups);
+        specification.addEventListener("change", syncBoundaryAndRefreshGroups);
+        version.addEventListener("change", refreshResourceGroups);
+        form.addEventListener("change", (event) => {
+            syncResourceCardState(event.target);
+        });
+        syncOptions();
+        updateContinueState();
+    })();
+</script>
+</body>
+</html>

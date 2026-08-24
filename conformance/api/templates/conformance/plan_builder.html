@@ -570,12 +570,7 @@
 
                 <aside>
                     <section class="guide-card" aria-labelledby="environment-heading">
-                        <h3 id="environment-heading">Environment</h3>
-                        <div class="field-row">
-                            <label for="{{ form.guided_environment.id_for_label }}">Environment</label>
-                            {{ form.guided_environment.errors }}
-                            <input id="{{ form.guided_environment.id_for_label }}" name="guided_environment" type="text" value="{{ form.guided_environment.value|default_if_none:'' }}" autocomplete="off">
-                        </div>
+                        <h3 id="environment-heading">Discovery</h3>
                         <div class="field-row">
                             <label for="{{ form.guided_discovery_url.id_for_label }}">Discovery URL</label>
                             {{ form.guided_discovery_url.errors }}

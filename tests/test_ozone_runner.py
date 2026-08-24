@@ -17,7 +17,6 @@ def test_run_model_bank_smoke_check_preserves_client_construction_error(monkeypa
 
     monkeypatch.setattr(OzoneModelBankClient, "from_config", raise_client_construction_error)
     config = ModelBankConfig(
-        environment="ozone-model-bank",
         discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
         result_output_path=Path("results.json"),
     )
@@ -49,7 +48,6 @@ def test_run_model_bank_smoke_check_fetches_discovery_and_jwks() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -69,7 +67,6 @@ def test_run_model_bank_smoke_check_reports_discovery_failure() -> None:
     with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -97,7 +94,6 @@ def test_run_model_bank_smoke_check_reports_jwks_failure() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -125,7 +121,6 @@ def test_run_model_bank_smoke_check_rejects_non_https_jwks_uri() -> None:
     ) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -153,7 +148,6 @@ def test_run_model_bank_smoke_check_rejects_non_https_issuer() -> None:
     ) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -181,7 +175,6 @@ def test_run_model_bank_smoke_check_rejects_issuer_userinfo() -> None:
     ) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -209,7 +202,6 @@ def test_run_model_bank_smoke_check_rejects_jwks_uri_userinfo() -> None:
     ) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -239,7 +231,6 @@ def test_run_model_bank_smoke_check_can_stop_after_discovery() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             follow_up_mode="discovery_only",
         )
@@ -275,7 +266,6 @@ def test_run_model_bank_smoke_check_rejects_ip_literal_and_malformed_hostname(
     ) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="ozone-model-bank",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -307,7 +297,6 @@ def test_run_model_bank_smoke_check_emits_event_sequence_on_success() -> None:
     with httpx.Client(transport=httpx.MockTransport(handler)) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="env",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("r.json"),
         )
@@ -340,7 +329,6 @@ def test_run_model_bank_smoke_check_emits_application_error_on_discovery_failure
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(500))) as http_client:
         client = OzoneModelBankClient(http_client)
         config = ModelBankConfig(
-            environment="env",
             discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
             result_output_path=Path("r.json"),
         )
@@ -372,7 +360,6 @@ def test_run_model_bank_smoke_check_emits_application_error_on_engine_exception(
 
     monkeypatch.setattr(OzoneModelBankClient, "from_config", raise_from_config)
     config = ModelBankConfig(
-        environment="ozone-model-bank",
         discovery_url="https://modelbank.example.com/.well-known/openid-configuration",
         result_output_path=Path("results.json"),
     )

@@ -114,7 +114,6 @@ def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
     execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
     runtime_config = RuntimeConfig(
         discovery_url=ozone_discovery_url,
-        environment="ozone-tier2",
         oauth_client_id=ozone_client_id,
         oauth_redirect_uri=ozone_redirect_uri,
     )
@@ -122,7 +121,6 @@ def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
     with httpx.Client(timeout=_INTEGRATION_HTTP_TIMEOUT_SECONDS) as client:
         result = run_manifest(
             manifest,
-            environment="ozone-tier2",
             client=client,
             execution_logger=execution_logger,
             plan=plan,

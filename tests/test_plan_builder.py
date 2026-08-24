@@ -11,7 +11,6 @@ from conformance.api.plan_builder import CatalogueEndpointOption, PlanBuilderFor
 from conformance.json_types import JsonValue
 
 VALID_CONFIG: dict[str, JsonValue] = {
-    "environment": "test-env",
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 """Minimal runtime config accepted by the plan-builder form."""
@@ -225,7 +224,7 @@ def test_guided_endpoint_selection_compiles_catalogue_plan() -> None:
 
     preview = _validated_preview(form)
 
-    assert preview.config.environment == "test-env"
+    assert preview.config.discovery_url == "https://example.com/.well-known/openid-configuration"
     assert preview.plan_spec.catalogue_key.api == "ais"
     assert [endpoint.path for endpoint in preview.plan_spec.implemented_endpoints] == [
         "/open-banking/v4.0/aisp/accounts"

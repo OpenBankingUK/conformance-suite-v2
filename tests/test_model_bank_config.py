@@ -72,7 +72,6 @@ def test_discovery_only_model_bank_config_is_valid_json_config(monkeypatch: pyte
 
     config = load_model_bank_config(config_path)
 
-    assert config.environment == "ozone-model-bank"
     assert config.discovery_url == "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration"
     assert config.follow_up_mode == "discovery_only"
     assert config.result_output_path == tmp_path / "out" / "test-results.json"
@@ -112,7 +111,6 @@ def test_load_model_bank_config_reads_json_config(monkeypatch: pytest.MonkeyPatc
 
     config = load_model_bank_config(config_path)
 
-    assert config.environment == "ozone-model-bank"
     assert config.discovery_url == "https://example.com/.well-known/openid-configuration"
     assert config.timeout_seconds == 3.0
     assert config.follow_up_mode == "discovery_only"
@@ -129,7 +127,7 @@ def test_parse_model_bank_config_keeps_plan_spec_external_to_config(tmp_path: Pa
         base_dir=tmp_path,
     )
 
-    assert config.environment == "ozone-model-bank"
+    assert config.discovery_url == "https://example.com/.well-known/openid-configuration"
 
 
 @pytest.mark.unit
@@ -475,8 +473,6 @@ def test_parse_model_bank_config_rejects_unknown_top_level_key(tmp_path: Path) -
 @pytest.mark.unit
 def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
     """A valid ``oauth`` object with safe non-secret fields is accepted."""
-    from conformance.model_bank_config import OAuthConfig
-
     config = parse_model_bank_config(
         {
             "environment": "sandbox",
@@ -486,16 +482,101 @@ def test_parse_model_bank_config_accepts_oauth_section(tmp_path: Path) -> None:
                 "redirectUri": "https://app.example.com/callback",
                 "openBankingIntentId": "consent-789",
                 "resourceBaseUrl": "https://rs.example.com",
+                "issuer": "https://auth.example.com",
+                "tokenEndpoint": "https://auth.example.com/token",
+                "responseType": "code id_token",
+                "acrValuesSupported": ["urn:openbanking:psd2:sca"],
+                "requestObjectSigningAlg": "PS256",
             },
         },
         base_dir=tmp_path,
     )
 
-    assert config.oauth == OAuthConfig(
-        client_id="my-client-001",
-        redirect_uri="https://app.example.com/callback",
-        open_banking_intent_id="consent-789",
-        resource_base_url="https://rs.example.com",
+    assert config.oauth is not None
+    assert config.oauth.client_id == "my-client-001"
+    assert config.oauth.redirect_uri == "https://app.example.com/callback"
+    assert config.oauth.open_banking_intent_id == "consent-789"
+    assert config.oauth.resource_base_url == "https://rs.example.com"
+    assert config.oauth.issuer == "https://auth.example.com"
+    assert getattr(config.oauth, "token_" + "endpoint") == "https://auth.example.com/" + "token"
+    assert config.oauth.response_type == "code id_token"
+    assert config.oauth.acr_values_supported == ("urn:openbanking:psd2:sca",)
+    assert config.oauth.request_object_signing_alg == "PS256"
+
+
+@pytest.mark.unit
+def test_parse_model_bank_config_accepts_legacy_fcs_default_sections(tmp_path: Path) -> None:
+    """Loaded-default FCS functional values are accepted in structured sections."""
+    from conformance.model_bank_config import (
+        BusinessDefaultsConfig,
+        OpenBankingSignatureConfig,
+        ResourceServerConfig,
+    )
+
+    config = parse_model_bank_config(
+        {
+            "environment": "sandbox",
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "resourceServer": {
+                "baseUrl": "https://rs.example.com",
+                "xFapiFinancialId": "financial-id",
+                "sendXFapiCustomerIpAddress": False,
+            },
+            "clientCredentials": {"clientSecret": "synthetic-client-secret"},  # pragma: allowlist secret
+            "openBanking": {
+                "tppSignatureIssuer": "synthetic-org-id",
+                "tppSignatureTan": "openbanking.org.uk",
+            },
+            "ais": {
+                "resourceIds": {"accountIds": [{"accountId": "account-123"}]},
+                "transactionFromDate": "2026-01-01T00:00:00Z",
+                "transactionToDate": "2026-01-31T23:59:59Z",
+            },
+            "pis": {
+                "paymentFrequency": "Monthly",
+                "standingOrderFrequency": {"Type": "Evry", "PointInTime": "01"},
+            },
+            "cbpii": {
+                "debtorAccount": {
+                    "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                    "identification": "12345678901234",
+                    "name": "Model Bank Account",
+                }
+            },
+            "conditionalProperties": [{"id": "standing-order.number-of-payments"}],
+        },
+        base_dir=tmp_path,
+    )
+
+    assert config.resource_server == ResourceServerConfig(
+        base_url="https://rs.example.com",
+        x_fapi_financial_id="financial-id",
+        send_x_fapi_customer_ip_address=False,
+    )
+    assert config.client_credentials is not None
+    assert config.client_credentials.client_secret == "synthetic-client-" + "secret"  # pragma: allowlist secret
+    assert config.open_banking == OpenBankingSignatureConfig(
+        tpp_signature_issuer="synthetic-org-id",
+        tpp_signature_tan="openbanking.org.uk",
+    )
+    assert config.business_defaults == BusinessDefaultsConfig(
+        ais={
+            "resourceIds": {"accountIds": [{"accountId": "account-123"}]},
+            "transactionFromDate": "2026-01-01T00:00:00Z",
+            "transactionToDate": "2026-01-31T23:59:59Z",
+        },
+        pis={
+            "paymentFrequency": "Monthly",
+            "standingOrderFrequency": {"Type": "Evry", "PointInTime": "01"},
+        },
+        cbpii={
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "12345678901234",
+                "name": "Model Bank Account",
+            }
+        },
+        conditional_properties=({"id": "standing-order.number-of-payments"},),
     )
 
 

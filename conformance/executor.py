@@ -67,6 +67,7 @@ from conformance.manifest import (
     ManifestTest,
     PsuAuthorizationStep,
     ResponseSchemaAssertion,
+    ResponseSignaturePolicy,
     StepPhase,
     V1Step,
     validate_header_value,
@@ -79,6 +80,7 @@ from conformance.psu_authorization import (
     redirect_matches_registered_uri,
     synthesize_psu_response,
 )
+from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
@@ -219,7 +221,6 @@ def _mask_result_url_query(url: str) -> str:
 def run_manifest(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     plan: TestPlan | None = None,
@@ -237,7 +238,6 @@ def run_manifest(
 
     Args:
         manifest: Parsed and validated manifest to execute.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
         execution_logger: Optional structured execution-log sink. Defaults to
             a :class:`NullExecutionLogger` for backwards-compatible callers
@@ -279,14 +279,13 @@ def run_manifest(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
-    run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
+    run_started_payload: JsonObject = {"schemaVersion": manifest.schema_version}
     logger_sink.emit("run-started", payload=run_started_payload)
     try:
         if manifest.schema_version == "v1":
             effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
             result = _run_manifest_v1(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 plan=effective_plan,
@@ -300,7 +299,6 @@ def run_manifest(
         else:
             result = _run_manifest_v0(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 run_id=effective_run_id,
@@ -332,7 +330,6 @@ def run_compiled_test_plan(
     *,
     runtime_inputs: Mapping[str, JsonValue],
     runtime_input_base_dir: Path,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     run_id: str | None = None,
@@ -350,7 +347,6 @@ def run_compiled_test_plan(
             may include sensitive values and is never persisted directly.
         runtime_input_base_dir: Directory used to resolve runtime
             ``file_reference`` values safely.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
         execution_logger: Optional structured execution-log sink.
         run_id: Optional run identifier used for log/auth-session correlation.
@@ -377,7 +373,6 @@ def run_compiled_test_plan(
     logger_sink.emit(
         "run-started",
         payload={
-            "environment": environment,
             "catalogue": {
                 "standard": compiled_plan.catalogue_key.standard,
                 "version": compiled_plan.catalogue_key.version,
@@ -389,7 +384,6 @@ def run_compiled_test_plan(
     try:
         result = _run_manifest_v1(
             synthetic_manifest,
-            environment=environment,
             client=client,
             execution_logger=logger_sink,
             plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
@@ -519,6 +513,9 @@ def _catalogue_request_step_to_manifest_step(
         mandatory=test_case.mandatory,
         group="catalogue",
         phase=phase,
+        response_signature_policy=(
+            ResponseSignaturePolicy(source="discovery-jwks") if test_case.response_signature_required else None
+        ),
     )
 
 
@@ -996,10 +993,73 @@ class _LazyFapiSigningService:
         return self._service
 
 
+class _ResponseSignatureJwksCache:
+    """Fetch and cache discovery JWKS for response signature validation."""
+
+    def __init__(self, client: httpx.Client) -> None:
+        """Initialise the JWKS cache.
+
+        Args:
+            client: HTTP client used for discovery and JWKS requests.
+        """
+        self._client = client
+        self._jwks: JsonObject | None = None
+        self._lock = threading.Lock()
+
+    def get(self, runtime_config: RuntimeConfig | None) -> JsonObject:
+        """Return the cached JWKS, fetching it from discovery when needed.
+
+        Args:
+            runtime_config: Runtime config containing the discovery URL.
+
+        Returns:
+            JWKS JSON object with a ``keys`` array.
+
+        Raises:
+            ValueError: If runtime config or discovery metadata is missing or
+                unsafe.
+            JsonHttpClientError: If discovery or JWKS HTTP retrieval fails.
+        """
+        if self._jwks is not None:
+            return self._jwks
+        with self._lock:
+            if self._jwks is None:
+                self._jwks = _fetch_response_signature_jwks(self._client, runtime_config)
+        return self._jwks
+
+
+def _fetch_response_signature_jwks(client: httpx.Client, runtime_config: RuntimeConfig | None) -> JsonObject:
+    """Fetch the JWKS advertised by the configured discovery document.
+
+    Args:
+        client: HTTP client used for discovery and JWKS requests.
+        runtime_config: Runtime config containing ``discoveryUrl``.
+
+    Returns:
+        JWKS JSON object.
+
+    Raises:
+        ValueError: If runtime config, ``jwks_uri``, or the JWKS shape is
+            invalid.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+    """
+    if runtime_config is None:
+        raise ValueError("Response signature validation requires runtime config discoveryUrl")
+    discovery_response = send_json(client, "GET", runtime_config.discovery_url)
+    jwks_uri = discovery_response.body.get("jwks_uri")
+    if not isinstance(jwks_uri, str) or not jwks_uri.strip():
+        raise ValueError("OpenID discovery response must contain jwks_uri for response signature validation")
+    validate_https_url(jwks_uri.strip(), label="discovery jwks_uri")
+    jwks_response = send_json(client, "GET", jwks_uri.strip())
+    keys = jwks_response.body.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("JWKS response must contain a keys array")
+    return dict(jwks_response.body)
+
+
 def _run_manifest_v1(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     plan: TestPlan,
@@ -1028,7 +1088,6 @@ def _run_manifest_v1(
 
     Args:
         manifest: Parsed v1 manifest containing sequential steps.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink.
         plan: Test plan governing which steps run and which are skipped
@@ -1059,6 +1118,7 @@ def _run_manifest_v1(
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
     fapi_signing_service = _LazyFapiSigningService(fapi_signing_config)
+    response_signature_jwks_cache = _ResponseSignatureJwksCache(client)
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
@@ -1082,6 +1142,7 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(setup_steps)
 
@@ -1096,13 +1157,13 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(execution_steps)
     if compiled_plan is not None:
         steps = _attach_catalogue_evidence_to_steps(steps, compiled_plan)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
         plan=plan,
@@ -1161,6 +1222,7 @@ def _execute_v1_step_sequence(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -1178,6 +1240,8 @@ def _execute_v1_step_sequence(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -1195,6 +1259,7 @@ def _execute_v1_step_sequence(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
         steps.append(step_result)
     return steps, context
@@ -1212,6 +1277,7 @@ def _execute_v1_execution_groups_concurrently(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -1233,6 +1299,8 @@ def _execute_v1_execution_groups_concurrently(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -1256,6 +1324,7 @@ def _execute_v1_execution_groups_concurrently(
                     fapi_signing_config,
                     fapi_signing_service,
                     mtls_client_configured,
+                    response_signature_jwks_cache,
                 )
             )
 
@@ -1278,6 +1347,7 @@ def _execute_v1_group(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -1294,6 +1364,8 @@ def _execute_v1_group(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Step results for this group in group-local order.
@@ -1308,6 +1380,7 @@ def _execute_v1_group(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     return group_steps
 
@@ -1323,6 +1396,7 @@ def _execute_v1_manifest_step(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -1340,6 +1414,8 @@ def _execute_v1_manifest_step(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1366,6 +1442,7 @@ def _execute_v1_manifest_step(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
@@ -2181,6 +2258,7 @@ def _execute_v1_step(
     fapi_signing_config: FapiSigningConfig | None = None,
     fapi_signing_service: _LazyFapiSigningService | None = None,
     mtls_client_configured: bool = False,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -2207,6 +2285,9 @@ def _execute_v1_step(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Optional per-run cache for response JWS
+            verification keys. A cache is created when omitted for direct unit
+            callers.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -2224,6 +2305,7 @@ def _execute_v1_step(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=effective_fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache or _ResponseSignatureJwksCache(client),
     )
     execution_logger.emit(
         "step-completed",
@@ -2246,6 +2328,7 @@ def _execute_v1_step_inner(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
 
@@ -2263,6 +2346,8 @@ def _execute_v1_step_inner(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -2622,6 +2707,42 @@ def _execute_v1_step_inner(
         payload={"statusCode": response.status_code, "url": response.url},
     )
 
+    try:
+        response_signature_evidence = _validate_response_signature_if_required(
+            manifest_step=manifest_step,
+            response=response,
+            context=context,
+            response_signature_jwks_cache=response_signature_jwks_cache,
+        )
+    except (JsonHttpClientError, HttpsUrlValidationError, ResponseSignatureValidationError, ValueError) as error:
+        execution_logger.emit(
+            "response-signature-invalid",
+            step_id=manifest_step.id,
+            payload={"message": str(error)},
+        )
+        response_evidence["responseSignature"] = {"status": "failed", "message": str(error)}
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Response signature validation failed: {error}",
+                    url=resolved_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            new_context,
+        )
+    if response_signature_evidence is not None:
+        execution_logger.emit(
+            "response-signature-validated",
+            step_id=manifest_step.id,
+            payload=response_signature_evidence,
+        )
+        response_evidence["responseSignature"] = {"status": "passed", **response_signature_evidence}
+
     # Evaluate assertions
     step_result = _build_assertion_step(
         name=manifest_step.id,
@@ -2674,6 +2795,47 @@ def _record_runtime_token_if_present(
     if not isinstance(access_token, str) or not access_token:
         return context
     return record_token(context, token_id=token_id, access_token=access_token)
+
+
+def _validate_response_signature_if_required(
+    *,
+    manifest_step: ManifestStep,
+    response: JsonHttpResponse,
+    context: ExecutionContext,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
+) -> JsonObject | None:
+    """Validate a required response detached JWS and return evidence.
+
+    Args:
+        manifest_step: Executed HTTP step whose policy may require validation.
+        response: JSON HTTP response received for the step.
+        context: Execution context containing runtime config.
+        response_signature_jwks_cache: Per-run cache for discovery JWKS.
+
+    Returns:
+        Non-secret response-signature evidence when validation was required and
+        passed, otherwise ``None``.
+
+    Raises:
+        ValueError: If the response-signature source is unsupported.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+        HttpsUrlValidationError: If discovery advertises an unsafe JWKS URL.
+        ResponseSignatureValidationError: If the signature itself is invalid.
+    """
+    policy = manifest_step.response_signature_policy
+    if policy is None:
+        return None
+    if policy.source != "discovery-jwks":
+        raise ValueError("Unsupported response signature validation source")
+    signature = response.headers.get("x-jws-signature")
+    if signature is None or not signature.strip():
+        raise ResponseSignatureValidationError("x-jws-signature header is missing")
+    validation = validate_ob_response_signature(
+        signature=signature,
+        payload=response.body_bytes,
+        jwks=response_signature_jwks_cache.get(context.config),
+    )
+    return validation.to_json_object()
 
 
 def _skipped_step(
@@ -2823,7 +2985,6 @@ def _serialize_json_request_body(body: JsonValue) -> bytes:
 def _run_manifest_v0(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     run_id: str,
@@ -2840,7 +3001,6 @@ def _run_manifest_v0(
 
     Args:
         manifest: Parsed v0 manifest containing tests with optional followUp.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink threaded through to
             each desugared v1 step.
@@ -2953,7 +3113,6 @@ def _run_manifest_v0(
                 steps.append(follow_up_result)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
         approved_release_policy=approved_release_policy,

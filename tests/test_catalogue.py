@@ -14,6 +14,7 @@ from conformance.catalogue import (
     EndpointCapability,
     EndpointRef,
     ImplementedEndpoint,
+    PlanDocumentV2,
     RuntimeInputRequirement,
     SecurityProfile,
     SecurityProfileApplicability,
@@ -21,7 +22,10 @@ from conformance.catalogue import (
     TestCatalogue,
     TestPlanSpec,
     compile_test_plan,
+    compile_test_plan_document,
+    parse_test_plan_document,
     parse_test_plan_spec,
+    plan_document_to_json_object,
 )
 from conformance.json_types import JsonValue
 
@@ -81,6 +85,16 @@ def _catalogue(*test_cases: CatalogueTestCase) -> TestCatalogue:
     )
 
 
+def _catalogue_with_key(
+    key: CatalogueKey,
+    *,
+    version: str,
+    test_cases: tuple[CatalogueTestCase, ...],
+    capabilities: tuple[EndpointCapability, ...] = (),
+) -> TestCatalogue:
+    return TestCatalogue(key=key, catalogue_version=version, test_cases=test_cases, capabilities=capabilities)
+
+
 def _spec(
     *,
     endpoints: tuple[ImplementedEndpoint, ...] = (
@@ -118,6 +132,45 @@ def _capability(
         required=required,
         endpoint_refs=endpoint_refs,
     )
+
+
+@pytest.mark.unit
+def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
+    """Structured v2 config defaults feed catalogue runtime inputs."""
+    document = parse_test_plan_document(
+        {
+            "schemaVersion": "v2",
+            "scheme": "open-banking-uk",
+            "specification": "read-write",
+            "version": "4.0.1",
+            "securityProfile": "fapi1-advanced",
+            "scope": {"resourceGroups": []},
+            "config": {
+                "resourceServer": {"baseUrl": "https://rs.example.com"},
+                "ais": {
+                    "resourceIds": {"accountIds": [{"accountId": "account-123"}]},
+                    "transactionFromDate": "2026-01-01T00:00:00Z",
+                    "transactionToDate": "2026-01-31T23:59:59Z",
+                },
+                "cbpii": {
+                    "debtorAccount": {
+                        "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "identification": "12345678901234",
+                        "name": "Model Bank Account",
+                    }
+                },
+            },
+        }
+    )
+
+    assert isinstance(document, PlanDocumentV2)
+    assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
+    assert document.runtime_inputs["consentedAccountId"] == "account-123"
+    assert document.runtime_inputs["fromBookingDateTime"] == "2026-01-01T00:00:00Z"
+    assert document.runtime_inputs["toBookingDateTime"] == "2026-01-31T23:59:59Z"
+    assert document.runtime_inputs["debtorAccountSchemeName"] == "UK.OBIE.SortCodeAccountNumber"
+    assert document.runtime_inputs["debtorAccountIdentification"] == "12345678901234"
+    assert document.runtime_inputs["debtorAccountName"] == "Model Bank Account"
 
 
 @pytest.mark.unit
@@ -415,6 +468,230 @@ def test_parse_test_plan_spec_validates_exportable_json_shape() -> None:
     assert spec.implemented_endpoints[0].capability_ids == ("accounts.balances",)
     assert spec.deselected_test_case_ids == ("optional-accounts-extension",)
     assert spec.assertion_overrides[0].assertion_id == "status-200"
+
+
+@pytest.mark.unit
+def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> None:
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "ais.accounts",
+                    "label": "Accounts",
+                    "endpoints": [
+                        {
+                            "method": "get",
+                            "path": "/open-banking/v4.0/aisp/accounts/",
+                            "capabilities": ["ais.accounts.list.core"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "config": {
+            "resourceBaseUrl": "https://rs.example.com",
+            "inputs": {"accessToken": {"value": "secret-access-token"}},
+        },
+    }
+
+    document = parse_test_plan_document(raw_spec)
+
+    assert isinstance(document, PlanDocumentV2)
+    assert document.scheme == "open-banking-uk"
+    assert document.specification == "read-write"
+    assert document.version == "4.0.1"
+    assert document.resource_groups[0].resource_group_id == "ais.accounts"
+    assert document.resource_groups[0].endpoints[0].method == "GET"
+    assert document.resource_groups[0].endpoints[0].path == "/open-banking/v4.0/aisp/accounts"
+    assert document.resource_groups[0].endpoints[0].capability_ids == ("ais.accounts.list.core",)
+    assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
+    assert document.runtime_inputs["accessToken"] == "secret-access-token"
+    assert plan_document_to_json_object(document) == {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "ais.accounts",
+                    "label": "Accounts",
+                    "endpoints": [
+                        {
+                            "method": "GET",
+                            "path": "/open-banking/v4.0/aisp/accounts",
+                            "capabilities": ["ais.accounts.list.core"],
+                        }
+                    ],
+                }
+            ]
+        },
+        "config": {
+            "resourceBaseUrl": "https://rs.example.com",
+            "inputs": {"accessToken": {"value": "secret-access-token"}},
+        },
+    }
+
+
+@pytest.mark.unit
+def test_compile_test_plan_document_v2_spans_read_write_catalogue_areas() -> None:
+    ais_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+    pis_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+    ais_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    pis_ref = EndpointRef(method="POST", path="/open-banking/v4.0/pisp/domestic-payments")
+    ais_case = _case(
+        "ais-accounts-read",
+        endpoint_refs=(ais_ref,),
+        runtime_requirements=(RuntimeInputRequirement("resourceBaseUrl", "url", "AIS resource server base URL"),),
+    )
+    pis_case = _case(
+        "pis-domestic-payment-submit",
+        endpoint_refs=(pis_ref,),
+        capability_ids=("pis.domestic-payment-submission",),
+        runtime_requirements=(RuntimeInputRequirement("resourceBaseUrl", "url", "PIS resource server base URL"),),
+    )
+    ais_catalogue = _catalogue_with_key(ais_key, version="ais.1", test_cases=(ais_case,))
+    pis_catalogue = _catalogue_with_key(
+        pis_key,
+        version="pis.1",
+        test_cases=(pis_case,),
+        capabilities=(
+            EndpointCapability(
+                capability_id="pis.domestic-payment-submission",
+                label="Domestic payment submission",
+                description="Optional domestic payment submission support.",
+                required=False,
+                endpoint_refs=(pis_ref,),
+            ),
+        ),
+    )
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "ais.accounts",
+                    "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
+                },
+                {
+                    "id": "pis.domestic-payments",
+                    "endpoints": [
+                        {
+                            "method": "POST",
+                            "path": "/open-banking/v4.0/pisp/domestic-payments",
+                            "capabilities": ["pis.domestic-payment-submission"],
+                        }
+                    ],
+                },
+            ]
+        },
+        "config": {"resourceBaseUrl": "https://rs.example.com"},
+    }
+    document = parse_test_plan_document(raw_spec)
+
+    compiled = compile_test_plan_document(document, (ais_catalogue, pis_catalogue))
+
+    assert compiled.catalogue_key == CatalogueKey(
+        standard="open-banking-uk",
+        version="4.0.1",
+        api="read-write",
+    )
+    assert compiled.catalogue_version == "ais:ais.1; pis:pis.1"
+    assert [case.test_case_id for case in compiled.test_cases] == [
+        "ais-accounts-read",
+        "pis-domestic-payment-submit",
+    ]
+    assert [endpoint.resource_group for endpoint in compiled.traceability.selected_endpoints] == [
+        "ais.accounts",
+        "pis.domestic-payments",
+    ]
+    assert [capability.capability_id for capability in compiled.traceability.selected_capabilities] == [
+        "pis.domestic-payment-submission"
+    ]
+    assert [runtime_input.input_id for runtime_input in compiled.traceability.runtime_input_snapshot] == [
+        "resourceBaseUrl"
+    ]
+    assert compiled.traceability.runtime_input_snapshot[0].value == "https://rs.example.com"
+    assert compiled.certifying is True
+
+
+@pytest.mark.unit
+def test_compile_test_plan_document_v2_rejects_cvrp_resource_group_outside_open_banking_boundary() -> None:
+    shared_ref = EndpointRef(method="POST", path="/domestic-vrp-consents")
+    vrp_catalogue = _catalogue_with_key(
+        CatalogueKey(standard="open-banking", version="v4.0", api="vrp"),
+        version="vrp.1",
+        test_cases=(_case("vrp-consent-create", endpoint_refs=(shared_ref,)),),
+    )
+    cvrp_catalogue = _catalogue_with_key(
+        CatalogueKey(standard="open-banking", version="v4.0", api="cvrp"),
+        version="cvrp.1",
+        test_cases=(_case("cvrp-consent-create", endpoint_refs=(shared_ref,)),),
+    )
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "vrp.domestic-vrp-consents",
+                    "endpoints": [{"method": "POST", "path": "/domestic-vrp-consents"}],
+                },
+                {
+                    "id": "cvrp.domestic-vrp-consents",
+                    "endpoints": [{"method": "POST", "path": "/domestic-vrp-consents"}],
+                },
+            ]
+        },
+        "config": {},
+    }
+    document = parse_test_plan_document(raw_spec)
+
+    with pytest.raises(
+        CatalogueError,
+        match="Resource group 'cvrp.domestic-vrp-consents' is not available for this plan boundary",
+    ):
+        compile_test_plan_document(document, (vrp_catalogue, cvrp_catalogue))
+
+
+@pytest.mark.unit
+def test_compile_test_plan_document_v2_rejects_endpoint_outside_selected_boundary() -> None:
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {
+            "resourceGroups": [
+                {
+                    "id": "ais.accounts",
+                    "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/unknown"}],
+                }
+            ]
+        },
+        "config": {},
+    }
+    document = parse_test_plan_document(raw_spec)
+
+    with pytest.raises(
+        CatalogueError,
+        match="Resource group 'ais.accounts' does not contain endpoint GET /open-banking/v4.0/aisp/unknown",
+    ):
+        compile_test_plan_document(document, (_catalogue(_case("accounts-read")),))
 
 
 @pytest.mark.unit
