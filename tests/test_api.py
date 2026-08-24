@@ -24,6 +24,8 @@ from conformance.catalogue import (
     SecurityProfileApplicability,
     TestCaseApplicability,
     TestCatalogue,
+    TestPlanSpec,
+    compile_test_plan,
 )
 from conformance.execution_log import BufferedExecutionLogger
 
@@ -745,6 +747,95 @@ class TestCreateRunEndpoint:
         threaded_plan = mock_execute.call_args.args[6]
         assert threaded_plan is not None
         assert threaded_plan.selected_step_ids() == ["keep-me"]
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_start_run_marks_non_mandatory_compiled_steps_optional(
+        self,
+        mock_execute: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """Compiled-plan snapshots mark non-mandatory catalogue cases as optional."""
+        from conformance.api.run_lifecycle import start_run
+        from conformance.model_bank_config import ModelBankConfig
+
+        catalogue = TestCatalogue(
+            key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+            catalogue_version="test.1",
+            test_cases=(
+                CatalogueTestCase(
+                    test_case_id="mandatory-case",
+                    name="Mandatory case",
+                    role="resource",
+                    compliance_scope=("legacy-fcs-script:test#mandatory",),
+                    applicability=TestCaseApplicability(
+                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    ),
+                    mandatory=True,
+                    request_steps=(
+                        CatalogueRequestStep(
+                            step_id="mandatory-step",
+                            name="Mandatory step",
+                            method="GET",
+                            path="/open-banking/v4.0/aisp/accounts",
+                        ),
+                    ),
+                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+                ),
+                CatalogueTestCase(
+                    test_case_id="optional-case",
+                    name="Optional case",
+                    role="resource",
+                    compliance_scope=("legacy-fcs-script:test#optional",),
+                    applicability=TestCaseApplicability(
+                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    ),
+                    mandatory=False,
+                    request_steps=(
+                        CatalogueRequestStep(
+                            step_id="optional-step",
+                            name="Optional step",
+                            method="GET",
+                            path="/open-banking/v4.0/aisp/accounts",
+                        ),
+                    ),
+                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+                ),
+            ),
+        )
+        compiled_plan = compile_test_plan(
+            catalogue,
+            TestPlanSpec(
+                schema_version="v1",
+                catalogue_key=catalogue.key,
+                security_profile="fapi1-advanced",
+                implemented_endpoints=(),
+                runtime_inputs={},
+            ),
+        )
+        config = ModelBankConfig(
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=tmp_path / "results.json",
+        )
+
+        response = start_run(
+            config=config,
+            compiled_plan=compiled_plan,
+            runtime_inputs={},
+            runtime_input_base_dir=tmp_path,
+        )
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        assert [(step.step_id, step.mandatory, step.optional) for step in record.planned_steps] == [
+            ("mandatory-step", True, False),
+            ("optional-step", False, True),
+        ]
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:

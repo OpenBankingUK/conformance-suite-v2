@@ -257,7 +257,7 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
                     group=test_case.test_case_id,
                     phase="setup" if test_case.role in {"setup", "security", "token"} else "execution",
                     mandatory=test_case.mandatory,
-                    optional=False,
+                    optional=not test_case.mandatory,
                     order=len(planned_steps),
                 )
             )
