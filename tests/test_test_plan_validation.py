@@ -80,6 +80,7 @@ def test_validate_test_plan_for_load_reports_schema_errors() -> None:
     validation = validate_test_plan_for_load(raw_plan)
 
     assert validation.valid is False
+    assert validation.execution_mode == "development"
     assert validation.issues[0].layer == "schema"
     assert "metadata" in validation.issues[0].message
 

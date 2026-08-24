@@ -303,7 +303,7 @@ def prepare_test_plan_for_run(
     if schema_issues:
         result = TestPlanValidationResult(
             schema_version=_schema_version_from_raw(raw_plan),
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=schema_issues,
         )
         raise TestPlanValidationError(result)
@@ -393,7 +393,7 @@ def validate_test_plan_for_load(raw_plan: object) -> TestPlanValidationResult:
     if schema_issues:
         return TestPlanValidationResult(
             schema_version=_schema_version_from_raw(raw_plan),
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=schema_issues,
         )
     try:
@@ -502,6 +502,21 @@ def _schema_version_from_raw(raw_plan: object) -> str:
         if isinstance(schema_version, str):
             return schema_version
     return "unknown"
+
+
+def _execution_mode_from_raw(raw_plan: object) -> PlanExecutionMode:
+    """Return the raw execution mode when it is recognisable.
+
+    Args:
+        raw_plan: Decoded JSON value to inspect.
+
+    Returns:
+        ``"development"`` when explicitly supplied, otherwise
+        ``"certification"``.
+    """
+    if isinstance(raw_plan, dict) and raw_plan.get("executionMode") == "development":
+        return "development"
+    return "certification"
 
 
 def _json_schema_error_path(error: object) -> str:

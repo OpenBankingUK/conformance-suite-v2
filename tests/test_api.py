@@ -29,6 +29,7 @@ from conformance.catalogue import (
 )
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.json_types import JsonObject
+from conformance.results import mark_development_result_evidence
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -250,6 +251,20 @@ class TestRunStore:
         reasons = certification_eligibility["reasons"]
         assert isinstance(reasons, list)
         assert "Development-mode run is not certification evidence" in reasons
+
+    def test_mark_development_result_evidence_updates_certification_block(self) -> None:
+        """Shared helper marks development-mode results as non-certifying."""
+        result: JsonObject = {"metadata": {}, "certificationEligibility": {"eligible": True}}
+
+        mark_development_result_evidence(
+            {"schemaVersion": "1.0", "executionMode": "development", "valid": True, "issues": []},
+            result,
+        )
+
+        eligibility = result["certificationEligibility"]
+        assert isinstance(eligibility, dict)
+        assert eligibility["eligible"] is False
+        assert result["metadata"] == {"executionMode": "development"}
 
     def test_get_run_returns_snapshot_not_live_reference(self) -> None:
         store = RunStore()

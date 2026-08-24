@@ -558,7 +558,7 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             raise CatalogueError(validation_result.summary_message())
         parsed_document = parse_test_plan_document(raw_document)
         if not isinstance(parsed_document, PlanDocumentV2):
-            raise CatalogueError("Browser import currently accepts shared JSON-first plan documents only")
+            raise CatalogueError("Browser import accepts schemaVersion 1.0 or legacy v2 shared plan documents only")
         runtime_input_prompts_for_plan_document(parsed_document)
     except CatalogueError as error:
         return render(

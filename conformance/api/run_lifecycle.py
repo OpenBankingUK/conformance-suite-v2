@@ -31,6 +31,7 @@ from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
 from conformance.model_bank_config import ModelBankConfig
+from conformance.results import mark_development_result_evidence
 from conformance.runner import run_model_bank_smoke_check
 from conformance.test_plan import TestPlan
 
@@ -445,34 +446,7 @@ def _attach_plan_evidence(result_object: JsonObject, run_record: RunRecord) -> N
         result_object["testPlanSnapshot"] = copy.deepcopy(plan_snapshot)
     if isinstance(validation_result, dict):
         result_object["testPlanValidation"] = copy.deepcopy(validation_result)
-        _mark_development_result(validation_result, result_object)
-
-
-def _mark_development_result(validation_result: JsonObject, result_object: JsonObject) -> None:
-    """Mark development-mode result evidence as non-certifying.
-
-    Args:
-        validation_result: Validation result captured before launch.
-        result_object: Mutable run result JSON object to annotate.
-    """
-    if validation_result.get("executionMode") != "development":
-        return
-    metadata = result_object.get("metadata")
-    if isinstance(metadata, dict):
-        metadata["executionMode"] = "development"
-    else:
-        result_object["metadata"] = {"executionMode": "development"}
-    eligibility = result_object.get("certificationEligibility")
-    if not isinstance(eligibility, dict):
-        return
-    reason = "Development-mode run is not certification evidence"
-    raw_reasons = eligibility.get("reasons")
-    reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
-    if reason not in reasons:
-        reasons.append(reason)
-    eligibility["eligible"] = False
-    eligibility["reason"] = reasons[0]
-    eligibility["reasons"] = reasons
+        mark_development_result_evidence(validation_result, result_object)
 
 
 def _persist_configured_artifacts(

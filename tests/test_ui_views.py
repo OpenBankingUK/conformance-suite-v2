@@ -900,8 +900,8 @@ class TestBuilderWizardUi:
         assert secret_export.status_code == 200
         assert safe_export["Cache-Control"] == "no-store"
         assert secret_export["Cache-Control"] == "no-store"
-        assert "environment" not in json.dumps(safe_export.json())
-        assert "environment" not in json.dumps(secret_export.json())
+        assert "environment" not in safe_export.json()
+        assert "environment" not in secret_export.json()
         assert safe_export.json()["resourceGroups"][0]["id"] == "AIS"
         assert safe_export.json()["businessTestData"]["inputs"]["accessToken"]["value"] == ""
         assert "secret-access-token" not in safe_export.content.decode("utf-8")

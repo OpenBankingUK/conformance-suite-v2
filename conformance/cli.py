@@ -30,7 +30,7 @@ from conformance.executor import run_compiled_test_plan
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, ModelBankConfig, load_model_bank_config
-from conformance.results import SmokeCheckResult
+from conformance.results import SmokeCheckResult, mark_development_result_evidence
 from conformance.runner import run_model_bank_smoke_check
 from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
@@ -157,7 +157,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         result_object["testPlanSnapshot"] = plan_snapshot
     if validation_result is not None:
         result_object["testPlanValidation"] = validation_result
-        _mark_development_result(validation_result, result_object)
+        mark_development_result_evidence(validation_result, result_object)
     try:
         config.result_output_path.parent.mkdir(parents=True, exist_ok=True)
         config.result_output_path.write_text(
@@ -256,33 +256,6 @@ def _run_cli_compiled_plan(
         )
     finally:
         http_client.close()
-
-
-def _mark_development_result(validation_result: JsonObject, result_object: JsonObject) -> None:
-    """Mark development-mode CLI result evidence as non-certifying.
-
-    Args:
-        validation_result: Validation result captured before launch.
-        result_object: Mutable result JSON object to annotate.
-    """
-    if validation_result.get("executionMode") != "development":
-        return
-    metadata = result_object.get("metadata")
-    if isinstance(metadata, dict):
-        metadata["executionMode"] = "development"
-    else:
-        result_object["metadata"] = {"executionMode": "development"}
-    eligibility = result_object.get("certificationEligibility")
-    if not isinstance(eligibility, dict):
-        return
-    reason = "Development-mode run is not certification evidence"
-    raw_reasons = eligibility.get("reasons")
-    reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
-    if reason not in reasons:
-        reasons.append(reason)
-    eligibility["eligible"] = False
-    eligibility["reason"] = reasons[0]
-    eligibility["reasons"] = reasons
 
 
 def _legacy_run_label(plan_spec_path: Path | None) -> str:
