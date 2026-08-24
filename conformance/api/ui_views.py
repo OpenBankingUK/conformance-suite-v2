@@ -1361,7 +1361,7 @@ def _builder_review_context(
         "review": state,
         "review_counts": _builder_review_counts(state),
         "review_phase_counts": _builder_review_phase_counts(state.rows),
-        "masked_config_json": _masked_review_config_json(state),
+        "masked_test_plan_json": _masked_review_test_plan_json(state),
     }
     if launch_error is not None:
         context["launch_error"] = launch_error
@@ -1518,7 +1518,7 @@ def _builder_review_phase_counts(rows: tuple[PlanTestCaseRow, ...]) -> dict[str,
     }
 
 
-def _masked_review_config_json(state: _BuilderReviewState) -> str:
+def _masked_review_test_plan_json(state: _BuilderReviewState) -> str:
     """Return masked canonical test-plan JSON for the review summary.
 
     Args:

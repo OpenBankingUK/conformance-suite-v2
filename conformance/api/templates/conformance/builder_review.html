@@ -159,10 +159,10 @@
         <p class="helper">{{ review.sensitive_export_warning }}</p>
     </section>
 
-    {% if masked_config_json %}
+    {% if masked_test_plan_json %}
         <section class="panel" aria-labelledby="config-summary-heading">
             <h2 id="config-summary-heading">Masked test plan summary</h2>
-            <textarea readonly spellcheck="false">{{ masked_config_json }}</textarea>
+            <textarea readonly spellcheck="false">{{ masked_test_plan_json }}</textarea>
         </section>
     {% endif %}
 
