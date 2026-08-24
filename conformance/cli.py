@@ -38,7 +38,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check from config and an optional plan spec.
+    """Run a conformance check from config/plan-spec input or a canonical test plan.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
