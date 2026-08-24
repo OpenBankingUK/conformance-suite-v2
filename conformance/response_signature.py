@@ -173,8 +173,8 @@ def _validate_protected_header(protected_header: Mapping[str, JsonValue]) -> Res
             "x-jws-signature crit must include: " + ", ".join(missing_critical_headers)
         )
     issued_at = protected_header.get(_OPEN_BANKING_IAT)
-    if not isinstance(issued_at, int | float) or isinstance(issued_at, bool):
-        raise ResponseSignatureValidationError(f"x-jws-signature {_OPEN_BANKING_IAT} must be a JSON number")
+    if not isinstance(issued_at, int) or isinstance(issued_at, bool):
+        raise ResponseSignatureValidationError(f"x-jws-signature {_OPEN_BANKING_IAT} must be a JSON integer")
     issuer = _required_header_string(protected_header, _OPEN_BANKING_ISS)
     trust_anchor = _required_header_string(protected_header, _OPEN_BANKING_TAN)
     return ResponseSignatureValidation(key_id=key_id, issuer=issuer, trust_anchor=trust_anchor)

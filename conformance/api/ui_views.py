@@ -596,17 +596,17 @@ def builder_review(request: HttpRequest, draft_id: str) -> HttpResponse:
     return render(request, "conformance/builder_review.html", _builder_review_context(draft=draft))
 
 
-@require_GET
+@require_http_methods(["GET", "POST"])
 def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
     """Download a reviewed builder draft as v2 plan JSON.
 
     Args:
-        request: The incoming browser GET request.
+        request: The incoming browser GET or POST request.
         draft_id: Session-scoped draft id from the route.
 
     Returns:
-        JSON attachment containing a safe export by default, or secrets when
-        ``include_secrets=1`` is explicitly requested.
+        JSON attachment containing a safe GET export by default, a secret-bearing
+        POST export when explicitly requested, or an error response.
     """
     draft = SessionBuilderDraftStore(request.session).get(draft_id)
     if draft is None:
@@ -614,7 +614,9 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
     state = _builder_review_state(draft)
     if state.document is None or state.compiled_plan is None:
         return JsonResponse({"error": state.error or "Builder draft cannot be exported"}, status=400)
-    include_secrets = request.GET.get("include_secrets") == "1"
+    if request.method == "GET" and request.GET.get("include_secrets") == "1":
+        return JsonResponse({"error": "Secret exports require POST"}, status=405)
+    include_secrets = request.method == "POST" and request.POST.get("include_secrets") == "1"
     exported = plan_document_to_export_json(
         state.document,
         sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
@@ -626,6 +628,9 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
     )
     suffix = "with-secrets" if include_secrets else "safe"
     response["Content-Disposition"] = f'attachment; filename="test-plan-{draft.draft_id}-{suffix}.json"'
+    response["Cache-Control"] = "no-store"
+    response["Pragma"] = "no-cache"
+    response["Expires"] = "0"
     return response
 
 

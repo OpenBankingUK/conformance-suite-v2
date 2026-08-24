@@ -147,7 +147,10 @@
             <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Edit security</a>
             <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
             <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
-            <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}?include_secrets=1">Export with secrets</a>
+            <form method="post" action="{% url 'builder-export' draft.draft_id %}">
+                {% csrf_token %}
+                <button class="secondary" type="submit" name="include_secrets" value="1">Export with secrets</button>
+            </form>
             <form method="post" action="{% url 'builder-launch' draft.draft_id %}">
                 {% csrf_token %}
                 <button type="submit" {% if not review.launch_supported %}disabled{% endif %}>Launch run</button>

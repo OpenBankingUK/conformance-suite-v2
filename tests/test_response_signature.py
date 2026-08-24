@@ -152,3 +152,22 @@ def test_validate_ob_response_signature_requires_critical_ob_headers() -> None:
 
     with pytest.raises(ResponseSignatureValidationError, match="crit must include:"):
         validate_ob_response_signature(signature=signature, payload=b"{}", jwks={"keys": []})
+
+
+@pytest.mark.unit
+def test_validate_ob_response_signature_requires_integer_iat_header() -> None:
+    """Open Banking response signatures must carry integer issued-at values."""
+    signature = _detached_signature_with_header(
+        {
+            "alg": "PS256",
+            "kid": "response-key",
+            "b64": False,
+            "crit": ["b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN],
+            _OPEN_BANKING_IAT: 1_774_120_000.5,
+            _OPEN_BANKING_ISS: "0015800001041RHAAY",
+            _OPEN_BANKING_TAN: "openbanking.org.uk",
+        }
+    )
+
+    with pytest.raises(ResponseSignatureValidationError, match="must be a JSON integer"):
+        validate_ob_response_signature(signature=signature, payload=b"{}", jwks={"keys": []})

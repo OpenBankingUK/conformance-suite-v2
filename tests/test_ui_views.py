@@ -884,11 +884,19 @@ class TestBuilderWizardUi:
         review_content = review_response.content.decode("utf-8")
         assert "Ready to launch" in review_content
         assert "secret-access-token" not in review_content
+        legacy_secret_export_href = f'href="{review_location.replace("/review/", "/export.json")}?include_secrets=1"'
+        assert legacy_secret_export_href not in review_content
+        assert 'name="include_secrets" value="1"' in review_content
 
         draft_id = _draft_id_from_builder_redirect(review_location)
         safe_export = client.get(f"/builder/{draft_id}/export.json")
-        secret_export = client.get(f"/builder/{draft_id}/export.json?include_secrets=1")
+        rejected_get_secret_export = client.get(f"/builder/{draft_id}/export.json?include_secrets=1")
+        secret_export = client.post(f"/builder/{draft_id}/export.json", data={"include_secrets": "1"})
         assert safe_export.status_code == 200
+        assert rejected_get_secret_export.status_code == 405
+        assert secret_export.status_code == 200
+        assert safe_export["Cache-Control"] == "no-store"
+        assert secret_export["Cache-Control"] == "no-store"
         assert "environment" not in safe_export.json()["config"]
         assert "environment" not in secret_export.json()["config"]
         assert safe_export.json()["scope"]["resourceGroups"][0]["id"] == "account-and-transaction"
