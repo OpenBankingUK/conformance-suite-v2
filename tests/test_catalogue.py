@@ -632,6 +632,50 @@ def test_parse_canonical_plan_document_requires_business_data_and_metadata() -> 
 
 
 @pytest.mark.unit
+def test_parse_canonical_plan_document_rejects_conflicting_profile_aliases() -> None:
+    """Canonical specification profile aliases must not disagree."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+            "securityProfile": "FAPI2",
+        },
+        "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    with pytest.raises(CatalogueError, match="profile and testPlan.specification.securityProfile must match"):
+        parse_test_plan_document(raw_spec)
+
+
+@pytest.mark.unit
+def test_parse_canonical_plan_document_accepts_matching_profile_aliases() -> None:
+    """Canonical specification profile aliases may both be supplied when equivalent."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+            "securityProfile": "fapi1-advanced",
+        },
+        "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    document = parse_test_plan_document(raw_spec)
+
+    assert isinstance(document, PlanDocumentV2)
+    assert document.security_profile == "fapi1-advanced"
+
+
+@pytest.mark.unit
 def test_parse_plan_document_uses_neutral_root_for_schema_version_errors() -> None:
     """Plan-document schema-version errors do not refer to the legacy planSpec root."""
     with pytest.raises(CatalogueError, match="planDocument.schemaVersion"):

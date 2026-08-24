@@ -1684,8 +1684,24 @@ def _parse_canonical_specification(
         version=version,
     )
     _internal_catalogue_version_for_plan_boundary(boundary)
-    raw_profile = raw_specification.get("profile", raw_specification.get("securityProfile"))
+    raw_profile = raw_specification.get("profile")
+    raw_security_profile = raw_specification.get("securityProfile")
     security_profile = _parse_canonical_security_profile(raw_profile, location="testPlan.specification.profile")
+    if raw_profile is None and raw_security_profile is not None:
+        security_profile = _parse_canonical_security_profile(
+            raw_security_profile,
+            location="testPlan.specification.securityProfile",
+        )
+    elif raw_profile is not None and raw_security_profile is not None:
+        legacy_security_profile = _parse_canonical_security_profile(
+            raw_security_profile,
+            location="testPlan.specification.securityProfile",
+        )
+        if legacy_security_profile != security_profile:
+            raise CatalogueError(
+                "testPlan.specification.profile and testPlan.specification.securityProfile must match when both "
+                "are supplied"
+            )
     return boundary, security_profile
 
 
