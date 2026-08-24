@@ -7,7 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from conformance.test_plan_validation import prepare_test_plan_for_run, validate_test_plan_for_load
+from conformance.test_plan_validation import (
+    TestPlanValidationError as PlanValidationError,
+)
+from conformance.test_plan_validation import (
+    prepare_test_plan_for_run,
+    validate_test_plan_for_load,
+)
 
 
 def _canonical_plan() -> dict[str, object]:
@@ -76,3 +82,23 @@ def test_validate_test_plan_for_load_reports_schema_errors() -> None:
     assert validation.valid is False
     assert validation.issues[0].layer == "schema"
     assert "metadata" in validation.issues[0].message
+
+
+@pytest.mark.unit
+def test_prepare_test_plan_for_run_rejects_legacy_v2_documents(tmp_path: Path) -> None:
+    """Run preparation accepts canonical test plans only, not legacy v2 documents."""
+    raw_plan = {
+        "schemaVersion": "v2",
+        "scheme": "open-banking-uk",
+        "specification": "read-write",
+        "version": "4.0.1",
+        "securityProfile": "fapi1-advanced",
+        "scope": {"resourceGroups": []},
+        "config": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+    }
+
+    with pytest.raises(PlanValidationError) as exc_info:
+        prepare_test_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    assert exc_info.value.result.schema_version == "v2"
+    assert "schemaVersion 1.0" in exc_info.value.result.summary_message()

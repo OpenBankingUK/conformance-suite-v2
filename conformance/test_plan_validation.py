@@ -316,7 +316,7 @@ def prepare_test_plan_for_run(
             issues=(TestPlanValidationIssue("schema", "error", str(error)),),
         )
         raise TestPlanValidationError(result) from error
-    if not isinstance(parsed, PlanDocumentV2):
+    if not isinstance(parsed, PlanDocumentV2) or parsed.schema_version != "1.0":
         result = TestPlanValidationResult(
             schema_version=parsed.schema_version,
             execution_mode="certification",

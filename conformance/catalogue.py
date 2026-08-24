@@ -2377,7 +2377,7 @@ def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
         resource_groups=_parse_plan_document_v2_resource_groups(_required_object(spec, "scope", location="planSpec")),
         config=MappingProxyType(config),
         runtime_inputs=MappingProxyType(_runtime_inputs_from_plan_config(config)),
-        security_environment=MappingProxyType(_security_environment_from_plan_config(config)),
+        security_environment=MappingProxyType(_optional_security_environment_from_plan_config(config)),
         business_test_data=MappingProxyType(_business_test_data_from_plan_config(config)),
         metadata=MappingProxyType({}),
         execution_mode="certification",
@@ -2517,7 +2517,7 @@ def _security_environment_for_export(document: PlanDocumentV2) -> JsonObject:
     Returns:
         Security environment object in canonical PRD shape.
     """
-    if document.security_environment:
+    if _security_environment_has_discovery_url(document.security_environment):
         return {key: _copy_json_value(value) for key, value in document.security_environment.items()}
     return _security_environment_from_plan_config(document.config)
 
@@ -2573,10 +2573,15 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
 
     Returns:
         Canonical security environment object.
+
+    Raises:
+        CatalogueError: If no non-empty discovery URL can be represented in the
+            canonical export.
     """
-    security_environment: JsonObject = {
-        "discoveryUrl": _copy_json_value(config["discoveryUrl"]) if "discoveryUrl" in config else ""
-    }
+    discovery_url = config.get("discoveryUrl")
+    if not isinstance(discovery_url, str) or not discovery_url.strip():
+        raise CatalogueError("Cannot serialize canonical test plan without securityEnvironment.discoveryUrl")
+    security_environment: JsonObject = {"discoveryUrl": discovery_url.strip()}
     _copy_optional_top_level_value(
         security_environment,
         config,
@@ -2705,6 +2710,34 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             target_key="tppSignatureTan",
         )
     return security_environment
+
+
+def _optional_security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Build legacy security metadata only when discovery URL is available.
+
+    Args:
+        config: Model-bank config section preserved by a legacy plan document.
+
+    Returns:
+        Canonical security environment metadata, or an empty object for legacy
+        documents that never carried discovery settings.
+    """
+    if not _security_environment_has_discovery_url(config):
+        return {}
+    return _security_environment_from_plan_config(config)
+
+
+def _security_environment_has_discovery_url(security_environment: Mapping[str, JsonValue]) -> bool:
+    """Return whether a security environment contains a non-empty discovery URL.
+
+    Args:
+        security_environment: Candidate security environment mapping.
+
+    Returns:
+        True when ``discoveryUrl`` is a non-empty string.
+    """
+    discovery_url = security_environment.get("discoveryUrl")
+    return isinstance(discovery_url, str) and bool(discovery_url.strip())
 
 
 def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, JsonValue]) -> None:

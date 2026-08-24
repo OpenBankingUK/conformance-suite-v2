@@ -495,6 +495,7 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
             ]
         },
         "config": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
             "resourceBaseUrl": "https://rs.example.com",
             "inputs": {"accessToken": {"value": "secret-access-token"}},
         },
@@ -520,7 +521,7 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
             "profile": "FAPI1_ADVANCED",
         },
         "executionMode": "certification",
-        "securityEnvironment": {"discoveryUrl": ""},
+        "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
         "resourceGroups": [
             {
                 "id": "AIS",
@@ -540,6 +541,26 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
         },
         "metadata": {},
     }
+
+
+@pytest.mark.unit
+def test_legacy_v2_to_canonical_export_rejects_missing_discovery_url() -> None:
+    """Legacy documents cannot be serialized as canonical plans without discovery URL."""
+    document = parse_test_plan_document(
+        {
+            "schemaVersion": "v2",
+            "scheme": "open-banking-uk",
+            "specification": "read-write",
+            "version": "4.0.1",
+            "securityProfile": "fapi1-advanced",
+            "scope": {"resourceGroups": []},
+            "config": {"resourceBaseUrl": "https://rs.example.com"},
+        }
+    )
+
+    assert isinstance(document, PlanDocumentV2)
+    with pytest.raises(CatalogueError, match="securityEnvironment.discoveryUrl"):
+        plan_document_to_json_object(document)
 
 
 @pytest.mark.unit
