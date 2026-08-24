@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Legacy FCS-derived bundled catalogues for AIS/accounts-transactions, PIS/payments, CBPII, and VRP under `conformance/catalogues/`, with registry coverage through `conformance.catalogue_registry`.
 - CLI, REST API, and browser plan-builder support for compiled catalogue plan execution via `--plan-spec` and `planSpec`.
 - Browser implemented-endpoint selection grouped by resource area, inline required/optional capability selectors, endpoint/capability-derived runtime prompts, launch integration, and a read-only generated-plan preview with collapsed low-level audit details.
-- Multi-step browser test-plan builder flow with session-backed drafts, grouped execution config, v2 plan import, generated review summaries, safe/secret export actions, and launch from the reviewed plan.
+- Multi-step browser test-plan builder flow with session-backed drafts, grouped execution config, JSON-first plan import, generated review summaries, safe/secret export actions, and launch from the reviewed plan.
+- Canonical JSON-first test-plan schema `1.0` with `specification`, single `securityEnvironment`, `resourceGroups`, `businessTestData`, `metadata`, and certification/development `executionMode`.
+- Shared pre-run validation evidence and secret-safe test-plan snapshots embedded in JSON run results for canonical plan launches.
 - Structured v2 config sections for resource-server headers, OAuth defaults, client credentials, Open Banking signature metadata, AIS/PIS/CBPII business defaults, and conditional properties.
 - Result JSON catalogue traceability, runtime input snapshots with sensitive values omitted, certification/non-certification reasons, and per-step catalogue evidence.
 - Run-detail catalogue evidence summary for selected endpoint/capability counts, generated test-case counts, catalogue version, and non-certifying reasons.
@@ -26,6 +28,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Participant-facing execution now compiles endpoint selections into catalogue plans and reuses the hardened HTTP, masking, signing, PSU authorisation, logging, and result-evidence execution path.
 - Public documentation now describes v2 shared plan documents, grouped config plus endpoint/capability execution, and the restored browser guided builder workflow instead of checked-in examples, config-selected suites, public manifest authoring, or generated-test selection.
+- Browser import/export now emits schemaVersion `1.0` JSON-first test plans while still accepting previous v1/v2 plan inputs on compatibility paths.
 - Browser wizard sessions now default to server-side file storage so local builder drafts work without running SQLite migrations first.
 - Browser config prompts now derive exact runtime values such as resource base URL, consented AIS account id, transaction filters, and CBPII debtor account fields from structured config defaults instead of duplicating them as manual endpoint prompts.
 - Browser discovery now treats JWKS as automatic security metadata rather than a participant-facing follow-up choice, and response-signature validation is driven by catalogue coverage.

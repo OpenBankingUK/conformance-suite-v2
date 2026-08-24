@@ -159,18 +159,24 @@
         <p class="helper">{{ review.sensitive_export_warning }}</p>
     </section>
 
-    {% if masked_config_json %}
+    {% if masked_test_plan_json %}
         <section class="panel" aria-labelledby="config-summary-heading">
-            <h2 id="config-summary-heading">Masked config summary</h2>
-            <textarea readonly spellcheck="false">{{ masked_config_json }}</textarea>
+            <h2 id="config-summary-heading">Masked test plan summary</h2>
+            <textarea readonly spellcheck="false">{{ masked_test_plan_json }}</textarea>
         </section>
     {% endif %}
 
     {% if review.safe_export_json %}
         <section class="panel" aria-labelledby="safe-export-heading">
             <h2 id="safe-export-heading">Safe export preview</h2>
-            <p class="helper">Safe export keeps the reusable plan shape but writes secret-bearing strings as empty strings.</p>
-            <textarea readonly spellcheck="false">{{ review.safe_export_json }}</textarea>
+            <p class="helper">Safe export keeps the reusable JSON-first plan shape but writes secret-bearing strings as empty strings.</p>
+            <form method="post" action="{% url 'builder-import' %}">
+                {% csrf_token %}
+                <textarea name="plan_json" spellcheck="false">{{ review.safe_export_json }}</textarea>
+                <div class="actions">
+                    <button class="secondary" type="submit">Edit raw JSON as new draft</button>
+                </div>
+            </form>
         </section>
     {% endif %}
 

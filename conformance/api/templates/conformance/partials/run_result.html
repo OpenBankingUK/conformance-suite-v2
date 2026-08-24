@@ -23,6 +23,21 @@
             <div class="metric"><strong>{{ plan_summary.mandatorySelected|default:"0" }}</strong><span>Mandatory selected</span></div>
             <div class="metric"><strong>{{ plan_summary.mandatoryDeselected|default:"0" }}</strong><span>Mandatory off</span></div>
         </div>
+        {% if test_plan_validation_summary %}
+            <h3>Test plan validation</h3>
+            <div class="grid">
+                <div class="metric"><strong>{{ test_plan_validation_summary.schemaVersion }}</strong><span>Schema</span></div>
+                <div class="metric"><strong>{{ test_plan_validation_summary.executionMode }}</strong><span>Execution mode</span></div>
+                <div class="metric"><strong>{{ test_plan_validation_summary.issueCount }}</strong><span>Validation issues</span></div>
+            </div>
+            {% if test_plan_validation_summary.issues %}
+                <ul class="issue-list">
+                    {% for issue in test_plan_validation_summary.issues %}
+                        <li>{{ issue.severity }} / {{ issue.layer }}: {{ issue.message }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endif %}
         {% if catalogue_trace_summary %}
             <h3>Catalogue traceability</h3>
             <div class="grid">

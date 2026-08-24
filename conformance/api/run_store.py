@@ -7,6 +7,7 @@ all run state is lost (fire-and-forget per the PRD).
 
 from __future__ import annotations
 
+import copy
 import dataclasses
 import threading
 import uuid
@@ -111,6 +112,10 @@ class RunRecord:
         planned_steps: Launch-time immutable snapshot of selected plan
             steps used by UI progress rendering. Empty for runs started
             without a manifest plan snapshot.
+        plan_snapshot: Secret-safe JSON-first test plan captured at launch
+            time. ``None`` for legacy smoke-check runs.
+        validation_result: Structured shared validation outcome captured before
+            execution. ``None`` for legacy smoke-check runs.
     """
 
     run_id: str
@@ -124,6 +129,8 @@ class RunRecord:
     participant_action: ParticipantAction | None = None
     execution_logger: BufferedExecutionLogger | None = None
     planned_steps: tuple[RunPlanStep, ...] = ()
+    plan_snapshot: JsonObject | None = None
+    validation_result: JsonObject | None = None
 
     def to_status_json(self) -> JsonObject:
         """Serialise the run record into the public status JSON shape.
@@ -158,12 +165,20 @@ class RunStore:
         self._runs: dict[str, RunRecord] = {}
         self._active_run_id: str | None = None
 
-    def create_run(self, *, planned_steps: tuple[RunPlanStep, ...] = ()) -> RunRecord:
+    def create_run(
+        self,
+        *,
+        planned_steps: tuple[RunPlanStep, ...] = (),
+        plan_snapshot: JsonObject | None = None,
+        validation_result: JsonObject | None = None,
+    ) -> RunRecord:
         """Reserve a new run slot if no run is currently active.
 
         Args:
             planned_steps: Optional immutable launch snapshot of selected
                 manifest plan steps.
+            plan_snapshot: Optional secret-safe JSON-first plan snapshot.
+            validation_result: Optional validation result captured before launch.
 
         Returns:
             The newly created run record in ``pending`` state.
@@ -181,6 +196,8 @@ class RunStore:
                 created_at=datetime.now(UTC),
                 execution_logger=BufferedExecutionLogger(run_id=run_id),
                 planned_steps=tuple(planned_steps),
+                plan_snapshot=_copy_json_object(plan_snapshot),
+                validation_result=_copy_json_object(validation_result),
             )
             self._runs[run_id] = record
             self._active_run_id = run_id
@@ -412,6 +429,8 @@ class RunStore:
             participant_actions=snapshot_actions,
             participant_action=legacy_action,
             planned_steps=tuple(record.planned_steps),
+            plan_snapshot=_copy_json_object(record.plan_snapshot),
+            validation_result=_copy_json_object(record.validation_result),
         )
 
     def _first_pending_action_locked(self, record: RunRecord) -> ParticipantAction | None:
@@ -485,3 +504,15 @@ class RunConflictError(Exception):
 # Module-level singleton for the Phase 1 single-process deployment.
 run_store = RunStore()
 """Global run store instance shared across the Django process."""
+
+
+def _copy_json_object(value: JsonObject | None) -> JsonObject | None:
+    """Return a detached copy of a JSON object.
+
+    Args:
+        value: Optional JSON object to copy.
+
+    Returns:
+        Deep-copied JSON object, or ``None`` when no object was supplied.
+    """
+    return copy.deepcopy(value) if value is not None else None

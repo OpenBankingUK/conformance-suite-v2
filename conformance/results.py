@@ -223,6 +223,33 @@ def build_smoke_check_result(
     )
 
 
+def mark_development_result_evidence(validation_result: JsonObject, result_object: JsonObject) -> None:
+    """Mark development-mode result evidence as non-certifying.
+
+    Args:
+        validation_result: Validation result captured before launch.
+        result_object: Mutable run result JSON object to annotate.
+    """
+    if validation_result.get("executionMode") != "development":
+        return
+    metadata = result_object.get("metadata")
+    if isinstance(metadata, dict):
+        metadata["executionMode"] = "development"
+    else:
+        result_object["metadata"] = {"executionMode": "development"}
+    eligibility = result_object.get("certificationEligibility")
+    if not isinstance(eligibility, dict):
+        return
+    reason = "Development-mode run is not certification evidence"
+    raw_reasons = eligibility.get("reasons")
+    reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
+    if reason not in reasons:
+        reasons.insert(0, reason)
+    eligibility["eligible"] = False
+    eligibility["reason"] = reason
+    eligibility["reasons"] = reasons
+
+
 def _build_eligibility(
     steps: tuple[StepResult, ...],
     *,
