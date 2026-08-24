@@ -311,8 +311,8 @@ def prepare_test_plan_for_run(
         parsed = parse_test_plan_document(raw_plan)
     except CatalogueError as error:
         result = TestPlanValidationResult(
-            schema_version="unknown",
-            execution_mode="certification",
+            schema_version=_schema_version_from_raw(raw_plan),
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(TestPlanValidationIssue("schema", "error", str(error)),),
         )
         raise TestPlanValidationError(result) from error
@@ -401,7 +401,7 @@ def validate_test_plan_for_load(raw_plan: object) -> TestPlanValidationResult:
     except CatalogueError as error:
         return TestPlanValidationResult(
             schema_version=_schema_version_from_raw(raw_plan),
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(TestPlanValidationIssue("schema", "error", str(error)),),
         )
     if not isinstance(parsed, PlanDocumentV2):

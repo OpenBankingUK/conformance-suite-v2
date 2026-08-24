@@ -116,3 +116,22 @@ def test_prepare_test_plan_for_run_rejects_legacy_v2_documents(tmp_path: Path) -
 
     assert exc_info.value.result.schema_version == "v2"
     assert "schemaVersion 1.0" in exc_info.value.result.summary_message()
+
+
+@pytest.mark.unit
+def test_parse_error_validation_preserves_development_mode(tmp_path: Path) -> None:
+    """Parser errors preserve raw schema version and execution mode evidence."""
+    raw_plan = _canonical_plan()
+    raw_plan["executionMode"] = "development"
+    raw_plan["specification"] = {"family": "OBL_READ_WRITE", "version": "9.9.9"}
+
+    validation = validate_test_plan_for_load(raw_plan)
+
+    assert validation.valid is False
+    assert validation.schema_version == "1.0"
+    assert validation.execution_mode == "development"
+
+    with pytest.raises(PlanValidationError) as exc_info:
+        prepare_test_plan_for_run(raw_plan, base_dir=tmp_path)
+    assert exc_info.value.result.schema_version == "1.0"
+    assert exc_info.value.result.execution_mode == "development"

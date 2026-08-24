@@ -632,6 +632,13 @@ def test_parse_canonical_plan_document_requires_business_data_and_metadata() -> 
 
 
 @pytest.mark.unit
+def test_parse_plan_document_uses_neutral_root_for_schema_version_errors() -> None:
+    """Plan-document schema-version errors do not refer to the legacy planSpec root."""
+    with pytest.raises(CatalogueError, match="planDocument.schemaVersion"):
+        parse_test_plan_document({"schemaVersion": "v99"})
+
+
+@pytest.mark.unit
 def test_canonical_resource_group_shorthand_expands_to_catalogue_endpoints() -> None:
     """A canonical resource-group string selects all endpoints in that catalogue group."""
     account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")

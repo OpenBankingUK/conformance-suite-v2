@@ -660,15 +660,15 @@ def parse_test_plan_document(raw_spec: object) -> ParsedPlanDocument:
     Raises:
         CatalogueError: If the decoded value is malformed or unsupported.
     """
-    spec = _json_object(raw_spec, location="planSpec")
-    schema_version = _required_string(spec, "schemaVersion", location="planSpec")
+    spec = _json_object(raw_spec, location="planDocument")
+    schema_version = _required_string(spec, "schemaVersion", location="planDocument")
     if schema_version == "v1":
         return parse_test_plan_spec(spec)
     if schema_version == _CANONICAL_PLAN_SCHEMA_VERSION:
         return _parse_canonical_plan_document(spec)
     if schema_version == "v2":
         return _parse_plan_document_v2(spec)
-    raise CatalogueError("planSpec.schemaVersion must be one of: 1.0, v1, v2")
+    raise CatalogueError("planDocument.schemaVersion must be one of: 1.0, v1, v2")
 
 
 def plan_document_to_json_object(document: PlanDocumentV2) -> JsonObject:
