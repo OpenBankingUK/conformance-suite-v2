@@ -842,8 +842,17 @@ def test_parse_v1_manifest_rejects_unknown_config_placeholder() -> None:
         ],
     }
 
-    with pytest.raises(ManifestError, match="unsupported config placeholder"):
+    with pytest.raises(ManifestError, match="unsupported config placeholder") as exc_info:
         parse_manifest(raw_manifest)
+    message = str(exc_info.value)
+    for placeholder in (
+        "${config.oauth.authorizationEndpoint}",
+        "${config.oauth.issuer}",
+        "${config.oauth.tokenEndpoint}",
+        "${config.oauth.responseType}",
+        "${config.oauth.requestObjectSigningAlg}",
+    ):
+        assert placeholder in message
 
 
 @pytest.mark.unit

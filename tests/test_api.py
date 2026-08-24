@@ -14,6 +14,17 @@ from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunPlanStep, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+from conformance.catalogue import (
+    CatalogueAssertion,
+    CatalogueKey,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    EndpointRef,
+    RuntimeInputRequirement,
+    SecurityProfileApplicability,
+    TestCaseApplicability,
+    TestCatalogue,
+)
 from conformance.execution_log import BufferedExecutionLogger
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
@@ -461,6 +472,71 @@ VALID_PLAN_SPEC = {
 }
 
 
+def _file_reference_catalogue() -> TestCatalogue:
+    """Build a minimal catalogue with a selected file-reference runtime input.
+
+    Returns:
+        Catalogue fixture whose selected case would read a local file if the API
+        accepted the submitted ``file_reference`` input.
+    """
+    endpoint = EndpointRef(method="POST", path="/open-banking/v4.0/files/request")
+    return TestCatalogue(
+        key=CatalogueKey(standard="open-banking", version="v4.0", api="files"),
+        catalogue_version="test.1",
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="file-request",
+                name="File request",
+                role="resource",
+                compliance_scope=("legacy-fcs-script:test#file",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    endpoint_refs=(endpoint,),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(
+                    RuntimeInputRequirement("resourceBaseUrl", "url", "Resource base URL"),
+                    RuntimeInputRequirement("requestBodyRef", "file_reference", "Request body file"),
+                ),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="file-request",
+                        name="POST file request",
+                        method="POST",
+                        path="/open-banking/v4.0/files/request",
+                        runtime_input_refs=("resourceBaseUrl", "requestBodyRef"),
+                    ),
+                ),
+                assertions=(CatalogueAssertion("status-201", "http_status", "HTTP 201", {"expected": 201}),),
+            ),
+        ),
+    )
+
+
+def _file_reference_plan_spec_json() -> dict[str, object]:
+    """Return API plan-spec JSON that selects a file-reference runtime input.
+
+    Returns:
+        v1 plan-spec JSON targeting :func:`_file_reference_catalogue`.
+    """
+    return {
+        "schemaVersion": "v1",
+        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "files"},
+        "securityProfile": "fapi1-advanced",
+        "implementedEndpoints": [
+            {
+                "method": "POST",
+                "path": "/open-banking/v4.0/files/request",
+                "resourceGroup": "Files",
+            }
+        ],
+        "runtimeInputs": {
+            "resourceBaseUrl": "https://resource.example.com",
+            "requestBodyRef": "local-request.json",
+        },
+    }
+
+
 def _wait_for_value[WaitValue](producer: Callable[[], WaitValue | None], *, timeout_seconds: float) -> WaitValue:
     """Poll until ``producer`` returns a non-None value or time expires.
 
@@ -693,6 +769,27 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args.args[3] == {}
         assert mock_execute.call_args.args[5:] == (None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
+
+    @patch("conformance.api.views.resolve_catalogue")
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_rejects_file_reference_runtime_inputs(
+        self,
+        mock_execute: Mock,
+        mock_resolve_catalogue: Mock,
+    ) -> None:
+        """REST launches must not read server-local file-reference inputs."""
+        mock_resolve_catalogue.return_value = _file_reference_catalogue()
+        client = Client()
+        body = {"config": VALID_CONFIG, "planSpec": _file_reference_plan_spec_json()}
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert response.json()["error"] == (
+            "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
+            "requestBodyRef"
+        )
+        mock_execute.assert_not_called()
 
     def test_rejects_removed_deselect_field(self) -> None:
         """``deselectStepIds`` is no longer a public API field."""

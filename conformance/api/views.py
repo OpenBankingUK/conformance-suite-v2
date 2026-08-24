@@ -16,7 +16,7 @@ import functools
 import ipaddress
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -36,13 +36,14 @@ from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.catalogue import (
     CatalogueError,
+    CompiledTestPlan,
     TestPlanSpec,
     compile_test_plan,
     compile_test_plan_document,
     parse_test_plan_document,
 )
 from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
-from conformance.json_types import JsonObject
+from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 
 logger = logging.getLogger(__name__)
@@ -289,6 +290,9 @@ def create_run(request: HttpRequest) -> JsonResponse:
         else:
             compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
             runtime_inputs = plan_document.runtime_inputs
+        api_file_reference_error = _api_file_reference_error(compiled_plan, runtime_inputs)
+        if api_file_reference_error is not None:
+            return api_file_reference_error
     except CatalogueError as error:
         return JsonResponse({"error": f"Plan-spec validation failed: {error}"}, status=400)
 
@@ -306,6 +310,42 @@ def create_run(request: HttpRequest) -> JsonResponse:
         )
 
     return JsonResponse(response_body, status=201)
+
+
+def _api_file_reference_error(
+    compiled_plan: CompiledTestPlan,
+    runtime_inputs: Mapping[str, JsonValue],
+) -> JsonResponse | None:
+    """Return a 400 response when an API plan would read server-local files.
+
+    Args:
+        compiled_plan: Compiled catalogue plan used to identify selected runtime
+            input types.
+        runtime_inputs: Participant-supplied runtime inputs keyed by input id.
+
+    Returns:
+        Error response when any selected ``file_reference`` input is supplied,
+        otherwise ``None``.
+    """
+    file_reference_input_ids = sorted(
+        trace.input_id
+        for trace in compiled_plan.traceability.runtime_input_snapshot
+        if trace.input_type == "file_reference"
+        and trace.input_id in runtime_inputs
+        and runtime_inputs[trace.input_id] is not None
+    )
+    if not file_reference_input_ids:
+        return None
+    joined_input_ids = ", ".join(file_reference_input_ids)
+    return JsonResponse(
+        {
+            "error": (
+                "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
+                f"{joined_input_ids}"
+            )
+        },
+        status=400,
+    )
 
 
 @_require_loopback

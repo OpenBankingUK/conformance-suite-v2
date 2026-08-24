@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 
+import conformance.catalogues as catalogues
 from conformance.catalogue import CatalogueKey
 from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
 
@@ -21,6 +22,13 @@ def test_supported_catalogues_cover_legacy_fcs_api_families() -> None:
         ("open-banking", "v4.0", "cbpii"),
         ("open-banking", "v4.0", "vrp"),
     }
+
+
+@pytest.mark.unit
+def test_catalogues_package_does_not_export_cvrp_as_public_plan_boundary() -> None:
+    """cVRP fixtures stay private until the public boundary is supported."""
+    assert "CVRP_LEGACY_FCS_CATALOGUE" not in catalogues.__all__
+    assert not hasattr(catalogues, "CVRP_LEGACY_FCS_CATALOGUE")
 
 
 @pytest.mark.unit
