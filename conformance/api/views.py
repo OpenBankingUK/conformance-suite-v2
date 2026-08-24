@@ -19,7 +19,6 @@ import logging
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
-from typing import cast
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.conf import settings
@@ -280,7 +279,15 @@ def create_run(request: HttpRequest) -> JsonResponse:
         return JsonResponse({"error": '"planSpec" key is required and must be a JSON object'}, status=400)
 
     if raw_plan_spec.get("schemaVersion") == "1.0":
-        return _start_canonical_test_plan(cast("dict[str, JsonValue]", raw_plan_spec))
+        return JsonResponse(
+            {
+                "error": (
+                    'Canonical schemaVersion 1.0 test plans must be submitted as the request body or under "testPlan"; '
+                    'do not combine them with a separate "config" payload.'
+                )
+            },
+            status=400,
+        )
 
     # Validate config eagerly so the caller gets immediate feedback.
     # base_dir anchors relative TLS certificate paths in the request body to

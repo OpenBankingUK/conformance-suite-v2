@@ -481,7 +481,10 @@ def _canonical_schema_issues(raw_plan: object) -> tuple[TestPlanValidationIssue,
         return ()
     return tuple(
         TestPlanValidationIssue("schema", "error", f"{_json_schema_error_path(error)}: {error.message}")
-        for error in sorted(_CANONICAL_TEST_PLAN_SCHEMA_VALIDATOR.iter_errors(raw_plan), key=lambda item: item.path)
+        for error in sorted(
+            _CANONICAL_TEST_PLAN_SCHEMA_VALIDATOR.iter_errors(raw_plan),
+            key=_json_schema_error_sort_key,
+        )
     )
 
 
@@ -510,7 +513,7 @@ def _json_schema_error_path(error: object) -> str:
     Returns:
         Dot/bracket path, or ``"testPlan"`` for root-level errors.
     """
-    path = getattr(error, "path", ())
+    path = getattr(error, "absolute_path", getattr(error, "path", ()))
     segments = list(path)
     if not segments:
         return "testPlan"
@@ -518,6 +521,21 @@ def _json_schema_error_path(error: object) -> str:
     for segment in segments:
         rendered += f"[{segment}]" if isinstance(segment, int) else f".{segment}"
     return rendered
+
+
+def _json_schema_error_sort_key(error: object) -> tuple[str, str, str]:
+    """Return a stable sort key for JSON Schema validation errors.
+
+    Args:
+        error: Validation error object from ``jsonschema``.
+
+    Returns:
+        Tuple built from rendered instance path, schema path, and message.
+    """
+    path = ".".join(str(segment) for segment in getattr(error, "absolute_path", ()))
+    schema_path = ".".join(str(segment) for segment in getattr(error, "absolute_schema_path", ()))
+    message = getattr(error, "message", "")
+    return (path, schema_path, message if isinstance(message, str) else "")
 
 
 def _execution_mode_issues(document: PlanDocumentV2) -> tuple[TestPlanValidationIssue, ...]:

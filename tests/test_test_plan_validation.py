@@ -85,6 +85,19 @@ def test_validate_test_plan_for_load_reports_schema_errors() -> None:
 
 
 @pytest.mark.unit
+def test_validate_test_plan_for_load_sorts_schema_errors_stably() -> None:
+    """Schema validation returns deterministic issues for unrelated bad paths."""
+    raw_plan = _canonical_plan()
+    raw_plan["resourceGroups"] = [123]
+    raw_plan["metadata"] = []
+
+    validation = validate_test_plan_for_load(raw_plan)
+
+    assert validation.valid is False
+    assert [issue.layer for issue in validation.issues] == ["schema", "schema"]
+
+
+@pytest.mark.unit
 def test_prepare_test_plan_for_run_rejects_legacy_v2_documents(tmp_path: Path) -> None:
     """Run preparation accepts canonical test plans only, not legacy v2 documents."""
     raw_plan = {

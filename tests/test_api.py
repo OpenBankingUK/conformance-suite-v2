@@ -939,6 +939,30 @@ class TestCreateRunEndpoint:
             timeout_seconds=1.0,
         )
 
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_rejects_canonical_plan_spec_with_separate_config(self, mock_execute: Mock) -> None:
+        """Canonical plans must not be mixed with the legacy config/planSpec request shape."""
+        client = Client()
+        body = {
+            "config": VALID_CONFIG,
+            "planSpec": {
+                "schemaVersion": "1.0",
+                "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
+                "securityEnvironment": {
+                    "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                },
+                "resourceGroups": ["AIS"],
+                "businessTestData": {},
+                "metadata": {},
+            },
+        }
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 400
+        assert "do not combine" in response.json()["error"]
+        mock_execute.assert_not_called()
+
     @patch("conformance.api.views.resolve_catalogue")
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_file_reference_runtime_inputs(
