@@ -57,12 +57,15 @@ class JsonHttpResponse:
         body (JsonObject): Parsed JSON object body.
         headers (FrozenHeaders): Immutable response headers with
             case-insensitive lookup.
+        body_bytes (bytes): Raw response body bytes used by detached JWS
+            validation.
     """
 
     url: str
     status_code: int
     body: JsonObject
     headers: FrozenHeaders
+    body_bytes: bytes
 
     def __init__(
         self,
@@ -71,6 +74,7 @@ class JsonHttpResponse:
         status_code: int,
         body: JsonObject,
         headers: Mapping[str, str] | Iterable[tuple[str, str]] | None = None,
+        body_bytes: bytes = b"",
     ) -> None:
         """Initialise a typed JSON response with frozen headers.
 
@@ -80,11 +84,13 @@ class JsonHttpResponse:
             body: Parsed JSON object body.
             headers: Source response headers copied into an immutable,
                 case-insensitive mapping.
+            body_bytes: Raw response body bytes.
         """
         object.__setattr__(self, "url", url)
         object.__setattr__(self, "status_code", status_code)
         object.__setattr__(self, "body", body)
         object.__setattr__(self, "headers", freeze_headers(headers))
+        object.__setattr__(self, "body_bytes", bytes(body_bytes))
 
 
 def get_json(client: httpx.Client, url: str) -> JsonHttpResponse:
@@ -225,6 +231,7 @@ def send_json(
             status_code=response.status_code,
             headers=response.headers,
             body={},
+            body_bytes=response.content,
         )
 
     try:
@@ -247,6 +254,7 @@ def send_json(
         status_code=response.status_code,
         headers=response.headers,
         body=json_body_parsed,
+        body_bytes=response.content,
     )
 
 

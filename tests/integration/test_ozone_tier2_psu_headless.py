@@ -9,7 +9,6 @@ completion is not yet confirmed.
 
 from __future__ import annotations
 
-import copy
 import json
 from pathlib import Path
 from typing import cast
@@ -21,17 +20,11 @@ from conformance.api.auth_session_store import AuthSessionStore
 from conformance.context import RuntimeConfig
 from conformance.execution_log import BufferedExecutionLogger, new_run_id
 from conformance.executor import run_manifest
-from conformance.json_types import JsonObject, JsonValue
+from conformance.json_types import JsonObject
 from conformance.manifest import parse_manifest
 from conformance.masking import MASKED_VALUE
 from conformance.test_plan import TestPlan
 from tests._ozone import requires_ozone
-
-_REPO_ROOT = Path(__file__).resolve().parents[2]
-"""Repository root used to load the bundled PSU example manifest."""
-
-_PSU_EXAMPLE_MANIFEST_PATH = _REPO_ROOT / "config" / "manifest-v1-psu-authorization-example.json"
-"""Bundled v1 PSU authorisation example manifest used by the live tier 2 test."""
 
 _OZONE_TIER2 = requires_ozone(2)
 """Skip marker applied to every tier 2 test in this module."""
@@ -44,27 +37,54 @@ _HEADLESS_STATE = "ozone-headless-psu-state-" + "x" * 32
 
 
 def _headless_psu_example_manifest() -> JsonObject:
-    """Load the bundled PSU example and adapt it for the live Ozone tier 2 run.
+    """Build a PSU manifest for the live Ozone tier 2 run.
 
-    The example remains the source of truth for the discovery -> PSU
-    authorisation -> token-exchange flow. Runtime config supplies discovery
-    and OAuth values; this helper only flips the PSU step from manual to
-    headless so the integration tier can run unattended.
+    Runtime config supplies discovery and OAuth values; this helper pins the
+    PSU step to headless mode so the integration tier can run unattended.
 
     Returns:
         A v1 manifest JSON object suitable for ``parse_manifest``.
     """
-    raw_manifest = cast(
-        "JsonObject",
-        json.loads(_PSU_EXAMPLE_MANIFEST_PATH.read_text(encoding="utf-8")),
-    )
-    manifest = copy.deepcopy(raw_manifest)
-    steps = cast("list[JsonValue]", manifest["steps"])
-
-    psu_step = cast("JsonObject", steps[1])
-    psu_step["mode"] = "headless"
-    psu_step["state"] = _HEADLESS_STATE
-    return manifest
+    return {
+        "schemaVersion": "v1",
+        "name": "Ozone tier 2 headless PSU authorization",
+        "steps": [
+            {
+                "id": "discovery",
+                "name": "Discovery",
+                "request": {"method": "GET", "url": "${config.discoveryUrl}"},
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+            {
+                "kind": "psu-authorization",
+                "id": "psu-authorization",
+                "name": "PSU authorization",
+                "mode": "headless",
+                "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
+                "clientId": "${config.oauth.clientId}",
+                "redirectUri": "${config.oauth.redirectUri}",
+                "state": _HEADLESS_STATE,
+            },
+            {
+                "id": "token-exchange",
+                "name": "Token exchange",
+                "request": {
+                    "method": "POST",
+                    "url": "${steps.discovery.response.body.token_endpoint}",
+                    "body": {
+                        "encoding": "form",
+                        "fields": {
+                            "grant_type": "authorization_code",
+                            "code": "${steps.psu-authorization.response.body.code}",
+                            "client_id": "${config.oauth.clientId}",
+                            "redirect_uri": "${config.oauth.redirectUri}",
+                        },
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 200}],
+            },
+        ],
+    }
 
 
 def _read_ndjson(path: Path) -> list[JsonObject]:
@@ -94,7 +114,6 @@ def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
     execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
     runtime_config = RuntimeConfig(
         discovery_url=ozone_discovery_url,
-        environment="ozone-tier2",
         oauth_client_id=ozone_client_id,
         oauth_redirect_uri=ozone_redirect_uri,
     )
@@ -102,7 +121,6 @@ def test_ozone_tier2_headless_psu_authorisation_masks_token_exchange_code(
     with httpx.Client(timeout=_INTEGRATION_HTTP_TIMEOUT_SECONDS) as client:
         result = run_manifest(
             manifest,
-            environment="ozone-tier2",
             client=client,
             execution_logger=execution_logger,
             plan=plan,

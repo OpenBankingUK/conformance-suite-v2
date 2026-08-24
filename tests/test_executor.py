@@ -14,6 +14,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from joserfc import jwk, jws, jwt
+from joserfc.jws import JWSRegistry
+from joserfc.registry import HeaderParameter
 
 from conformance.api.auth_session_store import AuthSessionStore
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
@@ -21,10 +23,17 @@ from conformance.context import ExecutionContext, RequestRecord, ResponseRecord,
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
-from conformance.manifest import GeneratedRequestObject, PsuAuthorizationStep, parse_manifest
+from conformance.manifest import (
+    GeneratedRequestObject,
+    Manifest,
+    ManifestRequest,
+    ManifestStep,
+    PsuAuthorizationStep,
+    ResponseSignaturePolicy,
+    parse_manifest,
+)
 from conformance.masking import MASKED_VALUE
 from conformance.model_bank_config import FapiSigningConfig, TokenEndpointClientAuthMode
-from conformance.results import SmokeCheckResult
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
 
 
@@ -77,6 +86,57 @@ def _write_executor_signing_pair(certificate_root: Path, *, stem: str) -> tuple[
         )
     )
     return certificate_path, private_key_path
+
+
+def _response_signature_registry() -> JWSRegistry:
+    """Return a JWS registry that accepts Open Banking protected headers.
+
+    Returns:
+        Registry configured for PS256 response-signature tests.
+    """
+    headers = {
+        **JWSRegistry.default_header_registry,
+        "http://openbanking.org.uk/iat": HeaderParameter("Open Banking issued-at header", "int"),
+        "http://openbanking.org.uk/iss": HeaderParameter("Open Banking issuer header", "str"),
+        "http://openbanking.org.uk/tan": HeaderParameter("Open Banking trust-anchor header", "str"),
+    }
+    return JWSRegistry(header_registry=headers, algorithms=["PS256"])
+
+
+def _signed_response_header(payload: bytes) -> tuple[str, JsonObject]:
+    """Return a valid detached response signature and matching JWKS.
+
+    Args:
+        payload: Exact response bytes to sign.
+
+    Returns:
+        Tuple of ``x-jws-signature`` header and JWKS document.
+    """
+    signing_key = jwk.generate_key("RSA", 2048, private=True, auto_kid=False)
+    public_key = signing_key.as_dict(is_private=False)
+    public_key["kid"] = "response-key"
+    protected = {
+        "alg": "PS256",
+        "kid": "response-key",
+        "b64": False,
+        "crit": [
+            "b64",
+            "http://openbanking.org.uk/iat",
+            "http://openbanking.org.uk/iss",
+            "http://openbanking.org.uk/tan",
+        ],
+        "http://openbanking.org.uk/iat": 1_774_120_000,
+        "http://openbanking.org.uk/iss": "0015800001041RHAAY",
+        "http://openbanking.org.uk/tan": "openbanking.org.uk",
+    }
+    compact_jws = jws.serialize_compact(
+        protected,
+        payload,
+        signing_key,
+        algorithms=["PS256"],
+        registry=_response_signature_registry(),
+    )
+    return jws.detach_content(compact_jws), cast(JsonObject, {"keys": [public_key]})
 
 
 def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
@@ -165,6 +225,119 @@ def manifest_config() -> dict[str, JsonValue]:
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_validates_required_response_signature() -> None:
+    """A step with response-signature policy validates against discovery JWKS."""
+    payload = b'{"Data":{"Status":"ACSP"}}'
+    signature, jwks_document = _signed_response_header(payload)
+    requested_urls: list[str] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve the protected resource, discovery document, and JWKS.
+
+        Args:
+            request: Incoming mock HTTP request.
+
+        Returns:
+            Mock response for the requested URL.
+        """
+        requested_urls.append(str(request.url))
+        if str(request.url) == "https://rs.example.com/payment":
+            return httpx.Response(
+                201,
+                content=payload,
+                headers={"Content-Type": "application/json", "x-jws-signature": signature},
+            )
+        if str(request.url) == "https://auth.example.com/.well-known/openid-configuration":
+            return httpx.Response(
+                200,
+                json={"issuer": "https://auth.example.com", "jwks_uri": "https://auth.example.com/jwks"},
+            )
+        if str(request.url) == "https://auth.example.com/jwks":
+            return httpx.Response(200, json=jwks_document)
+        return httpx.Response(404, json={"error": "not found"})
+
+    manifest = Manifest(
+        schema_version="v1",
+        name="response signature",
+        certification_coverage="complete",
+        steps=(
+            ManifestStep(
+                id="signed-response",
+                name="Signed response",
+                request=ManifestRequest(method="POST", url="https://rs.example.com/payment"),
+                assertions=(),
+                response_signature_policy=ResponseSignaturePolicy(source="discovery-jwks"),
+            ),
+        ),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            client=client,
+            runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+        )
+
+    assert result.status == "passed"
+    assert requested_urls == [
+        "https://rs.example.com/payment",
+        "https://auth.example.com/.well-known/openid-configuration",
+        "https://auth.example.com/jwks",
+    ]
+    response_evidence = result.steps[0].details["response"]
+    assert isinstance(response_evidence, dict)
+    assert response_evidence["responseSignature"] == {
+        "status": "passed",
+        "kid": "response-key",
+        "issuer": "0015800001041RHAAY",
+        "trustAnchor": "openbanking.org.uk",
+    }
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_fails_when_required_response_signature_missing() -> None:
+    """A step with response-signature policy fails when the response is unsigned."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Serve an unsigned protected-resource response.
+
+        Args:
+            request: Incoming mock HTTP request.
+
+        Returns:
+            Mock JSON response for the requested URL.
+        """
+        if str(request.url) == "https://rs.example.com/payment":
+            return httpx.Response(201, json={"Data": {"Status": "ACSP"}})
+        return httpx.Response(404, json={"error": "not found"})
+
+    manifest = Manifest(
+        schema_version="v1",
+        name="missing response signature",
+        certification_coverage="complete",
+        steps=(
+            ManifestStep(
+                id="signed-response",
+                name="Signed response",
+                request=ManifestRequest(method="POST", url="https://rs.example.com/payment"),
+                assertions=(),
+                response_signature_policy=ResponseSignaturePolicy(source="discovery-jwks"),
+            ),
+        ),
+    )
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(
+            manifest,
+            client=client,
+            runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+        )
+
+    assert result.status == "failed"
+    assert result.steps[0].message == "Response signature validation failed: x-jws-signature header is missing"
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_failing_step_still_records_context() -> None:
     """A step whose assertions fail still provides context to later steps."""
     raw_manifest: dict[str, JsonValue] = {
@@ -199,7 +372,7 @@ def test_run_manifest_v1_failing_step_still_records_context() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # First step fails assertions but second step still resolves and passes
     assert result.steps[0].status == "failed"
@@ -240,7 +413,7 @@ def test_run_manifest_v1_unresolvable_placeholder_fails_cleanly() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].status == "passed"
@@ -295,7 +468,7 @@ def test_run_manifest_v1_failed_request_skips_dependent_step() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # Aggregate failed because the first step failed.
     assert result.status == "failed"
@@ -351,7 +524,7 @@ def test_run_manifest_v1_skipped_step_triggered_by_header_placeholder() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "failed"
     assert result.steps[1].status == "skipped"
@@ -391,7 +564,7 @@ def test_run_manifest_v1_skipped_step_triggered_by_body_placeholder() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "failed"
     assert result.steps[1].status == "skipped"
@@ -432,7 +605,7 @@ def test_run_manifest_v1_unresolvable_field_still_fails_not_skips() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "passed"
     assert result.steps[1].status == "failed"
@@ -479,7 +652,7 @@ def test_run_manifest_v1_cross_group_placeholder_reference_fails_not_skips() -> 
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert requested_urls == ["https://example.com/alpha"]
     assert result.steps[0].status == "passed"
@@ -521,7 +694,7 @@ def test_run_manifest_v1_run_completes_all_steps_despite_failures() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert [s.status for s in result.steps] == ["passed", "failed", "passed"]
@@ -581,7 +754,7 @@ def test_run_manifest_v1_post_with_body_and_headers() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert len(captured_requests) == 2
@@ -641,7 +814,7 @@ def test_run_manifest_v1_post_resolves_body_placeholders() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
 
@@ -671,7 +844,7 @@ def test_run_manifest_v1_get_unaffected_by_post_changes() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
 
@@ -713,7 +886,7 @@ def test_run_manifest_v1_post_https_validation_on_resolved_url() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[1].status == "failed"
@@ -745,7 +918,7 @@ def test_run_manifest_v1_post_status_agnostic_4xx() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert result.steps[0].status == "passed"
@@ -801,7 +974,7 @@ def test_run_manifest_v1_schema_failure_records_masked_evidence() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     rendered = result.to_json_object()
     rendered_json = json.dumps(rendered)
@@ -881,7 +1054,7 @@ def test_run_manifest_v1_rejects_resolved_header_with_control_chars() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # First step passes, second step fails due to resolved header validation
     assert result.steps[0].status == "passed"
@@ -935,7 +1108,7 @@ def test_run_manifest_v1_delete_204_passes_http_status_assertion() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert len(captured_requests) == 1
@@ -994,7 +1167,7 @@ def test_run_manifest_v1_post_form_body_sends_urlencoded() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     token_request = captured_requests[1]
@@ -1052,7 +1225,7 @@ def test_run_manifest_v1_form_body_resolves_placeholders_in_values() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     wire_body = captured_requests[1].content.decode("ascii")
@@ -1090,7 +1263,7 @@ def test_run_manifest_v1_form_body_respects_manifest_content_type() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        run_manifest(manifest, environment="test", client=client)
+        run_manifest(manifest, client=client)
 
     assert captured_requests[0].headers["content-type"] == "application/x-www-form-urlencoded; charset=UTF-8"
 
@@ -1138,7 +1311,7 @@ def test_run_manifest_v1_form_body_step_record_omits_fields() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.steps[0].status == "passed"
     assert result.steps[0].url == "https://example.com/token"
@@ -1192,7 +1365,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_adds_client_assertion
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1285,7 +1457,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_policy_rejects_manifest_clie
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1348,7 +1519,6 @@ def test_run_manifest_v1_private_key_jwt_token_auth_masks_client_assertion(tmp_p
     ) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             execution_logger=execution_logger,
             fapi_signing_config=_executor_signing_config(tmp_path),
@@ -1453,7 +1623,6 @@ def test_run_manifest_reuses_signing_credentials_across_signed_http_steps(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1504,7 +1673,6 @@ def test_run_manifest_v1_unsigned_step_ignores_invalid_signing_credentials(tmp_p
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1559,7 +1727,6 @@ def test_run_manifest_v1_detached_jws_invalid_signing_credentials_fail_the_step(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1622,7 +1789,6 @@ def test_run_manifest_v1_private_key_jwt_invalid_signing_credentials_fail_the_st
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_invalid_executor_signing_config(tmp_path),
         )
@@ -1693,7 +1859,6 @@ def test_run_manifest_v1_tls_client_auth_ignores_invalid_signing_credentials_whe
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
             mtls_client_configured=True,
@@ -1741,7 +1906,6 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             execution_logger=execution_logger,
             fapi_signing_config=signing_config,
@@ -1822,7 +1986,6 @@ def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_p
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1873,7 +2036,6 @@ def test_run_manifest_v1_account_access_consent_skips_detached_jws_without_manif
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -1922,7 +2084,7 @@ def test_run_manifest_v1_detached_jws_policy_requires_signing_config() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert request_seen is False
@@ -1970,7 +2132,6 @@ def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: P
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=_executor_signing_config(tmp_path),
         )
@@ -2024,7 +2185,6 @@ def test_run_manifest_v1_tls_client_auth_policy_requires_mtls_client(tmp_path: P
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
         )
@@ -2078,7 +2238,6 @@ def test_run_manifest_v1_tls_client_auth_policy_dispatches_with_configured_mtls(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             fapi_signing_config=tls_signing_config,
             mtls_client_configured=True,
@@ -2123,7 +2282,7 @@ def test_run_manifest_v1_step_with_warning_emits_warn_when_assertions_pass() -> 
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     # Aggregate stays "passed" — WARN does not block certification (PRD).
     assert result.status == "passed"
@@ -2161,7 +2320,7 @@ def test_run_manifest_v1_step_with_warning_still_fails_when_assertion_fails() ->
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert result.steps[0].status == "failed"
@@ -2196,7 +2355,7 @@ def test_run_manifest_v1_warn_step_does_not_fail_aggregate_with_passed_step() ->
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert [step.status for step in result.steps] == ["passed", "warn"]
@@ -2235,7 +2394,7 @@ def test_run_manifest_v1_passed_step_includes_masked_request_and_response_eviden
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2280,7 +2439,7 @@ def test_run_manifest_v1_applies_header_and_json_assertions_with_pass_evidence()
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2331,7 +2490,7 @@ def test_run_manifest_v1_failed_step_includes_masked_request_and_response_eviden
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2388,7 +2547,7 @@ def test_run_manifest_v1_masks_sensitive_request_and_response_evidence_by_defaul
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2447,7 +2606,7 @@ def test_run_manifest_v1_developer_mode_keeps_sensitive_result_evidence_unmasked
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "passed"
@@ -2495,7 +2654,7 @@ def test_run_manifest_v1_failed_header_assertion_includes_masked_response_header
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2545,7 +2704,7 @@ def test_run_manifest_v1_failed_step_masks_form_body_credentials() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "failed"
@@ -2581,7 +2740,7 @@ def test_run_manifest_v1_warn_step_includes_evidence() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     step = result.steps[0]
     assert step.status == "warn"
@@ -2623,7 +2782,7 @@ def test_run_manifest_v1_skipped_step_includes_request_evidence_without_response
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
+        result = run_manifest(manifest, client=client)
 
     skipped = result.steps[1]
     assert skipped.status == "skipped"
@@ -2669,7 +2828,6 @@ def test_run_manifest_v1_threads_mandatory_into_step_result_and_eligibility(
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="test",
             client=client,
             approved_release_policy=approved_policy("1.2.3"),
         )
@@ -2702,7 +2860,7 @@ def test_run_manifest_v0_eligibility_block_reports_no_mandatory_steps() -> None:
 
     manifest = parse_manifest(raw_manifest)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="ozone-model-bank", client=client)
+        result = run_manifest(manifest, client=client)
 
     block = result.to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
@@ -2730,7 +2888,7 @@ def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
     manifest = parse_manifest(manifest_config())
     execution_logger = BufferedExecutionLogger(run_id="run-x", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(manifest, client=client, execution_logger=execution_logger)
 
     events = execution_logger.events()
     types = [event.type for event in events]
@@ -2743,1288 +2901,125 @@ def test_run_manifest_emits_full_event_sequence_for_v0_success() -> None:
     assert types.count("step-completed") == 2
 
 
-@pytest.mark.unit
-def test_run_manifest_emits_and_returns_suite_metadata_when_supplied() -> None:
-    """Config-resolved suite metadata is emitted in run-started and results."""
-    from conformance.suite_catalog import SuiteMetadata
-
-    metadata = SuiteMetadata(
-        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        api="ais",
-        suite="discovery-jwks",
-        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        description="Smoke-level discovery and JWKS checks.",
-    )
-    manifest = parse_manifest(
-        {
-            "schemaVersion": "v1",
-            "name": "suite metadata",
-            "steps": [
-                {
-                    "id": "discovery",
-                    "name": "Discovery",
-                    "mandatory": True,
-                    "request": {"method": "GET", "url": "https://modelbank.example.com/discovery"},
-                    "assertions": [{"type": "http_status", "expected": 200}],
-                }
-            ],
-        }
-    )
-    execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
-
-    with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(200, json={}))) as client:
-        result = run_manifest(
-            manifest,
-            environment="env",
-            client=client,
-            execution_logger=execution_logger,
-            suite_metadata=metadata,
-        )
-
-    expected_suite = {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "discovery-jwks",
-    }
-    assert execution_logger.events()[0].payload["suite"] == expected_suite
-    assert result.to_json_object()["suite"] == expected_suite
-
-
 @pytest.mark.integration
-def test_psu_auth_starter_bundled_suite_e2e_mocked_execution(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """End-to-end mocked execution of the bundled ``psu-auth-starter`` catalog suite.
-
-    Resolves the actual bundled manifest, builds a full default plan, executes
-    with mocked HTTP for the two HTTP steps and an intercepted auth-session for
-    the PSU step, and verifies that suite metadata, certification coverage,
-    masking, and plan rows are all coherent.
-
-    The test proves:
-
-    - The catalog resolves to the expected manifest and metadata.
-    - All three plan rows (openid-discovery, jwks-fetch, psu-authorization) are
-      selected by the default plan.
-    - HTTP steps receive mocked 200 responses with the required JSON fields.
-    - The PSU step completes via a fake captured auth code injected on first poll.
-    - The result is NOT certification-eligible because coverage is ``partial``.
-    - The ``certificationCoverage`` block carries ``value: "partial"``.
-    - PSU authorization URL ``client_id`` is masked in the execution log.
-    - Suite metadata is surfaced in the ``run-started`` log event and result JSON.
+def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) -> None:
+    """Compiled catalogue execution embeds traceability and omits suite metadata.
 
     Args:
-        monkeypatch: Pytest fixture used to replace ``conformance.executor.time``
-            with a deterministic fake so the PSU polling loop exits promptly
-            without calling real ``time.sleep``.
-        tmp_path: Pytest temporary directory used to hold generated FAPI signing
-            material for the bundled request-object directive.
+        tmp_path: Pytest temporary directory used as the runtime-input base.
     """
-    import types
-
-    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
-    from conformance.context import RuntimeConfig
-    from conformance.model_bank_config import SuiteSelection
-    from conformance.suite_catalog import resolve_suite
-    from conformance.test_plan import TestPlan
-
-    # 1. Resolve the real bundled catalog entry.
-    selection = SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="psu-auth-starter",
+    from conformance.catalogue import (
+        CatalogueAssertion,
+        CatalogueKey,
+        CatalogueRequestStep,
+        CatalogueTestCase,
+        ImplementedEndpoint,
+        RuntimeInputRequirement,
+        SecurityProfileApplicability,
+        TestCaseApplicability,
+        TestCatalogue,
+        TestPlanSpec,
+        compile_test_plan,
     )
-    resolved = resolve_suite(selection)
-    manifest = resolved.manifest
-    metadata = resolved.metadata
+    from conformance.executor import run_compiled_test_plan
 
-    assert metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-    assert metadata.suite == "psu-auth-starter"
-    assert manifest.certification_coverage == "partial"
-
-    # 2. Build a full default plan — all three steps should be selected.
-    plan = TestPlan.default_plan_from_manifest(manifest)
-    assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-
-    # 3. Wire auth session store and intercept register() to capture the state.
-    auth_store = AuthSessionStore()
-    run_id = "e2e-psu-starter"
-    _registered_states: list[str] = []
-    _original_register = auth_store.register
-
-    def _intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
-        """Delegate to the real register and record the generated state token.
-
-        Args:
-            run_id_inner: Parent run identifier passed through to the store.
-            state: Optional caller-supplied state; ``None`` causes the store
-                to generate one via ``secrets.token_urlsafe``.
-
-        Returns:
-            The newly registered :class:`AuthSession`.
-        """
-        session = _original_register(run_id_inner, state=state)
-        _registered_states.append(session.state)
-        return session
-
-    monkeypatch.setattr(auth_store, "register", _intercepting_register)
-
-    # 4. Replace ``conformance.executor.time`` with a fake that:
-    #    - ``monotonic`` advances by 0.5 s per call so the deadline (0 + 180 s)
-    #      is never breached after just one poll.
-    #    - ``sleep`` injects the auth code on the first call so the PSU step
-    #      finds a captured session and completes immediately.
-    _tick = [0.0]
-    _code_injected = [False]
-
-    def _fake_monotonic() -> float:
-        """Return a deterministically advancing monotonic timestamp.
-
-        Returns:
-            Current fake monotonic time in seconds.
-        """
-        v = _tick[0]
-        _tick[0] += 0.5
-        return v
-
-    def _fake_sleep(_seconds: float) -> None:
-        """Inject the auth code on the first poll so the PSU step completes.
-
-        Args:
-            _seconds: Sleep duration requested by the executor (ignored).
-        """
-        if _registered_states and not _code_injected[0]:
-            _code_injected[0] = True
-            auth_store.capture_code(_registered_states[-1], "psu-auth-code-e2e")
-
-    fake_time = types.SimpleNamespace(monotonic=_fake_monotonic, sleep=_fake_sleep)
-    monkeypatch.setattr("conformance.executor.time", fake_time)
-
-    # 5. Prepare a mock HTTP transport.
-    discovery_body = {
-        "issuer": "https://aspsp.example.com",
-        "authorization_endpoint": "https://aspsp.example.com/authorize",
-        "token_endpoint": "https://aspsp.example.com/token",
-        "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
-    }
-    jwks_body = {"keys": [{"kty": "RSA", "kid": "key-1"}]}
-
-    def _mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return mocked responses for the bundled suite HTTP steps.
-
-        Args:
-            request: Outbound HTTP request from the executor under test.
-
-        Returns:
-            Mocked response appropriate for the requested URL path.
-        """
-        if "jwks.json" in str(request.url):
-            return httpx.Response(200, json=jwks_body)
-        return httpx.Response(200, json=discovery_body)
-
-    runtime_config = RuntimeConfig(
-        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
-        environment="test",
-        oauth_client_id="test-client-id",
-        oauth_redirect_uri="https://0.0.0.0:8443/conformancesuite/callback",
-        oauth_open_banking_intent_id="consent-starter-123",
+    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
+    catalogue = TestCatalogue(
+        key=catalogue_key,
+        catalogue_version="2026.7.0",
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="ais-accounts-list",
+                name="Accounts list",
+                role="resource",
+                compliance_scope=("OBRW v4.0 AIS accounts",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(
+                    RuntimeInputRequirement(
+                        input_id="resourceBaseUrl",
+                        input_type="url",
+                        label="Resource base URL",
+                    ),
+                ),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="ais-accounts-list-request",
+                        name="List accounts",
+                        method="GET",
+                        path="/open-banking/v4.0/aisp/accounts",
+                        runtime_input_refs=("resourceBaseUrl",),
+                    ),
+                ),
+                assertions=(
+                    CatalogueAssertion(
+                        assertion_id="status-200",
+                        kind="http_status",
+                        description="Accounts endpoint returns HTTP 200",
+                        rule={"expected": 200},
+                    ),
+                ),
+            ),
+        ),
     )
-    signing_config = _executor_signing_config(tmp_path)
-
-    # 6. Execute the manifest end-to-end.
-    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
-    with httpx.Client(transport=httpx.MockTransport(_mock_handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="test",
-            client=client,
-            execution_logger=execution_logger,
-            suite_metadata=metadata,
-            runtime_config=runtime_config,
-            run_id=run_id,
-            auth_session_store=auth_store,
-            plan=plan,
-            fapi_signing_config=signing_config,
-        )
-
-    # 7. Assert plan coherence: all three steps present in result.
-    result_obj = result.to_json_object()
-    assert isinstance(result_obj.get("steps"), list)
-    # StepResult.name carries the step id (used as both identifier and display name).
-    step_ids = [cast(JsonObject, s)["name"] for s in cast(list[JsonValue], result_obj["steps"])]
-    assert "openid-discovery" in step_ids
-    assert "jwks-fetch" in step_ids
-    assert "psu-authorization" in step_ids
-
-    # 8. Assert partial coverage blocks certification eligibility.
-    eligibility = cast(JsonObject, result_obj.get("certificationEligibility"))
-    assert eligibility is not None
-    assert eligibility["eligible"] is False
-    coverage_block = cast(JsonObject, eligibility.get("certificationCoverage"))
-    assert coverage_block is not None
-    assert coverage_block["value"] == "partial"
-    assert any(
-        "partial" in cast(str, r).lower() or "coverage" in cast(str, r).lower()
-        for r in cast(list[JsonValue], eligibility["reasons"])
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=catalogue_key,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts",
+                resource_group="Accounts",
+            ),
+        ),
+        runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
     )
-
-    # 9. Assert suite metadata in result JSON and run-started event.
-    suite_in_result = cast(JsonObject, result_obj.get("suite"))
-    assert suite_in_result is not None
-    assert suite_in_result["catalogId"] == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-    assert suite_in_result["suite"] == "psu-auth-starter"
-    run_started_events = [e for e in execution_logger.events() if e.type == "run-started"]
-    assert len(run_started_events) == 1
-    run_started_suite = cast(JsonObject, run_started_events[0].payload.get("suite"))
-    assert run_started_suite["catalogId"] == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-
-    # 10. Assert masking: client_id masked in psu-authorization-url log event.
-    psu_url_events = [e for e in execution_logger.events() if e.type == "psu-authorization-url"]
-    assert len(psu_url_events) == 1
-    psu_authorization_url = cast(str, psu_url_events[0].payload["url"])
-    psu_authorization_query = dict(parse_qsl(urlsplit(psu_authorization_url).query, keep_blank_values=True))
-    assert psu_authorization_query["client_id"] == "test-client-id"
-    assert psu_authorization_query["response_type"] == "code id_token"
-    assert psu_authorization_query["scope"] == "openid accounts"
-    assert psu_authorization_query["redirect_uri"] == "https://0.0.0.0:8443/conformancesuite/callback"
-    assert "nonce" not in psu_authorization_query
-    assert psu_authorization_query["state"]
-    assert "request=" in psu_authorization_url
-    # Raw value is "test-client-id"; BufferedExecutionLogger must replace it.
-    assert psu_url_events[0].payload.get("client_id") == "***"  # noqa: S105 — masked sentinel, not a real secret
-
-
-@pytest.mark.integration
-def test_ais_certification_slice_token_exchange_executes_form_body_and_masks_logs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Bundled AIS slice executes token exchange with masked execution evidence.
-
-    Uses the real catalog manifest, deselects the later consent/resource steps
-    so the test stays scoped to chunk 4, injects a captured PSU auth code on
-    the first poll, and verifies both the on-wire form-urlencoded request and
-    the masked result/log artifacts.
-
-    Args:
-        monkeypatch: Pytest fixture used to install deterministic fake time for
-            the manual PSU polling loop.
-    """
-    import types
-
-    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
-    from conformance.model_bank_config import SuiteSelection
-    from conformance.suite_catalog import resolve_suite
-    from conformance.test_plan import TestPlan
-
-    selection = SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-certification-slice",
-    )
-    resolved = resolve_suite(selection)
-    manifest = resolved.manifest
-    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
-        [
-            "client-credentials-token",
-            "account-access-consent",
-            "accounts-list",
-            "account-balances",
-            "account-transactions",
-        ]
-    )
-
-    assert plan.selected_step_ids() == [
-        "openid-discovery",
-        "jwks-fetch",
-        "psu-authorization",
-        "token-exchange",
-    ]
-
-    auth_store = AuthSessionStore()
-    run_id = "e2e-ais-token"
-    registered_states: list[str] = []
-    original_register = auth_store.register
-
-    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
-        """Delegate to the real store and record the generated auth state.
-
-        Args:
-            run_id_inner: Run identifier passed through by the executor.
-            state: Optional caller-supplied state token.
-
-        Returns:
-            Newly registered auth session.
-        """
-        session = original_register(run_id_inner, state=state)
-        registered_states.append(session.state)
-        return session
-
-    monkeypatch.setattr(auth_store, "register", intercepting_register)
-
-    tick = [0.0]
-    code_injected = [False]
-
-    def fake_monotonic() -> float:
-        """Return deterministic monotonic time for PSU polling.
-
-        Returns:
-            Current fake monotonic timestamp.
-        """
-        value = tick[0]
-        tick[0] += 0.5
-        return value
-
-    def fake_sleep(_seconds: float) -> None:
-        """Inject a synthetic captured authorization code on first poll.
-
-        Args:
-            _seconds: Requested sleep interval, ignored by the fake.
-        """
-        if registered_states and not code_injected[0]:
-            code_injected[0] = True
-            auth_store.capture_code(registered_states[-1], "ais-auth-code-e2e")
-
-    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
-
-    captured_requests: list[httpx.Request] = []
-    discovery_body = {
-        "issuer": "https://aspsp.example.com",
-        "authorization_endpoint": "https://aspsp.example.com/authorize",
-        "token_endpoint": "https://aspsp.example.com/token",
-        "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
-        "response_types_supported": ["code id_token"],
-    }
-    jwks_body = {"keys": [{"kty": "RSA", "kid": "key-1"}]}
-    token_body = {
-        "access_token": "ais-access-token",
-        "id_token": "ais-id-token",
-        "token_type": "Bearer",
-        "expires_in": 300,
-    }
+    compiled_plan = compile_test_plan(catalogue, spec)
 
     def mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return mocked responses for discovery, JWKS, and token exchange.
-
-        Args:
-            request: Outbound HTTP request from the executor.
-
-        Returns:
-            Mocked JSON response for the requested endpoint.
-        """
-        captured_requests.append(request)
-        if str(request.url) == "https://aspsp.example.com/.well-known/openid-configuration":
-            return httpx.Response(200, json=discovery_body)
-        if str(request.url) == "https://aspsp.example.com/.well-known/jwks.json":
-            return httpx.Response(200, json=jwks_body)
-        return httpx.Response(200, json=token_body)
-
-    runtime_config = RuntimeConfig(
-        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
-        environment="test",
-        oauth_resource_base_url="https://resource.example.com",
-        oauth_client_id="ais-client-id",
-        oauth_redirect_uri="https://participant.example.com/callback",
-    )
-
-    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
-    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="test",
-            client=client,
-            execution_logger=execution_logger,
-            suite_metadata=resolved.metadata,
-            runtime_config=runtime_config,
-            run_id=run_id,
-            auth_session_store=auth_store,
-            plan=plan,
-        )
-
-    assert result.status == "passed"
-    assert [step.name for step in result.steps] == [
-        "openid-discovery",
-        "jwks-fetch",
-        "psu-authorization",
-        "token-exchange",
-    ]
-
-    token_request = captured_requests[-1]
-    assert token_request.method == "POST"
-    assert str(token_request.url) == "https://aspsp.example.com/token"
-    assert token_request.headers["content-type"] == "application/x-www-form-urlencoded"
-    wire_body = token_request.content.decode("ascii")
-    assert "grant_type=authorization_code" in wire_body
-    assert "code=ais-auth-code-e2e" in wire_body
-    assert "client_id=ais-client-id" in wire_body
-    assert "redirect_uri=https%3A%2F%2Fparticipant.example.com%2Fcallback" in wire_body
-
-    serialised_result = json.dumps(result.to_json_object(), sort_keys=True)
-    assert "ais-auth-code-e2e" not in serialised_result
-    assert "ais-access-token" not in serialised_result
-    assert "ais-id-token" not in serialised_result
-
-    token_request_events = [
-        event
-        for event in execution_logger.events()
-        if event.type == "request-sent" and event.step_id == "token-exchange"
-    ]
-    assert len(token_request_events) == 1
-    assert token_request_events[0].payload["form"] == {
-        "grant_type": "authorization_code",
-        "code": "***",
-        "redirect_uri": "https://participant.example.com/callback",
-        "client_id": "ais-client-id",
-    }
-
-    token_response_events = [
-        event
-        for event in execution_logger.events()
-        if event.type == "response-received" and event.step_id == "token-exchange"
-    ]
-    assert len(token_response_events) == 1
-    assert token_response_events[0].payload == {
-        "statusCode": 200,
-        "url": "https://aspsp.example.com/token",
-    }
-
-
-@pytest.mark.integration
-def test_ais_certification_slice_accounts_execution_uses_resource_token_and_masks_logs(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Bundled AIS slice executes resource calls with masked token evidence.
-
-    Args:
-        monkeypatch: Pytest fixture used to install deterministic fake time for
-            the manual PSU polling loop.
-    """
-    import types
-
-    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
-    from conformance.model_bank_config import SuiteSelection
-    from conformance.suite_catalog import resolve_suite
-
-    selection = SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-certification-slice",
-    )
-    resolved = resolve_suite(selection)
-    manifest = resolved.manifest
-
-    auth_store = AuthSessionStore()
-    run_id = "e2e-ais-accounts"
-    registered_states: list[str] = []
-    original_register = auth_store.register
-
-    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
-        """Delegate to the real store and record the generated auth state.
-
-        Args:
-            run_id_inner: Run identifier passed through by the executor.
-            state: Optional caller-supplied state token.
-
-        Returns:
-            Newly registered auth session.
-        """
-        session = original_register(run_id_inner, state=state)
-        registered_states.append(session.state)
-        return session
-
-    monkeypatch.setattr(auth_store, "register", intercepting_register)
-
-    tick = [0.0]
-    code_injected = [False]
-
-    def fake_monotonic() -> float:
-        """Return deterministic monotonic time for PSU polling.
-
-        Returns:
-            Current fake monotonic timestamp.
-        """
-        value = tick[0]
-        tick[0] += 0.5
-        return value
-
-    def fake_sleep(_seconds: float) -> None:
-        """Inject a synthetic captured authorization code on first poll.
-
-        Args:
-            _seconds: Requested sleep interval, ignored by the fake.
-        """
-        if registered_states and not code_injected[0]:
-            code_injected[0] = True
-            auth_store.capture_code(registered_states[-1], "ais-accounts-auth-code")
-
-    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
-
-    captured_requests: list[httpx.Request] = []
-
-    def mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return mocked responses for the bundled AIS slice.
-
-        Args:
-            request: Outbound HTTP request from the executor.
-
-        Returns:
-            Mocked JSON response for the requested endpoint.
-
-        Raises:
-            AssertionError: If the executor calls an unexpected endpoint.
-        """
-        captured_requests.append(request)
-        url = str(request.url)
-        if url == "https://aspsp.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://aspsp.example.com",
-                    "authorization_endpoint": "https://aspsp.example.com/authorize",
-                    "token_endpoint": "https://aspsp.example.com/token",
-                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
-                    "response_types_supported": ["code id_token"],
-                },
-            )
-        if url == "https://aspsp.example.com/.well-known/jwks.json":
-            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
-        if url == "https://aspsp.example.com/token":
-            body = request.content.decode("ascii")
-            if "grant_type=client_credentials" in body:
-                return httpx.Response(
-                    200,
-                    json={
-                        "access_token": "ais-consent-access-token",
-                        "token_type": "Bearer",
-                        "expires_in": 300,
-                    },
-                )
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "ais-resource-access-token",
-                    "id_token": "ais-resource-id-token",
-                    "token_type": "Bearer",
-                    "expires_in": 300,
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-            return httpx.Response(
-                201,
-                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
-                json={
-                    "Data": {
-                        "ConsentId": "consent-123",
-                        "Permissions": ["ReadTransactionsDetail"],
-                    },
-                    "Risk": {},
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-            return httpx.Response(
-                200,
-                json={
-                    "Data": {
-                        "Account": [
-                            {
-                                "AccountId": "account-123",
-                                "Status": "Enabled",
-                            }
-                        ]
-                    }
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/balances":
-            return httpx.Response(
-                200,
-                json={
-                    "Data": {
-                        "Balance": [
-                            {
-                                "Type": "ClosingAvailable",
-                                "Amount": {"Amount": "123.45", "Currency": "GBP"},
-                                "CreditDebitIndicator": "Credit",
-                            }
-                        ]
-                    }
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions":
-            return httpx.Response(
-                200,
-                json={
-                    "Data": {
-                        "Transaction": [
-                            {
-                                "TransactionId": "txn-123",
-                                "Amount": {"Amount": "123.45", "Currency": "GBP"},
-                            }
-                        ]
-                    }
-                },
-            )
-        raise AssertionError(f"Unexpected request URL: {url}")
-
-    runtime_config = RuntimeConfig(
-        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
-        environment="test",
-        oauth_resource_base_url="https://resource.example.com",
-        oauth_client_id="ais-client-id",
-        oauth_redirect_uri="https://participant.example.com/callback",
-    )
-
-    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
-    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="test",
-            client=client,
-            execution_logger=execution_logger,
-            suite_metadata=resolved.metadata,
-            runtime_config=runtime_config,
-            run_id=run_id,
-            auth_session_store=auth_store,
-        )
-
-    assert [step.name for step in result.steps] == [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "accounts-list",
-        "account-balances",
-        "account-transactions",
-    ]
-
-    consent_token_request = captured_requests[2]
-    consent_request = captured_requests[3]
-    accounts_request = captured_requests[-3]
-    balances_request = captured_requests[-2]
-    transactions_request = captured_requests[-1]
-    assert consent_token_request.method == "POST"
-    assert str(consent_token_request.url) == "https://aspsp.example.com/token"
-    consent_token_form = dict(parse_qsl(consent_token_request.content.decode("ascii"), keep_blank_values=True))
-    assert consent_token_form["grant_type"] == "client_credentials"
-    assert consent_token_form["client_id"] == "ais-client-id"
-    assert consent_token_form["scope"] == "accounts"
-    assert consent_request.method == "POST"
-    assert str(consent_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"
-    assert consent_request.headers["authorization"] == "Bearer ais-consent-access-token"
-    assert accounts_request.method == "GET"
-    assert str(accounts_request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts"
-    assert accounts_request.headers["authorization"] == "Bearer ais-resource-access-token"
-    assert balances_request.method == "GET"
-    assert str(balances_request.url) == (
-        "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/balances"
-    )
-    assert balances_request.headers["authorization"] == "Bearer ais-resource-access-token"
-    assert transactions_request.method == "GET"
-    assert str(transactions_request.url) == (
-        "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions"
-    )
-    assert transactions_request.headers["authorization"] == "Bearer ais-resource-access-token"
-
-    rendered = result.to_json_object()
-    assert rendered["summary"] == {"total": 9, "passed": 9, "failed": 0, "warn": 0, "skipped": 0}
-    eligibility = cast(JsonObject, rendered["certificationEligibility"])
-    assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 9
-    assert eligibility["mandatoryPassed"] == 9
-    assert eligibility["mandatoryFailed"] == 0
-    assert eligibility["mandatorySkipped"] == 0
-
-    balances_request_events = [
-        event
-        for event in execution_logger.events()
-        if event.type == "request-sent" and event.step_id == "account-balances"
-    ]
-    assert len(balances_request_events) == 1
-    assert balances_request_events[0].payload["headers"] == {
-        "Accept": "application/json",
-        "Authorization": "***",
-    }
-
-    transactions_request_events = [
-        event
-        for event in execution_logger.events()
-        if event.type == "request-sent" and event.step_id == "account-transactions"
-    ]
-    assert len(transactions_request_events) == 1
-    assert transactions_request_events[0].payload["headers"] == {
-        "Accept": "application/json",
-        "Authorization": "***",
-    }
-
-
-@pytest.mark.unit
-def test_run_manifest_v1_resolves_semantic_token_placeholder_namespace() -> None:
-    """Protected-resource steps resolve Authorization tokens via semantic token ids."""
-    raw_manifest: dict[str, JsonValue] = {
-        "schemaVersion": "v1",
-        "name": "semantic-token-runtime",
-        "steps": [
-            {
-                "id": "token-exchange",
-                "name": "Token exchange",
-                "request": {
-                    "method": "POST",
-                    "url": "https://auth.example.com/token",
-                    "body": {
-                        "encoding": "form",
-                        "fields": {
-                            "grant_type": "authorization_code",
-                            "code": "abc",
-                            "client_id": "client-123",
-                        },
-                    },
-                },
-                "assertions": [{"type": "http_status", "expected": 200}],
-                "producesTokenId": "ais-resource-detail",
-            },
-            {
-                "id": "accounts-list",
-                "name": "Accounts",
-                "request": {
-                    "method": "GET",
-                    "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
-                    "headers": {
-                        "Accept": "application/json",
-                        "Authorization": "Bearer ${tokens.ais-resource-detail.access_token}",
-                    },
-                },
-                "assertions": [{"type": "http_status", "expected": 200}],
-                "requiredTokenId": "ais-resource-detail",
-            },
-        ],
-    }
-
-    captured_requests: list[httpx.Request] = []
-
-    def mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return token and protected-resource responses for semantic token test.
-
-        Args:
-            request: Outbound HTTP request from the executor.
-
-        Returns:
-            Mock JSON response for the requested endpoint.
-
-        Raises:
-            AssertionError: If the executor issues an unexpected request URL.
-        """
-        captured_requests.append(request)
-        if str(request.url) == "https://auth.example.com/token":
-            return httpx.Response(200, json={"access_token": "resource-token-123"})
-        if str(request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-            return httpx.Response(200, json={"Data": {"Account": []}})
-        raise AssertionError(f"Unexpected request URL: {request.url}")
-
-    manifest = parse_manifest(raw_manifest)
-    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_manifest(manifest, environment="test", client=client)
-
-    assert result.status == "passed"
-    assert len(captured_requests) == 2
-    assert captured_requests[1].headers["authorization"] == "Bearer resource-token-123"
-
-
-@pytest.mark.integration
-def test_ais_certification_slice_accounts_resource_failure_blocks_eligibility(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Malformed protected accounts payload fails the bundled AIS resource step.
-
-    Args:
-        monkeypatch: Pytest fixture used to install deterministic fake time for
-            the manual PSU polling loop.
-    """
-    import types
-
-    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
-    from conformance.model_bank_config import SuiteSelection
-    from conformance.suite_catalog import resolve_suite
-
-    selection = SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-certification-slice",
-    )
-    resolved = resolve_suite(selection)
-
-    auth_store = AuthSessionStore()
-    registered_states: list[str] = []
-    original_register = auth_store.register
-
-    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
-        """Delegate to the real store and record the generated auth state.
-
-        Args:
-            run_id_inner: Run identifier passed through by the executor.
-            state: Optional caller-supplied state token.
-
-        Returns:
-            Newly registered auth session.
-        """
-        session = original_register(run_id_inner, state=state)
-        registered_states.append(session.state)
-        return session
-
-    monkeypatch.setattr(auth_store, "register", intercepting_register)
-
-    tick = [0.0]
-    code_injected = [False]
-
-    def fake_monotonic() -> float:
-        """Return deterministic monotonic time for PSU polling.
-
-        Returns:
-            Current fake monotonic timestamp.
-        """
-        value = tick[0]
-        tick[0] += 0.5
-        return value
-
-    def fake_sleep(_seconds: float) -> None:
-        """Inject a synthetic captured authorization code on first poll.
-
-        Args:
-            _seconds: Requested sleep interval, ignored by the fake.
-        """
-        if registered_states and not code_injected[0]:
-            code_injected[0] = True
-            auth_store.capture_code(registered_states[-1], "ais-accounts-auth-code")
-
-    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
-
-    def mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return mocked responses with a malformed accounts resource payload.
-
-        Args:
-            request: Outbound HTTP request from the executor.
-
-        Returns:
-            Mocked JSON response for the requested endpoint.
-        """
-        url = str(request.url)
-        if url == "https://aspsp.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://aspsp.example.com",
-                    "authorization_endpoint": "https://aspsp.example.com/authorize",
-                    "token_endpoint": "https://aspsp.example.com/token",
-                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
-                    "response_types_supported": ["code id_token"],
-                },
-            )
-        if url == "https://aspsp.example.com/.well-known/jwks.json":
-            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
-        if url == "https://aspsp.example.com/token":
-            body = request.content.decode("ascii")
-            if "grant_type=client_credentials" in body:
-                return httpx.Response(
-                    200,
-                    json={
-                        "access_token": "ais-consent-access-token",
-                        "token_type": "Bearer",
-                        "expires_in": 300,
-                    },
-                )
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "ais-resource-access-token",
-                    "id_token": "ais-resource-id-token",
-                    "token_type": "Bearer",
-                    "expires_in": 300,
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-            return httpx.Response(
-                201,
-                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
-                json={
-                    "Data": {
-                        "ConsentId": "consent-123",
-                        "Permissions": ["ReadTransactionsDetail"],
-                    },
-                    "Risk": {},
-                },
-            )
-        return httpx.Response(200, json={"Data": {"Account": [{"Status": "Enabled"}]}})
-
-    runtime_config = RuntimeConfig(
-        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
-        environment="test",
-        oauth_resource_base_url="https://resource.example.com",
-        oauth_client_id="ais-client-id",
-        oauth_redirect_uri="https://participant.example.com/callback",
-    )
-
-    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_manifest(
-            resolved.manifest,
-            environment="test",
-            client=client,
-            runtime_config=runtime_config,
-            run_id="e2e-ais-accounts-fail",
-            auth_session_store=auth_store,
-        )
-
-    assert result.status == "failed"
-
-    accounts_step = next(step for step in result.steps if step.name == "accounts-list")
-    assert accounts_step.status == "failed"
-    assert accounts_step.mandatory is True
-    details = dict(accounts_step.details)
-    assertion_results = details["assertions"]
-    assert isinstance(assertion_results, list)
-    assert len(assertion_results) == 7
-    assert assertion_results[-1] == {
-        "status": "failed",
-        "message": "Every item in JSON field Data.Account must contain field AccountId",
-    }
-    assert details["request"] == {
-        "method": "GET",
-        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
-        "headers": {
-            "Accept": "application/json",
-            "Authorization": "***",
-        },
-    }
-    response_details = details["response"]
-    assert isinstance(response_details, dict)
-    assert response_details == {
-        "statusCode": 200,
-        "headers": {
-            "content-length": cast(dict[str, str], response_details["headers"])["content-length"],
-            "content-type": "application/json",
-        },
-        "body": {"Data": {"Account": [{"Status": "Enabled"}]}},
-    }
-
-    balances_step = result.steps[-2]
-    assert balances_step.name == "account-balances"
-    assert balances_step.status == "failed"
-    assert balances_step.mandatory is True
-    assert balances_step.message == (
-        "Placeholder resolution failed: Path segment 'AccountId' not found: "
-        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
-    )
-    assert dict(balances_step.details) == {
-        "request": {
-            "method": "GET",
-            "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
-            "${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances",
-        }
-    }
-
-    transactions_step = result.steps[-1]
-    assert transactions_step.name == "account-transactions"
-    assert transactions_step.status == "failed"
-    assert transactions_step.mandatory is True
-    assert transactions_step.message == (
-        "Placeholder resolution failed: Path segment 'AccountId' not found: "
-        "${steps.accounts-list.response.body.Data.Account.0.AccountId}"
-    )
-    assert dict(transactions_step.details) == {
-        "request": {
-            "method": "GET",
-            "url": "${config.oauth.resourceBaseUrl}/open-banking/v4.0/aisp/accounts/"
-            "${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions",
-        }
-    }
-
-    eligibility = result.to_json_object()["certificationEligibility"]
-    assert isinstance(eligibility, dict)
-    assert eligibility["eligible"] is False
-    assert eligibility["mandatoryTotal"] == 9
-    assert eligibility["mandatoryPassed"] == 6
-    assert eligibility["mandatoryFailed"] == 3
-    assert eligibility["mandatorySkipped"] == 0
-
-
-def _run_v4_ais_baseline_through_accounts_list(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-    *,
-    accounts_response: JsonObject,
-) -> tuple[SmokeCheckResult, BufferedExecutionLogger, list[httpx.Request]]:
-    """Execute the bundled v4 AIS baseline through the accounts-list step.
-
-    Args:
-        monkeypatch: Pytest monkeypatch fixture used to replace PSU polling
-            time with a deterministic fake.
-        tmp_path: Pytest temporary directory used to hold generated FAPI
-            signing credentials.
-        accounts_response: JSON body returned by the mocked accounts endpoint.
-
-    Returns:
-        Tuple of the result object, execution logger, and captured HTTP
-        requests for the exercised baseline slice.
-    """
-    import types
-
-    from conformance.api.auth_session_store import AuthSession, AuthSessionStore
-    from conformance.model_bank_config import SuiteSelection
-    from conformance.suite_catalog import resolve_suite
-    from conformance.test_plan import TestPlan
-
-    selection = SuiteSelection(
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        suite="ais-certification-baseline",
-    )
-    resolved = resolve_suite(selection)
-    manifest = resolved.manifest
-    plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(
-        ["account-detail", "account-balances", "account-transactions", "transactions-list"]
-    )
-
-    auth_store = AuthSessionStore()
-    run_id = "e2e-ais-baseline-accounts"
-    registered_states: list[str] = []
-    original_register = auth_store.register
-
-    def intercepting_register(run_id_inner: str, *, state: str | None = None) -> AuthSession:
-        """Delegate to the real store and record the generated PSU state.
-
-        Args:
-            run_id_inner: Run identifier passed through by the executor.
-            state: Optional caller-supplied state token.
-
-        Returns:
-            Newly registered auth session.
-        """
-        session = original_register(run_id_inner, state=state)
-        registered_states.append(session.state)
-        return session
-
-    monkeypatch.setattr(auth_store, "register", intercepting_register)
-
-    tick = [0.0]
-    code_injected = [False]
-
-    def fake_monotonic() -> float:
-        """Return a deterministic monotonic time for the PSU poll loop.
-
-        Returns:
-            Current fake monotonic timestamp.
-        """
-        value = tick[0]
-        tick[0] += 0.5
-        return value
-
-    def fake_sleep(_seconds: float) -> None:
-        """Inject a captured auth code on the first PSU poll.
-
-        Args:
-            _seconds: Requested sleep interval, ignored by the fake.
-        """
-        if registered_states and not code_injected[0]:
-            code_injected[0] = True
-            auth_store.capture_code(registered_states[-1], "baseline-accounts-auth-code")
-
-    monkeypatch.setattr("conformance.executor.time", types.SimpleNamespace(monotonic=fake_monotonic, sleep=fake_sleep))
-
-    captured_requests: list[httpx.Request] = []
-
-    def mock_handler(request: httpx.Request) -> httpx.Response:
-        """Return mocked responses for the baseline slice under test.
+        """Return the mocked accounts response for compiled-plan execution.
 
         Args:
             request: Outbound HTTP request emitted by the executor.
 
         Returns:
-            Mock response for the requested endpoint.
-
-        Raises:
-            AssertionError: If the executor issues an unexpected URL.
+            Mocked successful accounts response.
         """
-        captured_requests.append(request)
-        url = str(request.url)
-        if url == "https://aspsp.example.com/.well-known/openid-configuration":
-            return httpx.Response(
-                200,
-                json={
-                    "issuer": "https://aspsp.example.com",
-                    "authorization_endpoint": "https://aspsp.example.com/authorize",
-                    "token_endpoint": "https://aspsp.example.com/token",
-                    "jwks_uri": "https://aspsp.example.com/.well-known/jwks.json",
-                    "response_types_supported": ["code id_token"],
-                },
-            )
-        if url == "https://aspsp.example.com/.well-known/jwks.json":
-            return httpx.Response(200, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
-        if url == "https://aspsp.example.com/token":
-            body = request.content.decode("ascii")
-            if "grant_type=client_credentials" in body:
-                return httpx.Response(
-                    200,
-                    json={
-                        "access_token": "baseline-consent-access-token",
-                        "token_type": "Bearer",
-                        "expires_in": 300,
-                    },
-                )
-            return httpx.Response(
-                200,
-                json={
-                    "access_token": "baseline-resource-access-token",
-                    "id_token": "baseline-resource-id-token",
-                    "token_type": "Bearer",
-                    "expires_in": 300,
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-            return httpx.Response(
-                201,
-                headers={"content-type": "application/json", "x-fapi-interaction-id": "interaction-123"},
-                json={
-                    "Data": {
-                        "ConsentId": "consent-123",
-                        "Permissions": ["ReadTransactionsDetail"],
-                    },
-                    "Risk": {},
-                },
-            )
-        if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-            return httpx.Response(
-                200,
-                headers={"content-type": "application/json", "x-fapi-interaction-id": "accounts-123"},
-                json=accounts_response,
-            )
-        raise AssertionError(f"Unexpected request URL: {url}")
+        assert str(request.url) == "https://resource.example.com/open-banking/v4.0/aisp/accounts"
+        return httpx.Response(200, json={"Data": {"Account": []}})
 
-    runtime_config = RuntimeConfig(
-        discovery_url="https://aspsp.example.com/.well-known/openid-configuration",
-        environment="test",
-        oauth_resource_base_url="https://resource.example.com",
-        oauth_client_id="baseline-client-id",
-        oauth_redirect_uri="https://participant.example.com/callback",
-    )
-
-    execution_logger = BufferedExecutionLogger(run_id=run_id, developer_mode=False)
+    execution_logger = BufferedExecutionLogger(run_id="compiled-plan-run", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_manifest(
-            manifest,
-            environment="test",
+        result = run_compiled_test_plan(
+            compiled_plan,
+            runtime_inputs=spec.runtime_inputs,
+            runtime_input_base_dir=tmp_path,
             client=client,
             execution_logger=execution_logger,
-            suite_metadata=resolved.metadata,
-            runtime_config=runtime_config,
-            run_id=run_id,
-            auth_session_store=auth_store,
-            plan=plan,
-            fapi_signing_config=_executor_signing_config(tmp_path),
         )
 
-    return result, execution_logger, captured_requests
-
-
-@pytest.mark.integration
-def test_ais_certification_baseline_accounts_resource_schema_passes(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Mocked baseline execution reaches a passing schema-backed accounts check.
-
-    The test exercises the bundled v4 AIS baseline through the first resource
-    assertion that uses the new schema-backed primitive and confirms the
-    response-schema assertion passes while the run stays otherwise coherent.
-    """
-    result, _execution_logger, captured_requests = _run_v4_ais_baseline_through_accounts_list(
-        monkeypatch,
-        tmp_path,
-        accounts_response={
-            "Data": {"Account": [{"AccountId": "account-123"}]},
-            "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
-            "Meta": {},
-        },
-    )
-
     assert result.status == "passed"
-    assert [step.name for step in result.steps] == [
-        "openid-discovery",
-        "jwks-fetch",
-        "client-credentials-token",
-        "account-access-consent",
-        "psu-authorization",
-        "token-exchange",
-        "accounts-list",
-    ]
-    accounts_step = result.steps[-1]
-    assert accounts_step.status == "passed"
-    details = cast("dict[str, Any]", accounts_step.details)
-    assertions = cast(list[dict[str, Any]], details["assertions"])
-    assert assertions[-1] == {
-        "status": "passed",
-        "message": (
-            "Response body matches schema #/components/schemas/OBReadAccount6 "
-            "from ob-read-write-v4.0-account-info-openapi"
-        ),
+    result_json = result.to_json_object()
+    assert "suite" not in result_json
+    catalogue_evidence = cast(JsonObject, result_json["catalogue"])
+    assert catalogue_evidence["generatedTestCaseIds"] == ["ais-accounts-list"]
+    details = cast("dict[str, Any]", result.steps[0].details)
+    assert details["catalogue"] == {
+        "testCaseId": "ais-accounts-list",
+        "requestStepId": "ais-accounts-list-request",
+        "role": "resource",
+        "complianceScope": ["OBRW v4.0 AIS accounts"],
     }
-    assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
-
-
-@pytest.mark.integration
-def test_ais_certification_baseline_accounts_resource_schema_failure_masks_evidence(
-    monkeypatch: pytest.MonkeyPatch,
-    tmp_path: Path,
-) -> None:
-    """Schema validation failure keeps the step failed and masks evidence.
-
-    The accounts response deliberately violates the schema while still
-    satisfying the earlier JSON-field assertions, so the failure is attributed
-    to the schema-backed assertion rather than a simpler structural check.
-    """
-    result, _execution_logger, captured_requests = _run_v4_ais_baseline_through_accounts_list(
-        monkeypatch,
-        tmp_path,
-        accounts_response={
-            "Data": {"Account": [{"AccountId": "account-123", "Status": "BROKEN"}]},
-            "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
-            "Meta": {},
-            "access_token": "baseline-leaky-token",
-        },
-    )
-
-    accounts_step = result.steps[-1]
-    assert accounts_step.name == "accounts-list"
-    assert accounts_step.status == "failed"
-    details = cast("dict[str, Any]", accounts_step.details)
-    assertions = cast(list[dict[str, Any]], details["assertions"])
-    assert assertions[-1]["status"] == "failed"
-    assert "failed schema validation" in cast(str, assertions[-1]["message"])
-    assert details["request"] == {
-        "method": "GET",
-        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts",
-        "headers": {
-            "Accept": "application/json",
-            "Authorization": "***",
-        },
+    run_started = execution_logger.events()[0]
+    assert run_started.payload["catalogue"] == {
+        "standard": "open-banking",
+        "version": "v4.0",
+        "api": "ais",
+        "catalogueVersion": "2026.7.0",
     }
-    response_details = cast("dict[str, Any]", details["response"])
-    assert response_details["statusCode"] == 200
-    assert response_details["body"] == {
-        "Data": {"Account": [{"AccountId": "account-123", "Status": "BROKEN"}]},
-        "Links": {"Self": "https://resource.example.com/open-banking/v4.0/aisp/accounts"},
-        "Meta": {},
-        "access_token": "***",
-    }
-    assert captured_requests[-1].headers["authorization"] == "Bearer baseline-resource-access-token"
 
 
 @pytest.mark.unit
@@ -4054,7 +3049,7 @@ def test_run_manifest_request_sent_masks_authorization_header() -> None:
 
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     request_events = [event for event in execution_logger.events() if event.type == "request-sent"]
     assert len(request_events) == 1
@@ -4095,7 +3090,7 @@ def test_run_manifest_emits_placeholder_error_event() -> None:
 
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     types = [event.type for event in execution_logger.events()]
     assert "placeholder-error" in types
@@ -4138,7 +3133,7 @@ def test_run_manifest_emits_application_error_on_unexpected_engine_exception(
 
     mock_transport = httpx.MockTransport(lambda _r: httpx.Response(200, json={}))
     with pytest.raises(RuntimeError) as exc_info, httpx.Client(transport=mock_transport) as client:
-        run_manifest(v1_manifest, environment="env", client=client, execution_logger=execution_logger)
+        run_manifest(v1_manifest, client=client, execution_logger=execution_logger)
 
     assert exc_info.value is expected_error
     types = [event.type for event in execution_logger.events()]
@@ -4190,7 +3185,7 @@ def test_run_manifest_deselected_step_does_not_run_or_produce_result() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["optional-step"])
 
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     assert requested == ["https://example.com/a"]
     assert [step.name for step in result.steps] == ["mandatory-step"]
@@ -4207,7 +3202,7 @@ def test_run_manifest_emits_step_deselected_before_step_started() -> None:
     execution_logger = BufferedExecutionLogger(run_id="r", developer_mode=False)
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        run_manifest(manifest, environment="env", client=client, execution_logger=execution_logger, plan=plan)
+        run_manifest(manifest, client=client, execution_logger=execution_logger, plan=plan)
 
     types = [event.type for event in execution_logger.events()]
     assert types[0] == "run-started"
@@ -4233,7 +3228,7 @@ def test_run_manifest_default_plan_when_none_passed_preserves_legacy_behaviour()
 
     manifest = parse_manifest(_plan_v1_manifest())
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
-        result = run_manifest(manifest, environment="env", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert requested == ["https://example.com/a", "https://example.com/b"]
     assert [step.name for step in result.steps] == ["mandatory-step", "optional-step"]
@@ -4248,7 +3243,7 @@ def test_run_manifest_deselected_mandatory_flips_eligibility() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["mandatory-step"])
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     eligibility = result.to_json_object()["certificationEligibility"]
     assert isinstance(eligibility, dict)
@@ -4267,7 +3262,7 @@ def test_run_manifest_plan_block_present_when_plan_supplied() -> None:
     plan = TestPlan.default_plan_from_manifest(manifest)
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
-        result = run_manifest(manifest, environment="env", client=client, plan=plan)
+        result = run_manifest(manifest, client=client, plan=plan)
 
     rendered = result.to_json_object()
     assert rendered["plan"] == {
@@ -4314,7 +3309,7 @@ def test_run_manifest_generates_run_id_when_caller_supplies_none() -> None:
 
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
         # No run_id, no auth_session_store — must not raise and must execute the step.
-        result = run_manifest(manifest, environment="env", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed"
     assert [step.status for step in result.steps] == ["passed"]
@@ -4340,6 +3335,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
+        response_signature_jwks_cache: Any = None,
     ) -> tuple[Any, Any]:
         """Capture the threaded run ID before delegating to the real executor."""
         captured["run_id"] = run_id
@@ -4354,6 +3350,7 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
 
     sentinel_store = _RecordingAuthSessionStore()
@@ -4364,7 +3361,6 @@ def test_run_manifest_reuses_logger_run_id_when_caller_supplies_none(monkeypatch
     with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
         run_manifest(
             manifest,
-            environment="env",
             client=client,
             execution_logger=execution_logger,
             auth_session_store=sentinel_store,
@@ -4390,6 +3386,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         fapi_signing_config: FapiSigningConfig | None = None,
         fapi_signing_service: Any = None,
         mtls_client_configured: bool = False,
+        response_signature_jwks_cache: Any = None,
     ) -> tuple[Any, Any]:
         """Capture the threaded run_id and store, then delegate to the real impl."""
         captured["run_id"] = run_id
@@ -4404,6 +3401,7 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
 
     from conformance import executor as executor_module
@@ -4416,7 +3414,6 @@ def test_run_manifest_threads_caller_supplied_store_to_steps() -> None:
         with httpx.Client(transport=httpx.MockTransport(lambda _r: httpx.Response(200, json={}))) as client:
             run_manifest(
                 manifest,
-                environment="env",
                 client=client,
                 run_id="run-abc",
                 auth_session_store=sentinel_store,
@@ -4557,7 +3554,6 @@ def test_psu_manual_step_prefers_runtime_authorization_endpoint_override() -> No
         context=ExecutionContext(
             config=RuntimeConfig(
                 discovery_url="https://auth.example.com/.well-known/openid-configuration",
-                environment="sandbox",
                 oauth_authorization_endpoint="https://auth.example.com/auth",
             )
         ),
@@ -4985,7 +3981,6 @@ def test_run_manifest_mandatory_psu_timeout_counts_as_mandatory_failed(monkeypat
     with httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))) as client:
         result = run_manifest(
             manifest,
-            environment="env",
             client=client,
             run_id="run-mandatory-psu-timeout",
             auth_session_store=AuthSessionStore(),
@@ -5108,7 +4103,6 @@ def test_run_manifest_psu_manual_step_feeds_downstream_token_exchange(monkeypatc
     with httpx.Client(transport=httpx.MockTransport(handler)) as client:
         result = run_manifest(
             manifest,
-            environment="env",
             client=client,
             run_id="run-manual",
             auth_session_store=store,

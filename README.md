@@ -1,230 +1,193 @@
 # Functional Conformance Suite V2 (WIP)
 
-This forked repository will be used to manage the development of the new v2 Functional Confirmance suite before it is ready to be merged back into the main conformance suite repository.
+This repository is used to develop the next Open Banking UK Functional
+Conformance Suite before it is ready to merge back into the official
+conformance-suite repository. It is not the official released suite.
 
-This repository is purely for development and should not be used as the official conformance suite.
+## Participant workflow
 
-Please see the official repo for the Open Banking Conformance Suite [here](https://github.com/OpenBankingUK/conformance-suite).
+Participants no longer select checked-in suites, manifests, or config examples.
+The supported workflow is:
 
-## Model-bank smoke check
+1. Open the browser main menu at `/`.
+2. Choose **Create a new test plan with builder** or **Import test plan**.
+3. For a new plan, select the scheme, specification, and version. The page then
+   shows resource groups only when the selected specification defines them, such
+   as Read/Write Account and Transaction or Payment Initiation.
+4. Select implemented endpoints inside the chosen resource groups when the
+   selected specification is catalogue-backed.
+5. Review the endpoint capabilities shown inline on each selected endpoint card.
+   Required capabilities are checked and locked; optional capabilities are
+   unchecked until the participant declares that behaviour as implemented.
+6. Provide config through staged pages: business/request defaults first,
+   discovery URL next, OAuth/FAPI/security settings after discovery metadata is
+   available, and generated runtime artifacts last. Domain-specific fields
+   appear only for the selected endpoint scope.
+7. Review the generated v2 plan document, export reusable JSON, or launch the
+   run.
 
-The first Ozone model-bank interaction is available as a small manual runner. It reads a JSON config and fetches the OpenID discovery document. The runner can also fetch the discovered JWKS endpoint when `followUp.mode` is set to `jwks` and the required certificate trust chain is available locally.
+The UI shows generated tests, counts, source traceability, runtime/auth
+requirements, launch blockers, and certification status after preview. Generated
+tests are read-only: participants cannot select exact generated tests. Lower-level
+request and assertion details stay collapsed under audit details.
 
-```bash
-uv run python main.py config/model-bank-example.json
-```
+## CLI plan-spec execution
 
-The runner writes a structured result JSON to the configured `resultOutputPath`, which defaults to `out/test-results.json`, and exits with `0` when all smoke-check steps pass, `1` when the model-bank check fails, `2` when the config is invalid, or `3` when the result file or the structured execution log cannot be written. Relative `resultOutputPath` and `executionLogPath` values are resolved from the current working directory, while certificate paths are resolved from the config file location.
-
-Alongside the result file the runner writes a structured **execution log** (NDJSON, one event per line) to `executionLogPath` (default `out/execution-log.ndjson`). The log records `run-started`, `step-started`, `request-sent`, `response-received`, `assertion-evaluated`, `step-completed`, `run-completed` and the error events, with credentials and sensitive headers masked exactly as in the result file. The same log is exposed by the REST API as `GET /api/runs/<id>/log/` (`application/x-ndjson`), which returns the current full NDJSON snapshot in a single response — CI scripts can poll the endpoint to observe an in-flight run, but it is not a streaming/tail endpoint. Set `CONFORMANCE_DEVELOPER_MODE=true` to disable masking for local engineering debugging only — a `WARN` line is logged at startup whenever this is set, and it must never be enabled in release builds.
-
-The config is JSON-only for now. TLS certificate paths, when supplied, are resolved under `tls.certificatePathRoot`; FAPI signing certificate and private-key paths are resolved under `fapiSigning.certificatePathRoot`. Do not commit real certificates, private keys, or inline secret material.
-
-## Config-selected suite runs
-
-Participant config can also select a bundled conformance-suite manifest instead of requiring callers to pass or paste manifest JSON manually. Add a `testSuite` object to the model-bank config:
-
-```jsonc
-{
-	"environment": "ozone-model-bank",
-	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-	"timeoutSeconds": 10,
-	"testSuite": {
-		"standard": "ob-read-write",
-		"specVersion": "v4.0",
-		"profile": "fapi1-advanced",
-		"suite": "discovery-jwks"
-	},
-	"tls": {
-		"certificatePathRoot": "./certs"
-	},
-	"resultOutputPath": "./out/test-results.json",
-	"executionLogPath": "./out/execution-log.ndjson"
-}
-```
-
-Supported bundled suites use the `ob-read-write` standard and `fapi1-advanced` profile, with the explicit version/suite combinations shown below. **Every bundled suite remains explicitly `partial` coverage — none can satisfy certification eligibility yet.** The v4.0 AIS catalog now has two bundled tracks: `ais-certification-baseline` is the certifiable-track baseline suite, and `ais-certification-slice` is the older preserved proof slice. Neither should be treated as complete certification coverage until Standards confirm the mandatory matrix and the manifest is promoted accordingly.
-
-| Spec version | Suite name | Steps | Participant config required |
-|---|---|---|---|
-| `v3.1.11`, `v4.0` | `discovery-jwks` | OpenID discovery + JWKS fetch | No |
-| `v3.1.11`, `v4.0` | `psu-auth-starter` | OpenID discovery + JWKS fetch + manual PSU authorisation | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
-| `v4.0` | `ais-certification-baseline` | Discovery + JWKS + manual PSU authorisation + token exchange + consent creation + mandatory core AIS resource coverage, with optional/conditional AIS rows available as opt-in plan entries | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
-| `v4.0` | `ais-certification-slice` | Discovery + JWKS + manual PSU authorisation + token exchange + account-access consent + accounts, balances, and transactions resource validation | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
-
-The `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` suites require an `oauth` section in the participant config. `clientId` must be registered at the ASPSP, `redirectUri` must be an HTTPS redirect URI registered with the ASPSP, and `resourceBaseUrl` must be the HTTPS base URL for the protected AIS resource server. Do not include the Open Banking API path prefix in `resourceBaseUrl`; the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves. The starter suite uses a pre-existing `oauth.openBankingIntentId` and does not create account-access consent; run `ais-certification-baseline` first if you want the tool to create consent and return a `Data.ConsentId`. Both AIS suites also use `resourceBaseUrl` for consent creation and protected resource calls.
-
-The `ais-certification-baseline` suite also accepts a dedicated `fapiSigning` block for generated JAR request objects, token-endpoint client authentication, and detached JWS signing of the account-access-consent request body. The current config fields are `certificatePathRoot`, `signingCertificatePath`, `signingPrivateKeyPath`, `kid`, `clientAssertionIssuer`, `clientAssertionSubject`, and `tokenEndpointAuthMethod` (`private_key_jwt` or `tls_client_auth`). The preserved `ais-certification-slice` remains the older proof flow and does not opt into these manifest directives.
-
-`private_key_jwt` uses the signing key to add `client_assertion_type` and `client_assertion` form fields at token exchange time. `tls_client_auth` reuses the existing `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` settings for the outbound mTLS client and still keeps all signing and client-auth inputs outside the manifest placeholder allow-list.
-
-```jsonc
-{
-	"environment": "ozone-model-bank",
-	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-	"timeoutSeconds": 10,
-	"testSuite": {
-		"standard": "ob-read-write",
-		"specVersion": "v4.0",
-		"profile": "fapi1-advanced",
-		"suite": "ais-certification-baseline"
-	},
-	"oauth": {
-		"clientId": "your-client-id-here",
-		"redirectUri": "https://conformance.example.com/callback",
-		"resourceBaseUrl": "https://resource.example.com"
-	},
-	"fapiSigning": {
-		"certificatePathRoot": "./certs",
-		"signingCertificatePath": "dummy-signing.crt",
-		"signingPrivateKeyPath": "dummy-signing.key", // pragma: allowlist secret
-		"kid": "your-signing-kid-here",
-		"clientAssertionIssuer": "your-client-id-here",
-		"clientAssertionSubject": "your-client-id-here",
-		"tokenEndpointAuthMethod": "private_key_jwt"
-	},
-	"tls": {
-		"certificatePathRoot": "./certs"
-	},
-	"resultOutputPath": "./out/test-results.json",
-	"executionLogPath": "./out/execution-log.ndjson"
-}
-```
-
-Only `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, `${config.oauth.openBankingIntentId}`, and `${config.oauth.resourceBaseUrl}` are exposed to manifests. `fapiSigning` values, TLS paths, certificates, private keys, client secrets, request objects, client assertions, and arbitrary config traversal are not placeholder-addressable.
-
-Run a config-selected suite from the CLI by omitting `--manifest`:
+The CLI accepts participant config plus a shared plan document JSON file:
 
 ```bash
-# Smoke suite (no OAuth config required)
-uv run python main.py config/model-bank-suite-example.json
-
-# PSU auth starter suite (requires oauth section in config)
-uv run python main.py config/model-bank-psu-auth-starter-example.json
-
-# AIS certification baseline (recommended v4 AIS catalog entry; requires
-# oauth.clientId, oauth.redirectUri, oauth.resourceBaseUrl, and fapiSigning)
-uv run python main.py config/model-bank-ais-certification-baseline-example.json
-
-# AIS certification proof slice (older partial reference flow; requires the
-# same oauth settings but does not opt into generated signing directives)
-uv run python main.py config/model-bank-ais-certification-slice-example.json
+uv run python main.py path/to/config.json --plan-spec path/to/plan-spec.json
 ```
 
-`--manifest` remains an explicit override for authoring and certification-validation workflows. `--deselect` works with either an explicit manifest or a config-selected `testSuite`, and remains invalid for plain model-bank smoke checks that have neither.
-
-The REST API follows the same precedence: an inline `manifest` in `POST /api/runs/` wins; otherwise `config.testSuite` resolves a bundled suite; otherwise the legacy smoke check runs. `deselectStepIds` is accepted with inline or config-resolved manifests only. In the browser plan builder at `/plan/`, leave the manifest textarea blank to preview and launch the suite selected by config, or paste a manifest to override the catalog for authoring/testing. The guided flow includes model-bank examples for environment and discovery values, with the generated fields remaining editable for custom ASPSP/model-bank endpoints. CLI, REST API, and browser-launched config-resolved runs all carry the validated `fapiSigning` block into runtime execution without widening the manifest placeholder boundary.
-
-Browser-launched runs can also drive manual PSU authorisation manifests. While a manual PSU step is waiting for the ASPSP callback, the run detail and status views show an `Open authorisation` action for the current step. The raw authorisation URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
-
-All bundled suites set `certificationCoverage: partial` in their manifests. This blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The result JSON includes a `certificationCoverage` block under `certificationEligibility` so the blocker is visible for audit. This still applies to both v4 AIS entries: the baseline suite is the certifiable-track working set, while the older slice remains a deliberately partial proof flow.
-
-The bundled `ais-certification-baseline` manifest builds on the preserved slice path with a broader v4.0 AIS working set. Its mandatory default flow covers:
-
-- generated PS256 request-object signing for the PSU authorisation redirect (`requestObject: {"source": "fapi-signing"}`)
-- form-urlencoded token exchange using `${steps.psu-authorization.response.body.code}`
-- token-endpoint client authentication from `fapiSigning.tokenEndpointAuthMethod`
-- `POST /open-banking/v4.0/aisp/account-access-consents`
-- `GET /open-banking/v4.0/aisp/accounts`
-- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}`
-- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/balances`
-- `GET /open-banking/v4.0/aisp/accounts/${steps.accounts-list.response.body.Data.Account.0.AccountId}/transactions`
-- `GET /open-banking/v4.0/aisp/transactions`
-
-The baseline manifest also signs the exact JSON consent payload as a detached PS256 JWS sent in `x-jws-signature`. The detached-JWS rows are available for local execution and authoring review, but they are not selected by default. The older `ais-certification-slice` manifest is kept unchanged as the narrower proof flow that stops after consent creation plus accounts, balances, and account-scoped transactions.
-
-The resource-server calls assert more than status codes. The consent response must return `Data.ConsentId`. The accounts responses must include a top-level `Data` object plus an account array with `AccountId` and `Status` fields on each item. The balances responses must include a top-level `Data` object plus a balance array with `Type`, `Amount`, and `CreditDebitIndicator` fields on each item. The account-scoped and top-level transactions responses must include a top-level `Data` object plus a `Data.Transaction` array. In the `ais-certification-baseline` manifest, transaction items must include `BookingDateTime` and `Amount`; the preserved `ais-certification-slice` manifest continues to require `TransactionId` and `Amount`.
-
-Manifest placeholders can also traverse JSON arrays using non-negative numeric path segments. Both bundled v4 AIS manifests use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned account into account-scoped resource endpoints. Array indices must be in bounds, and response placeholders must still resolve to primitive values rather than whole objects or arrays.
-
-Masking now also covers OAuth authorisation codes, access tokens, ID tokens, client assertions, request objects, detached `x-jws-signature` values, and `Authorization` header values in result JSON, NDJSON execution logs, API log snapshots, and browser downloads. Signing certificate PEM, private-key PEM, and raw client-auth/signing config secrets are loaded only at execution time and are not serialized into logs, results, or error messages. The CLI still prints the one-time manual browser handoff URL needed for PSU consent, but persisted artifacts retain masked values.
-
-The bundled `psu-auth-starter` manifests also act as the first authoring proof for the expanded generic response-assertion vocabulary. They stay deliberately partial, but now demonstrate response-header checks plus richer JSON rules on the discovery and JWKS responses: `header` assertions (`present`, `absent`, `equals`, `contains`) and `json_field` rules including `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, and `all_items_have_field`. The v4 AIS baseline and legacy benchmark slices now also use a schema-backed `response_schema` assertion for allowlisted bundled standards documents.
-
-For ad hoc manifest authoring, the updated `config/manifest-v1-openid-jwks-example.json` shows the same generic style against discovery/JWKS endpoints. Representative assertion fragments look like this:
+The config carries discovery, TLS, OAuth, signing, resource-server header,
+scope-relevant AIS/PIS/CBPII business defaults, conditional-property, output,
+and optional approved-release-policy settings. Browser discovery can prefill
+OAuth/FAPI values from OpenID metadata, but exported JSON includes the final
+accepted config values without recording
+whether they came from discovery or manual entry. The
+preferred v2 plan document carries the scheme/specification/version boundary,
+security profile, nested resource groups, implemented endpoints, selected
+endpoint capabilities, grouped config defaults, and remaining runtime inputs or
+references. A single Read/Write v2 plan can span AIS, PIS, CBPII, and VRP
+catalogue areas. cVRP is not exposed under the Open Banking UK Read/Write
+boundary for now.
 
 ```json
 {
-	"type": "header",
-	"name": "content-type",
-	"rule": "contains",
-	"value": "application/json"
+  "schemaVersion": "v2",
+  "scheme": "open-banking-uk",
+  "specification": "read-write",
+  "version": "4.0.1",
+  "securityProfile": "fapi1-advanced",
+  "scope": {
+    "resourceGroups": [
+      {
+        "id": "account-and-transaction",
+        "label": "Account and Transaction",
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts"
+          }
+        ]
+      }
+    ]
+  },
+  "config": {
+    "resourceServer": {"baseUrl": "https://resource.example.com"},
+    "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
+  }
 }
 ```
+
+Required endpoint capabilities may be omitted from exported documents because
+the compiler selects them automatically for implemented endpoints. Optional
+capabilities must be listed under their endpoint to generate implementation-
+dependent tests. The lower-level v1 per-catalogue plan spec remains accepted by
+CLI/API for compatibility, but the browser import/export flow uses v2 shared
+plan documents. `config.testSuite`, public `--manifest`, public `--deselect`,
+REST `manifest`, and REST `deselectStepIds` are intentionally rejected.
+Mandatory applicable catalogue tests cannot be arbitrarily deselected. v1
+assertion overrides are import-only, recorded, and make the run non-certifying.
+
+## Browser and REST launch
+
+The browser wizard imports, exports, reviews, and launches the same v2 plan
+document that the catalogue compiler accepts through CLI and REST. The REST run
+creation endpoint accepts the document under `planSpec` in `POST /api/runs/`:
 
 ```json
 {
-	"type": "json_field",
-	"path": "keys",
-	"rule": "all_items_have_field",
-	"field": "kty"
+  "config": {
+    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration"
+  },
+  "planSpec": {
+    "schemaVersion": "v2",
+    "scheme": "open-banking-uk",
+    "specification": "read-write",
+    "version": "4.0.1",
+    "securityProfile": "fapi1-advanced",
+    "scope": {"resourceGroups": []},
+    "config": {}
+  }
 }
 ```
 
-```json
-{
-	"type": "json_field",
-	"path": "token_endpoint_auth_method",
-	"rule": "one_of",
-	"values": ["private_key_jwt", "tls_client_auth"]
-}
-```
+Browser exports are secret-safe by default: the generated v2 plan document
+preserves endpoint and capability scope plus non-sensitive runtime references,
+but writes secret-bearing strings as empty strings. A separate
+export-with-secrets action is available for local power-user workflows. Launch
+still uses the sensitive values retained in the same browser session or supplied
+inline by direct CLI/API submission.
 
-```json
-{
-	"type": "response_schema",
-	"source": "bundled_openapi",
-	"document": "ob-read-write-v4.0-account-info-openapi",
-	"schemaRef": "#/components/schemas/OBReadAccount6"
-}
-```
+Run detail, result downloads, and NDJSON execution logs keep the existing
+masking and evidence behaviour. Result JSON includes catalogue traceability for
+selected endpoints, selected capabilities, generated test-case IDs, applicability
+decisions, runtime input snapshots with sensitive values omitted, and
+non-certifying reasons. Manual PSU authorisation handoff URLs remain transient
+browser state; persisted artifacts mask credentials, tokens, request objects,
+client assertions, detached JWS values, and sensitive headers.
 
-For `response_schema`, `source` is currently restricted to `bundled_openapi`, and `document` is currently restricted to the bundled Account Info OpenAPI snapshots: `ob-read-write-v4.0-account-info-openapi` and `ob-read-write-v4.0.1-account-info-openapi`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` can scope validation to a nested response node. Placeholders are not allowed in `source`, `document`, `schemaRef`, or `bodyPath`, and participant manifests cannot trigger arbitrary filesystem or network schema loading.
+## Bundled catalogues
 
-This is still an enabling layer for suite authors. It does not publish full Read/Write certification coverage, and no bundled suite should be treated as certifying until Standards confirm the complete mandatory manifest coverage.
+The bundled catalogue registry currently covers the legacy FCS baseline for:
+
+| Standard | Version | API family |
+| --- | --- | --- |
+| `open-banking` | `v4.0` | `ais` |
+| `open-banking` | `v4.0` | `pis` |
+| `open-banking` | `v4.0` | `cbpii` |
+| `open-banking` | `v4.0` | `vrp` |
+
+Each catalogue case carries traceability back to the relevant legacy FCS
+coverage in its compliance scope. Each catalogue can also define endpoint-scoped
+capabilities that explain baseline and optional implementation coverage without
+turning generated tests into participant selections. The hand-maintained mapping
+lives in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
+
+The browser catalogue selector also lists Dynamic Client Registration v3.4 as a
+selector-only example. It deliberately hides Read/Write resource groups and
+blocks continuation until DCR catalogue coverage is implemented.
+
+## Outputs and exit codes
+
+The runner writes a structured result JSON to `resultOutputPath`, defaulting to
+`out/test-results.json`, and writes an NDJSON execution log to
+`executionLogPath`, defaulting to `out/execution-log.ndjson`.
+
+CLI exit codes are:
+
+| Code | Meaning |
+| --- | --- |
+| `0` | All selected checks passed. |
+| `1` | Execution completed with failed checks. |
+| `2` | Config, plan-spec, or catalogue compilation input was invalid. |
+| `3` | Result or execution-log output could not be written. |
+
+Set `CONFORMANCE_DEVELOPER_MODE=true` only for local debugging. It disables
+masking in developer-visible logs and must never be enabled in release builds.
 
 ## Certification report validation
 
-OBL reviewers can validate a submitted result JSON against the manifest used for the run and an approved-release policy:
+The OBL-side certification validator remains an internal reviewer tool. It
+validates a submitted result report against the manifest representation used for
+the original run and an independently supplied approved-release policy:
 
 ```bash
 uv run python -m conformance.certification_cli out/test-results.json \
-	--manifest config/manifest-v1-openid-jwks-example.json \
-	--approved-releases config/approved-fcs-releases-example.json
+  --manifest path/to/internal-manifest.json \
+  --approved-releases path/to/approved-releases.json
 ```
 
-The command prints a Confluence-ready summary to stdout and exits with `0` when the report is valid, `1` when validation finds blocking certification issues, `2` when an input file is malformed or missing required fields, and `3` when `--summary-output` cannot be written.
-
-The approved-release policy is supplied as JSON so release governance is kept outside Python code:
+Approved-release policy files use this shape:
 
 ```json
 {
-	"schemaVersion": "v1",
-	"approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
+  "schemaVersion": "v1",
+  "approvedToolVersions": ["OBL-APPROVED-RELEASE-VERSION"]
 }
 ```
 
-The bundled `config/approved-fcs-releases-example.json` is non-authoritative and contains a placeholder version. Replace it with the exact OBL-approved release versions before using the validator for a real review.
-
-Participant runs can also use the same policy shape for report self-assessment by adding `approvedReleasePolicyPath` to model-bank config JSON:
-
-```json
-{
-	"environment": "ozone-model-bank",
-	"discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-	"approvedReleasePolicyPath": "approved-fcs-releases-example.json"
-}
-```
-
-The path is resolved inside the config directory for CLI-loaded config files, or the process working directory for API/UI-submitted config JSON. Malformed policy files fail config validation before a run starts. Generated reports always include `certificationEligibility.approvedRelease`; if the policy is absent or does not list the current `tool.version`, the participant-side self-assessment is non-eligible. OBL-side validation remains authoritative and recomputes approved-release status from independently supplied inputs.
-
-Generated report JSON includes stable metadata consumed by the validator:
-
-```json
-{
-	"metadata": {"reportVersion": "1.0"},
-	"tool": {"version": "0.1.0"}
-}
-```
-
-Release builds can stamp the Docker image with `--build-arg CONFORMANCE_TOOL_VERSION=<version>`. Local/source runs fall back to `[project].version` from `pyproject.toml`, then `0+unknown` if no version can be resolved.
+Generated reports include catalogue traceability, runtime input snapshots with
+sensitive values omitted, certification/non-certification reasons, and stable
+`metadata.reportVersion` plus `tool.version` fields consumed by the validator.

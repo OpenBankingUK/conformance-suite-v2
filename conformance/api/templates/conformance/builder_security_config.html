@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>OAuth and security configuration</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
+        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2, h3 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.1rem; }
+        h3 { font-size: 1rem; }
+        .panel, .config-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .config-card { margin-top: 14px; background: #fbfcfe; }
+        .muted, .helper { color: var(--muted); }
+        .helper { font-size: 0.9rem; }
+        .step-id, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86rem; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+        .field-row { margin-top: 12px; }
+        label { display: block; font-weight: 650; margin-bottom: 8px; }
+        input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
+        input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
+        textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
+        .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .metadata-list { display: grid; grid-template-columns: minmax(180px, 0.5fr) 1fr; gap: 8px 12px; margin-top: 12px; }
+        .metadata-list dt { font-weight: 650; }
+        .metadata-list dd { margin: 0; overflow-wrap: anywhere; }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
+        .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
+        @media (max-width: 840px) { header, .grid, .grid.three, .metadata-list { display: block; } .grid > div + div, .metadata-list dd + dt { margin-top: 12px; } }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>OAuth and security configuration</h1>
+            <div class="muted">Step 5 of the guided builder</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="security-heading">
+        <h2 id="security-heading">OAuth/FAPI and communication settings</h2>
+        <p class="helper">Discovery metadata can prefill this page. Values are saved into the plan only after you submit them here.</p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        {% if discovery_metadata.fetch_error %}
+            <div class="message warning">Discovery metadata is unavailable for {{ discovery_metadata.source_url }}: {{ discovery_metadata.fetch_error }}. Continue manually.</div>
+        {% elif discovery_metadata.fields %}
+            <section class="config-card" aria-labelledby="metadata-heading">
+                <h3 id="metadata-heading">Discovery metadata</h3>
+                <p class="helper">These values came from discovery and are shown for reference. Prefilled fields below remain editable.</p>
+                <dl class="metadata-list">
+                    {% for row in discovery_metadata.fields %}
+                        <dt>{{ row.label }}</dt>
+                        <dd>{{ row.value }}</dd>
+                    {% endfor %}
+                </dl>
+            </section>
+        {% endif %}
+        {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+
+        <form method="post" action="{% url 'builder-security-config' draft.draft_id %}">
+            {% csrf_token %}
+            <section class="config-card" aria-labelledby="oauth-heading">
+                <h3 id="oauth-heading">OAuth/client</h3>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.oauth_client_id.id_for_label }}">Client ID</label>
+                        {{ form.oauth_client_id.errors }}
+                        <input id="{{ form.oauth_client_id.id_for_label }}" name="oauth_client_id" type="text" value="{{ form.oauth_client_id.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_redirect_uri.id_for_label }}">Redirect URI</label>
+                        {{ form.oauth_redirect_uri.errors }}
+                        <input id="{{ form.oauth_redirect_uri.id_for_label }}" name="oauth_redirect_uri" type="url" value="{{ form.oauth_redirect_uri.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint</label>
+                        {{ form.oauth_authorization_endpoint.errors }}
+                        <input id="{{ form.oauth_authorization_endpoint.id_for_label }}" name="oauth_authorization_endpoint" type="url" value="{{ form.oauth_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer</label>
+                        {{ form.oauth_issuer.errors }}
+                        <input id="{{ form.oauth_issuer.id_for_label }}" name="oauth_issuer" type="url" value="{{ form.oauth_issuer.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint</label>
+                        {{ form.oauth_token_endpoint.errors }}
+                        <input id="{{ form.oauth_token_endpoint.id_for_label }}" name="oauth_token_endpoint" type="url" value="{{ form.oauth_token_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_open_banking_intent_id.id_for_label }}">Open Banking intent ID</label>
+                        {{ form.oauth_open_banking_intent_id.errors }}
+                        <input id="{{ form.oauth_open_banking_intent_id.id_for_label }}" name="oauth_open_banking_intent_id" type="text" value="{{ form.oauth_open_banking_intent_id.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type</label>
+                        {{ form.oauth_response_type.errors }}
+                        <input id="{{ form.oauth_response_type.id_for_label }}" name="oauth_response_type" type="text" value="{{ form.oauth_response_type.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm</label>
+                        {{ form.oauth_request_object_signing_alg.errors }}
+                        <input id="{{ form.oauth_request_object_signing_alg.id_for_label }}" name="oauth_request_object_signing_alg" type="text" value="{{ form.oauth_request_object_signing_alg.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.client_credentials_client_secret.id_for_label }}">Client secret</label>
+                        {{ form.client_credentials_client_secret.errors }}
+                        <input id="{{ form.client_credentials_client_secret.id_for_label }}" name="client_credentials_client_secret" type="password" value="{{ form.client_credentials_client_secret.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method</label>
+                        {{ form.signing_token_endpoint_auth_method.errors }}
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                            {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
+                                <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        {% if discovery_metadata.fields %}<div class="helper">Discovery-supported methods are shown above, but this list stays fixed to the tool's supported methods.</div>{% endif %}
+                    </div>
+                </div>
+                <div class="field-row">
+                    <label for="{{ form.oauth_acr_values_supported.id_for_label }}">ACR values supported JSON</label>
+                    {{ form.oauth_acr_values_supported.errors }}
+                    <textarea id="{{ form.oauth_acr_values_supported.id_for_label }}" name="oauth_acr_values_supported" spellcheck="false">{{ form.oauth_acr_values_supported.value|default_if_none:'' }}</textarea>
+                </div>
+            </section>
+
+            <section class="config-card" aria-labelledby="resource-server-heading">
+                <h3 id="resource-server-heading">Resource server targets and headers</h3>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.resource_server_base_url.id_for_label }}">Resource server base URL</label>
+                        {{ form.resource_server_base_url.errors }}
+                        <input id="{{ form.resource_server_base_url.id_for_label }}" name="resource_server_base_url" type="url" value="{{ form.resource_server_base_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                    </div>
+                    <div>
+                        <label for="{{ form.resource_server_x_fapi_financial_id.id_for_label }}">x-fapi-financial-id</label>
+                        {{ form.resource_server_x_fapi_financial_id.errors }}
+                        <input id="{{ form.resource_server_x_fapi_financial_id.id_for_label }}" name="resource_server_x_fapi_financial_id" type="text" value="{{ form.resource_server_x_fapi_financial_id.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.resource_server_x_fapi_customer_ip_address.id_for_label }}">x-fapi-customer-ip-address</label>
+                        {{ form.resource_server_x_fapi_customer_ip_address.errors }}
+                        <input id="{{ form.resource_server_x_fapi_customer_ip_address.id_for_label }}" name="resource_server_x_fapi_customer_ip_address" type="text" value="{{ form.resource_server_x_fapi_customer_ip_address.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.resource_server_send_x_fapi_customer_ip_address.id_for_label }}">
+                            <input id="{{ form.resource_server_send_x_fapi_customer_ip_address.id_for_label }}" name="resource_server_send_x_fapi_customer_ip_address" type="checkbox" {% if form.resource_server_send_x_fapi_customer_ip_address.value %}checked{% endif %}>
+                            Send customer IP header
+                        </label>
+                        {{ form.resource_server_send_x_fapi_customer_ip_address.errors }}
+                    </div>
+                </div>
+            </section>
+
+            <section class="config-card" aria-labelledby="signing-heading">
+                <h3 id="signing-heading">FAPI signing and Open Banking signatures</h3>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.signing_certificate_path_root.id_for_label }}">Certificate path root</label>
+                        {{ form.signing_certificate_path_root.errors }}
+                        <input id="{{ form.signing_certificate_path_root.id_for_label }}" name="signing_certificate_path_root" type="text" value="{{ form.signing_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_kid.id_for_label }}">Signing key ID</label>
+                        {{ form.signing_kid.errors }}
+                        <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_certificate_path.id_for_label }}">Signing certificate path</label>
+                        {{ form.signing_certificate_path.errors }}
+                        <input id="{{ form.signing_certificate_path.id_for_label }}" name="signing_certificate_path" type="text" value="{{ form.signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key path</label>
+                        {{ form.signing_private_key_path.errors }}
+                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer</label>
+                        {{ form.signing_client_assertion_issuer.errors }}
+                        <input id="{{ form.signing_client_assertion_issuer.id_for_label }}" name="signing_client_assertion_issuer" type="text" value="{{ form.signing_client_assertion_issuer.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_client_assertion_subject.id_for_label }}">Client assertion subject</label>
+                        {{ form.signing_client_assertion_subject.errors }}
+                        <input id="{{ form.signing_client_assertion_subject.id_for_label }}" name="signing_client_assertion_subject" type="text" value="{{ form.signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.open_banking_tpp_signature_issuer.id_for_label }}">TPP signature issuer</label>
+                        {{ form.open_banking_tpp_signature_issuer.errors }}
+                        <input id="{{ form.open_banking_tpp_signature_issuer.id_for_label }}" name="open_banking_tpp_signature_issuer" type="text" value="{{ form.open_banking_tpp_signature_issuer.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.open_banking_tpp_signature_tan.id_for_label }}">TPP signature TAN</label>
+                        {{ form.open_banking_tpp_signature_tan.errors }}
+                        <input id="{{ form.open_banking_tpp_signature_tan.id_for_label }}" name="open_banking_tpp_signature_tan" type="text" value="{{ form.open_banking_tpp_signature_tan.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                </div>
+            </section>
+
+            <section class="config-card" aria-labelledby="tls-heading">
+                <h3 id="tls-heading">TLS/certificates</h3>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.tls_certificate_path_root.id_for_label }}">TLS certificate path root</label>
+                        {{ form.tls_certificate_path_root.errors }}
+                        <input id="{{ form.tls_certificate_path_root.id_for_label }}" name="tls_certificate_path_root" type="text" value="{{ form.tls_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle path</label>
+                        {{ form.tls_ca_bundle_path.errors }}
+                        <input id="{{ form.tls_ca_bundle_path.id_for_label }}" name="tls_ca_bundle_path" type="text" value="{{ form.tls_ca_bundle_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate path</label>
+                        {{ form.tls_client_certificate_path.errors }}
+                        <input id="{{ form.tls_client_certificate_path.id_for_label }}" name="tls_client_certificate_path" type="text" value="{{ form.tls_client_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key path</label>
+                        {{ form.tls_client_private_key_path.errors }}
+                        <input id="{{ form.tls_client_private_key_path.id_for_label }}" name="tls_client_private_key_path" type="text" value="{{ form.tls_client_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                </div>
+            </section>
+
+            <div class="actions">
+                <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Back to discovery</a>
+                <button type="submit">Continue to runtime inputs</button>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

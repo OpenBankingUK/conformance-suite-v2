@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Import test plan</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root {
+            color-scheme: light;
+            --bg: #f7f8fa;
+            --panel: #ffffff;
+            --border: #ccd3dc;
+            --text: #1b1f24;
+            --muted: #667085;
+            --accent: #0b6bcb;
+            --danger: #b42318;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            background: var(--bg);
+            color: var(--text);
+            font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            line-height: 1.5;
+        }
+        main { width: min(960px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.1rem; }
+        .panel { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .muted, .helper { color: var(--muted); }
+        .helper { font-size: 0.9rem; }
+        label { display: block; font-weight: 650; margin-bottom: 8px; }
+        textarea {
+            width: 100%;
+            min-height: 360px;
+            resize: vertical;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 12px;
+            font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+            color: var(--text);
+            background: #fbfcfe;
+        }
+        .message { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.error { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        button, .button {
+            min-height: 38px;
+            border: 1px solid var(--accent);
+            border-radius: 6px;
+            padding: 8px 14px;
+            background: var(--accent);
+            color: #ffffff;
+            font: inherit;
+            font-weight: 650;
+            text-decoration: none;
+            cursor: pointer;
+        }
+        .button.secondary { background: #ffffff; color: var(--accent); }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Import test plan</h1>
+            <div class="muted">Open a reusable v2 plan document into review</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="import-heading">
+        <h2 id="import-heading">Plan JSON</h2>
+        <p class="helper">Paste a v2 plan document with scheme/specification/version, scope, security profile, and config. Imported secrets are retained only in this browser session and are masked in review.</p>
+        {% if import_error %}<div class="message error">{{ import_error }}</div>{% endif %}
+        <form method="post" action="{% url 'builder-import' %}">
+            {% csrf_token %}
+            <label for="id_plan_json">v2 plan document JSON</label>
+            <textarea id="id_plan_json" name="plan_json" spellcheck="false">{{ plan_json }}</textarea>
+            <div class="actions">
+                <a class="button secondary" href="{% url 'home' %}">Cancel</a>
+                <button type="submit">Import and review</button>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

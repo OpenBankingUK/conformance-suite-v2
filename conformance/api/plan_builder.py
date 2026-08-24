@@ -1,40 +1,43 @@
-"""Plan-builder forms and presenters for participant-facing browser workflows."""
+"""Plan-builder forms and presenters for catalogue-backed browser workflows."""
 
 from __future__ import annotations
 
 import json
-import re
-from collections.abc import Mapping, MutableMapping
+from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import Literal, cast
+from typing import cast
 
 from django import forms
 from django.core.files.uploadedfile import UploadedFile
 from django.utils.datastructures import MultiValueDict
 
-from conformance.json_types import JsonValue
-from conformance.manifest import (
-    FormBody,
-    GeneratedRequestObject,
-    JsonBody,
-    Manifest,
-    ManifestError,
-    ManifestStep,
-    PsuAuthorizationStep,
-    StepPhase,
-    load_manifest_from_object,
+from conformance.catalogue import (
+    ApplicabilityDecision,
+    CatalogueError,
+    CatalogueKey,
+    CatalogueTestCase,
+    CompiledTestPlan,
+    EndpointRef,
+    HttpMethod,
+    ImplementedEndpoint,
+    RuntimeInputRequirement,
+    SecurityProfile,
+    TestCatalogue,
+    TestPlanSpec,
+    compile_test_plan,
+    parse_test_plan_spec,
 )
+from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
+from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, list_supported_suites, resolve_suite
-from conformance.test_plan import TestPlan, TestPlanEntry
 
-StepKind = Literal["http", "psu-authorization"]
-"""Step kind labels displayed by the participant plan-builder UI."""
+_RUNTIME_INPUT_PREFIX = "runtime_input__"
+"""Prefix used for runtime input names in browser form submissions."""
 
-SelectionMode = Literal["deselect", "select"]
-"""Modes used by browser forms to describe participant step selection."""
+_CAPABILITY_VALUE_SEPARATOR = "::"
+"""Separator used in endpoint capability checkbox values."""
 
 
 @dataclass(frozen=True)
@@ -42,169 +45,186 @@ class GuidedApiOption:
     """One guided-flow API option available for a specification version.
 
     Attributes:
+        standard: Standards namespace that owns the catalogue.
         spec_version: Specification version that exposes this API family.
         api: API family value posted back by the browser form.
         label: Human-readable API family label shown in the browser UI.
     """
 
-    spec_version: str
-    api: str
-    label: str
-
-
-@dataclass(frozen=True)
-class GuidedSuiteOption:
-    """One guided-flow suite option rendered in the browser selector.
-
-    Attributes:
-        standard: Suite standard value written into generated config JSON.
-        spec_version: Specification version value posted by the browser form.
-        profile: Security profile value written into generated config JSON.
-        api: API family value posted by the browser form.
-        suite: Suite identifier value posted by the browser form.
-        label: Human-readable suite label shown in the browser UI.
-        description: Short scope note shown beside the selector.
-        prompts_oauth: Whether the guided form should show OAuth fields.
-        prompts_intent_id: Whether the guided form should show the intent id field.
-        prompts_resource_base_url: Whether the guided form should show the resource base URL field.
-        prompts_signing: Whether the guided form should show FAPI signing fields.
-    """
-
     standard: str
     spec_version: str
-    profile: str
     api: str
-    suite: str
     label: str
-    description: str
-    prompts_oauth: bool
-    prompts_intent_id: bool
-    prompts_resource_base_url: bool
-    prompts_signing: bool
 
 
 @dataclass(frozen=True)
-class GuidedModelBankOption:
-    """One known model-bank environment available in the guided flow.
+class EndpointCapabilityOption:
+    """One endpoint-scoped capability rendered inside an endpoint card.
 
     Attributes:
-        value: Stable option value posted by the browser form.
-        label: Human-readable model-bank label shown in the browser UI.
-        environment: Environment value written into generated config JSON.
-        discovery_url: OpenID Provider discovery URL written into generated
-            config JSON.
+        value: Stable browser checkbox value pairing endpoint and capability.
+        endpoint_id: Endpoint option id that owns the capability.
+        capability_id: Catalogue-owned capability id.
+        label: Human-readable capability label.
+        description: Participant-facing capability explanation.
+        required: Whether the capability is locked baseline endpoint coverage.
+        selected: Whether the capability is currently selected or implied.
     """
 
     value: str
+    endpoint_id: str
+    capability_id: str
     label: str
-    environment: str
-    discovery_url: str
+    description: str
+    required: bool
+    selected: bool = False
 
 
 @dataclass(frozen=True)
-class PlanStepRow:
-    """Rendered row for one manifest step in the participant plan builder.
+class CatalogueEndpointOption:
+    """One implemented-endpoint option rendered by the browser plan builder.
 
     Attributes:
-        id: Stable manifest step identifier.
-        name: Human-readable manifest step name.
-        kind: Manifest step kind displayed to participants.
-        group: Execution group label shown in the plan preview.
-        phase: Scheduling phase shown in the plan preview.
-        mandatory: Whether the manifest marks the step as certification mandatory.
-        optional: Whether the manifest marks the step as opt-in optional.
-        default_selected: Whether the default plan selects the step before form input.
-        selected_after_form: Whether the submitted form selection selects the step.
-        certification_required: Whether certification eligibility depends on the step.
-        deselection_impacts_certification: Whether deselecting this step affects certification eligibility.
-        certification_blocked_by_deselection: Whether this submitted selection blocks certification eligibility.
+        id: Stable form value for this exact method/path reference.
+        standard: Standards namespace that owns the endpoint.
+        spec_version: Specification version that owns the endpoint.
+        api: API family that owns the endpoint.
+        method: HTTP method for the endpoint.
+        path: Standards path for the endpoint.
+        resource_group: Human-readable grouping label.
+        operation_id: Optional operation identifier exported in the plan spec.
+        capabilities: Capability selectors available for this endpoint.
+        selected: Whether the submitted form currently selects this endpoint.
+    """
+
+    id: str
+    standard: str
+    spec_version: str
+    api: str
+    method: str
+    path: str
+    resource_group: str
+    operation_id: str | None
+    capabilities: tuple[EndpointCapabilityOption, ...] = ()
+    selected: bool = False
+
+
+@dataclass(frozen=True)
+class RuntimeInputPrompt:
+    """One runtime input prompt driven by selected catalogue endpoints.
+
+    Attributes:
+        input_id: Stable runtime input identifier used by the plan spec.
+        name: Browser form field name.
+        label: Human-readable prompt label from the catalogue.
+        input_type: Catalogue runtime input type.
+        required: Whether the compiler requires the value.
+        sensitive: Whether values are secrets or credentials and must not be
+            shown in audit snapshots.
+        value: Current submitted value for redisplay.
+    """
+
+    input_id: str
+    name: str
+    label: str
+    input_type: str
+    required: bool
+    sensitive: bool
+    value: str
+
+
+@dataclass(frozen=True)
+class PlanRuntimeRequirement:
+    """Runtime requirement summary shown in the generated plan preview.
+
+    Attributes:
+        input_id: Stable runtime input identifier.
+        label: Human-readable catalogue prompt label.
+        required: Whether the generated case requires the input.
+        sensitive: Whether values for this input are secret-bearing.
+    """
+
+    input_id: str
+    label: str
+    required: bool
+    sensitive: bool
+
+
+@dataclass(frozen=True)
+class PlanTestCaseRow:
+    """Read-only generated test-case preview row.
+
+    Attributes:
+        id: Catalogue test-case identifier.
+        name: Human-readable test-case name.
+        role: Execution/compliance role.
+        phase: High-level execution phase derived from the compiled case role.
+        source: Human-readable reason this case was generated.
+        source_detail: Additional endpoint, capability, or dependency context.
+        mandatory: Whether the generated case is mandatory for certification.
+        dependencies: Other generated case ids this case depends on.
+        request_count: Number of request steps generated for the case.
+        assertion_count: Number of locked assertions attached to the case.
+        runtime_requirements: Runtime inputs consumed by the generated case.
+        request_step_ids: Request-step identifiers owned by the case.
+        assertion_summaries: Assertion summaries owned by the case.
+        compliance_scope: Traceability labels for standards and legacy coverage.
     """
 
     id: str
     name: str
-    kind: StepKind
-    group: str
-    phase: StepPhase
+    role: str
+    phase: str
+    source: str
+    source_detail: str
     mandatory: bool
-    optional: bool
-    default_selected: bool
-    selected_after_form: bool
-    certification_required: bool
-    deselection_impacts_certification: bool
-    certification_blocked_by_deselection: bool
-
-
-@dataclass(frozen=True)
-class PlanStepAuthRequirement:
-    """Auth bundle mapping for one selected manifest step.
-
-    Attributes:
-        step_id: Selected manifest step id requiring an access token.
-        bundle_id: Stable auth bundle identifier consumed by the step.
-    """
-
-    step_id: str
-    bundle_id: str
-
-
-@dataclass(frozen=True)
-class PlanAuthBundle:
-    """Consent/token requirement bundle required by selected steps.
-
-    Attributes:
-        id: Stable identifier derived from token source and effective requirements.
-        token_step_id: Step id that mints the access token consumed by this bundle.
-        consent_step_id: Step id that creates the consent backing this token,
-            or ``None`` when no consent-creation step is detected.
-        required_scopes: Required OAuth scopes for this bundle.
-        required_ob_permissions: Required Open Banking consent permissions for this bundle.
-        consuming_step_ids: Selected step ids that consume this bundle.
-    """
-
-    id: str
-    token_step_id: str
-    consent_step_id: str | None
-    required_scopes: tuple[str, ...]
-    required_ob_permissions: tuple[str, ...]
-    consuming_step_ids: tuple[str, ...]
+    dependencies: tuple[str, ...]
+    request_count: int
+    assertion_count: int
+    runtime_requirements: tuple[PlanRuntimeRequirement, ...]
+    request_step_ids: tuple[str, ...]
+    assertion_summaries: tuple[str, ...]
+    compliance_scope: tuple[str, ...]
 
 
 @dataclass(frozen=True)
 class PlanPreview:
-    """Validated plan-builder state ready for template rendering or launch.
+    """Validated catalogue plan-builder state ready for preview or launch.
 
     Attributes:
-        config: Validated model-bank configuration supplied through the form.
-        manifest: Validated v1 manifest supplied through the form or resolved
-            from ``config.test_suite``.
-        suite_metadata: Display metadata for a config-resolved suite, or
-            ``None`` when the preview uses an explicit manifest.
-        default_plan: Default plan derived from the manifest before form input.
-        selected_plan: Plan after applying submitted selection or deselection input.
-        rows: Step presenters in manifest order.
-        launch_supported: Whether this preview can be launched by the browser UI slice.
-        launch_blockers: Human-readable reasons launch is disabled.
-        certification_eligible_by_selection: Whether the submitted selection preserves certification eligibility.
-        auth_inventory: Stable consent/token bundles required by selected
-            token-protected steps.
-        step_auth_requirements: Selected step to auth-bundle mappings.
+        config: Validated runtime configuration supplied through the form.
+        plan_spec: Participant-authored plan spec generated by guided endpoint
+            selection or imported through JSON mode.
+        compiled_plan: Deterministic executable plan generated by the compiler.
+        catalogue_label: Human-readable catalogue boundary label.
+        endpoint_options: Endpoint options for the selected catalogue.
+        selected_endpoint_ids: Endpoint option ids included in ``plan_spec``.
+        runtime_input_prompts: Runtime prompts derived from selected endpoints.
+        generated_plan_spec_json: Exportable JSON plan spec.
+        rows: Generated test-case audit rows. Templates keep these collapsed by
+            default so participants see counts before implementation details.
+        launch_supported: Whether this preview can be launched.
+        launch_blockers: Human-readable launch blockers.
+        certification_eligible_by_selection: Whether the generated plan is
+            certifying before execution.
     """
 
     config: ModelBankConfig
-    manifest: Manifest
-    suite_metadata: SuiteMetadata | None
-    default_plan: TestPlan
-    selected_plan: TestPlan
-    rows: tuple[PlanStepRow, ...]
+    plan_spec: TestPlanSpec
+    compiled_plan: CompiledTestPlan
+    catalogue_label: str
+    endpoint_options: tuple[CatalogueEndpointOption, ...]
+    selected_endpoint_ids: tuple[str, ...]
+    runtime_input_prompts: tuple[RuntimeInputPrompt, ...]
+    generated_plan_spec_json: str
+    rows: tuple[PlanTestCaseRow, ...]
     launch_supported: bool
     launch_blockers: tuple[str, ...]
     certification_eligible_by_selection: bool
-    auth_inventory: tuple[PlanAuthBundle, ...]
-    step_auth_requirements: tuple[PlanStepAuthRequirement, ...]
 
 
-class StepIdListField(forms.Field):
-    """Form field that accepts repeated checkbox values as a list of step ids.
+class EndpointIdListField(forms.Field):
+    """Form field that accepts repeated endpoint checkbox values.
 
     Attributes:
         widget: Checkbox widget used to read repeated values from form data.
@@ -213,15 +233,13 @@ class StepIdListField(forms.Field):
     widget = forms.CheckboxSelectMultiple
 
     def to_python(self, value: object) -> list[str]:
-        """Convert a Django form value into a list of non-empty step ids.
+        """Convert a Django form value into a list of non-empty endpoint ids.
 
         Args:
-            value: Raw value extracted from form data. Checkbox widgets usually
-                provide a list, while tests or alternate clients may provide a
-                single string.
+            value: Raw value extracted from form data.
 
         Returns:
-            Ordered, non-empty step ids submitted by the caller.
+            Ordered, non-empty endpoint ids submitted by the caller.
 
         Raises:
             ValidationError: If any submitted value is not a string.
@@ -230,73 +248,55 @@ class StepIdListField(forms.Field):
             return []
         if isinstance(value, str):
             return [value] if value else []
-        if isinstance(value, (list, tuple)) and all(isinstance(step_id, str) for step_id in value):
-            return [step_id for step_id in value if step_id]
-        raise forms.ValidationError("Step ids must be submitted as strings", code="invalid_step_ids")
+        if isinstance(value, (list, tuple)) and all(isinstance(endpoint_id, str) for endpoint_id in value):
+            return [endpoint_id for endpoint_id in value if endpoint_id]
+        raise forms.ValidationError("Endpoint ids must be submitted as strings", code="invalid_endpoint_ids")
 
 
 class PlanBuilderForm(forms.Form):
-    """Django Form boundary for participant plan-builder preview and launch posts.
+    """Django Form boundary for catalogue plan-builder preview and launch posts.
 
     Attributes:
         config_json: Textarea containing model-bank config JSON.
-        manifest_json: Optional textarea containing v1 conformance manifest
-            JSON. When blank, ``config.testSuite`` may resolve a bundled suite.
-        guided_model_bank: Structured model-bank example selector used to
-            populate guided environment and discovery values.
-        guided_environment: Structured environment input used when building a
-            config from guided browser fields instead of pasted JSON.
-        guided_discovery_url: Structured discovery URL input used by the
-            guided browser flow.
+        plan_spec_json: Optional textarea containing an exportable plan spec.
+        guided_discovery_url: Structured discovery URL input used by the guided
+            browser flow.
+        guided_standard: Structured selector for the standards namespace.
         guided_spec_version: Structured selector for the target spec version.
         guided_api: Structured selector for the target API family.
-        guided_suite: Structured selector for the bundled suite identifier.
-        guided_client_id: Structured OAuth client id prompt used by guided
-            suites that require OAuth input.
-        guided_redirect_uri: Structured OAuth redirect URI prompt used by
-            guided suites that require OAuth input.
-        guided_authorization_endpoint: Optional structured authorization
-            endpoint override prompt for legacy registrations.
-        guided_open_banking_intent_id: Optional structured Open Banking intent
-            id prompt for starter suites.
-        guided_resource_base_url: Optional structured protected-resource base
-            URL prompt for AIS suites.
-        guided_signing_certificate_path_root: Optional structured root path for
-            signing certificate material.
-        guided_signing_certificate_path: Optional structured signing
-            certificate path prompt.
-        guided_signing_private_key_path: Optional structured signing private
-            key path prompt.
-        guided_signing_kid: Optional structured signing key id prompt.
-        guided_signing_client_assertion_issuer: Optional structured client
-            assertion issuer prompt.
-        guided_signing_client_assertion_subject: Optional structured client
-            assertion subject prompt.
-        guided_signing_token_endpoint_auth_method: Optional structured token
-            endpoint auth-method prompt.
-        selection_mode: Choice controlling whether selected or deselected ids drive the submitted plan.
-        selected_step_ids: Step ids posted by checked step checkboxes.
-        deselect_step_ids: Step ids posted as explicit deselections.
+        guided_security_profile: Structured selector for the security profile.
+        guided_client_id: Structured OAuth client id prompt.
+        guided_redirect_uri: Structured OAuth redirect URI prompt.
+        guided_authorization_endpoint: Optional authorization endpoint override.
+        guided_resource_base_url: Optional protected-resource base URL.
+        guided_signing_certificate_path_root: Optional signing path root.
+        guided_signing_certificate_path: Optional signing certificate path.
+        guided_signing_private_key_path: Optional signing private-key path.
+        guided_signing_kid: Optional signing key id.
+        guided_signing_client_assertion_issuer: Optional assertion issuer.
+        guided_signing_client_assertion_subject: Optional assertion subject.
+        guided_signing_token_endpoint_auth_method: Optional token endpoint auth method.
+        implemented_endpoint_ids: Endpoint ids posted by endpoint checkboxes.
+        implemented_endpoint_capabilities: Endpoint capability checkbox values
+            posted for optional implementation features.
         preview: Typed preview built after successful form validation.
-        generated_config_json: Optional generated JSON emitted from guided
-            fields after validation.
+        generated_config_json: Optional generated config JSON emitted from guided fields.
+        runtime_input_prompts: Runtime prompts derived from current endpoint selection.
     """
 
     config_json: forms.CharField = forms.CharField(label="Config JSON", required=False, widget=forms.Textarea)
-    manifest_json: forms.CharField = forms.CharField(label="Manifest JSON", required=False, widget=forms.Textarea)
-    guided_model_bank: forms.ChoiceField = forms.ChoiceField(label="Model bank example", required=False)
-    guided_environment: forms.CharField = forms.CharField(label="Environment", required=False)
+    plan_spec_json: forms.CharField = forms.CharField(label="Plan spec JSON", required=False, widget=forms.Textarea)
     guided_discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
+    guided_standard: forms.ChoiceField = forms.ChoiceField(label="Standard", required=False)
     guided_spec_version: forms.ChoiceField = forms.ChoiceField(label="Specification version", required=False)
     guided_api: forms.ChoiceField = forms.ChoiceField(label="API family", required=False)
-    guided_suite: forms.ChoiceField = forms.ChoiceField(label="Suite", required=False)
+    guided_security_profile: forms.ChoiceField = forms.ChoiceField(label="Security profile", required=False)
     guided_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
     guided_redirect_uri: forms.CharField = forms.CharField(label="Redirect URI", required=False)
     guided_authorization_endpoint: forms.CharField = forms.CharField(
         label="Authorization endpoint override",
         required=False,
     )
-    guided_open_banking_intent_id: forms.CharField = forms.CharField(label="Intent ID", required=False)
     guided_resource_base_url: forms.CharField = forms.CharField(label="Resource base URL", required=False)
     guided_signing_certificate_path_root: forms.CharField = forms.CharField(
         label="Certificate path root",
@@ -317,15 +317,12 @@ class PlanBuilderForm(forms.Form):
         label="Token endpoint auth method",
         required=False,
     )
-    selection_mode: forms.ChoiceField = forms.ChoiceField(
-        choices=(("deselect", "Deselect submitted ids"), ("select", "Select submitted ids")),
-        required=False,
-    )
-    selected_step_ids: StepIdListField = StepIdListField(required=False)
-    deselect_step_ids: StepIdListField = StepIdListField(required=False)
+    implemented_endpoint_ids: EndpointIdListField = EndpointIdListField(required=False)
+    implemented_endpoint_capabilities: EndpointIdListField = EndpointIdListField(required=False)
 
     preview: PlanPreview | None = None
     generated_config_json: str | None = None
+    runtime_input_prompts: tuple[RuntimeInputPrompt, ...] = ()
 
     def __init__(
         self,
@@ -343,7 +340,7 @@ class PlanBuilderForm(forms.Form):
         renderer: forms.renderers.BaseRenderer | None = None,
         bound_field_class: type[forms.BoundField] | None = None,
     ) -> None:
-        """Initialise the form with the current guided-flow catalog choices.
+        """Initialise the form with catalogue choices.
 
         Args:
             data: Optional bound form data.
@@ -373,19 +370,11 @@ class PlanBuilderForm(forms.Form):
             renderer=renderer,
             bound_field_class=bound_field_class,
         )
-        guided_model_bank_field = cast(forms.ChoiceField, self.fields["guided_model_bank"])
-        guided_spec_version_field = cast(forms.ChoiceField, self.fields["guided_spec_version"])
-        guided_api_field = cast(forms.ChoiceField, self.fields["guided_api"])
-        guided_suite_field = cast(forms.ChoiceField, self.fields["guided_suite"])
-        guided_signing_auth_method_field = cast(
-            forms.ChoiceField,
-            self.fields["guided_signing_token_endpoint_auth_method"],
-        )
-        guided_model_bank_field.choices = [("", "Custom environment"), *guided_model_bank_choices()]
-        guided_spec_version_field.choices = [("", "Select version"), *guided_spec_version_choices()]
-        guided_api_field.choices = [("", "Select API"), *guided_api_choices()]
-        guided_suite_field.choices = [("", "Select suite"), *guided_suite_name_choices()]
-        guided_signing_auth_method_field.choices = [
+        cast(forms.ChoiceField, self.fields["guided_standard"]).choices = guided_standard_choices()
+        cast(forms.ChoiceField, self.fields["guided_spec_version"]).choices = guided_spec_version_choices()
+        cast(forms.ChoiceField, self.fields["guided_api"]).choices = guided_api_choices()
+        cast(forms.ChoiceField, self.fields["guided_security_profile"]).choices = guided_security_profile_choices()
+        cast(forms.ChoiceField, self.fields["guided_signing_token_endpoint_auth_method"]).choices = [
             ("", "Select auth method"),
             ("private_key_jwt", "private_key_jwt"),
             ("tls_client_auth", "tls_client_auth"),
@@ -396,12 +385,11 @@ class PlanBuilderForm(forms.Form):
 
         Returns:
             Parsed and validated model-bank configuration, or ``None`` when
-            the browser form leaves the textarea blank and relies on guided
-            inputs instead.
+            guided fields should generate the config.
 
         Raises:
-            ValidationError: If the value is not JSON, is not a JSON object,
-                or fails model-bank config validation.
+            ValidationError: If the value is not JSON, is not a JSON object, or
+                fails model-bank config validation.
         """
         raw_value = self.cleaned_data["config_json"]
         if not isinstance(raw_value, str):
@@ -414,34 +402,6 @@ class PlanBuilderForm(forms.Form):
         except ConfigError as error:
             raise forms.ValidationError(f"Config validation failed: {error}", code="invalid_config") from error
 
-    def clean_manifest_json(self) -> Manifest | None:
-        """Validate the submitted v1 conformance manifest JSON.
-
-        Returns:
-            Parsed v1 manifest, or ``None`` when the field is blank so the
-            form can attempt config-driven suite resolution.
-
-        Raises:
-            ValidationError: If the value is not JSON, fails manifest
-                validation, or is not a v1 manifest.
-        """
-        raw_value = self.cleaned_data["manifest_json"]
-        if not isinstance(raw_value, str):
-            raise forms.ValidationError("Manifest JSON must be text", code="invalid_manifest_json")
-        if raw_value.strip() == "":
-            return None
-        raw_manifest = _load_json_object(raw_value, label="Manifest JSON")
-        try:
-            manifest = load_manifest_from_object(raw_manifest)
-        except ManifestError as error:
-            raise forms.ValidationError(f"Manifest validation failed: {error}", code="invalid_manifest") from error
-        if manifest.schema_version != "v1":
-            raise forms.ValidationError(
-                "Plan builder supports v1 manifests only; v0 manifests do not carry selectable plan steps.",
-                code="unsupported_manifest_version",
-            )
-        return manifest
-
     def clean(self) -> dict[str, object]:
         """Build the typed preview once individual form fields are valid.
 
@@ -451,65 +411,71 @@ class PlanBuilderForm(forms.Form):
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
         config = cleaned_data.get("config_json")
-        manifest = cleaned_data.get("manifest_json")
         if config is None:
-            config = self._build_guided_config(cleaned_data=cleaned_data, requires_suite=manifest is None)
+            config = self._build_guided_config(cleaned_data=cleaned_data)
         if not isinstance(config, ModelBankConfig):
             return cleaned_data
 
-        suite_metadata: SuiteMetadata | None = None
-        if manifest is None:
-            if config.test_suite is None:
-                self.add_error(
-                    "manifest_json",
-                    forms.ValidationError(
-                        "Manifest JSON is required unless config.testSuite selects a bundled suite.",
-                        code="missing_manifest_or_suite",
-                    ),
-                )
-                return cleaned_data
-            try:
-                resolved_suite = resolve_suite(config.test_suite)
-            except SuiteCatalogError as error:
-                raise forms.ValidationError(f"Suite resolution failed: {error}", code="invalid_suite") from error
-            manifest = resolved_suite.manifest
-            suite_metadata = resolved_suite.metadata
-        elif not isinstance(manifest, Manifest):
-            return cleaned_data
+        selected_catalogue = _catalogue_from_cleaned_data(cleaned_data)
+        selected_endpoint_ids = _cleaned_endpoint_ids(cleaned_data.get("implemented_endpoint_ids"))
+        selected_capability_values = _cleaned_endpoint_ids(cleaned_data.get("implemented_endpoint_capabilities"))
+        security_profile = _security_profile_from_cleaned_data(cleaned_data)
+        endpoint_options = _endpoint_options_for_catalogue(
+            selected_catalogue,
+            selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+        )
+        self.runtime_input_prompts = _runtime_prompts_for_endpoint_selection(
+            catalogue=selected_catalogue,
+            selected_endpoint_ids=selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+            security_profile=security_profile,
+            data=self.data if self.is_bound else {},
+        )
 
-        selected_step_ids = _cleaned_step_ids(cleaned_data.get("selected_step_ids"))
-        deselect_step_ids = _cleaned_step_ids(cleaned_data.get("deselect_step_ids"))
-        selection_mode = _cleaned_selection_mode(cleaned_data.get("selection_mode"))
         try:
-            self.preview = build_plan_preview(
-                config=config,
-                manifest=manifest,
-                suite_metadata=suite_metadata,
-                selected_step_ids=selected_step_ids,
-                deselect_step_ids=deselect_step_ids,
-                selection_mode=selection_mode,
+            plan_spec = self._plan_spec_from_cleaned_data(
+                cleaned_data=cleaned_data,
+                catalogue=selected_catalogue,
+                endpoint_options=endpoint_options,
+                selected_endpoint_ids=selected_endpoint_ids,
+                selected_capability_values=selected_capability_values,
             )
-        except ValueError as error:
+            compiled_catalogue = resolve_catalogue(plan_spec.catalogue_key)
+            compiled_plan = compile_test_plan(compiled_catalogue, plan_spec)
+        except forms.ValidationError:
+            raise
+        except CatalogueError as error:
             raise forms.ValidationError(f"Plan validation failed: {error}", code="invalid_plan") from error
+
+        selected_endpoint_ids = tuple(_endpoint_id(endpoint) for endpoint in plan_spec.implemented_endpoints)
+        selected_capability_values = _capability_values_from_plan_spec(plan_spec)
+        endpoint_options = _endpoint_options_for_catalogue(
+            compiled_catalogue,
+            selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+        )
+        self.runtime_input_prompts = _runtime_prompts_from_trace(compiled_plan, data=self.data if self.is_bound else {})
+        self.preview = _build_preview(
+            config=config,
+            plan_spec=plan_spec,
+            compiled_plan=compiled_plan,
+            catalogue=compiled_catalogue,
+            endpoint_options=endpoint_options,
+            selected_endpoint_ids=selected_endpoint_ids,
+            runtime_input_prompts=self.runtime_input_prompts,
+        )
         return cleaned_data
 
-    def _build_guided_config(
-        self,
-        *,
-        cleaned_data: dict[str, object],
-        requires_suite: bool,
-    ) -> ModelBankConfig | None:
-        """Build a validated config object from the guided browser fields.
+    def _build_guided_config(self, *, cleaned_data: dict[str, object]) -> ModelBankConfig | None:
+        """Build a validated config object from guided browser fields.
 
         Args:
             cleaned_data: Current cleaned-data dictionary from the form.
-            requires_suite: Whether blank manifest input means the guided flow
-                must provide ``testSuite`` fields.
 
         Returns:
             Parsed and validated config built from guided fields, or ``None``
-            when the submission did not provide enough guided data to build a
-            config.
+            when the submission did not provide enough guided data.
         """
         if not _has_guided_input(cleaned_data):
             self.add_error(
@@ -521,55 +487,18 @@ class PlanBuilderForm(forms.Form):
             )
             return None
 
-        model_bank_option = _guided_model_bank_option_from_cleaned_data(cleaned_data)
-        environment = _cleaned_optional_string(cleaned_data.get("guided_environment"))
         discovery_url = _cleaned_optional_string(cleaned_data.get("guided_discovery_url"))
-        if model_bank_option is not None:
-            environment = environment or model_bank_option.environment
-            discovery_url = discovery_url or model_bank_option.discovery_url
-        if environment is None:
-            self.add_error("guided_environment", "Environment is required for guided config generation.")
         if discovery_url is None:
             self.add_error("guided_discovery_url", "Discovery URL is required for guided config generation.")
-
-        suite_option = _guided_suite_option_from_cleaned_data(cleaned_data)
-        suite_choice_supplied = _guided_suite_choice_supplied(cleaned_data)
-        if suite_choice_supplied and suite_option is None:
-            if _cleaned_optional_string(cleaned_data.get("guided_spec_version")) is None:
-                self.add_error(
-                    "guided_spec_version",
-                    "Specification version is required when selecting a guided suite.",
-                )
-            if _cleaned_optional_string(cleaned_data.get("guided_api")) is None:
-                self.add_error("guided_api", "API family is required when selecting a guided suite.")
-            if _cleaned_optional_string(cleaned_data.get("guided_suite")) is None:
-                self.add_error("guided_suite", "Suite is required when selecting a guided suite.")
-        if requires_suite and suite_option is None:
-            self.add_error(
-                "guided_suite",
-                "Guided suite selection is required unless you paste a manifest JSON object.",
-            )
-
         if self.errors:
             return None
 
-        raw_config: dict[str, JsonValue] = {
-            "environment": environment,
-            "discoveryUrl": discovery_url,
+        raw_config: JsonObject = {
+            "discoveryUrl": discovery_url or "",
         }
-        if suite_option is not None:
-            raw_config["testSuite"] = {
-                "standard": suite_option.standard,
-                "specVersion": suite_option.spec_version,
-                "profile": suite_option.profile,
-                "api": suite_option.api,
-                "suite": suite_option.suite,
-            }
-
         raw_oauth = _build_guided_oauth_object(cleaned_data)
         if raw_oauth is not None:
             raw_config["oauth"] = raw_oauth
-
         raw_fapi_signing = _build_guided_fapi_signing_object(cleaned_data)
         if raw_fapi_signing is not None:
             raw_config["fapiSigning"] = raw_fapi_signing
@@ -581,64 +510,258 @@ class PlanBuilderForm(forms.Form):
             self.add_error("config_json", f"Guided config validation failed: {error}")
             return None
 
+    def _plan_spec_from_cleaned_data(
+        self,
+        *,
+        cleaned_data: dict[str, object],
+        catalogue: TestCatalogue,
+        endpoint_options: tuple[CatalogueEndpointOption, ...],
+        selected_endpoint_ids: tuple[str, ...],
+        selected_capability_values: tuple[str, ...],
+    ) -> TestPlanSpec:
+        """Read an imported plan spec or build one from guided endpoint fields.
+
+        Args:
+            cleaned_data: Current form cleaned-data dictionary.
+            catalogue: Catalogue selected by guided standard/version/API fields.
+            endpoint_options: Endpoint options available for ``catalogue``.
+            selected_endpoint_ids: Endpoint option ids submitted by the form.
+            selected_capability_values: Endpoint capability checkbox values
+                submitted by the form.
+
+        Returns:
+            Parsed plan spec.
+
+        Raises:
+            ValidationError: If JSON mode is malformed or endpoint selection is invalid.
+            CatalogueError: If the plan spec fails schema validation.
+        """
+        raw_plan_spec_json = cleaned_data.get("plan_spec_json")
+        if isinstance(raw_plan_spec_json, str) and raw_plan_spec_json.strip():
+            raw_plan_spec = _load_json_object(raw_plan_spec_json, label="Plan spec JSON")
+            return parse_test_plan_spec(raw_plan_spec)
+
+        selected_options = [option for option in endpoint_options if option.id in selected_endpoint_ids]
+        unknown_ids = set(selected_endpoint_ids) - {option.id for option in endpoint_options}
+        if unknown_ids:
+            unknown_list = ", ".join(sorted(unknown_ids))
+            raise forms.ValidationError(f"Unknown implemented endpoint id(s): {unknown_list}", code="invalid_endpoint")
+        _validate_selected_capability_values(
+            endpoint_options=endpoint_options,
+            selected_capability_values=selected_capability_values,
+        )
+
+        raw_plan_spec = _guided_plan_spec_object(
+            catalogue=catalogue,
+            security_profile=_security_profile_from_cleaned_data(cleaned_data),
+            endpoint_options=tuple(selected_options),
+            runtime_inputs=_runtime_inputs_from_prompts(self.runtime_input_prompts),
+        )
+        return parse_test_plan_spec(raw_plan_spec)
+
 
 def build_plan_preview(
     *,
     config: ModelBankConfig,
-    manifest: Manifest,
-    suite_metadata: SuiteMetadata | None = None,
-    selected_step_ids: list[str] | None = None,
-    deselect_step_ids: list[str] | None = None,
-    selection_mode: SelectionMode = "deselect",
+    raw_plan_spec: JsonObject,
 ) -> PlanPreview:
-    """Build the typed step-row presenter for a validated v1 manifest.
+    """Build a catalogue preview from already-decoded config and plan-spec objects.
 
     Args:
-        config: Validated model-bank configuration to carry into launch.
-        manifest: Validated v1 manifest to preview.
-        suite_metadata: Optional metadata describing the config-resolved suite
-            that supplied ``manifest``.
-        selected_step_ids: Step ids checked in a selection-mode form post.
-        deselect_step_ids: Step ids unchecked or explicitly deselected by a deselection-mode form post.
-        selection_mode: Whether to derive the submitted plan from selected ids
-            or by deselecting ids from the default plan.
+        config: Validated runtime configuration.
+        raw_plan_spec: Decoded plan-spec JSON object.
 
     Returns:
-        A complete plan preview with step rows and launch support flags.
+        Complete plan preview with generated-test audit rows.
 
     Raises:
-        ValueError: If ``manifest`` is not v1 or any submitted step id is unknown.
+        CatalogueError: If plan-spec parsing, catalogue resolution, or
+            compilation fails.
     """
-    if manifest.schema_version != "v1":
-        raise ValueError("Plan builder supports v1 manifests only")
-    default_plan = TestPlan.default_plan_from_manifest(manifest)
-    if selection_mode == "select":
-        selected_plan = _plan_from_selected_step_ids(default_plan, selected_step_ids or [])
-    else:
-        selected_plan = default_plan.with_deselection(deselect_step_ids or [])
-
-    rows = _build_step_rows(manifest=manifest, default_plan=default_plan, selected_plan=selected_plan)
-    auth_inventory, step_auth_requirements = _build_auth_inventory(
-        manifest=manifest,
-        selected_plan=selected_plan,
+    plan_spec = parse_test_plan_spec(raw_plan_spec)
+    catalogue = resolve_catalogue(plan_spec.catalogue_key)
+    compiled_plan = compile_test_plan(catalogue, plan_spec)
+    selected_endpoint_ids = tuple(_endpoint_id(endpoint) for endpoint in plan_spec.implemented_endpoints)
+    return _build_preview(
+        config=config,
+        plan_spec=plan_spec,
+        compiled_plan=compiled_plan,
+        catalogue=catalogue,
+        endpoint_options=_endpoint_options_for_catalogue(catalogue, selected_endpoint_ids),
+        selected_endpoint_ids=selected_endpoint_ids,
+        runtime_input_prompts=_runtime_prompts_from_trace(compiled_plan, data={}),
     )
-    launch_blockers = _launch_blockers(manifest)
+
+
+def compiled_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow, ...]:
+    """Build read-only generated test rows for an already compiled plan.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to render.
+
+    Returns:
+        Template-ready generated plan rows in execution order.
+    """
+    return _build_plan_rows(compiled_plan)
+
+
+def guided_standard_choices() -> tuple[tuple[str, str], ...]:
+    """Return guided-flow standards namespace choices.
+
+    Returns:
+        Distinct standard value/label pairs in catalogue order.
+    """
+    standards = tuple(dict.fromkeys(catalogue.key.standard for catalogue in supported_catalogues()))
+    return tuple((standard, _standard_label(standard)) for standard in standards)
+
+
+def guided_spec_version_choices() -> tuple[tuple[str, str], ...]:
+    """Return guided-flow specification version choices.
+
+    Returns:
+        Distinct specification version value/label pairs in catalogue order.
+    """
+    versions = tuple(dict.fromkeys(catalogue.key.version for catalogue in supported_catalogues()))
+    return tuple((version, version) for version in versions)
+
+
+def guided_api_choices() -> tuple[tuple[str, str], ...]:
+    """Return guided-flow API family choices.
+
+    Returns:
+        Distinct API family value/label pairs in deterministic order.
+    """
+    apis = tuple(dict.fromkeys(catalogue.key.api for catalogue in supported_catalogues()))
+    return tuple((api, _guided_api_label(api)) for api in apis)
+
+
+def guided_security_profile_choices() -> tuple[tuple[str, str], ...]:
+    """Return security profile choices supported by the browser flow.
+
+    Returns:
+        Security profile value/label pairs in display order.
+    """
+    return (
+        ("fapi1-advanced", "FAPI 1 Advanced"),
+        ("fapi2", "FAPI 2"),
+    )
+
+
+def guided_flow_context(form: PlanBuilderForm) -> dict[str, object]:
+    """Build template context for the structured guided browser flow.
+
+    Args:
+        form: Bound or unbound plan-builder form.
+
+    Returns:
+        Template context containing catalogue selector options, endpoint
+        options, runtime prompts, and generated JSON previews.
+    """
+    selected_catalogue = _selected_catalogue_for_form(form)
+    if form.preview is None:
+        selected_endpoint_ids = tuple(_raw_form_values(form, "implemented_endpoint_ids"))
+        selected_capability_values = tuple(_raw_form_values(form, "implemented_endpoint_capabilities"))
+    else:
+        selected_endpoint_ids = form.preview.selected_endpoint_ids
+        selected_capability_values = _capability_values_from_plan_spec(form.preview.plan_spec)
+    endpoint_options = _endpoint_options_for_catalogue(
+        selected_catalogue,
+        selected_endpoint_ids,
+        selected_capability_values=selected_capability_values,
+    )
+    prompts = form.runtime_input_prompts
+    if not prompts:
+        prompts = _runtime_prompts_for_endpoint_selection(
+            catalogue=selected_catalogue,
+            selected_endpoint_ids=selected_endpoint_ids,
+            selected_capability_values=selected_capability_values,
+            security_profile=_security_profile_from_raw_form(form),
+            data=form.data if form.is_bound else {},
+        )
+    return {
+        "guided_standards": guided_standard_choices(),
+        "guided_versions": guided_spec_version_choices(),
+        "guided_api_options": guided_api_options(),
+        "guided_security_profiles": guided_security_profile_choices(),
+        "guided_endpoint_options": endpoint_options,
+        "runtime_input_prompts": prompts,
+        "generated_config_json": form.generated_config_json,
+        "selected_catalogue": selected_catalogue,
+        "selected_catalogue_label": _catalogue_label(selected_catalogue.key),
+    }
+
+
+def guided_api_options() -> tuple[GuidedApiOption, ...]:
+    """Return version-aware API selector options for the guided flow.
+
+    Returns:
+        Guided API options in catalogue order with per-version scoping.
+    """
+    seen: set[tuple[str, str, str]] = set()
+    options: list[GuidedApiOption] = []
+    for catalogue in supported_catalogues():
+        key = (catalogue.key.standard, catalogue.key.version, catalogue.key.api)
+        if key in seen:
+            continue
+        seen.add(key)
+        options.append(
+            GuidedApiOption(
+                standard=catalogue.key.standard,
+                spec_version=catalogue.key.version,
+                api=catalogue.key.api,
+                label=_guided_api_label(catalogue.key.api),
+            )
+        )
+    return tuple(options)
+
+
+def _build_preview(
+    *,
+    config: ModelBankConfig,
+    plan_spec: TestPlanSpec,
+    compiled_plan: CompiledTestPlan,
+    catalogue: TestCatalogue,
+    endpoint_options: tuple[CatalogueEndpointOption, ...],
+    selected_endpoint_ids: tuple[str, ...],
+    runtime_input_prompts: tuple[RuntimeInputPrompt, ...],
+) -> PlanPreview:
+    """Build a template-ready plan preview.
+
+    Args:
+        config: Validated runtime configuration.
+        plan_spec: Parsed plan spec used for compilation.
+        compiled_plan: Compiler output for ``plan_spec``.
+        catalogue: Catalogue used for compilation.
+        endpoint_options: Endpoint options for the selected catalogue.
+        selected_endpoint_ids: Endpoint ids selected by the participant.
+        runtime_input_prompts: Runtime prompts derived from compiled tests.
+
+    Returns:
+        Complete plan preview for rendering and launch.
+    """
+    rows = _build_plan_rows(compiled_plan)
+    launch_blockers = _launch_blockers(compiled_plan)
     return PlanPreview(
         config=config,
-        manifest=manifest,
-        suite_metadata=suite_metadata,
-        default_plan=default_plan,
-        selected_plan=selected_plan,
+        plan_spec=plan_spec,
+        compiled_plan=compiled_plan,
+        catalogue_label=_catalogue_label(catalogue.key),
+        endpoint_options=endpoint_options,
+        selected_endpoint_ids=selected_endpoint_ids,
+        runtime_input_prompts=runtime_input_prompts,
+        generated_plan_spec_json=json.dumps(
+            _plan_spec_to_json_object(plan_spec, compiled_plan=compiled_plan),
+            indent=2,
+            sort_keys=True,
+        ),
         rows=rows,
         launch_supported=not launch_blockers,
         launch_blockers=launch_blockers,
-        certification_eligible_by_selection=selected_plan.is_eligible_by_selection(),
-        auth_inventory=auth_inventory,
-        step_auth_requirements=step_auth_requirements,
+        certification_eligible_by_selection=compiled_plan.certifying,
     )
 
 
-def _load_json_object(raw_value: str, *, label: str) -> dict[str, JsonValue]:
+def _load_json_object(raw_value: str, *, label: str) -> JsonObject:
     """Decode a JSON text field and require an object root.
 
     Args:
@@ -657,292 +780,771 @@ def _load_json_object(raw_value: str, *, label: str) -> dict[str, JsonValue]:
         raise forms.ValidationError(f"{label} must be valid JSON: {error.msg}", code="invalid_json") from error
     if not isinstance(raw_object, dict):
         raise forms.ValidationError(f"{label} must be a JSON object", code="invalid_json_object")
-    return cast(dict[str, JsonValue], raw_object)
+    return cast(JsonObject, raw_object)
 
 
-def _cleaned_step_ids(value: object) -> list[str] | None:
-    """Read optional step ids from cleaned form data.
+def _catalogue_from_cleaned_data(cleaned_data: dict[str, object]) -> TestCatalogue:
+    """Resolve the guided catalogue selection from cleaned form data.
 
     Args:
-        value: Cleaned value from ``StepIdListField``.
+        cleaned_data: Current form cleaned-data dictionary.
 
     Returns:
-        A list of step ids, or ``None`` when the field was absent.
+        Matching bundled catalogue, defaulting to the first bundled catalogue.
+    """
+    standard = _cleaned_optional_string(cleaned_data.get("guided_standard"))
+    version = _cleaned_optional_string(cleaned_data.get("guided_spec_version"))
+    api = _cleaned_optional_string(cleaned_data.get("guided_api"))
+    if standard is None or version is None or api is None:
+        return supported_catalogues()[0]
+    try:
+        return resolve_catalogue(CatalogueKey(standard=standard, version=version, api=api))
+    except CatalogueError:
+        return supported_catalogues()[0]
+
+
+def _selected_catalogue_for_form(form: PlanBuilderForm) -> TestCatalogue:
+    """Resolve the currently selected catalogue for a bound or unbound form.
+
+    Args:
+        form: Form whose raw selector values should be inspected.
+
+    Returns:
+        Matching bundled catalogue, defaulting to the first bundled catalogue.
+    """
+    standard = _raw_form_value(form, "guided_standard") or supported_catalogues()[0].key.standard
+    version = _raw_form_value(form, "guided_spec_version") or supported_catalogues()[0].key.version
+    api = _raw_form_value(form, "guided_api") or supported_catalogues()[0].key.api
+    try:
+        return resolve_catalogue(CatalogueKey(standard=standard, version=version, api=api))
+    except CatalogueError:
+        return supported_catalogues()[0]
+
+
+def _security_profile_from_cleaned_data(cleaned_data: dict[str, object]) -> SecurityProfile:
+    """Return the selected security profile.
+
+    Args:
+        cleaned_data: Current form cleaned-data dictionary.
+
+    Returns:
+        Selected profile, defaulting to ``"fapi1-advanced"``.
+    """
+    value = _cleaned_optional_string(cleaned_data.get("guided_security_profile"))
+    return cast(SecurityProfile, value if value in {"fapi1-advanced", "fapi2"} else "fapi1-advanced")
+
+
+def _security_profile_from_raw_form(form: forms.Form) -> SecurityProfile:
+    """Return the selected security profile from raw form data.
+
+    Args:
+        form: Bound or unbound form whose selector should be inspected.
+
+    Returns:
+        Selected profile, defaulting to ``"fapi1-advanced"``.
+    """
+    value = _raw_form_value(form, "guided_security_profile")
+    return cast(SecurityProfile, value if value in {"fapi1-advanced", "fapi2"} else "fapi1-advanced")
+
+
+def _endpoint_options_for_catalogue(
+    catalogue: TestCatalogue,
+    selected_endpoint_ids: Iterable[str],
+    *,
+    selected_capability_values: Iterable[str] = (),
+) -> tuple[CatalogueEndpointOption, ...]:
+    """Build endpoint options for a catalogue.
+
+    Args:
+        catalogue: Catalogue whose endpoint applicability refs should be shown.
+        selected_endpoint_ids: Endpoint option ids currently selected.
+        selected_capability_values: Endpoint capability checkbox values
+            currently selected.
+
+    Returns:
+        De-duplicated endpoint options grouped by resource label then path.
+    """
+    selected = set(selected_endpoint_ids)
+    selected_capability_ids = _selected_capability_values_by_endpoint(
+        selected_capability_values,
+        strict=False,
+    )
+    refs: dict[EndpointRef, CatalogueEndpointOption] = {}
+    for test_case in catalogue.test_cases:
+        for endpoint_ref in test_case.applicability.endpoint_refs:
+            if endpoint_ref in refs:
+                continue
+            endpoint = ImplementedEndpoint(
+                method=endpoint_ref.method,
+                path=endpoint_ref.path,
+                resource_group=_resource_group_label(catalogue.key.api, endpoint_ref.path),
+                operation_id=_operation_id(catalogue.key.api, endpoint_ref),
+            )
+            option_id = _endpoint_id(endpoint)
+            selected_ids_for_endpoint = selected_capability_ids.get(option_id, set())
+            refs[endpoint_ref] = CatalogueEndpointOption(
+                id=option_id,
+                standard=catalogue.key.standard,
+                spec_version=catalogue.key.version,
+                api=catalogue.key.api,
+                method=endpoint.method,
+                path=endpoint.path,
+                resource_group=endpoint.resource_group,
+                operation_id=endpoint.operation_id,
+                capabilities=_capability_options_for_endpoint(
+                    catalogue=catalogue,
+                    endpoint_ref=endpoint_ref,
+                    endpoint_id=option_id,
+                    selected_capability_ids=selected_ids_for_endpoint,
+                ),
+                selected=option_id in selected,
+            )
+    return tuple(sorted(refs.values(), key=lambda option: (option.resource_group, option.path, option.method)))
+
+
+def _capability_options_for_endpoint(
+    *,
+    catalogue: TestCatalogue,
+    endpoint_ref: EndpointRef,
+    endpoint_id: str,
+    selected_capability_ids: set[str],
+) -> tuple[EndpointCapabilityOption, ...]:
+    """Build capability options for one endpoint option.
+
+    Args:
+        catalogue: Catalogue containing capability definitions.
+        endpoint_ref: Endpoint reference owning the rendered options.
+        endpoint_id: Browser endpoint option id.
+        selected_capability_ids: Explicitly submitted capability ids for the
+            endpoint.
+
+    Returns:
+        Capability options in catalogue definition order.
+    """
+    return tuple(
+        EndpointCapabilityOption(
+            value=_capability_selection_value(endpoint_id=endpoint_id, capability_id=capability.capability_id),
+            endpoint_id=endpoint_id,
+            capability_id=capability.capability_id,
+            label=capability.label,
+            description=capability.description,
+            required=capability.required,
+            selected=capability.required or capability.capability_id in selected_capability_ids,
+        )
+        for capability in catalogue.capabilities
+        if endpoint_ref in capability.endpoint_refs
+    )
+
+
+def _runtime_prompts_for_endpoint_selection(
+    *,
+    catalogue: TestCatalogue,
+    selected_endpoint_ids: Iterable[str],
+    selected_capability_values: Iterable[str],
+    security_profile: SecurityProfile,
+    data: Mapping[str, object],
+) -> tuple[RuntimeInputPrompt, ...]:
+    """Build runtime prompts for currently selected endpoints and capabilities.
+
+    Args:
+        catalogue: Catalogue selected by the form.
+        selected_endpoint_ids: Endpoint option ids selected by the participant.
+        selected_capability_values: Capability checkbox values selected by the
+            participant.
+        security_profile: Security profile selected by the participant.
+        data: Raw form data used to redisplay submitted runtime values.
+
+    Returns:
+        De-duplicated runtime input prompts in catalogue order.
+    """
+    selected_ids = set(selected_endpoint_ids)
+    selected_options = _endpoint_options_for_catalogue(
+        catalogue,
+        selected_ids,
+        selected_capability_values=selected_capability_values,
+    )
+    selected_refs = _selected_refs_from_options(selected_options, selected_ids=selected_ids)
+    selected_capabilities_by_ref = _selected_capability_ids_by_ref(selected_options, selected_ids=selected_ids)
+    requirements: list[RuntimeInputRequirement] = []
+    seen: dict[str, RuntimeInputRequirement] = {}
+    for test_case in catalogue.test_cases:
+        if not test_case.applicability.security_profiles.applies_to(security_profile):
+            continue
+        endpoint_refs = set(test_case.applicability.endpoint_refs)
+        if endpoint_refs and not endpoint_refs.issubset(selected_refs):
+            continue
+        if not _test_case_capabilities_are_selected(test_case, selected_capabilities_by_ref):
+            continue
+        for requirement in test_case.runtime_input_requirements:
+            existing = seen.get(requirement.input_id)
+            if existing is None:
+                seen[requirement.input_id] = requirement
+                requirements.append(requirement)
+                continue
+            if existing != requirement:
+                raise forms.ValidationError(
+                    f"Runtime input '{requirement.input_id}' has conflicting catalogue requirements",
+                    code="invalid_runtime_input",
+                )
+    return tuple(_runtime_prompt(requirement, data=data) for requirement in requirements)
+
+
+def _selected_refs_from_options(
+    endpoint_options: Iterable[CatalogueEndpointOption],
+    *,
+    selected_ids: set[str],
+) -> set[EndpointRef]:
+    """Return selected endpoint refs from rendered endpoint options.
+
+    Args:
+        endpoint_options: Endpoint options built for the current catalogue.
+        selected_ids: Selected endpoint option ids.
+
+    Returns:
+        Exact endpoint refs selected by the participant.
+    """
+    return {
+        EndpointRef(method=cast(HttpMethod, option.method), path=option.path)
+        for option in endpoint_options
+        if option.id in selected_ids
+    }
+
+
+def _selected_capability_ids_by_ref(
+    endpoint_options: Iterable[CatalogueEndpointOption],
+    *,
+    selected_ids: set[str],
+) -> dict[EndpointRef, set[str]]:
+    """Return selected capability ids keyed by endpoint ref.
+
+    Args:
+        endpoint_options: Endpoint options with capability selection state.
+        selected_ids: Selected endpoint option ids.
+
+    Returns:
+        Selected required and optional capability ids by endpoint reference.
+    """
+    selected: dict[EndpointRef, set[str]] = {}
+    for option in endpoint_options:
+        if option.id not in selected_ids:
+            continue
+        endpoint_ref = EndpointRef(method=cast(HttpMethod, option.method), path=option.path)
+        selected[endpoint_ref] = {capability.capability_id for capability in option.capabilities if capability.selected}
+    return selected
+
+
+def _test_case_capabilities_are_selected(
+    test_case: CatalogueTestCase,
+    selected_capabilities_by_ref: Mapping[EndpointRef, set[str]],
+) -> bool:
+    """Return whether a catalogue test case's required capabilities are selected.
+
+    Args:
+        test_case: Catalogue test case being evaluated.
+        selected_capabilities_by_ref: Selected capabilities by endpoint ref.
+
+    Returns:
+        True when every required capability is selected for at least one of the
+        test case's endpoint refs.
+    """
+    required_ids = set(test_case.applicability.required_capability_ids)
+    if not required_ids:
+        return True
+    selected_ids: set[str] = set()
+    for endpoint_ref in test_case.applicability.endpoint_refs:
+        selected_ids.update(selected_capabilities_by_ref.get(endpoint_ref, set()))
+    return required_ids.issubset(selected_ids)
+
+
+def _runtime_prompts_from_trace(
+    compiled_plan: CompiledTestPlan,
+    *,
+    data: Mapping[str, object],
+) -> tuple[RuntimeInputPrompt, ...]:
+    """Build runtime prompts from compiler traceability.
+
+    Args:
+        compiled_plan: Compiled plan whose runtime snapshot should be rendered.
+        data: Raw form data used to redisplay submitted runtime values.
+
+    Returns:
+        Runtime input prompts in compiler trace order.
+    """
+    return tuple(
+        RuntimeInputPrompt(
+            input_id=trace.input_id,
+            name=f"{_RUNTIME_INPUT_PREFIX}{trace.input_id}",
+            label=trace.input_id,
+            input_type=trace.input_type,
+            required=trace.required,
+            sensitive=trace.sensitive,
+            value=_raw_mapping_value(data, f"{_RUNTIME_INPUT_PREFIX}{trace.input_id}"),
+        )
+        for trace in compiled_plan.traceability.runtime_input_snapshot
+    )
+
+
+def _runtime_prompt(requirement: RuntimeInputRequirement, *, data: Mapping[str, object]) -> RuntimeInputPrompt:
+    """Convert a catalogue runtime requirement into a browser prompt.
+
+    Args:
+        requirement: Catalogue runtime input requirement.
+        data: Raw form data used to redisplay submitted values.
+
+    Returns:
+        Template-friendly runtime input prompt.
+    """
+    name = f"{_RUNTIME_INPUT_PREFIX}{requirement.input_id}"
+    return RuntimeInputPrompt(
+        input_id=requirement.input_id,
+        name=name,
+        label=requirement.label,
+        input_type=requirement.input_type,
+        required=requirement.required,
+        sensitive=requirement.sensitive,
+        value=_raw_mapping_value(data, name),
+    )
+
+
+def _runtime_inputs_from_prompts(prompts: Iterable[RuntimeInputPrompt]) -> JsonObject:
+    """Build runtime input JSON from rendered prompts.
+
+    Args:
+        prompts: Runtime prompts with submitted string values.
+
+    Returns:
+        Runtime input mapping suitable for plan-spec parsing.
 
     Raises:
-        TypeError: If a non-string step id reaches cleaned data.
+        ValidationError: If a typed prompt value is malformed JSON, number, or boolean input.
     """
-    if value is None:
-        return None
-    if isinstance(value, list) and all(isinstance(step_id, str) for step_id in value):
-        return value
-    raise TypeError("Cleaned step ids must be a list of strings")
+    runtime_inputs: JsonObject = {}
+    for prompt in prompts:
+        raw_value = prompt.value.strip()
+        if not raw_value:
+            continue
+        if prompt.input_type == "json":
+            runtime_inputs[prompt.input_id] = _load_json_value(raw_value, label=prompt.label)
+        elif prompt.input_type == "number":
+            runtime_inputs[prompt.input_id] = _parse_number(raw_value, label=prompt.label)
+        elif prompt.input_type == "boolean":
+            runtime_inputs[prompt.input_id] = _parse_boolean(raw_value, label=prompt.label)
+        else:
+            runtime_inputs[prompt.input_id] = raw_value
+    return runtime_inputs
 
 
-def _cleaned_selection_mode(value: object) -> SelectionMode:
-    """Read the selection mode from cleaned form data.
+def _load_json_value(raw_value: str, *, label: str) -> JsonValue:
+    """Decode a runtime JSON value.
 
     Args:
-        value: Cleaned value from the ``selection_mode`` choice field.
+        raw_value: JSON text submitted through a runtime input prompt.
+        label: Human-readable prompt label for validation messages.
 
     Returns:
-        The submitted selection mode, defaulting to ``"deselect"``.
+        Decoded JSON value.
+
+    Raises:
+        ValidationError: If the text is malformed JSON.
     """
-    if value == "select":
-        return "select"
-    return "deselect"
+    try:
+        return cast(JsonValue, json.loads(raw_value))
+    except json.JSONDecodeError as error:
+        raise forms.ValidationError(f"{label} must be valid JSON: {error.msg}", code="invalid_runtime_json") from error
 
 
-def guided_spec_version_choices() -> tuple[tuple[str, str], ...]:
-    """Return guided-flow specification version choices.
-
-    Returns:
-        Distinct specification version value/label pairs in catalog order.
-    """
-    versions = tuple(dict.fromkeys(metadata.spec_version for metadata in list_supported_suites()))
-    return tuple((version, version) for version in versions)
-
-
-def guided_api_choices() -> tuple[tuple[str, str], ...]:
-    """Return guided-flow API family choices.
-
-    Returns:
-        Distinct API family value/label pairs in deterministic order.
-    """
-    apis = tuple(dict.fromkeys(metadata.api for metadata in list_supported_suites()))
-    return tuple((api, _guided_api_label(api)) for api in apis)
-
-
-def guided_suite_name_choices() -> tuple[tuple[str, str], ...]:
-    """Return guided-flow suite identifier choices.
-
-    Returns:
-        Distinct suite-name value/label pairs in deterministic order.
-    """
-    suites = tuple(dict.fromkeys(metadata.suite for metadata in list_supported_suites()))
-    return tuple((suite, _guided_suite_label(suite)) for suite in suites)
-
-
-def guided_model_bank_choices() -> tuple[tuple[str, str], ...]:
-    """Return known model-bank example choices for the guided flow.
-
-    Returns:
-        Model-bank option value/label pairs in display order.
-    """
-    return tuple((option.value, option.label) for option in guided_model_bank_options())
-
-
-def guided_flow_context(form: PlanBuilderForm) -> dict[str, object]:
-    """Build template context for the structured guided browser flow.
+def _parse_number(raw_value: str, *, label: str) -> int | float:
+    """Parse a runtime number value.
 
     Args:
-        form: Bound or unbound plan-builder form.
+        raw_value: Submitted number text.
+        label: Human-readable prompt label for validation messages.
 
     Returns:
-        Template context containing guided selector options, current
-        selection, suite requirements, and the generated config preview.
+        Parsed integer or floating-point number.
+
+    Raises:
+        ValidationError: If the text is not a JSON number.
     """
-    selected_spec_version = _raw_form_value(form, "guided_spec_version")
-    selected_api = _raw_form_value(form, "guided_api")
-    selected_suite = _raw_form_value(form, "guided_suite")
-    suite_options = guided_suite_options()
-    selected_suite_option = next(
-        (
-            option
-            for option in suite_options
-            if option.spec_version == selected_spec_version
-            and option.api == selected_api
-            and option.suite == selected_suite
-        ),
-        None,
-    )
+    try:
+        parsed = json.loads(raw_value)
+    except json.JSONDecodeError as error:
+        raise forms.ValidationError(f"{label} must be a JSON number", code="invalid_runtime_number") from error
+    if isinstance(parsed, bool) or not isinstance(parsed, int | float):
+        raise forms.ValidationError(f"{label} must be a JSON number", code="invalid_runtime_number")
+    return parsed
+
+
+def _parse_boolean(raw_value: str, *, label: str) -> bool:
+    """Parse a runtime boolean value.
+
+    Args:
+        raw_value: Submitted boolean text.
+        label: Human-readable prompt label for validation messages.
+
+    Returns:
+        Parsed boolean value.
+
+    Raises:
+        ValidationError: If the text is not ``true`` or ``false``.
+    """
+    normalized = raw_value.strip().lower()
+    if normalized == "true":
+        return True
+    if normalized == "false":
+        return False
+    raise forms.ValidationError(f"{label} must be true or false", code="invalid_runtime_boolean")
+
+
+def _guided_plan_spec_object(
+    *,
+    catalogue: TestCatalogue,
+    security_profile: SecurityProfile,
+    endpoint_options: tuple[CatalogueEndpointOption, ...],
+    runtime_inputs: JsonObject,
+) -> JsonObject:
+    """Build the exportable plan-spec JSON object from guided fields.
+
+    Args:
+        catalogue: Catalogue selected by the participant.
+        security_profile: Security profile selected by the participant.
+        endpoint_options: Implemented endpoints selected by the participant.
+        runtime_inputs: Runtime input values supplied by the participant.
+
+    Returns:
+        Plan-spec JSON object accepted by :func:`parse_test_plan_spec`.
+    """
     return {
-        "guided_versions": tuple(version for version, _label in guided_spec_version_choices()),
-        "guided_model_bank_options": guided_model_bank_options(),
-        "guided_api_options": guided_api_options(),
-        "guided_suite_options": suite_options,
-        "guided_selected_suite": selected_suite_option,
-        "generated_config_json": form.generated_config_json,
+        "schemaVersion": "v1",
+        "catalogue": {
+            "standard": catalogue.key.standard,
+            "version": catalogue.key.version,
+            "api": catalogue.key.api,
+        },
+        "securityProfile": security_profile,
+        "implementedEndpoints": [
+            {
+                "method": option.method,
+                "path": option.path,
+                "resourceGroup": option.resource_group,
+                **(
+                    {
+                        "capabilities": [
+                            capability.capability_id
+                            for capability in option.capabilities
+                            if capability.selected and not capability.required
+                        ]
+                    }
+                    if any(capability.selected and not capability.required for capability in option.capabilities)
+                    else {}
+                ),
+                **({"operationId": option.operation_id} if option.operation_id is not None else {}),
+            }
+            for option in endpoint_options
+        ],
+        "runtimeInputs": runtime_inputs,
     }
 
 
-def guided_api_options() -> tuple[GuidedApiOption, ...]:
-    """Return version-aware API selector options for the guided flow.
+def _plan_spec_to_json_object(plan_spec: TestPlanSpec, *, compiled_plan: CompiledTestPlan) -> JsonObject:
+    """Convert a parsed plan spec back to exportable JSON.
+
+    Args:
+        plan_spec: Parsed plan spec.
+        compiled_plan: Compiled plan whose runtime trace identifies sensitive
+            values that must not be exported.
 
     Returns:
-        Guided API options in catalog order with per-version scoping.
+        JSON object preserving non-secret runtime references and selected endpoints.
     """
-    seen: set[tuple[str, str]] = set()
-    options: list[GuidedApiOption] = []
-    for metadata in list_supported_suites():
-        key = (metadata.spec_version, metadata.api)
-        if key in seen:
-            continue
-        seen.add(key)
-        options.append(
-            GuidedApiOption(
-                spec_version=metadata.spec_version,
-                api=metadata.api,
-                label=_guided_api_label(metadata.api),
+    return {
+        "schemaVersion": plan_spec.schema_version,
+        "catalogue": {
+            "standard": plan_spec.catalogue_key.standard,
+            "version": plan_spec.catalogue_key.version,
+            "api": plan_spec.catalogue_key.api,
+        },
+        "securityProfile": plan_spec.security_profile,
+        "implementedEndpoints": [
+            {
+                "method": endpoint.method,
+                "path": endpoint.path,
+                "resourceGroup": endpoint.resource_group,
+                **({"capabilities": list(endpoint.capability_ids)} if endpoint.capability_ids else {}),
+                **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
+            }
+            for endpoint in plan_spec.implemented_endpoints
+        ],
+        "runtimeInputs": _exportable_runtime_inputs(plan_spec, compiled_plan=compiled_plan),
+        **(
+            {"deselectedTestCaseIds": list(plan_spec.deselected_test_case_ids)}
+            if plan_spec.deselected_test_case_ids
+            else {}
+        ),
+        **(
+            {
+                "assertionOverrides": [
+                    {
+                        "testCaseId": override.test_case_id,
+                        "assertionId": override.assertion_id,
+                        "reason": override.reason,
+                    }
+                    for override in plan_spec.assertion_overrides
+                ]
+            }
+            if plan_spec.assertion_overrides
+            else {}
+        ),
+    }
+
+
+def _build_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow, ...]:
+    """Build rich read-only preview rows for generated catalogue cases.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to render.
+
+    Returns:
+        Template-ready generated plan rows in execution order.
+    """
+    decisions = {decision.test_case_id: decision for decision in compiled_plan.traceability.applicability_decisions}
+    selected_capabilities = _selected_capability_labels_by_id(compiled_plan)
+    rows: list[PlanTestCaseRow] = []
+    for test_case in compiled_plan.test_cases:
+        source, source_detail = _test_case_source(
+            test_case,
+            decisions[test_case.test_case_id],
+            selected_capabilities,
+        )
+        rows.append(
+            PlanTestCaseRow(
+                id=test_case.test_case_id,
+                name=test_case.name,
+                role=test_case.role,
+                phase=_test_case_phase(test_case),
+                source=source,
+                source_detail=source_detail,
+                mandatory=test_case.mandatory,
+                dependencies=test_case.dependencies,
+                request_count=len(test_case.request_steps),
+                assertion_count=len(test_case.assertions),
+                runtime_requirements=tuple(
+                    PlanRuntimeRequirement(
+                        input_id=requirement.input_id,
+                        label=requirement.label,
+                        required=requirement.required,
+                        sensitive=requirement.sensitive,
+                    )
+                    for requirement in test_case.runtime_input_requirements
+                ),
+                request_step_ids=tuple(request_step.step_id for request_step in test_case.request_steps),
+                assertion_summaries=tuple(assertion.description for assertion in test_case.assertions),
+                compliance_scope=test_case.compliance_scope,
             )
         )
-    return tuple(options)
+    return tuple(rows)
 
 
-def guided_suite_options() -> tuple[GuidedSuiteOption, ...]:
-    """Return suite selector options and prompt requirements.
-
-    Returns:
-        Guided suite options derived from the supported suite catalog.
-    """
-    return tuple(_guided_suite_option(metadata) for metadata in list_supported_suites())
-
-
-def guided_model_bank_options() -> tuple[GuidedModelBankOption, ...]:
-    """Return known model-bank examples for environment/discovery input.
-
-    Returns:
-        Guided model-bank examples that can populate editable environment and
-        discovery URL fields.
-    """
-    return (
-        GuidedModelBankOption(
-            value="ozone-obie-preprod",
-            label="Ozone OBIE pre-production",
-            environment="ozone-model-bank",
-            discovery_url="https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-        ),
-    )
-
-
-def _guided_api_label(api: str) -> str:
-    """Return the participant-facing label for an API family.
+def _selected_capability_labels_by_id(compiled_plan: CompiledTestPlan) -> dict[str, tuple[str, bool]]:
+    """Return selected capability labels and required flags by capability id.
 
     Args:
-        api: API family value from the suite catalog.
+        compiled_plan: Compiled plan whose traceability carries capability selections.
 
     Returns:
-        Short uppercase label used in the browser selector.
+        Mapping from capability id to display label and required flag.
     """
-    labels = {
-        "ais": "AIS",
-        "pis": "PIS",
-        "cbpii": "CBPII",
-        "vrp": "VRP",
-        "cvrp": "cVRP",
+    return {
+        capability.capability_id: (capability.label, capability.required)
+        for capability in compiled_plan.traceability.selected_capabilities
     }
-    return labels.get(api, api)
 
 
-def _guided_suite_label(suite: str) -> str:
-    """Return the participant-facing label for a suite identifier.
+def _test_case_source(
+    test_case: CatalogueTestCase,
+    decision: ApplicabilityDecision,
+    selected_capabilities: Mapping[str, tuple[str, bool]],
+) -> tuple[str, str]:
+    """Describe why a generated test case appears in the compiled preview.
 
     Args:
-        suite: Suite identifier from the suite catalog.
+        test_case: Generated catalogue test case.
+        decision: Compiler traceability decision for the test case.
+        selected_capabilities: Selected capability labels and required flags by id.
 
     Returns:
-        Short label used in the browser suite selector.
+        Pair of short source label and detailed source context.
     """
-    labels = {
-        "discovery-jwks": "Discovery and JWKS smoke",
-        "psu-auth-starter": "PSU authorization starter",
-        "ais-certification-slice": "AIS certification slice",
-        "ais-certification-baseline": "AIS certification baseline",
-        "ais-fcs-legacy-benchmark": "AIS FCS legacy benchmark",
+    if decision.dependency_of and decision.reason == "included as dependency":
+        return "Automatic dependency", f"Required by {', '.join(decision.dependency_of)}"
+    if not test_case.applicability.endpoint_refs:
+        if test_case.role in {"setup", "token", "consent"}:
+            return "Setup coverage", "Generated automatically for the selected security profile"
+        if test_case.role == "security":
+            return "Security coverage", "Generated automatically for the selected security profile"
+        return "Catalogue coverage", "Generated automatically for the selected security profile"
+    if test_case.applicability.required_capability_ids:
+        labels = [
+            selected_capabilities.get(capability_id, (capability_id, False))
+            for capability_id in test_case.applicability.required_capability_ids
+        ]
+        source = "Required capability" if all(required for _, required in labels) else "Selected capability"
+        return source, ", ".join(label for label, _ in labels)
+    endpoints = ", ".join(f"{endpoint.method} {endpoint.path}" for endpoint in test_case.applicability.endpoint_refs)
+    return "Selected endpoint", endpoints
+
+
+def _test_case_phase(test_case: CatalogueTestCase) -> str:
+    """Return the preview phase for a generated catalogue test case.
+
+    Args:
+        test_case: Generated catalogue test case.
+
+    Returns:
+        ``"setup"`` for setup/security/token cases, otherwise ``"execution"``.
+    """
+    return "setup" if test_case.role in {"setup", "security", "token"} else "execution"
+
+
+def _exportable_runtime_inputs(plan_spec: TestPlanSpec, *, compiled_plan: CompiledTestPlan) -> JsonObject:
+    """Return non-sensitive runtime inputs for plan-spec export.
+
+    Args:
+        plan_spec: Parsed plan spec containing submitted runtime inputs.
+        compiled_plan: Compiled plan whose trace marks sensitive inputs.
+
+    Returns:
+        Runtime input mapping with sensitive values omitted.
+    """
+    sensitive_input_ids = {
+        trace.input_id for trace in compiled_plan.traceability.runtime_input_snapshot if trace.sensitive
     }
-    return labels.get(suite, suite)
-
-
-def _guided_suite_option(metadata: SuiteMetadata) -> GuidedSuiteOption:
-    """Convert suite metadata into a guided-flow suite option.
-
-    Args:
-        metadata: Supported suite metadata row from the catalog.
-
-    Returns:
-        Guided suite option including field-prompt requirements.
-    """
-    prompts_oauth = metadata.suite != "discovery-jwks"
-    prompts_intent_id = metadata.suite == "psu-auth-starter"
-    prompts_resource_base_url = metadata.api == "ais" and metadata.suite in {
-        "ais-certification-slice",
-        "ais-certification-baseline",
-        "ais-fcs-legacy-benchmark",
+    return {
+        input_id: value for input_id, value in plan_spec.runtime_inputs.items() if input_id not in sensitive_input_ids
     }
-    prompts_signing = metadata.suite in {
-        "psu-auth-starter",
-        "ais-certification-slice",
-        "ais-certification-baseline",
-        "ais-fcs-legacy-benchmark",
-    }
-    return GuidedSuiteOption(
-        standard=metadata.standard,
-        spec_version=metadata.spec_version,
-        profile=metadata.profile,
-        api=metadata.api,
-        suite=metadata.suite,
-        label=_guided_suite_label(metadata.suite),
-        description=metadata.description,
-        prompts_oauth=prompts_oauth,
-        prompts_intent_id=prompts_intent_id,
-        prompts_resource_base_url=prompts_resource_base_url,
-        prompts_signing=prompts_signing,
-    )
 
 
-def _guided_suite_choice_supplied(cleaned_data: dict[str, object]) -> bool:
-    """Return whether the guided suite selectors contain any value.
+def _capability_selection_value(*, endpoint_id: str, capability_id: str) -> str:
+    """Return the form value for an endpoint capability checkbox.
 
     Args:
-        cleaned_data: Current form cleaned-data dictionary.
+        endpoint_id: Endpoint option id owning the capability.
+        capability_id: Catalogue capability id selected under the endpoint.
 
     Returns:
-        ``True`` when version, API, or suite selectors were supplied.
+        Stable compound checkbox value.
     """
-    return any(
-        _cleaned_optional_string(cleaned_data.get(field_name)) is not None
-        for field_name in ("guided_spec_version", "guided_api", "guided_suite")
-    )
+    return f"{endpoint_id}{_CAPABILITY_VALUE_SEPARATOR}{capability_id}"
 
 
-def _guided_suite_option_from_cleaned_data(cleaned_data: dict[str, object]) -> GuidedSuiteOption | None:
-    """Resolve the currently selected guided suite option.
+def _capability_values_from_plan_spec(plan_spec: TestPlanSpec) -> tuple[str, ...]:
+    """Return endpoint capability checkbox values selected by a plan spec.
 
     Args:
-        cleaned_data: Current form cleaned-data dictionary.
+        plan_spec: Parsed plan spec whose endpoint capability declarations
+            should be reflected in the guided UI.
 
     Returns:
-        Matching guided suite option, or ``None`` when the selection is blank
-        or does not match a supported catalog row.
+        Compound endpoint/capability checkbox values in plan-spec order.
     """
-    spec_version = _cleaned_optional_string(cleaned_data.get("guided_spec_version"))
-    api = _cleaned_optional_string(cleaned_data.get("guided_api"))
-    suite = _cleaned_optional_string(cleaned_data.get("guided_suite"))
-    if spec_version is None or api is None or suite is None:
-        return None
-    return next(
-        (
-            option
-            for option in guided_suite_options()
-            if option.spec_version == spec_version and option.api == api and option.suite == suite
-        ),
-        None,
-    )
+    values: list[str] = []
+    for endpoint in plan_spec.implemented_endpoints:
+        endpoint_id = _endpoint_id(endpoint)
+        values.extend(
+            _capability_selection_value(endpoint_id=endpoint_id, capability_id=capability_id)
+            for capability_id in endpoint.capability_ids
+        )
+    return tuple(values)
 
 
-def _guided_model_bank_option_from_cleaned_data(cleaned_data: dict[str, object]) -> GuidedModelBankOption | None:
-    """Resolve the selected guided model-bank example.
+def _selected_capability_values_by_endpoint(
+    values: Iterable[str],
+    *,
+    strict: bool,
+) -> dict[str, set[str]]:
+    """Decode selected capability values into endpoint-scoped ids.
 
     Args:
-        cleaned_data: Current form cleaned-data dictionary.
+        values: Compound endpoint/capability checkbox values.
+        strict: Whether malformed values should raise a form validation error.
 
     Returns:
-        Matching model-bank option, or ``None`` when custom values are used.
+        Mapping of endpoint option ids to selected capability ids.
+
+    Raises:
+        ValidationError: If ``strict`` is true and a submitted value is malformed.
     """
-    selected_value = _cleaned_optional_string(cleaned_data.get("guided_model_bank"))
-    if selected_value is None:
-        return None
-    return next((option for option in guided_model_bank_options() if option.value == selected_value), None)
+    selected: dict[str, set[str]] = {}
+    for value in values:
+        if _CAPABILITY_VALUE_SEPARATOR not in value:
+            if strict:
+                raise forms.ValidationError("Endpoint capability values are malformed", code="invalid_capability")
+            continue
+        endpoint_id, capability_id = value.split(_CAPABILITY_VALUE_SEPARATOR, maxsplit=1)
+        if not endpoint_id or not capability_id:
+            if strict:
+                raise forms.ValidationError("Endpoint capability values are malformed", code="invalid_capability")
+            continue
+        selected.setdefault(endpoint_id, set()).add(capability_id)
+    return selected
+
+
+def _validate_selected_capability_values(
+    *,
+    endpoint_options: tuple[CatalogueEndpointOption, ...],
+    selected_capability_values: tuple[str, ...],
+) -> None:
+    """Validate selected capability checkbox values against rendered options.
+
+    Args:
+        endpoint_options: Endpoint options available for the selected catalogue.
+        selected_capability_values: Submitted endpoint capability checkbox values.
+
+    Raises:
+        ValidationError: If a capability belongs to an unknown endpoint or is not
+            available on the submitted endpoint.
+    """
+    selected_by_endpoint = _selected_capability_values_by_endpoint(selected_capability_values, strict=True)
+    options_by_id = {option.id: option for option in endpoint_options}
+    for endpoint_id, capability_ids in selected_by_endpoint.items():
+        option = options_by_id.get(endpoint_id)
+        if option is None:
+            raise forms.ValidationError(
+                f"Unknown endpoint capability endpoint id: {endpoint_id}",
+                code="invalid_capability",
+            )
+        if not option.selected:
+            raise forms.ValidationError(
+                f"Capability selected for unselected endpoint: {option.method} {option.path}",
+                code="invalid_capability",
+            )
+        available_ids = {capability.capability_id for capability in option.capabilities}
+        unknown_ids = sorted(capability_ids - available_ids)
+        if unknown_ids:
+            unknown_list = ", ".join(unknown_ids)
+            raise forms.ValidationError(
+                f"Unknown capability id(s) for {option.method} {option.path}: {unknown_list}",
+                code="invalid_capability",
+            )
+
+
+def _cleaned_endpoint_ids(value: object) -> tuple[str, ...]:
+    """Read endpoint ids from cleaned form data.
+
+    Args:
+        value: Cleaned value from ``EndpointIdListField``.
+
+    Returns:
+        Tuple of endpoint ids preserving submitted order.
+
+    Raises:
+        TypeError: If a non-string endpoint id reaches cleaned data.
+    """
+    if value is None:
+        return ()
+    if isinstance(value, list) and all(isinstance(endpoint_id, str) for endpoint_id in value):
+        return tuple(value)
+    raise TypeError("Cleaned endpoint ids must be a list of strings")
 
 
 def _cleaned_optional_string(value: object) -> str | None:
@@ -972,16 +1574,10 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
     return any(
         _cleaned_optional_string(cleaned_data.get(field_name)) is not None
         for field_name in (
-            "guided_model_bank",
-            "guided_environment",
             "guided_discovery_url",
-            "guided_spec_version",
-            "guided_api",
-            "guided_suite",
             "guided_client_id",
             "guided_redirect_uri",
             "guided_authorization_endpoint",
-            "guided_open_banking_intent_id",
             "guided_resource_base_url",
             "guided_signing_certificate_path_root",
             "guided_signing_certificate_path",
@@ -994,7 +1590,7 @@ def _has_guided_input(cleaned_data: dict[str, object]) -> bool:
     )
 
 
-def _build_guided_oauth_object(cleaned_data: dict[str, object]) -> dict[str, JsonValue] | None:
+def _build_guided_oauth_object(cleaned_data: dict[str, object]) -> JsonObject | None:
     """Build an ``oauth`` JSON object from guided browser fields.
 
     Args:
@@ -1007,10 +1603,9 @@ def _build_guided_oauth_object(cleaned_data: dict[str, object]) -> dict[str, Jso
         "clientId": "guided_client_id",
         "redirectUri": "guided_redirect_uri",
         "authorizationEndpoint": "guided_authorization_endpoint",
-        "openBankingIntentId": "guided_open_banking_intent_id",
         "resourceBaseUrl": "guided_resource_base_url",
     }
-    raw_oauth: dict[str, JsonValue] = {}
+    raw_oauth: JsonObject = {}
     for config_key, field_name in field_mapping.items():
         value = _cleaned_optional_string(cleaned_data.get(field_name))
         if value is not None:
@@ -1018,7 +1613,7 @@ def _build_guided_oauth_object(cleaned_data: dict[str, object]) -> dict[str, Jso
     return raw_oauth or None
 
 
-def _build_guided_fapi_signing_object(cleaned_data: dict[str, object]) -> dict[str, JsonValue] | None:
+def _build_guided_fapi_signing_object(cleaned_data: dict[str, object]) -> JsonObject | None:
     """Build an ``fapiSigning`` JSON object from guided browser fields.
 
     Args:
@@ -1036,7 +1631,7 @@ def _build_guided_fapi_signing_object(cleaned_data: dict[str, object]) -> dict[s
         "clientAssertionSubject": "guided_signing_client_assertion_subject",
         "tokenEndpointAuthMethod": "guided_signing_token_endpoint_auth_method",
     }
-    raw_fapi_signing: dict[str, JsonValue] = {}
+    raw_fapi_signing: JsonObject = {}
     for config_key, field_name in field_mapping.items():
         value = _cleaned_optional_string(cleaned_data.get(field_name))
         if value is not None:
@@ -1055,490 +1650,159 @@ def _raw_form_value(form: forms.Form, field_name: str) -> str:
         Raw string value suitable for selector comparisons and template state.
     """
     if form.is_bound:
-        raw_value = form.data.get(field_name, "")
-        return raw_value if isinstance(raw_value, str) else ""
+        return _raw_mapping_value(form.data, field_name)
     initial_value = form.initial.get(field_name, "")
     return initial_value if isinstance(initial_value, str) else ""
 
 
-def _plan_from_selected_step_ids(default_plan: TestPlan, selected_step_ids: list[str]) -> TestPlan:
-    """Create a plan by marking exactly the submitted ids as selected.
+def _raw_form_values(form: forms.Form, field_name: str) -> list[str]:
+    """Return current raw list values for a repeated form field.
 
     Args:
-        default_plan: Default plan derived from a v1 manifest.
-        selected_step_ids: Step ids submitted as checked by the participant.
+        form: Django form whose raw field values should be read.
+        field_name: Repeated field name to read.
 
     Returns:
-        A plan whose entries preserve manifest order and metadata while using
-        the submitted selection state.
-
-    Raises:
-        ValueError: If any submitted id is not present in the default plan.
+        Raw submitted values, or an empty list for unbound forms.
     """
-    selected_set = set(selected_step_ids)
-    known_ids = {entry.step_id for entry in default_plan.entries}
-    unknown = selected_set - known_ids
-    if unknown:
-        unknown_list = ", ".join(sorted(unknown))
-        raise ValueError(f"Unknown step id(s) in selection: {unknown_list}")
-    return TestPlan(
-        entries=tuple(
-            TestPlanEntry(
-                step_id=entry.step_id,
-                mandatory=entry.mandatory,
-                optional=entry.optional,
-                selected=entry.step_id in selected_set,
-            )
-            for entry in default_plan.entries
-        )
-    )
+    if not form.is_bound:
+        return []
+    if hasattr(form.data, "getlist"):
+        values = form.data.getlist(field_name)
+        return [value for value in values if isinstance(value, str)]
+    value = form.data.get(field_name)
+    if isinstance(value, list):
+        return [item for item in value if isinstance(item, str)]
+    return [value] if isinstance(value, str) and value else []
 
 
-def _build_step_rows(*, manifest: Manifest, default_plan: TestPlan, selected_plan: TestPlan) -> tuple[PlanStepRow, ...]:
-    """Build participant-facing row presenters for every manifest step.
+def _raw_mapping_value(data: Mapping[str, object], key: str) -> str:
+    """Return a string value from a raw mapping.
 
     Args:
-        manifest: Validated v1 manifest whose steps are being rendered.
-        default_plan: Plan before participant form input.
-        selected_plan: Plan after participant form input.
+        data: Mapping submitted by a browser or test client.
+        key: Field name to read.
 
     Returns:
-        Step rows in manifest order.
+        String value, or an empty string when absent/non-string.
     """
-    default_entries = {entry.step_id: entry for entry in default_plan.entries}
-    selected_entries = {entry.step_id: entry for entry in selected_plan.entries}
-    rows: list[PlanStepRow] = []
-    for step in manifest.steps:
-        default_entry = default_entries[step.id]
-        selected_entry = selected_entries[step.id]
-        rows.append(
-            PlanStepRow(
-                id=step.id,
-                name=step.name,
-                kind=_step_kind(step),
-                group=step.group,
-                phase=step.phase,
-                mandatory=step.mandatory,
-                optional=step.optional,
-                default_selected=default_entry.selected,
-                selected_after_form=selected_entry.selected,
-                certification_required=step.mandatory,
-                deselection_impacts_certification=step.mandatory,
-                certification_blocked_by_deselection=step.mandatory and not selected_entry.selected,
-            )
-        )
-    return tuple(rows)
+    value = data.get(key, "")
+    return value if isinstance(value, str) else ""
 
 
-def _step_kind(step: ManifestStep | PsuAuthorizationStep) -> StepKind:
-    """Return the display kind for a v1 manifest step.
+def _endpoint_id(endpoint: ImplementedEndpoint) -> str:
+    """Return the stable form id for an implemented endpoint.
 
     Args:
-        step: Parsed v1 manifest step.
+        endpoint: Implemented endpoint selected by the participant.
 
     Returns:
-        ``"psu-authorization"`` for PSU steps, otherwise ``"http"``.
+        Stable endpoint id derived from method and path.
     """
-    if isinstance(step, PsuAuthorizationStep):
-        return "psu-authorization"
-    return "http"
+    digest = sha256(f"{endpoint.method} {endpoint.path}".encode()).hexdigest()[:12]
+    return f"endpoint-{digest}"
 
 
-def _launch_blockers(manifest: Manifest) -> tuple[str, ...]:
-    """Return reasons the browser UI must not launch this manifest.
+def _resource_group_label(api: str, path: str) -> str:
+    """Infer a participant-facing resource group from an endpoint path.
 
     Args:
-        manifest: Validated v1 manifest being previewed.
+        api: API family selected by the catalogue.
+        path: Standards endpoint path.
+
+    Returns:
+        Human-readable group label.
+    """
+    segments = [segment for segment in path.split("/") if segment and not segment.startswith("{")]
+    api_segment = {"ais": "aisp", "pis": "pisp", "cbpii": "cbpii", "vrp": "vrp", "cvrp": "cvrp"}.get(api)
+    if api_segment in segments:
+        index = segments.index(api_segment)
+        if index + 1 < len(segments):
+            return _title_segment(segments[index + 1])
+    if segments:
+        return _title_segment(segments[-1])
+    return _guided_api_label(api)
+
+
+def _title_segment(value: str) -> str:
+    """Convert a path segment into a title-cased display label.
+
+    Args:
+        value: Raw standards path segment.
+
+    Returns:
+        Human-readable label.
+    """
+    return " ".join(word.capitalize() for word in value.split("-"))
+
+
+def _operation_id(api: str, endpoint_ref: EndpointRef) -> str:
+    """Build a stable operation id for generated plan-spec exports.
+
+    Args:
+        api: API family selected by the catalogue.
+        endpoint_ref: Endpoint method/path reference.
+
+    Returns:
+        Operation id derived from API, method, and path segments.
+    """
+    suffix = endpoint_ref.path.strip("/").replace("{", "").replace("}", "").replace("/", "-")
+    return f"{api}-{endpoint_ref.method.lower()}-{suffix}".replace("--", "-")
+
+
+def _launch_blockers(compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
+    """Return reasons the browser UI must not launch this compiled plan.
+
+    Args:
+        compiled_plan: Compiled plan being previewed.
 
     Returns:
         Human-readable launch blockers. Empty when browser launch is supported.
     """
+    if not compiled_plan.test_cases:
+        return ("Select at least one implemented endpoint before launch.",)
     return ()
 
 
-@dataclass(frozen=True)
-class _TokenBundleSeed:
-    """Intermediate auth-bundle seed linked to a token-minting step.
-
-    Attributes:
-        token_step_id: Step id that mints the access token.
-        consent_step_id: Consent-creation step id linked to this token.
-        required_scopes: OAuth scopes carried by the linked PSU step.
-        required_ob_permissions: Consent permissions linked to the token.
-    """
-
-    token_step_id: str
-    consent_step_id: str | None
-    required_scopes: tuple[str, ...]
-    required_ob_permissions: tuple[str, ...]
-
-
-def _build_auth_inventory(
-    *,
-    manifest: Manifest,
-    selected_plan: TestPlan,
-) -> tuple[tuple[PlanAuthBundle, ...], tuple[PlanStepAuthRequirement, ...]]:
-    """Build selected-step auth bundle inventory for plan previews.
+def _catalogue_label(key: CatalogueKey) -> str:
+    """Return the browser label for a catalogue key.
 
     Args:
-        manifest: Validated manifest whose selected steps are being previewed.
-        selected_plan: Plan after applying participant selection input.
+        key: Catalogue key to label.
 
     Returns:
-        Tuple of auth bundles and selected step-to-bundle mappings.
+        Human-readable catalogue label.
     """
-    selected_ids = set(selected_plan.selected_step_ids())
-    token_seeds = _token_bundle_seeds(manifest)
-    if not token_seeds:
-        return (), ()
-
-    bundle_map: dict[tuple[str, tuple[str, ...], tuple[str, ...]], PlanAuthBundle] = {}
-    bundle_consumers: dict[str, list[str]] = {}
-    step_requirements: list[PlanStepAuthRequirement] = []
-    for step in manifest.steps:
-        if step.id not in selected_ids:
-            continue
-        if isinstance(step, PsuAuthorizationStep):
-            continue
-        token_step_id = _authorization_token_step_id(step)
-        if token_step_id is None:
-            continue
-        seed = token_seeds.get(token_step_id)
-        if seed is None:
-            continue
-        effective_permissions = _effective_permissions_for_step(step=step, seed=seed)
-        bundle_key = (seed.token_step_id, seed.required_scopes, effective_permissions)
-        bundle = bundle_map.get(bundle_key)
-        if bundle is None:
-            bundle_id = _stable_bundle_id(
-                token_step_id=seed.token_step_id,
-                required_scopes=seed.required_scopes,
-                required_permissions=effective_permissions,
-            )
-            bundle = PlanAuthBundle(
-                id=bundle_id,
-                token_step_id=seed.token_step_id,
-                consent_step_id=seed.consent_step_id,
-                required_scopes=seed.required_scopes,
-                required_ob_permissions=effective_permissions,
-                consuming_step_ids=(),
-            )
-            bundle_map[bundle_key] = bundle
-            bundle_consumers[bundle_id] = []
-        bundle_consumers[bundle.id].append(step.id)
-        step_requirements.append(PlanStepAuthRequirement(step_id=step.id, bundle_id=bundle.id))
-
-    ordered_bundle_ids = [
-        requirement.bundle_id for requirement in step_requirements if requirement.bundle_id in bundle_consumers
-    ]
-    deduplicated_ordered_bundle_ids = tuple(dict.fromkeys(ordered_bundle_ids))
-    bundles = tuple(
-        PlanAuthBundle(
-            id=bundle.id,
-            token_step_id=bundle.token_step_id,
-            consent_step_id=bundle.consent_step_id,
-            required_scopes=bundle.required_scopes,
-            required_ob_permissions=bundle.required_ob_permissions,
-            consuming_step_ids=tuple(bundle_consumers[bundle.id]),
-        )
-        for bundle_id in deduplicated_ordered_bundle_ids
-        for bundle in bundle_map.values()
-        if bundle.id == bundle_id
-    )
-    return bundles, tuple(step_requirements)
+    return f"{_standard_label(key.standard)} {key.version} {_guided_api_label(key.api)}"
 
 
-def _token_bundle_seeds(manifest: Manifest) -> dict[str, _TokenBundleSeed]:
-    """Build token-step seeds carrying consent permissions and PSU scopes.
+def _standard_label(standard: str) -> str:
+    """Return the participant-facing label for a standard namespace.
 
     Args:
-        manifest: Validated manifest to inspect.
+        standard: Standards namespace value from a catalogue key.
 
     Returns:
-        Mapping of token-minting step id to auth bundle seed.
+        Human-readable standards label.
     """
-    consent_permissions = _consent_permissions_by_step_id(manifest)
-    psu_steps = {step.id: step for step in manifest.steps if isinstance(step, PsuAuthorizationStep)}
-    seeds: dict[str, _TokenBundleSeed] = {}
-    for step in manifest.steps:
-        if isinstance(step, PsuAuthorizationStep):
-            continue
-        psu_step_id = _authorization_code_source_step_id(step)
-        if psu_step_id is None:
-            continue
-        psu_step = psu_steps.get(psu_step_id)
-        if psu_step is None:
-            continue
-        consent_step_id = _consent_step_id_for_psu(psu_step=psu_step, manifest=manifest)
-        permissions = () if consent_step_id is None else consent_permissions.get(consent_step_id, ())
-        seeds[step.id] = _TokenBundleSeed(
-            token_step_id=step.id,
-            consent_step_id=consent_step_id,
-            required_scopes=_scope_tokens(psu_step.scope),
-            required_ob_permissions=permissions,
-        )
-    return seeds
+    labels = {"open-banking": "Open Banking"}
+    return labels.get(standard, standard)
 
 
-def _authorization_code_source_step_id(step: ManifestStep | PsuAuthorizationStep) -> str | None:
-    """Return the PSU step id used as authorization-code source.
+def _guided_api_label(api: str) -> str:
+    """Return the participant-facing label for an API family.
 
     Args:
-        step: Manifest step to inspect.
+        api: API family value from the catalogue registry.
 
     Returns:
-        PSU step id referenced by the token exchange ``code`` field, or
-        ``None`` when the step is not an authorization-code exchange.
+        Short uppercase label used in the browser selector.
     """
-    if isinstance(step, PsuAuthorizationStep):
-        return None
-    if step.request.body is None or not isinstance(step.request.body, FormBody):
-        return None
-    grant_type = step.request.body.fields.get("grant_type")
-    if grant_type != "authorization_code":
-        return None
-    code_value = step.request.body.fields.get("code")
-    if code_value is None:
-        return None
-    return _extract_step_placeholder_step_id(code_value, field="code")
-
-
-def _authorization_token_step_id(step: ManifestStep | PsuAuthorizationStep) -> str | None:
-    """Return the token step id referenced by a bearer Authorization header.
-
-    Args:
-        step: Manifest step to inspect.
-
-    Returns:
-        Token-minting step id when the request uses a bearer placeholder,
-        or ``None`` for non-protected steps.
-    """
-    if isinstance(step, PsuAuthorizationStep):
-        return None
-    headers = step.request.headers or {}
-    auth_header = headers.get("Authorization")
-    if auth_header is None:
-        return None
-    auth_header_value = auth_header.strip()
-    if not auth_header_value.startswith("Bearer "):
-        return None
-    token_placeholder = auth_header_value.removeprefix("Bearer ").strip()
-    return _extract_step_placeholder_step_id(token_placeholder, field="access_token")
-
-
-def _consent_permissions_by_step_id(manifest: Manifest) -> dict[str, tuple[str, ...]]:
-    """Return Open Banking permissions declared by consent-creation steps.
-
-    Args:
-        manifest: Validated manifest to inspect.
-
-    Returns:
-        Mapping from consent-creation step id to sorted permissions.
-    """
-    permissions_by_step: dict[str, tuple[str, ...]] = {}
-    for step in manifest.steps:
-        if isinstance(step, PsuAuthorizationStep):
-            continue
-        if step.request.method != "POST":
-            continue
-        if "account-access-consents" not in step.request.url:
-            continue
-        request_body = step.request.body
-        if request_body is None or not isinstance(request_body, JsonBody):
-            continue
-        permissions_by_step[step.id] = _permissions_from_request_body(request_body.value)
-    return permissions_by_step
-
-
-def _permissions_from_request_body(body_value: JsonValue) -> tuple[str, ...]:
-    """Extract consent permissions from a consent request body.
-
-    Args:
-        body_value: JSON request body value.
-
-    Returns:
-        Sorted unique permission strings from ``Data.Permissions``.
-    """
-    if not isinstance(body_value, dict):
-        return ()
-    raw_data = body_value.get("Data")
-    if not isinstance(raw_data, dict):
-        return ()
-    raw_permissions = raw_data.get("Permissions")
-    if not isinstance(raw_permissions, list):
-        return ()
-    permissions = [permission for permission in raw_permissions if isinstance(permission, str) and permission]
-    return tuple(sorted(set(permissions)))
-
-
-def _consent_step_id_for_psu(*, psu_step: PsuAuthorizationStep, manifest: Manifest) -> str | None:
-    """Resolve the consent step id associated with a PSU authorization step.
-
-    Args:
-        psu_step: PSU authorization step whose consent dependency is resolved.
-        manifest: Manifest containing the PSU step.
-
-    Returns:
-        Consent step id, or ``None`` when no linked consent step is found.
-    """
-    request_object = psu_step.request_object
-    if isinstance(request_object, GeneratedRequestObject) and request_object.openbanking_intent_id is not None:
-        from_request_object = _extract_step_placeholder_step_id(
-            request_object.openbanking_intent_id,
-            field="Data.ConsentId",
-        )
-        if from_request_object is not None:
-            return from_request_object
-
-    consent_step_ids = set(_consent_permissions_by_step_id(manifest).keys())
-    if not consent_step_ids:
-        return None
-    psu_index = next((index for index, step in enumerate(manifest.steps) if step.id == psu_step.id), None)
-    if psu_index is None:
-        return None
-    for step in reversed(manifest.steps[:psu_index]):
-        if step.id in consent_step_ids:
-            return step.id
-    return None
-
-
-def _extract_step_placeholder_step_id(placeholder: str, *, field: str) -> str | None:
-    """Extract a step id from a ``${steps.<id>.response.body.<field>}`` placeholder.
-
-    Args:
-        placeholder: Placeholder string to parse.
-        field: Expected response-body field suffix.
-
-    Returns:
-        Referenced step id, or ``None`` when the placeholder does not match.
-    """
-    pattern = re.compile(r"^\$\{steps\.([A-Za-z0-9_.-]+)\.response\.body\." + re.escape(field) + r"\}$")
-    match = pattern.match(placeholder)
-    if match is None:
-        return None
-    return match.group(1)
-
-
-def _scope_tokens(scope: str) -> tuple[str, ...]:
-    """Normalize an OAuth scope string into sorted unique tokens.
-
-    Args:
-        scope: Raw OAuth scope string from a PSU authorization step.
-
-    Returns:
-        Sorted unique non-empty scope tokens.
-    """
-    tokens = [token for token in scope.split(" ") if token]
-    return tuple(sorted(set(tokens)))
-
-
-def _effective_permissions_for_step(
-    *,
-    step: ManifestStep | PsuAuthorizationStep,
-    seed: _TokenBundleSeed,
-) -> tuple[str, ...]:
-    """Compute step-specific effective permissions for auth-bundle grouping.
-
-    Args:
-        step: Selected token-protected step consuming the bundle.
-        seed: Bundle seed carrying manifest-level consent permissions.
-
-    Returns:
-        Effective permissions, potentially narrowed to Basic or Detail when
-        both variants exist in the same permission family.
-    """
-    if isinstance(step, PsuAuthorizationStep):
-        return seed.required_ob_permissions
-
-    variant = _permission_variant_for_step(step)
-    if variant is None:
-        return seed.required_ob_permissions
-
-    families_with_split = _families_with_basic_detail(seed.required_ob_permissions)
-    if not families_with_split:
-        return seed.required_ob_permissions
-
-    narrowed_permissions: list[str] = []
-    for permission in seed.required_ob_permissions:
-        family, permission_variant = _permission_family_and_variant(permission)
-        if (
-            family in families_with_split
-            and permission_variant in {"Basic", "Detail"}
-            and permission_variant != variant
-        ):
-            continue
-        narrowed_permissions.append(permission)
-    return tuple(narrowed_permissions)
-
-
-def _permission_variant_for_step(step: ManifestStep) -> Literal["Basic", "Detail"] | None:
-    """Infer whether a selected step consumes Basic or Detail permissions.
-
-    Args:
-        step: Selected HTTP manifest step using a protected resource token.
-
-    Returns:
-        ``"Basic"`` or ``"Detail"`` when inferred from step metadata,
-        otherwise ``None``.
-    """
-    metadata = f"{step.id} {step.name}".lower()
-    if "detail" in metadata:
-        return "Detail"
-    if "basic" in metadata or "list" in metadata:
-        return "Basic"
-    return None
-
-
-def _families_with_basic_detail(permissions: tuple[str, ...]) -> set[str]:
-    """Return permission families that contain both Basic and Detail variants.
-
-    Args:
-        permissions: Consent permission set.
-
-    Returns:
-        Families containing both ``Basic`` and ``Detail`` variants.
-    """
-    family_variants: dict[str, set[str]] = {}
-    for permission in permissions:
-        family, variant = _permission_family_and_variant(permission)
-        if variant is None:
-            continue
-        family_variants.setdefault(family, set()).add(variant)
-    return {family for family, variants in family_variants.items() if "Basic" in variants and "Detail" in variants}
-
-
-def _permission_family_and_variant(permission: str) -> tuple[str, Literal["Basic", "Detail"] | None]:
-    """Split an OB permission into family and Basic/Detail variant.
-
-    Args:
-        permission: Open Banking permission name.
-
-    Returns:
-        Tuple of permission family and optional Basic/Detail variant.
-    """
-    if permission.endswith("Basic"):
-        return permission[: -len("Basic")], "Basic"
-    if permission.endswith("Detail"):
-        return permission[: -len("Detail")], "Detail"
-    return permission, None
-
-
-def _stable_bundle_id(
-    *,
-    token_step_id: str,
-    required_scopes: tuple[str, ...],
-    required_permissions: tuple[str, ...],
-) -> str:
-    """Build a deterministic auth bundle identifier for preview consumers.
-
-    Args:
-        token_step_id: Step id minting the access token.
-        required_scopes: Required OAuth scopes for the bundle.
-        required_permissions: Required consent permissions for the bundle.
-
-    Returns:
-        Stable short id suitable for payload references and UI rendering.
-    """
-    digest_source = "|".join((token_step_id, ",".join(required_scopes), ",".join(required_permissions)))
-    digest = sha256(digest_source.encode("utf-8")).hexdigest()[:12]
-    return f"auth-{token_step_id}-{digest}"
+    labels = {
+        "ais": "AIS",
+        "pis": "PIS",
+        "cbpii": "CBPII",
+        "vrp": "VRP",
+        "cvrp": "cVRP",
+    }
+    return labels.get(api, api)

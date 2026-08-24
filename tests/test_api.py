@@ -7,7 +7,6 @@ from pathlib import Path
 from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
-import httpx
 import pytest
 from django.test import Client
 
@@ -15,8 +14,20 @@ from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import MAX_TERMINAL_RECORDS, RunConflictError, RunPlanStep, RunStore, run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+from conformance.catalogue import (
+    CatalogueAssertion,
+    CatalogueKey,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    EndpointRef,
+    RuntimeInputRequirement,
+    SecurityProfileApplicability,
+    TestCaseApplicability,
+    TestCatalogue,
+    TestPlanSpec,
+    compile_test_plan,
+)
 from conformance.execution_log import BufferedExecutionLogger
-from tests.test_executor import _executor_signing_config
 
 # ─── RunStore unit tests ─────────────────────────────────────────────────────
 
@@ -454,93 +465,78 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
-SUITE_CONFIG = {
-    **VALID_CONFIG,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "discovery-jwks",
-    },
+VALID_PLAN_SPEC = {
+    "schemaVersion": "v1",
+    "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
+    "securityProfile": "fapi1-advanced",
+    "implementedEndpoints": [],
+    "runtimeInputs": {},
 }
 
-PSU_AUTH_STARTER_CONFIG = {
-    **VALID_CONFIG,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "psu-auth-starter",
-    },
-    "oauth": {
-        "clientId": "test-client-id",
-        "redirectUri": "https://conformance.example.com/callback",
-        "openBankingIntentId": "consent-api-123",
-    },
-}
 
-AIS_SLICE_CONFIG = {
-    **VALID_CONFIG,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "ais-certification-slice",
-    },
-    "oauth": {
-        "clientId": "test-client-id",
-        "redirectUri": "https://conformance.example.com/callback",
-        "resourceBaseUrl": "https://resource.example.com",
-    },
-}
+def _file_reference_catalogue() -> TestCatalogue:
+    """Build a minimal catalogue with a selected file-reference runtime input.
 
-AIS_BASELINE_CONFIG = {
-    **VALID_CONFIG,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "ais-certification-baseline",
-    },
-    "oauth": {
-        "clientId": "test-client-id",
-        "redirectUri": "https://conformance.example.com/callback",
-        "resourceBaseUrl": "https://resource.example.com",
-    },
-}
+    Returns:
+        Catalogue fixture whose selected case would read a local file if the API
+        accepted the submitted ``file_reference`` input.
+    """
+    endpoint = EndpointRef(method="POST", path="/open-banking/v4.0/files/request")
+    return TestCatalogue(
+        key=CatalogueKey(standard="open-banking", version="v4.0", api="files"),
+        catalogue_version="test.1",
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="file-request",
+                name="File request",
+                role="resource",
+                compliance_scope=("legacy-fcs-script:test#file",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    endpoint_refs=(endpoint,),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(
+                    RuntimeInputRequirement("resourceBaseUrl", "url", "Resource base URL"),
+                    RuntimeInputRequirement("requestBodyRef", "file_reference", "Request body file"),
+                ),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="file-request",
+                        name="POST file request",
+                        method="POST",
+                        path="/open-banking/v4.0/files/request",
+                        runtime_input_refs=("resourceBaseUrl", "requestBodyRef"),
+                    ),
+                ),
+                assertions=(CatalogueAssertion("status-201", "http_status", "HTTP 201", {"expected": 201}),),
+            ),
+        ),
+    )
 
-AIS_FCS_LEGACY_BENCHMARK_CONFIG = {
-    **VALID_CONFIG,
-    "testSuite": {
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "suite": "ais-fcs-legacy-benchmark",
-    },
-    "oauth": {
-        "clientId": "test-client-id",
-        "redirectUri": "https://conformance.example.com/callback",
-        "resourceBaseUrl": "https://resource.example.com",
-    },
-}
 
-VALID_MANIFEST = {
-    "schemaVersion": "v0",
-    "name": "Test manifest",
-    "tests": [
-        {
-            "id": "test-1",
-            "name": "Test endpoint",
-            "request": {
-                "method": "GET",
-                "url": "https://example.com/test",
-            },
-            "assertions": [
-                {"type": "http_status", "expected": 200},
-            ],
-        }
-    ],
-}
+def _file_reference_plan_spec_json() -> dict[str, object]:
+    """Return API plan-spec JSON that selects a file-reference runtime input.
+
+    Returns:
+        v1 plan-spec JSON targeting :func:`_file_reference_catalogue`.
+    """
+    return {
+        "schemaVersion": "v1",
+        "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "files"},
+        "securityProfile": "fapi1-advanced",
+        "implementedEndpoints": [
+            {
+                "method": "POST",
+                "path": "/open-banking/v4.0/files/request",
+                "resourceGroup": "Files",
+            }
+        ],
+        "runtimeInputs": {
+            "resourceBaseUrl": "https://resource.example.com",
+            "requestBodyRef": "local-request.json",
+        },
+    }
 
 
 def _wait_for_value[WaitValue](producer: Callable[[], WaitValue | None], *, timeout_seconds: float) -> WaitValue:
@@ -627,17 +623,17 @@ class TestCreateRunEndpoint:
 
     def test_rejects_invalid_config(self) -> None:
         client = Client()
-        body = {"config": {"environment": "test"}}  # missing discoveryUrl
+        body = {"config": {"environment": "test"}, "planSpec": VALID_PLAN_SPEC}  # missing discoveryUrl
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
         assert "Config validation failed" in response.json()["error"]
 
-    def test_rejects_invalid_manifest(self) -> None:
+    def test_rejects_removed_manifest_field(self) -> None:
         client = Client()
         body = {"config": VALID_CONFIG, "manifest": {"schemaVersion": "v99"}}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Manifest validation failed" in response.json()["error"]
+        assert "Unknown request field(s): manifest" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_start_run_derives_default_plan_and_persists_selected_steps(self, mock_execute: Mock) -> None:
@@ -647,7 +643,6 @@ class TestCreateRunEndpoint:
         from conformance.model_bank_config import ModelBankConfig
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -698,7 +693,7 @@ class TestCreateRunEndpoint:
             timeout_seconds=1.0,
         )
         assert mock_execute.call_args is not None
-        threaded_plan = mock_execute.call_args.args[3]
+        threaded_plan = mock_execute.call_args.args[6]
         assert threaded_plan is not None
         assert threaded_plan.selected_step_ids() == ["mandatory-http", "psu-step"]
 
@@ -711,7 +706,6 @@ class TestCreateRunEndpoint:
         from conformance.test_plan import TestPlan
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -750,14 +744,103 @@ class TestCreateRunEndpoint:
             timeout_seconds=1.0,
         )
         assert mock_execute.call_args is not None
-        threaded_plan = mock_execute.call_args.args[3]
+        threaded_plan = mock_execute.call_args.args[6]
         assert threaded_plan is not None
         assert threaded_plan.selected_step_ids() == ["keep-me"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_start_run_marks_non_mandatory_compiled_steps_optional(
+        self,
+        mock_execute: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """Compiled-plan snapshots mark non-mandatory catalogue cases as optional."""
+        from conformance.api.run_lifecycle import start_run
+        from conformance.model_bank_config import ModelBankConfig
+
+        catalogue = TestCatalogue(
+            key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+            catalogue_version="test.1",
+            test_cases=(
+                CatalogueTestCase(
+                    test_case_id="mandatory-case",
+                    name="Mandatory case",
+                    role="resource",
+                    compliance_scope=("legacy-fcs-script:test#mandatory",),
+                    applicability=TestCaseApplicability(
+                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    ),
+                    mandatory=True,
+                    request_steps=(
+                        CatalogueRequestStep(
+                            step_id="mandatory-step",
+                            name="Mandatory step",
+                            method="GET",
+                            path="/open-banking/v4.0/aisp/accounts",
+                        ),
+                    ),
+                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+                ),
+                CatalogueTestCase(
+                    test_case_id="optional-case",
+                    name="Optional case",
+                    role="resource",
+                    compliance_scope=("legacy-fcs-script:test#optional",),
+                    applicability=TestCaseApplicability(
+                        security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    ),
+                    mandatory=False,
+                    request_steps=(
+                        CatalogueRequestStep(
+                            step_id="optional-step",
+                            name="Optional step",
+                            method="GET",
+                            path="/open-banking/v4.0/aisp/accounts",
+                        ),
+                    ),
+                    assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+                ),
+            ),
+        )
+        compiled_plan = compile_test_plan(
+            catalogue,
+            TestPlanSpec(
+                schema_version="v1",
+                catalogue_key=catalogue.key,
+                security_profile="fapi1-advanced",
+                implemented_endpoints=(),
+                runtime_inputs={},
+            ),
+        )
+        config = ModelBankConfig(
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=tmp_path / "results.json",
+        )
+
+        response = start_run(
+            config=config,
+            compiled_plan=compiled_plan,
+            runtime_inputs={},
+            runtime_input_base_dir=tmp_path,
+        )
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        assert [(step.step_id, step.mandatory, step.optional) for step in record.planned_steps] == [
+            ("mandatory-step", True, False),
+            ("optional-step", False, True),
+        ]
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
         data = response.json()
@@ -773,381 +856,44 @@ class TestCreateRunEndpoint:
         )
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
-        assert mock_execute.call_args.args[2:] == (None, None, None)
+        assert mock_execute.call_args.args[2] is not None
+        assert mock_execute.call_args.args[3] == {}
+        assert mock_execute.call_args.args[5:] == (None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
+    @patch("conformance.api.views.resolve_catalogue")
     @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_manifest_and_returns_201(self, mock_execute: object) -> None:
-        client = Client()
-        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST}
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 201
-        data = response.json()
-        assert data["status"] == "pending"
-        assert "id" in data
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_config_resolved_suite(self, mock_execute: Mock) -> None:
-        """A config ``testSuite`` supplies the manifest when inline manifest is absent.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-        """
-        client = Client()
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": SUITE_CONFIG}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        data = response.json()
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        manifest = mock_execute.call_args.args[2]
-        plan = mock_execute.call_args.args[3]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite"
-        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch"]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/discovery-jwks"
-        assert data["status"] == "pending"
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_psu_auth_starter_config_resolved_suite(self, mock_execute: Mock) -> None:
-        """A ``psu-auth-starter`` testSuite config resolves the bundled PSU auth starter manifest.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-        """
-        client = Client()
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": PSU_AUTH_STARTER_CONFIG}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        manifest = mock_execute.call_args.args[2]
-        plan = mock_execute.call_args.args[3]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced PSU auth starter suite"
-        assert plan.selected_step_ids() == ["openid-discovery", "jwks-fetch", "psu-authorization"]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/psu-auth-starter"
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_ais_slice_config_resolved_suite(self, mock_execute: Mock) -> None:
-        """A v4 AIS ``testSuite`` config resolves the bundled AIS slice manifest.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-        """
-        client = Client()
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": AIS_SLICE_CONFIG}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        manifest = mock_execute.call_args.args[2]
-        plan = mock_execute.call_args.args[3]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification slice"
-        assert plan.selected_step_ids() == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-balances",
-            "account-transactions",
-        ]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-slice"
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_ais_baseline_config_resolved_suite(
+    def test_rejects_file_reference_runtime_inputs(
         self,
         mock_execute: Mock,
-        tmp_path: Path,
+        mock_resolve_catalogue: Mock,
     ) -> None:
-        """A v4 AIS baseline ``testSuite`` config resolves the bundled baseline manifest.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-            tmp_path: Temporary directory used to materialise signing PEM files.
-        """
+        """REST launches must not read server-local file-reference inputs."""
+        mock_resolve_catalogue.return_value = _file_reference_catalogue()
         client = Client()
-        signing_config = _executor_signing_config(tmp_path)
-        baseline_config = {
-            **AIS_BASELINE_CONFIG,
-            "fapiSigning": {
-                "certificatePathRoot": str(signing_config.certificate_path_root),
-                "signingCertificatePath": str(signing_config.signing_certificate_path),
-                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
-                "kid": signing_config.key_id,
-                "clientAssertionIssuer": signing_config.client_assertion_issuer,
-                "clientAssertionSubject": signing_config.client_assertion_subject,
-                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
-            },
-        }
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": baseline_config}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        config = mock_execute.call_args.args[1]
-        manifest = mock_execute.call_args.args[2]
-        plan = mock_execute.call_args.args[3]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert config.fapi_signing is not None
-        assert config.fapi_signing.key_id == signing_config.key_id
-        assert config.fapi_signing.token_endpoint_auth_method == signing_config.token_endpoint_auth_method
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS certification baseline"
-        assert plan.selected_step_ids() == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "accounts-list",
-            "account-detail",
-            "account-balances",
-            "account-transactions",
-            "transactions-list",
-        ]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline"
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_ais_fcs_legacy_benchmark_config_resolved_suite(
-        self,
-        mock_execute: Mock,
-        tmp_path: Path,
-    ) -> None:
-        """A v4 AIS legacy benchmark ``testSuite`` resolves the bundled manifest.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-            tmp_path: Temporary directory used to materialise signing PEM files.
-        """
-        client = Client()
-        signing_config = _executor_signing_config(tmp_path)
-        benchmark_config = {
-            **AIS_FCS_LEGACY_BENCHMARK_CONFIG,
-            "fapiSigning": {
-                "certificatePathRoot": str(signing_config.certificate_path_root),
-                "signingCertificatePath": str(signing_config.signing_certificate_path),
-                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
-                "kid": signing_config.key_id,
-                "clientAssertionIssuer": signing_config.client_assertion_issuer,
-                "clientAssertionSubject": signing_config.client_assertion_subject,
-                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
-            },
-        }
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": benchmark_config}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        config = mock_execute.call_args.args[1]
-        manifest = mock_execute.call_args.args[2]
-        plan = mock_execute.call_args.args[3]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert config.fapi_signing is not None
-        assert config.fapi_signing.key_id == signing_config.key_id
-        assert manifest.name == "Open Banking Read/Write v4.0 FAPI 1 Advanced AIS FCS legacy benchmark"
-        assert plan.selected_step_ids() == [
-            "openid-discovery",
-            "jwks-fetch",
-            "client-credentials-token",
-            "account-access-consent",
-            "psu-authorization",
-            "token-exchange",
-            "OB-400-ACC-100400",
-            "OB-400-ACC-100200",
-            "OB-400-BAL-101200",
-            "OB-400-TRA-105100",
-            "OB-400-TRA-105110",
-            "OB-400-TRA-105120",
-        ]
-        assert suite_metadata.catalog_id == "ob-read-write/v4.0/fapi1-advanced/ais-fcs-legacy-benchmark"
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_inline_manifest_overrides_config_resolved_suite(self, mock_execute: Mock) -> None:
-        """Inline API manifests remain explicit overrides for authoring workflows.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-        """
-        client = Client()
-        inline_manifest = {
-            "schemaVersion": "v1",
-            "name": "inline override",
-            "steps": [
-                {
-                    "id": "inline-step",
-                    "name": "Inline step",
-                    "request": {"method": "GET", "url": "https://example.com/inline"},
-                    "assertions": [{"type": "http_status", "expected": 200}],
-                }
-            ],
-        }
-
-        response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": SUITE_CONFIG, "manifest": inline_manifest}),
-            content_type="application/json",
-        )
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        manifest = mock_execute.call_args.args[2]
-        suite_metadata = mock_execute.call_args.args[4]
-        assert manifest.name == "inline override"
-        assert [step.id for step in manifest.steps] == ["inline-step"]
-        assert suite_metadata is None
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_manifest_and_valid_deselection(self, mock_execute: object) -> None:
-        """A valid ``deselectStepIds`` against a v1 manifest is accepted."""
-        client = Client()
-        v1_manifest = {
-            "schemaVersion": "v1",
-            "name": "plan-api",
-            "steps": [
-                {
-                    "id": "a",
-                    "name": "A",
-                    "request": {"method": "GET", "url": "https://example.com/a"},
-                    "assertions": [{"type": "http_status", "expected": 200}],
-                },
-                {
-                    "id": "b",
-                    "name": "B",
-                    "optional": True,
-                    "request": {"method": "GET", "url": "https://example.com/b"},
-                    "assertions": [{"type": "http_status", "expected": 200}],
-                },
-            ],
-        }
-        body = {"config": VALID_CONFIG, "manifest": v1_manifest, "deselectStepIds": ["a"]}
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 201
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_creates_run_with_config_resolved_suite_and_valid_deselection(self, mock_execute: Mock) -> None:
-        """``deselectStepIds`` is valid against a config-resolved suite manifest.
-
-        Args:
-            mock_execute: Patched lifecycle worker used to inspect run inputs.
-        """
-        client = Client()
-        body = {"config": SUITE_CONFIG, "deselectStepIds": ["jwks-fetch"]}
-
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-
-        assert response.status_code == 201
-        _wait_for_value(
-            lambda: True if mock_execute.call_args is not None else None,
-            timeout_seconds=1.0,
-        )
-        assert mock_execute.call_args is not None
-        plan = mock_execute.call_args.args[3]
-        assert plan.selected_step_ids() == ["openid-discovery"]
-
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_rejects_deselect_unknown_step_id_for_ais_config_resolved_suite(self, mock_execute: Mock) -> None:
-        """Unknown step ids are rejected for config-selected AIS runs.
-
-        Args:
-            mock_execute: Patched lifecycle worker that must not run.
-        """
-        client = Client()
-        body = {"config": AIS_SLICE_CONFIG, "deselectStepIds": ["ghost-step"]}
+        body = {"config": VALID_CONFIG, "planSpec": _file_reference_plan_spec_json()}
 
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
         assert response.status_code == 400
-        assert "Plan validation failed" in response.json()["error"]
+        assert response.json()["error"] == (
+            "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
+            "requestBodyRef"
+        )
         mock_execute.assert_not_called()
 
-    @patch("conformance.api.run_lifecycle._execute_run")
-    def test_rejects_deselect_unknown_step_id(self, mock_execute: object) -> None:
-        """An unknown step id in ``deselectStepIds`` returns 400."""
-        client = Client()
-        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": ["ghost"]}
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 400
-        assert "Plan validation failed" in response.json()["error"]
-
-    def test_rejects_deselect_without_manifest(self) -> None:
-        """``deselectStepIds`` requires an inline or config-resolved manifest."""
+    def test_rejects_removed_deselect_field(self) -> None:
+        """``deselectStepIds`` is no longer a public API field."""
         client = Client()
         body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "deselectStepIds" in response.json()["error"]
-
-    def test_rejects_invalid_config_suite_resolution(self) -> None:
-        """Catalog resolution errors are surfaced as HTTP 400 before run start."""
-        from conformance.suite_catalog import SuiteCatalogError
-
-        client = Client()
-        with patch("conformance.api.views.resolve_suite", side_effect=SuiteCatalogError("missing resource")):
-            response = client.post(
-                "/api/runs/",
-                data=json.dumps({"config": SUITE_CONFIG}),
-                content_type="application/json",
-            )
-
-        assert response.status_code == 400
-        assert "Suite resolution failed" in response.json()["error"]
-
-    def test_rejects_deselect_not_array_of_strings(self) -> None:
-        """``deselectStepIds`` must be an array of strings; otherwise 400."""
-        client = Client()
-        body = {"config": VALID_CONFIG, "manifest": VALID_MANIFEST, "deselectStepIds": [1, 2]}
-        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
-        assert response.status_code == 400
-        assert "array of strings" in response.json()["error"]
+        assert "Unknown request field(s): deselectStepIds" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         first = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert first.status_code == 201
         second = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -1161,346 +907,6 @@ class TestCreateRunEndpoint:
 
 
 @pytest.mark.integration
-class TestPsuAuthorizationApiRun:
-    """End-to-end API coverage for manual PSU authorisation manifest runs."""
-
-    def test_manifest_run_passes_after_synthetic_callback(self) -> None:
-        """A PSU manifest run can be completed through the public callback path."""
-        client = Client()
-        state = "api-psu-state-" + "x" * 32
-        manifest = {
-            "schemaVersion": "v1",
-            "name": "api psu authorisation",
-            "steps": [
-                {
-                    "kind": "psu-authorization",
-                    "id": "psu",
-                    "name": "PSU authorisation",
-                    "mode": "manual",
-                    "authorizationEndpoint": "https://auth.example.com/authorize",
-                    "clientId": "client-123",
-                    "redirectUri": "https://conformance.example.com/callback",
-                    "state": state,
-                    "timeoutSeconds": 3,
-                    "mandatory": True,
-                }
-            ],
-        }
-
-        create_response = client.post(
-            "/api/runs/",
-            data=json.dumps({"config": VALID_CONFIG, "manifest": manifest}),
-            content_type="application/json",
-        )
-        assert create_response.status_code == 201
-        run_id = create_response.json()["id"]
-
-        _wait_for_value(
-            lambda: True if auth_session_store.get(run_id, state) is not None else None,
-            timeout_seconds=2.0,
-        )
-        callback_response = client.get("/callback/", {"state": state, "code": "api-auth-code"})
-        assert callback_response.status_code == 200
-
-        def completed_result() -> dict[str, object] | None:
-            """Return result JSON once the asynchronous run has completed.
-
-            Returns:
-                Result JSON dictionary when available, otherwise ``None``
-                while the run is still pending/running.
-
-            Raises:
-                AssertionError: If the result endpoint reports an unexpected
-                terminal or internal-error response.
-            """
-            result_response = client.get(f"/api/runs/{run_id}/result/")
-            if result_response.status_code == 200:
-                body = result_response.json()
-                assert isinstance(body, dict)
-                return body
-            if result_response.status_code == 409:
-                return None
-            raise AssertionError(
-                f"Unexpected result response {result_response.status_code}: {result_response.content!r}"
-            )
-
-        result = _wait_for_value(completed_result, timeout_seconds=4.0)
-        assert result["status"] == "passed"
-        assert result["summary"] == {"total": 1, "passed": 1, "failed": 0, "warn": 0, "skipped": 0}
-        steps = result["steps"]
-        assert isinstance(steps, list)
-        assert steps[0]["name"] == "psu"
-        assert steps[0]["status"] == "passed"
-
-        log_response = client.get(f"/api/runs/{run_id}/log/")
-        assert log_response.status_code == 200
-        events = json.loads(log_response.content.decode("utf-8"))
-        assert "psu-authorization-url" in [event["type"] for event in events]
-
-    def test_baseline_suite_run_passes_after_synthetic_callback_and_stays_partial(self, tmp_path: Path) -> None:
-        """The baseline suite executes token and resource steps but remains non-eligible while partial."""
-        client = Client()
-        captured_requests: list[httpx.Request] = []
-        signing_config = _executor_signing_config(tmp_path)
-        baseline_config = {
-            **AIS_BASELINE_CONFIG,
-            "fapiSigning": {
-                "certificatePathRoot": str(signing_config.certificate_path_root),
-                "signingCertificatePath": str(signing_config.signing_certificate_path),
-                "signingPrivateKeyPath": str(signing_config.signing_private_key_path),
-                "kid": signing_config.key_id,
-                "clientAssertionIssuer": signing_config.client_assertion_issuer,
-                "clientAssertionSubject": signing_config.client_assertion_subject,
-                "tokenEndpointAuthMethod": signing_config.token_endpoint_auth_method,
-            },
-        }
-
-        def handler(request: httpx.Request) -> httpx.Response:
-            """Return mocked responses for the baseline suite's HTTP calls.
-
-            Args:
-                request: Outbound HTTP request issued by the async API run.
-
-            Returns:
-                Mocked JSON response that satisfies the baseline manifest.
-
-            Raises:
-                AssertionError: If the test receives an unexpected request.
-            """
-            captured_requests.append(request)
-            url = str(request.url)
-            json_headers = {"content-type": "application/json"}
-            if url == "https://example.com/.well-known/openid-configuration":
-                return httpx.Response(
-                    200,
-                    headers=json_headers,
-                    json={
-                        "issuer": "https://example.com",
-                        "authorization_endpoint": "https://example.com/authorize",
-                        "token_endpoint": "https://example.com/token",
-                        "jwks_uri": "https://example.com/jwks",
-                        "response_types_supported": ["code id_token"],
-                    },
-                )
-            if url == "https://example.com/jwks":
-                return httpx.Response(200, headers=json_headers, json={"keys": [{"kty": "RSA", "kid": "key-1"}]})
-            if url == "https://example.com/token":
-                return httpx.Response(
-                    200,
-                    headers=json_headers,
-                    json={
-                        "access_token": "baseline-access-token",
-                        "id_token": "baseline-id-token",
-                        "token_type": "Bearer",
-                        "expires_in": 300,
-                    },
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents":
-                return httpx.Response(
-                    201,
-                    headers={**json_headers, "x-fapi-interaction-id": "consent-123"},
-                    json={
-                        "Data": {
-                            "ConsentId": "consent-123",
-                            "Permissions": ["ReadTransactionsDetail"],
-                        },
-                        "Risk": {},
-                    },
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts":
-                return httpx.Response(
-                    200,
-                    headers={**json_headers, "x-fapi-interaction-id": "accounts-123"},
-                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123":
-                return httpx.Response(
-                    200,
-                    headers={**json_headers, "x-fapi-interaction-id": "account-123"},
-                    json={"Data": {"Account": [{"AccountId": "acct-123", "Status": "Enabled"}]}},
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances":
-                return httpx.Response(
-                    200,
-                    headers={**json_headers, "x-fapi-interaction-id": "balances-123"},
-                    json={
-                        "Data": {
-                            "Balance": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "Type": "CLAV",
-                                    "DateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "10.00", "Currency": "GBP"},
-                                    "CreditDebitIndicator": "Credit",
-                                }
-                            ]
-                        }
-                    },
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions":
-                return httpx.Response(
-                    200,
-                    headers={**json_headers, "x-fapi-interaction-id": "account-transactions-123"},
-                    json={
-                        "Data": {
-                            "Transaction": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "CreditDebitIndicator": "Debit",
-                                    "Status": "BOOK",
-                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "3.14", "Currency": "GBP"},
-                                }
-                            ]
-                        }
-                    },
-                )
-            if url == "https://resource.example.com/open-banking/v4.0/aisp/transactions":
-                return httpx.Response(
-                    200,
-                    headers={**json_headers, "x-fapi-interaction-id": "transactions-123"},
-                    json={
-                        "Data": {
-                            "Transaction": [
-                                {
-                                    "AccountId": "acct-123",
-                                    "CreditDebitIndicator": "Credit",
-                                    "Status": "BOOK",
-                                    "BookingDateTime": "2024-01-01T00:00:00+00:00",
-                                    "Amount": {"Amount": "1.00", "Currency": "GBP"},
-                                }
-                            ]
-                        }
-                    },
-                )
-            raise AssertionError(f"Unexpected request: {request.method} {url}")
-
-        def completed_result(run_id: str) -> dict[str, object] | None:
-            """Return result JSON once the asynchronous run has completed.
-
-            Args:
-                run_id: API run identifier to poll.
-
-            Returns:
-                Result JSON dictionary when available, otherwise ``None`` while
-                the run is still pending or running.
-
-            Raises:
-                AssertionError: If the result endpoint reports an unexpected
-                    terminal or internal-error response.
-            """
-            result_response = client.get(f"/api/runs/{run_id}/result/")
-            if result_response.status_code == 200:
-                body = result_response.json()
-                assert isinstance(body, dict)
-                return body
-            if result_response.status_code == 409:
-                return None
-            raise AssertionError(
-                f"Unexpected result response {result_response.status_code}: {result_response.content!r}"
-            )
-
-        with (
-            httpx.Client(transport=httpx.MockTransport(handler)) as fake_client,
-            patch("conformance.api.run_lifecycle.build_json_http_client", return_value=fake_client),
-        ):
-            create_response = client.post(
-                "/api/runs/",
-                data=json.dumps({"config": baseline_config}),
-                content_type="application/json",
-            )
-            assert create_response.status_code == 201
-            run_id = create_response.json()["id"]
-
-            session = _wait_for_value(
-                lambda: auth_session_store.for_run(run_id)[0] if auth_session_store.for_run(run_id) else None,
-                timeout_seconds=2.0,
-            )
-            callback_response = client.get("/callback/", {"state": session.state, "code": "baseline-auth-code"})
-            assert callback_response.status_code == 200
-
-            result = _wait_for_value(lambda: completed_result(run_id), timeout_seconds=4.0)
-
-        assert result["status"] == "passed"
-        assert result["summary"] == {"total": 11, "passed": 11, "failed": 0, "warn": 0, "skipped": 0}
-        serialised_result = json.dumps(result)
-        assert "Response body matches schema #/components/schemas/OBReadAccount6" in serialised_result
-        assert "Response body matches schema #/components/schemas/OBReadBalance1" in serialised_result
-        assert "Response body matches schema #/components/schemas/OBReadTransaction6" in serialised_result
-        assert result["suite"] == {
-            "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
-            "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
-            "standard": "ob-read-write",
-            "specVersion": "v4.0",
-            "profile": "fapi1-advanced",
-            "api": "ais",
-            "suite": "ais-certification-baseline",
-        }
-        assert result["plan"] == {
-            "totalSteps": 28,
-            "selectedSteps": 11,
-            "deselectedSteps": 17,
-            "mandatorySelected": 11,
-            "mandatoryDeselected": 0,
-        }
-        eligibility = result["certificationEligibility"]
-        assert isinstance(eligibility, dict)
-        assert eligibility["eligible"] is False
-        assert eligibility["mandatoryTotal"] == 11
-        assert eligibility["mandatoryPassed"] == 11
-        assert eligibility["reason"] == "Manifest is not marked as complete certification coverage"
-
-        assert [(request.method, str(request.url)) for request in captured_requests] == [
-            ("GET", "https://example.com/.well-known/openid-configuration"),
-            ("GET", "https://example.com/jwks"),
-            ("POST", "https://example.com/token"),
-            ("POST", "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"),
-            ("POST", "https://example.com/token"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/balances"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/accounts/acct-123/transactions"),
-            ("GET", "https://resource.example.com/open-banking/v4.0/aisp/transactions"),
-        ]
-        consent_token_wire_body = captured_requests[2].content.decode("ascii")
-        assert "grant_type=client_credentials" in consent_token_wire_body
-        assert "client_id=test-client-id" in consent_token_wire_body
-        token_wire_body = captured_requests[4].content.decode("ascii")
-        assert "grant_type=authorization_code" in token_wire_body
-        assert "code=baseline-auth-code" in token_wire_body
-        assert "client_id=test-client-id" in token_wire_body
-        assert "redirect_uri=https%3A%2F%2Fconformance.example.com%2Fcallback" in token_wire_body
-        assert (
-            "client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer" in token_wire_body
-        )
-        assert "client_assertion=" in token_wire_body
-        assert captured_requests[3].headers["Authorization"] == "Bearer baseline-access-token"
-        resource_authorization_headers = [request.headers["Authorization"] for request in captured_requests[5:]]
-        assert resource_authorization_headers == ["Bearer baseline-access-token"] * 5
-
-        serialised_result = json.dumps(result, sort_keys=True)
-        assert "baseline-auth-code" not in serialised_result
-        assert "baseline-access-token" not in serialised_result
-        assert "baseline-id-token" not in serialised_result
-        assert "signingCertificatePath" not in serialised_result
-        assert "signingPrivateKeyPath" not in serialised_result
-        assert "request=***" in serialised_result
-
-        log_response = client.get(f"/api/runs/{run_id}/log/")
-        assert log_response.status_code == 200
-        log_json = log_response.content.decode("utf-8")
-        assert "baseline-auth-code" not in log_json
-        assert "baseline-access-token" not in log_json
-        assert "baseline-id-token" not in log_json
-        assert '"client_assertion": "***"' in log_json
-        assert '"request_object": "***"' in log_json
-        assert '"Authorization": "***"' in log_json
-        assert "signingCertificatePath" not in log_json
-        assert "signingPrivateKeyPath" not in log_json
-        assert '"code": "***"' in log_json
-
-
-@pytest.mark.integration
 class TestGetRunStatusEndpoint:
     def test_returns_404_for_unknown_id(self) -> None:
         client = Client()
@@ -1510,7 +916,7 @@ class TestGetRunStatusEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_run_status(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/")
@@ -1590,7 +996,7 @@ class TestGetRunResultEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_409_when_run_not_complete(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/result/")
@@ -1755,14 +1161,14 @@ class TestLoopbackGuard:
     def test_loopback_request_is_allowed_by_default(self) -> None:
         # Django test client uses REMOTE_ADDR=127.0.0.1 by default.
         client = Client()
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         with patch("conformance.api.run_lifecycle._execute_run"):
             response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
 
     def test_non_loopback_request_is_rejected_with_403(self) -> None:
         client = Client(REMOTE_ADDR="10.0.0.5")
-        body = {"config": VALID_CONFIG}
+        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 403
         assert "loopback" in response.json()["error"].lower()
@@ -2273,12 +1679,10 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 2
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2310,12 +1714,10 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 1
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2352,13 +1754,11 @@ class TestExecuteRunDiscardsAuthSessions:
         result_path = tmp_path / "out" / "result.json"
         log_path = tmp_path / "out" / "execution-log.ndjson"
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=result_path,
             execution_log_path=log_path,
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2389,7 +1789,6 @@ class TestExecuteRunDiscardsAuthSessions:
         assert len(auth_session_store.for_run(record.run_id)) == 1
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
@@ -2401,41 +1800,6 @@ class TestExecuteRunDiscardsAuthSessions:
 
         assert auth_session_store.for_run(record.run_id) == []
         assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
-
-    def test_suite_resolution_failure_surfaces_catalog_error(self) -> None:
-        """Catalog failures produce actionable run errors and still clean sessions."""
-        from pathlib import Path
-
-        from conformance.api.auth_session_store import auth_session_store
-        from conformance.api.run_lifecycle import _execute_run
-        from conformance.model_bank_config import ModelBankConfig, SuiteSelection
-        from conformance.suite_catalog import SuiteCatalogError
-
-        record = run_store.create_run()
-        auth_session_store.register(record.run_id)
-        config = ModelBankConfig(
-            environment="test-env",
-            discovery_url="https://example.com/.well-known/openid-configuration",
-            result_output_path=Path("results.json"),
-            test_suite=SuiteSelection(
-                standard="ob-read-write",
-                spec_version="v4.0",
-                profile="fapi1-advanced",
-                suite="discovery-jwks",
-            ),
-        )
-
-        with patch(
-            "conformance.api.run_lifecycle.resolve_suite",
-            side_effect=SuiteCatalogError("missing resource"),
-        ):
-            _execute_run(record.run_id, config, manifest=None, plan=None)
-
-        updated = run_store.get_run(record.run_id)
-        assert updated is not None
-        assert updated.status == "failed"
-        assert updated.error == "Suite resolution failed: missing resource"
-        assert auth_session_store.for_run(record.run_id) == []
 
     def test_other_runs_auth_sessions_are_not_discarded(self) -> None:
         """The hook is run-scoped: sibling runs' sessions are untouched."""
@@ -2453,12 +1817,10 @@ class TestExecuteRunDiscardsAuthSessions:
         auth_session_store.register(other_run_id)
 
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2486,12 +1848,10 @@ class TestExecuteRunDiscardsAuthSessions:
         record = run_store.create_run()
         raw_url = "https://auth.example.com/authorize?client_id=client-123&request=raw-jws-value&state=browser-state"
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2512,7 +1872,6 @@ class TestExecuteRunDiscardsAuthSessions:
             Returns:
                 The fake successful smoke-check result.
             """
-            assert config.environment == "test-env"
             assert isinstance(execution_logger, BrowserParticipantActionLogger)
             execution_logger.emit("psu-authorization-url", step_id="psu", payload={"url": raw_url})
             return fake_result
@@ -2549,7 +1908,6 @@ class TestExecuteRunDiscardsAuthSessions:
             approved_tool_versions=("1.2.3",),
         )
         config = ModelBankConfig(
-            environment="test-env",
             discovery_url="https://example.com/.well-known/openid-configuration",
             result_output_path=Path("results.json"),
             approved_release_policy=approved_release_policy,
@@ -2569,7 +1927,6 @@ class TestExecuteRunDiscardsAuthSessions:
             }
         )
         fake_result = SmokeCheckResult(
-            environment="test-env",
             status="passed",
             started_at=datetime.now(UTC),
             finished_at=datetime.now(UTC),
@@ -2585,5 +1942,4 @@ class TestExecuteRunDiscardsAuthSessions:
         assert mock_run_manifest.call_args is not None
         runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]
         assert runtime_config.discovery_url == "https://example.com/.well-known/openid-configuration"
-        assert runtime_config.environment == "test-env"
         assert mock_run_manifest.call_args.kwargs["approved_release_policy"] is approved_release_policy

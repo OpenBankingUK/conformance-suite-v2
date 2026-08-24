@@ -1,0 +1,7 @@
+# Default E2E test fixture
+#
+# The E2E workflow accepts an override path for real environment-specific
+# configuration. This placeholder lives under tests/fixtures so participant-facing
+# examples are not shipped from the Django config package.
+
+# TODO: Define E2E configuration schema and populate with fixture defaults.

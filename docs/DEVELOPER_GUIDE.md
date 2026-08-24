@@ -4,178 +4,273 @@
 
 - Python 3.14+ (managed via `.python-version`)
 - [uv](https://docs.astral.sh/uv/) package manager
-- Docker (for container builds)
+- Docker for container builds
 - GNU Make
 
-## Getting Started
+## Getting started
 
 ```bash
-# Clone the repo
 git clone <repo-url>
 cd conformance-suite-v2
-
-# Install all dependencies (including dev tools)
-# uv includes the [dependency-groups] dev group by default.
-# Production builds (Dockerfile) use --no-dev to exclude dev tooling.
-# --no-install-project: this is a container-deployed app, not a distributable package.
 uv sync --frozen --no-install-project
-
-# Activate the pre-commit hook (one-time setup per clone)
 git config core.hooksPath .githooks
 ```
 
-## Running the Application
-
-```bash
-make dev         # Django dev server on the legacy FCS callback port
-make dev-unmasked # Django dev server with unmasked execution logs
-make serve       # Uvicorn locally on the legacy FCS callback port
-make docker      # Build and run the Docker container
-```
+## Running the application
 
 | Command | Server | Auto-reload | Use case |
-|---------|--------|-------------|----------|
-| `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day development with legacy FCS callback registrations |
-| `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked execution-log payloads |
-| `make serve` | Uvicorn on `0.0.0.0:8443` | No | Test production behaviour locally on the same callback port |
-| `make docker` | Uvicorn (container) | No | Full production-like environment (requires `DJANGO_SECRET_KEY` and `DJANGO_ALLOWED_HOSTS`) |
+| --- | --- | --- | --- |
+| `make dev` | Django `runserver` on `0.0.0.0:8443` | Yes | Day-to-day browser development. |
+| `make dev-unmasked` | Django `runserver` on `0.0.0.0:8443` | Yes | Local engine debugging with unmasked logs. |
+| `make serve` | Uvicorn on `0.0.0.0:8443` | No | Local production-behaviour check. |
+| `make docker` | Uvicorn in Docker | No | Production-like container run. |
 
-`make dev`, `make dev-unmasked`, and `make serve` work with zero configuration. `make dev-unmasked` writes credentials and tokens in clear text to execution logs and can expose unmasked result evidence in the browser report UI; use it only for local debugging. `make docker` requires environment variables (see [Environment Variables](#environment-variables)).
+All runtime entry points bind to port `8443` so callback registrations against
+the legacy FCS callback URI continue to reach the local application.
 
-All runtime entry points bind to port `8443` so callbacks registered against the previous FCS URI `https://0.0.0.0:8443/conformancesuite/callback` land on the same local port across Django, Uvicorn, and Docker.
+`make dev-unmasked` can write credentials and tokens in clear text to
+developer-visible logs. Use it only for local debugging.
 
-## Local Checks
+## Local checks
 
-Run `make check` before pushing. This mirrors the CI pipeline and runs:
-
-1. **Secret scanning** — detects leaked credentials, tokens, API keys
-2. **Linting** — ruff lint + format checks
-3. **Type checking** — mypy in strict mode
-4. **Tests** — pytest (unit + integration, excluding E2E)
+Run `make check` before pushing. It runs secret scanning, ruff lint/format
+checks, mypy strict, and pytest.
 
 ```bash
-make check       # Full check (secrets → lint → test)
-make secrets     # Secret scanning only
-make lint        # Ruff + mypy only
-make test        # Tests only
-make help        # Show all targets
+make secrets
+make lint
+make test
+make check
 ```
 
-No environment variables are needed for `make check` — `settings.py` provides a safe `django-insecure-` fallback when `DJANGO_SECRET_KEY` is absent, allowing tooling (mypy, pytest) to boot Django without external configuration.
+No environment variables are needed for local checks. `settings.py` supplies a
+safe `django-insecure-` fallback when `DJANGO_SECRET_KEY` is absent so tooling
+can boot Django without production configuration.
 
-## Pre-Commit Hook
+## Secret scanning
 
-The `.githooks/pre-commit` hook runs automatically on every `git commit`. It scans **staged files only** for secrets using `detect-secrets`.
-
-If a secret is detected:
-- The commit is **blocked**
-- You'll see which file and line triggered the detection
-- Fix the code (move the value to an environment variable or `.env`)
-
-To bypass in an emergency (e.g. confirmed false positive):
-```bash
-git commit --no-verify
-```
-
-### Setup
-
-The hook is activated by pointing git at the `.githooks/` directory:
+The repository uses `detect-secrets` and a staged-file pre-commit hook.
 
 ```bash
-git config core.hooksPath .githooks
-```
-
-This is a per-clone setting. Every developer must run this once after cloning.
-
-## Secret Scanning
-
-We use [detect-secrets](https://github.com/Yelp/detect-secrets) to prevent credentials from being committed.
-
-### How It Works
-
-- **`.secrets.baseline`** — tracks scanner configuration and audited findings. Committed to the repo so the team shares the same state.
-- **`detect-secrets-hook`** — the checking command. Compares staged files against the baseline and fails if new unaudited secrets are found.
-
-### Handling False Positives
-
-If `detect-secrets` flags something that isn't a real secret:
-
-```bash
-# Regenerate the baseline (picks up the new finding)
 uv run detect-secrets scan --exclude-files '\.env$' --exclude-files 'uv\.lock$' > .secrets.baseline
-
-# Audit — interactively mark findings as true/false positives
 uv run detect-secrets audit .secrets.baseline
-
-# Commit the updated baseline
-git add .secrets.baseline
-git commit -m "chore: update secrets baseline"
 ```
 
-Alternatively, add an inline comment to suppress a specific line:
-```python
-KNOWN_PUBLIC_VALUE = "not-a-secret"  # pragma: allowlist secret
-```
+Only audit false positives. Move real secrets into environment variables,
+untracked local files, or deployment secret stores.
 
-### What Gets Scanned
-
-The scanner checks for: AWS keys, Azure storage keys, GitHub/GitLab tokens, JWTs, high-entropy strings, private keys, Stripe/Twilio/SendGrid keys, hardcoded passwords (via keyword detection), and more.
-
-Excluded from scanning: `.env` files, `uv.lock`.
-
-## CI Pipeline
-
-The GitHub Actions CI workflow (`.github/workflows/ci.yml`) runs the same checks on every PR and push to protected branches:
-
-| Job | What it does |
-|-----|--------------|
-| **Lint & Type Check** | `ruff check`, `ruff format --check`, `mypy` |
-| **Unit & Integration Tests** | `pytest` with coverage reporting |
-| **Docker Build & Smoke Test** | Builds the container image and verifies it starts and passes a health check |
-
-CI uses a hardcoded dummy `DJANGO_SECRET_KEY` — this is intentional and not a security concern (it's never used in production).
-
-## Environment Variables
+## Environment variables
 
 | Variable | Required | Purpose |
-|----------|----------|---------|
-| `DJANGO_SECRET_KEY` | Production only | Django cryptographic signing key. Falls back to a safe `django-insecure-` value for local tooling. |
-| `DJANGO_DEBUG` | No | Set to `"true"` for debug mode (default: `"false"`) |
-| `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. Enforced when `DJANGO_SECRET_KEY` is explicitly set and `DEBUG` is off. |
-| `CONFORMANCE_DEVELOPER_MODE` | No | Set to `"true"` to disable execution-log masking for local engine debugging only. |
-| `CONFORMANCE_TOOL_VERSION` | No | Optional tool version stamped into generated reports. Docker builds can set this through `--build-arg CONFORMANCE_TOOL_VERSION=<version>`; source runs fall back to `pyproject.toml`. |
+| --- | --- | --- |
+| `DJANGO_SECRET_KEY` | Production only | Django signing key. |
+| `DJANGO_DEBUG` | No | Enables Django debug mode when `"true"`. |
+| `DJANGO_ALLOWED_HOSTS` | Production only | Comma-separated allowed hosts. |
+| `DJANGO_SESSION_ENGINE` | No | Overrides the default server-side file session backend. |
+| `DJANGO_SESSION_FILE_PATH` | No | Optional directory for file-backed browser session drafts. |
+| `CONFORMANCE_DEVELOPER_MODE` | No | Disables masking for local engine debugging only. |
+| `CONFORMANCE_TOOL_VERSION` | No | Overrides generated report `tool.version`. |
 
-### How environment variables are managed per context
+`make docker` requires production-style configuration and fails fast when
+misconfigured. Local source runs fall back to the project version in
+`pyproject.toml`, then `0+unknown` if no version can be resolved.
 
-| Context | Who provides env vars | Notes |
-|---------|----------------------|-------|
-| `make check` (lint/test) | No env vars needed | `settings.py` uses a safe `django-insecure-` fallback for `SECRET_KEY`; production guards are skipped |
-| `make dev` | Makefile sets `DJANGO_DEBUG=true` and binds `0.0.0.0:8443` | Django ignores `ALLOWED_HOSTS` when `DEBUG=True`; port matches legacy FCS callback registrations |
-| `make dev-unmasked` | Makefile sets `DJANGO_DEBUG=true` and `CONFORMANCE_DEVELOPER_MODE=true` | Same server as `make dev`, but execution-log masking is disabled for local debugging |
-| `make serve` | Makefile sets `DJANGO_ALLOWED_HOSTS` and binds `0.0.0.0:8443` | Allows `localhost`, `127.0.0.1`, and `0.0.0.0` for local Uvicorn while matching the legacy FCS callback port |
-| `make docker` | Caller must provide both vars | Simulates production — fails fast if misconfigured |
-| Production | Orchestrator (K8s, ECS, Compose) | Must set a real `SECRET_KEY` and `ALLOWED_HOSTS` |
+Browser wizard drafts use Django sessions. The default session backend is
+server-side file storage, so `make dev` and `make dev-unmasked` do not require
+running Django migrations before creating a builder draft. Do not switch to
+signed-cookie sessions for the builder because imported plan documents may carry
+participant-supplied secret values until launch or explicit export.
 
-**Design principle:** `settings.py` is declarative — it requires correct configuration and fails loudly when misconfigured. The Makefile provides developer ergonomics per context. An unconfigured production deployment will reject all requests (not silently degrade).
+## Catalogue architecture
 
-**For local Docker** (production simulation):
-```bash
-DJANGO_SECRET_KEY="my-local-key" DJANGO_ALLOWED_HOSTS="localhost" make docker  # pragma: allowlist secret
+The participant-facing source of truth is now a catalogue-backed plan spec, not
+checked-in manifest examples or config-selected suites.
+
+Core modules:
+
+| Module | Role |
+| --- | --- |
+| `conformance.catalogue` | Domain model, plan-spec parser, compiler, applicability decisions, traceability model. |
+| `conformance.catalogue_registry` | Registry of bundled catalogues available to CLI, API, and UI. |
+| `conformance.catalogues.*` | Legacy FCS-derived catalogues for AIS, PIS, CBPII, and VRP. cVRP code is retained for future non-Open-Banking handling but is not bundled. |
+| `conformance.executor.run_compiled_test_plan` | Executes compiled catalogue plans through the existing hardened HTTP/PSU/signing engine. |
+| `conformance.results` | Serializes catalogue traceability and certification reasons in result JSON. |
+
+The compiler selects test cases by catalogue key, security profile, exact
+implemented endpoint operations, and endpoint-scoped implementation
+capabilities. Required capabilities are baseline endpoint coverage and are
+selected automatically. Optional capabilities only generate implementation-
+dependent cases when the participant declares them under the matching endpoint.
+The compiler includes dependencies automatically, rejects mandatory applicable
+deselection, snapshots runtime inputs without sensitive values, and marks
+assertion overrides as non-certifying.
+
+## Shared plan-document contract
+
+The participant-facing contract is the shared plan document accepted by the
+browser wizard, REST API, and CLI. New browser import/export uses schema version
+`v2`:
+
+```json
+{
+  "schemaVersion": "v2",
+  "scheme": "open-banking-uk",
+  "specification": "read-write",
+  "version": "4.0.1",
+  "securityProfile": "fapi1-advanced",
+  "scope": {
+    "resourceGroups": [
+      {
+        "id": "account-and-transaction",
+        "label": "Account and Transaction",
+        "endpoints": [
+          {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts",
+            "operationId": "GetAccounts",
+            "capabilities": []
+          }
+        ]
+      }
+    ]
+  },
+  "config": {
+    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+    "resourceServer": {"baseUrl": "https://resource.example.com"},
+    "ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
+  }
+}
 ```
 
-## Certification Report Validation
+The v2 boundary is user-facing: `scheme`, `specification`, and `version` select
+one or more underlying bundled catalogues. The current Open Banking UK
+Read/Write boundary maps to the bundled Open Banking v4.0 AIS, PIS, CBPII, and
+VRP catalogue areas so one plan document can span multiple resource families.
+cVRP is intentionally not exposed under this Open Banking UK boundary for now.
+Dynamic Client Registration v3.4 is currently exposed in the browser selector
+only to demonstrate boundary-specific wizard behaviour; it hides resource groups
+and cannot continue to launch until DCR catalogue coverage is added.
 
-The OBL-side certification validator is an internal CLI that checks a participant-submitted report against the manifest used for the run and an externally supplied approved-release policy. It deliberately recomputes mandatory coverage from the manifest instead of trusting the participant-side `certificationEligibility` block.
+The lower-level schema version `v1` per-catalogue plan spec is still parsed by
+CLI/API compatibility paths. Prefer v2 for browser import/export and for new
+automation that needs a Read/Write plan spanning multiple catalogue areas.
+
+Structured config sections such as `resourceServer`, `ais`, and `cbpii` derive
+exact runtime inputs like `resourceBaseUrl`, `consentedAccountId`, and debtor
+account fields so the browser does not duplicate them as endpoint runtime
+prompts. The browser collects config in stages: business/request defaults,
+discovery, OAuth/FAPI/security, and generated runtime artifacts. Discovery
+metadata can prefill security fields, but only values accepted on the security
+page become part of the exported plan JSON. Sensitive runtime values may still
+be supplied to browser launch, REST, or CLI execution, but the compiler's
+traceability snapshot records only that they were provided.
+
+Keep capability IDs stable and domain-oriented, for example
+`ais.transactions.date-range-filtering`, rather than generated test-case IDs.
+The same endpoint-scoped `capabilities` contract is parsed by the UI, CLI, and
+REST API. Required capabilities are catalogue-owned baseline coverage and are
+selected automatically for implemented endpoints. Optional capabilities must be
+listed under the matching endpoint context and must not be modelled as generated
+test-case selections.
+
+Browser safe exports preserve endpoint/capability scope and non-sensitive
+runtime references, but write secret-bearing strings as `""`. Imported inline
+secrets stay in the active Django-session draft for review/launch, are masked in
+rendered summaries, and are included in downloaded JSON only through the
+explicit export-with-secrets action.
+
+The CLI accepts `config.json --plan-spec plan-spec.json`. The REST API accepts
+`{"config": {...}, "planSpec": {...}}`. The browser builder generates the same
+v2 document from selected boundary, scope, capabilities, and grouped runtime
+prompts.
+
+## Removed public surfaces
+
+The following surfaces are intentionally not supported:
+
+| Removed surface | Replacement |
+| --- | --- |
+| Checked-in participant config examples | Browser plan builder and user-supplied config files. |
+| `config.testSuite` | v2 `planSpec` boundary/scope plus endpoint capability selection. |
+| CLI `--manifest` and `--deselect` for participant runs | CLI `--plan-spec`. |
+| REST `manifest` and `deselectStepIds` | REST `planSpec`. |
+| Legacy bundled suite JSON resources | Python catalogue modules under `conformance/catalogues/`. |
+
+The internal manifest parser and executor remain because compiled plans are
+lowered into an internal manifest facade while the hardened HTTP execution,
+masking, signing, PSU authorisation, logging, and evidence paths are reused.
+Do not re-expose those internals as participant configuration.
+
+## Browser plan builder
+
+The browser root menu at `/` exposes the new multi-step builder and v2 import
+flow. The legacy single-page builder remains at `/plan/` while the wizard is
+completed.
+
+The new wizard flow is:
+
+1. POST `/builder/new/` to create a session-backed draft.
+2. Select scheme, specification, version, and any boundary-defined high-level
+   resource groups at `/builder/<draft>/catalogue/`. The dynamic fragment at
+   `/builder/<draft>/catalogue/resource-groups/` re-renders the resource-group
+   picker whenever the selected boundary changes. Selector-only boundaries such
+   as DCR v3.4 render an explanatory no-resource-group state instead of
+   continuing into endpoint selection.
+3. Select endpoints and scoped optional capabilities at
+   `/builder/<draft>/scope/`. The server-rendered fragment at
+   `/builder/<draft>/scope/options/` shows only endpoints from the selected AIS,
+   PIS, CBPII, or VRP groups and reveals capabilities only for selected
+   endpoints.
+4. Enter business/request defaults at `/builder/<draft>/config/`. AIS, PIS,
+   CBPII, and VRP fields render only when selected endpoints need that domain.
+   Known account, amount, date, and frequency shapes use friendly fields with
+   advanced JSON fallbacks.
+5. Enter the `.well-known/openid-configuration` URL at
+   `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
+   lookup, records non-secret helper metadata and JWKS diagnostics in the draft,
+   and allows manual continuation when the lookup fails.
+6. Enter OAuth/FAPI/security and resource-server settings at
+   `/builder/<draft>/config/security/`. Discovery-derived values are editable
+   prefilled fields; the token-endpoint-auth-method selector remains the tool's
+   supported list while discovery-supported methods are shown as metadata.
+7. Enter generated runtime artifacts such as tokens, token file references,
+   consent ids, payment ids, and idempotency keys at
+   `/builder/<draft>/config/runtime/`.
+8. Review the generated plan at `/builder/<draft>/review/`, including summary
+   counts, masked config, launch blockers, safe export preview, and collapsed
+   generated-test rows.
+9. Download safe JSON from `/builder/<draft>/export.json`, explicitly request
+   local secret-bearing JSON with `?include_secrets=1`, or launch through
+   `/builder/<draft>/launch/`.
+
+Imported v2 plans enter through `/builder/import/` and go straight to the same
+review page. Missing secret-capable runtime inputs do not block import; the
+review page shows launch blockers and edit links back to the appropriate wizard
+steps.
+
+Generated tests are always read-only. Scope changes happen by editing resource
+groups, endpoints, and capabilities; the review page must not expose generated
+test-case checkboxes or deselection controls.
+
+Browser posts remain Django-form mediated and CSRF-protected. Run detail and log
+downloads continue to use the same masking boundary as CLI/API execution. Run
+detail surfaces the top-level catalogue evidence summary from the completed
+result: selected endpoints, selected capabilities, generated test-case counts,
+and non-certifying reasons.
+
+## Certification validation
+
+`conformance.certification_cli` is an internal reviewer tool. It validates a
+submitted result report against the manifest representation used for the
+original run and an independently supplied approved-release policy.
 
 ```bash
 uv run python -m conformance.certification_cli out/test-results.json \
-  --manifest config/manifest-v1-openid-jwks-example.json \
-  --approved-releases config/approved-fcs-releases-example.json
+  --manifest path/to/internal-manifest.json \
+  --approved-releases path/to/approved-releases.json
 ```
 
-Use `--summary-output path/to/summary.txt` to write the Confluence-ready summary to disk instead of stdout. Exit codes are `0` for a valid report, `1` for validation failures, `2` for invalid inputs, and `3` when the summary output cannot be written.
-
-The approved-release policy shape is intentionally small:
+The approved-release policy shape is:
 
 ```json
 {
@@ -184,323 +279,13 @@ The approved-release policy shape is intentionally small:
 }
 ```
 
-`schemaVersion` must currently be `v1`; `approvedToolVersions` is an exact-match list compared against `tool.version` in the submitted report. `config/approved-fcs-releases-example.json` is parseable but non-authoritative and uses a placeholder value so it cannot accidentally certify a development build.
-
-Generated reports carry the metadata consumed by the validator as top-level fields:
-
-```json
-{
-  "metadata": {"reportVersion": "1.0"},
-  "tool": {"version": "0.1.0"}
-}
-```
-
-The validator treats mandatory steps with `passed` or `warn` status as acceptable. Mandatory `failed`, `skipped`, or missing steps are blocking, as is a `tool.version` absent from the approved-release policy.
-
-Participant config may include optional `approvedReleasePolicyPath` to populate the generated report's advisory `certificationEligibility.approvedRelease` block. CLI config resolves the path relative to the config file directory; API and browser-submitted config resolves it relative to the process working directory. In both cases the path must remain inside that root and point to an existing JSON file. Policy absence and unapproved `tool.version` values both make the participant-side `certificationEligibility.eligible` value `false`, with reasons retained in the report for audit/debugging. This participant self-assessment is useful feedback, but it is not trusted for certification decisions; OBL-side validation still supplies its own policy and recomputes the result.
-
-## Config-Driven Suite Resolution
-
-Participant configuration can select a bundled manifest catalog entry through an optional `testSuite` object. Existing configs without `testSuite` remain valid model-bank smoke-check configs, and unknown config keys continue to be rejected.
-
-```json
-{
-  "environment": "ozone-model-bank",
-  "discoveryUrl": "https://auth1.obie.uk.ozoneapi.io/.well-known/openid-configuration",
-  "timeoutSeconds": 10,
-  "approvedReleasePolicyPath": "approved-fcs-releases-example.json",
-  "testSuite": {
-    "standard": "ob-read-write",
-    "specVersion": "v4.0",
-    "profile": "fapi1-advanced",
-    "suite": "discovery-jwks"
-  },
-  "tls": {
-    "certificatePathRoot": "./certs"
-  },
-  "resultOutputPath": "./out/test-results.json",
-  "executionLogPath": "./out/execution-log.ndjson"
-}
-```
-
-The supported catalog keys are:
-
-| `standard` | `specVersion` | `profile` | `suite` | Scope | Participant config required |
-| --- | --- | --- | --- | --- | --- |
-| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
-| `ob-read-write` | `v3.1.11` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-baseline` | Certifiable-track AIS baseline: discovery, JWKS, PSU authorisation, token exchange, consent creation, and the current mandatory default core AIS resource flow, with optional/conditional AIS rows available as opt-in plan entries. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl`, `fapiSigning.*` |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `ais-certification-slice` | Preserved certification-grade proof slice: discovery, JWKS, PSU authorisation, token exchange, account-access consent, and account-scoped AIS resource validation for accounts, balances, and transactions. | `oauth.clientId`, `oauth.redirectUri`, `oauth.resourceBaseUrl` |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `discovery-jwks` | Smoke-level OpenID discovery and JWKS checks. | No |
-| `ob-read-write` | `v4.0` | `fapi1-advanced` | `psu-auth-starter` | OpenID discovery, JWKS fetch, and manual PSU authorisation setup step. | `oauth.clientId`, `oauth.redirectUri`, `oauth.openBankingIntentId` |
-
-**All bundled suites are `certificationCoverage: partial`.** A `partial` manifest blocks `certificationEligibility.eligible` in the result JSON and OBL-side `validate_report`, even when all mandatory steps pass and the tool version is approved. The `certificationCoverage` block is always surfaced in the result for audit. For v4.0 AIS, `ais-certification-baseline` is the current certifiable-track working set and `ais-certification-slice` is the older preserved proof slice. Do not relabel either as complete certification coverage without Standards confirmation and matching validator coverage.
-
-The `psu-auth-starter` suite requires an `oauth` section in the participant config. Starter runs that target ASPSPs such as Ozone and need a pre-existing AIS consent must also supply `oauth.openBankingIntentId`. Both AIS suites add a protected-resource base URL:
-
-```json
-{
-  "oauth": {
-    "clientId": "your-client-id-here",
-    "redirectUri": "https://conformance.example.com/callback",
-    "openBankingIntentId": "aac-example-consent-id",
-    "resourceBaseUrl": "https://resource.example.com"
-  }
-}
-```
-
-The redirect URI and resource base URL must both be HTTPS URLs. `redirectUri` and `clientId` must be registered with the ASPSP before running the suite; the bundled manifests resolve `redirectUri` from `${config.oauth.redirectUri}`, the PSU starter manifests resolve `openbankingIntentId` from `${config.oauth.openBankingIntentId}`, and the v4 AIS manifests resolve protected resource URLs from `${config.oauth.resourceBaseUrl}`. `openBankingIntentId` is non-secret and must hold a real pre-existing account-access consent id only for starter flows that do not create consent themselves. Run `ais-certification-baseline` first if you want the tool to create consent and return a `Data.ConsentId`. `resourceBaseUrl` is the protected-resource base URL only; do not include the Open Banking API path prefix because the bundled v4 AIS manifests append `/open-banking/v4.0/aisp/...` themselves.
-
-Step-response placeholders can traverse JSON arrays with non-negative numeric path segments. The bundled v4 AIS baseline and slice use `${steps.accounts-list.response.body.Data.Account.0.AccountId}` to follow the first returned `AccountId` from `GET /accounts` into account-scoped resource calls. Negative indices, out-of-bounds indices, and placeholders that terminate on whole objects or arrays remain invalid.
-
-The v4 AIS baseline now accepts a dedicated `fapiSigning` block for runtime JOSE signing and token-endpoint auth policy selection:
-
-```jsonc
-{
-  "fapiSigning": {
-    "certificatePathRoot": "./certs",
-    "signingCertificatePath": "dummy-signing.crt",
-    "signingPrivateKeyPath": "dummy-signing.key", // pragma: allowlist secret
-    "kid": "your-signing-kid-here",
-    "clientAssertionIssuer": "your-client-id-here",
-    "clientAssertionSubject": "your-client-id-here",
-    "tokenEndpointAuthMethod": "private_key_jwt"
-  }
-}
-```
-
-`certificatePathRoot` is a separate trust boundary from `tls.certificatePathRoot` and is revalidated at both config-parse time and runtime credential loading. Signing certificate and key bytes stay on disk until execution time, must remain under the configured root, and are never exposed through `${config.*}` placeholders. The current config model requires the full `fapiSigning` block even when `tokenEndpointAuthMethod` is `tls_client_auth`.
-
-The baseline manifest uses this block in three places: PSU authorisation can generate a PS256 request object from `{"source": "fapi-signing"}`, token exchange can apply `tokenEndpointAuthPolicy: {"source": "fapi-signing"}` to emit either `private_key_jwt` form fields or `tls_client_auth` pre-dispatch validation, and account-access consent creation signs the exact JSON payload into a detached `x-jws-signature` header. The preserved AIS slice remains the older proof flow and does not opt into these directives.
-
-For Ozone-compatible AIS runs, both bundled v4 suites create account-access consent before PSU authorisation and bind that consent id into the generated request object using `requestObject.openbankingIntentId` -> `claims.id_token.openbanking_intent_id` (with `essential: true`).
-
-When `tokenEndpointAuthMethod` is `private_key_jwt`, the executor adds `client_assertion_type` and `client_assertion` to the existing form-urlencoded token request while preserving `grant_type`, `code`, `redirect_uri`, and `client_id`. Those two assertion fields are reserved for runtime FAPI signing when `tokenEndpointAuthPolicy` is enabled, so manifest authors must not supply them in the form body. When it is `tls_client_auth`, the executor requires an mTLS client configured in `tls.clientCertificatePath` and `tls.clientPrivateKeyPath` and fails before dispatch if that client is absent.
-
-Bundle authors must not expose certificate paths, private keys, client secrets, signing keys, request objects, client assertions, or detached JWS values through config placeholders just to make token exchange or protected-resource calls work.
-
-See `config/model-bank-suite-example.json` (smoke suite), `config/model-bank-psu-auth-starter-example.json` (starter suite), `config/model-bank-ais-certification-baseline-example.json` (v4 AIS baseline), and `config/model-bank-ais-certification-slice-example.json` (preserved v4 AIS proof slice) for complete config examples.
-
-The bundled `psu-auth-starter` manifests are also the current proof point for the expanded generic response-assertion language. They remain `certificationCoverage: partial`, but they now demonstrate response-header assertions and richer JSON checks on OpenID discovery and JWKS responses without moving Open Banking-specific policy into Python. The v4 AIS baseline and legacy benchmark slices additionally use `response_schema` assertions for schema-backed response checks against bundled standards assets.
-
-Supported v1 assertion shapes are:
-
-| Assertion type | Rules | Notes |
-| --- | --- | --- |
-| `http_status` | Exact `expected` status code | Existing status assertion. |
-| `header` | `present`, `absent`, `equals`, `contains` | Header names are case-insensitive. |
-| `json_field` | `required`, `absent`, `string`, `number`, `boolean`, `object`, `https_url`, `array`, `non_empty_array`, `min_items`, `equals`, `one_of`, `all_items_have_field` | `required` treats explicit JSON `null` as present; `all_items_have_field` is a lightweight array-of-objects constraint. |
-| `response_schema` | `source` + `document` + exactly one of `schemaRef` or inline `schema`; optional `bodyPath` | Source/document are allowlisted; placeholders are rejected for schema selector fields. |
-
-Representative manifest snippets:
-
-```json
-{"type": "json_field", "path": "issuer", "rule": "https_url"}
-```
-
-```json
-{"type": "json_field", "path": "keys", "rule": "min_items", "minItems": 1}
-```
-
-```json
-{"type": "json_field", "path": "request_parameter_supported", "rule": "equals", "value": true}
-```
-
-```json
-{"type": "json_field", "path": "token_endpoint_auth_method", "rule": "one_of", "values": ["private_key_jwt", "tls_client_auth"]}
-```
-
-```json
-{"type": "response_schema", "source": "bundled_openapi", "document": "ob-read-write-v4.0-account-info-openapi", "schemaRef": "#/components/schemas/OBReadAccount6"}
-```
-
-`response_schema` currently allowlists `source: "bundled_openapi"` and the bundled Account Info OpenAPI documents `"ob-read-write-v4.0-account-info-openapi"` and `"ob-read-write-v4.0.1-account-info-openapi"`. Assertions must provide exactly one of `schemaRef` or inline `schema`; optional `bodyPath` validates a nested response node before evaluation. `source`, `document`, `schemaRef`, and `bodyPath` must be constant strings with no placeholders, and manifests cannot load schemas from arbitrary local paths or remote URLs.
-
-These rules are generic authoring primitives only. They enable Standards-authored certification suites, but they do not by themselves make the current bundled starter suites complete or certifying.
-
-These entries live in the application package under `conformance/suites/` so Docker and API execution do not depend on the caller's working directory. The example manifests under `config/manifest-*-example.json` remain authoring examples and validator inputs, not catalog internals.
-
-Bundled suite manifests are v1 manifests. Mandatory steps are declared in the manifest JSON itself, not hardcoded in Python. The `discovery-jwks` entries use `${config.discoveryUrl}` for the first request and `${steps.openid-discovery.response.body.jwks_uri}` for the JWKS follow-up. The `psu-auth-starter` entries additionally use `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, and `${config.oauth.openBankingIntentId}` in the PSU authorisation step. The preserved `ais-certification-slice` continues from that path with a form-urlencoded token exchange, account-access consent creation, and core account-scoped resource coverage. The `ais-certification-baseline` builds on the same placeholder model with a broader mandatory default flow plus optional/conditional AIS rows, still rooted at `${config.oauth.resourceBaseUrl}` before the manifest-owned `/open-banking/v4.0/aisp/...` path.
-
-When PSU authorisation uses a signed JAR request object, the emitted authorization URL intentionally keeps outer `redirect_uri` and `state` query parameters alongside `request` for ASPSP compatibility.
-
-Manifest access to config is deliberately allow-listed. The supported config placeholders are `${config.discoveryUrl}`, `${config.environment}`, `${config.oauth.clientId}`, `${config.oauth.redirectUri}`, `${config.oauth.openBankingIntentId}`, and `${config.oauth.resourceBaseUrl}`. `fapiSigning` values, TLS paths, private-key material, client secrets, arbitrary nested config traversal, request objects, client assertions, and detached JWS values are intentionally not exposed through placeholders.
-
-The v4 AIS manifests are the current authoring reference for catalog-backed certification-track flows:
-
-- token exchange reuses existing form-urlencoded request support rather than custom OAuth engine code
-- the baseline can now generate PS256 request-object JWTs, emit token-endpoint client assertions, and sign consent JSON as detached `x-jws-signature` without exposing signing config to manifest placeholders
-- protected-resource requests use ordinary HTTP steps plus generic assertions over JSON structure
-- the baseline keeps broader optional or conditional AIS coverage in manifest data rather than Python branches, and those rows stay opt-in unless explicitly selected
-- masking must still hide authorization `code`, bearer tokens, `Authorization` header values, client assertions, request objects, and detached JWS values in every persisted artifact
-
-When extending this area, keep new assertion or manifest vocabulary domain-agnostic. Open Banking-specific semantics belong in bundled manifests and tests, not in hardcoded executor branches.
-
-CLI precedence is:
-
-1. `--manifest manifest.json` executes the explicit manifest, even when config also contains `testSuite`.
-2. With no `--manifest`, `config.testSuite` resolves and executes the bundled catalog manifest.
-3. With neither `--manifest` nor `testSuite`, the legacy model-bank smoke check runs.
-
-`--deselect` is valid for cases 1 and 2 only, because those cases have a v1 test plan. It exits with code `2` when used against a plain smoke check or with an unknown step id.
-
-REST API precedence matches the CLI. `POST /api/runs/` uses an inline `manifest` when present, otherwise resolves `config.testSuite`, otherwise falls back to the smoke check. `deselectStepIds` is accepted for inline or suite-resolved manifests and rejected for smoke checks. Suite resolution and invalid deselection failures use the existing HTTP 400 convention; the single-active-run guard still returns 409 for run conflicts.
-
-The browser plan builder at `/plan/` supports two authoring modes. Paste config plus manifest JSON to preview an explicit manifest, or leave the manifest textarea blank and provide a config with `testSuite` to preview the resolved bundled suite. The preview shows the suite label/version metadata for config-resolved plans and launches through the same shared run lifecycle as the REST API. Browser posts remain Django-form mediated and CSRF-protected. CLI, REST API, and browser plan/run flows all pass the validated `fapiSigning` config through to runtime execution for config-resolved suites.
-
-Suite-resolved runs add safe suite metadata to participant-visible result JSON and the `run-started` execution-log payload: `standard`, `specVersion`, `profile`, `suite`, `catalogId`, and `manifestResource`. Smoke checks and explicit-manifest runs keep their existing shape unless suite metadata is known.
-
-This feature creates the catalog and config-selection rail only. The bundled `discovery-jwks`, `psu-auth-starter`, `ais-certification-baseline`, and `ais-certification-slice` entries are not full Open Banking Read/Write certification suites. The baseline is the conservative v4.0 certifiable-track working set, and the slice remains the narrower proof flow, until Standards confirm complete mandatory coverage.
-
-## Group-Aware Manifest Execution (v1)
-
-Manifest `schemaVersion: "v1"` now supports additive scheduling metadata on both HTTP and PSU authorisation steps:
-
-- `phase`: optional, `"setup"` or `"execution"`
-- `group`: optional execution-group identifier
-
-Accepted `phase` values are `"setup"` and `"execution"`. Omitted `phase` defaults to `"execution"`.
-Omitted `group` defaults to `"default"`.
-
-`group` uses the same identifier shape as `id` and is validated at parse time. Invalid group identifiers and unknown phase values are rejected during manifest loading so runtime scheduling stays deterministic.
-
-### Runtime Guarantees
-
-The v1 executor derives a schedule from manifest metadata plus active `TestPlan` selection and preserves the existing `run_manifest()` public signature.
-
-At runtime, the engine guarantees:
-
-1. `step-deselected` events are emitted before any step execution.
-2. Selected `setup` steps run first, sequentially, in manifest order.
-3. Selected `execution` steps run by independent group.
-4. Steps inside a single group remain sequential and ordered.
-5. Independent execution groups may run concurrently within one active run.
-6. A failure in one execution group does not suppress another independent execution group.
-7. Result ordering remains deterministic by manifest order, even when logs interleave due to concurrency.
-8. Execution-group concurrency is bounded by an internal worker cap (currently 32) so participant-authored manifests cannot create unbounded thread counts.
-9. Execution groups run from isolated post-setup context snapshots. `${steps...}` placeholders are guaranteed to resolve only for setup-phase steps and earlier steps in the same execution group. Cross-group or otherwise missing-step references fail placeholder resolution (`failed`), while `skipped` is reserved for predecessors that exist but produced no response.
-
-Selection remains plan-driven: deselected steps do not execute and do not produce `StepResult` entries.
-
-Grouping is manifest-authored metadata only. No new CLI or API request fields are required.
-
-This scheduling feature establishes the engine setup/execution model and does not, by itself, add full Open Banking Read/Write certification coverage.
-
-## Structured Execution Log
-
-Every CLI and REST API run produces a structured **execution log** in [NDJSON](https://github.com/ndjson/ndjson-spec) format alongside the result file. One JSON object per line, streamable, tail-friendly, and partial-read safe — a truncated file is still parseable up to the last complete line.
-
-**Where it goes:**
-
-- CLI: `executionLogPath` in the model-bank config (default `out/execution-log.ndjson`, anchored at the same output base as `resultOutputPath`). Atomic write via `NamedTemporaryFile` + `os.replace` — a crash mid-flush leaves the prior log (or nothing) on disk, never a half-written file. Exit code `3` on write failure, same as the result file.
-- REST API: `GET /api/runs/<id>/log/` returns `application/x-ndjson`. Loopback-guarded like every other API endpoint. Safe to poll on an in-flight run — the response is a snapshot of the buffer at request time.
-
-**Event taxonomy** (`type` field, closed set):
-
-| Type | Emitted when |
-| --- | --- |
-| `run-started` | First event of every run. |
-| `run-completed` | Last event of a normal run; `payload.summary` carries the aggregate counts. Not emitted when the engine crashes — see `application-error`. |
-| `step-started` / `step-completed` | Per-step bracket. |
-| `request-sent` | Before each outbound HTTP request, with the masked request evidence. |
-| `response-received` | After each HTTP response (status code + URL only; bodies are captured in the result file, not duplicated in the log). |
-| `assertion-evaluated` | One event per declared assertion (re-read from `details.assertions`; never re-evaluated). |
-| `placeholder-error` | Manifest placeholder could not be resolved (`payload.location` is `url` / `headers` / `body`, or `reason: "missing-predecessor-response"` for skipped steps). |
-| `application-error` | Transport failure or other engine-side exception. Step-scoped occurrences (with a `step_id`) are non-terminal — the run continues and `run-completed` is still emitted. A top-level occurrence (no `step_id`) is terminal: the engine re-raises immediately afterwards and `run-completed` will not appear. |
-
-**Masking:** every payload flows through `conformance.masking` before being buffered. Sensitive headers (`Authorization`, `Cookie`, `Set-Cookie`, `X-API-Key`, `X-FAPI-Financial-Id`, …) and credential-bearing JSON/form keys (`access_token`, `id_token`, `client_secret`, `code`, `client_assertion`, `password`, `private_key`, …) are replaced with the literal `"***"`. Match is case-insensitive; key casing is preserved verbatim. Replacement length is constant by design — original lengths are not preserved to avoid leaking entropy.
-
-**Developer mode (`CONFORMANCE_DEVELOPER_MODE=true`):**
-
-- Disables masking so the buffered events round-trip unchanged.
-- Logs a prominent `WARN` line at startup: this is the **only** in-process protection — never set this in release builds, never set this on shared infrastructure, never set this when running against real Open Banking participant data.
-- Intended for local engineering debugging of the engine itself, not for participants diagnosing their own implementations.
-
-## Test Plans and Step Deselection
-
-Every v1 manifest run executes against a **test plan** — an ordered, immutable list of plan entries that pairs each manifest `step.id` with a `selected: bool`. Plans are first-class engine values (`conformance.test_plan.TestPlan`); the runner never inspects raw manifests for selection. (v0 manifests have no plan support and always run every step.)
-
-**Default plan.** Calling `TestPlan.default_plan_from_manifest(manifest)` returns a plan that selects every step the manifest declares as either `mandatory: true` *or* not `optional: true`. In other words, mandatory and "ordinary" steps are pre-selected; only steps explicitly tagged `"optional": true` are pre-deselected. This satisfies PRD Participant Story #4 (*"mandatory tests pre-populated by default, so I don't have to manually configure every run"*) and OBL Standards Story #3 (*"mandatory tests defined in configuration per spec version and standard, not hardcoded"*).
-
-**Deselection.** `plan.with_deselection([step_ids])` returns a new immutable plan with the named ids flipped to `selected=False`. Unknown ids raise `ValueError` at call time — invalid deselections never reach the executor. Deselected steps **do not run** and **do not produce a `StepResult`**; "deselected" is not the same as the `skipped` outcome (which means a prerequisite failed). A single `step-deselected` execution-log event is emitted per deselected entry before the first `step-started`, so a log consumer can derive the plan-vs-manifest delta without scanning the full run.
-
-**CLI:**
-
-```sh
-python -m conformance.cli config.json \
-    --manifest manifest.json \
-    --deselect step-id-a \
-    --deselect step-id-b
-```
-
-`--deselect` is repeatable, requires either `--manifest` or a config-selected `testSuite`, and exits with code `2` for invalid combinations or an unknown id.
-
-**REST API:**
-
-```jsonc
-POST /api/runs/
-{
-  "config":   { ... },
-  "manifest": { "schemaVersion": "v1", ... },   // optional when config.testSuite selects a bundled suite
-  "deselectStepIds": ["step-id-a", "step-id-b"]   // optional
-}
-```
-
-`deselectStepIds` must be an array of strings, requires either an inline `manifest` or config-selected `testSuite`, and is rejected with HTTP 400 if any id is unknown.
-
-API timestamp fields remain canonical timezone-aware ISO strings (`createdAt`, `startedAt`, `finishedAt`, `capturedAt`). For browser-facing display, callers may supply an explicit IANA timezone via `?timeZone=Europe/London` (or `X-Time-Zone: Europe/London`). When supplied, responses include additive presentation-only companions such as `createdAtLocal`, `startedAtLocal`, `finishedAtLocal`, and `capturedAtLocal`, plus `displayTimeZone`. Canonical fields are unchanged and remain the audit/source-of-truth fields.
-
-**Browser plan builder UI:**
-
-Run the local Django server and open `http://localhost:8443/plan/`:
-
-```bash
-make dev
-```
-
-The page accepts model-bank config JSON and optional v1 manifest JSON in text areas, validates them through the same Django form boundary used for preview and launch, and renders a selectable step table. The guided-flow selector can populate known model-bank environment and discovery values while still leaving those fields editable for custom endpoints. Leave the manifest JSON blank to resolve the suite selected by `config.testSuite`; paste manifest JSON to override the catalog for authoring/testing. Mandatory and non-optional steps are selected by default; steps marked `"optional": true` start deselected. Deselecting a mandatory step remains possible, but the preview marks the certification impact and the resulting run is not eligible for certification.
-
-Launching from the browser creates the same single active run as `POST /api/runs/` and redirects to `/runs/<run_id>/`, where the page shows status, timestamps, errors, result summaries, plan summaries, certification eligibility, and browser-accessible links to masked JSON/NDJSON outputs. The loopback-guarded REST API still exposes the same masked result and log for automation. The UI is intentionally scoped to v1 manifests because v0 manifests do not carry selectable plan semantics.
-
-Manual `psu-authorization` steps can be previewed and launched from the browser plan builder. While a browser-launched run is waiting for the ASPSP callback, `/runs/<run_id>/` and the status partial show a single `Open authorisation` action for the active step. The raw authorization URL is held only in active in-memory run state for that browser prompt; result JSON, NDJSON execution logs, API log snapshots, downloadable artifacts, and the existing CLI/API masked-log behaviour remain unchanged.
-
-**Result file additions.** When a plan is supplied (CLI/API/UI explicit manifest mode and config-selected suite mode), the result JSON gains a top-level `plan` block:
-
-```json
-"plan": {
-  "totalSteps": 5,
-  "selectedSteps": 4,
-  "deselectedSteps": 1,
-  "mandatorySelected": 2,
-  "mandatoryDeselected": 1
-}
-```
-
-`certificationEligibility` gains two related fields: `mandatoryDeselected` (count) and `mandatoryDeselectedStepIds` (ordered list). Whenever `mandatoryDeselected > 0` the run is **not eligible** and the dedicated reason `"Mandatory steps were deselected from the plan"` takes precedence over every other failure reason — a mandatory step that never ran cannot demonstrate coverage, regardless of why.
-
-## PSU Authorization Callback Coordination
-
-The PRD's PSU Authorisation flow (manual mode, Phase 1) requires the engine to receive the ASPSP's browser redirect after the participant approves an authorization request. This is supported by three pieces of plumbing — a public callback endpoint, an in-memory auth-session store, and a pair of loopback-guarded register/poll endpoints. Token exchange of the captured `code` and executor-side wiring (a manifest step type that awaits an auth code) are explicit follow-up work.
-
-**Endpoint contract:**
-
-| Method | Path | Auth | Purpose |
-| --- | --- | --- | --- |
-| `POST` | `/api/runs/<run_id>/auth-sessions/` | Loopback-guarded | Register an expected auth session; returns the opaque `state` to embed in the authorization URL. |
-| `GET`  | `/api/runs/<run_id>/auth-sessions/<state>/` | Loopback-guarded | Poll the session; returns `status` and (when `captured`) the authorization `code`. |
-| `GET`  | `/callback/` | **Public** (no loopback guard) | Receives the ASPSP redirect (`?state=...&code=...` or `?state=...&error=...`). |
-
-**State generation.** Prefer the server-generated value — `POST /api/runs/<id>/auth-sessions/` with an empty body returns a URL-safe token generated from 32 bytes of entropy via `secrets.token_urlsafe(32)`. Callers MAY supply their own `state` (`{"state": "..."}`) when they need to thread an externally-generated correlator through the flow, but the value must be at least 32 characters long; shorter values are rejected with HTTP 400. When supplying `state`, callers MUST ensure it is cryptographically unguessable (length alone is not an entropy guarantee) because the public `/callback/` endpoint relies on `state` unpredictability for security.
-
-**One-shot semantics.** A session transitions exactly once from `awaiting` to a terminal state (`captured` or `error`). A second hit on `/callback/` with the same `state` is rejected (returning the generic 400 failure page) and does not overwrite the captured value. There is no persistent nonce table — replay protection comes from the in-process one-shot rule and the per-run cap of 8 simultaneous sessions.
-
-**Why `/callback/` is not loopback-guarded.** A browser redirect from the ASPSP must be able to reach the endpoint. Even when the FCS runs locally the navigation arrives via the host's network stack, and coupling the endpoint to `REMOTE_ADDR` would break any future reverse-proxy or portal deployment without adding real security. The security model relies on three independent properties: `state` unguessability (server-generated states use `secrets.token_urlsafe(32)`; caller-supplied states must be at least 32 characters long), one-shot consumption, and run-scoped binding (the loopback-guarded read API requires the parent `run_id` to retrieve the captured `code`). The callback never echoes the `state` value or any ASPSP-supplied free text into the response body.
-
-**Execution-log events.** Two new event types join the taxonomy:
-
-- `auth-session-registered` — emitted by `POST /api/runs/<id>/auth-sessions/` after successful registration. Payload: `{"state": "...", "status": "awaiting"}`. The `state` value is non-sensitive (it leaves the process inside the authorization URL anyway) and the event proves the FCS expected this state.
-- `auth-callback-received` — emitted by `/callback/` after successful capture. Payload: `{"state": "...", "code": "***"}` for the success path, `{"state": "...", "error": "...", "error_description": "..."}` for the ASPSP-reported-error path (`error_description` is omitted when the ASPSP did not supply one). Payload keys use snake_case to match the rest of the execution-log event taxonomy (e.g. `request-sent` uses `method`/`url`). The raw `code` is added to the masking allow-list in `conformance.masking` so it is masked by default and is not persisted to the NDJSON log in clear text unless `CONFORMANCE_DEVELOPER_MODE=true` disables masking for local debugging. Unknown-state hits do not produce a log event — there is no run context to attach to, and emitting one would partially defeat the "does not disclose which states exist" property.
-
-**Lifecycle.** Auth sessions are dropped when their parent run reaches a terminal state (`completed` or `failed`). Awaiting sessions for a finished run are not retained.
-
-See [`FCS Rebuild - PRD v3 [DRAFT].md`](FCS%20Rebuild%20-%20PRD%20v3%20%5BDRAFT%5D.md) for the broader PSU authorization context and the Phase 1 vs. Phase 2 split.
+Participant config may include `approvedReleasePolicyPath` for advisory
+self-assessment in generated reports. OBL-side validation remains authoritative
+and recomputes approved-release status from independently supplied inputs.
+
+## CI pipeline
+
+GitHub Actions run the same checks as `make check`: ruff, mypy, pytest with
+coverage, secret scanning, Docker build, and health checks. The E2E workflow
+uses `tests/fixtures/e2e-default.yaml` as a placeholder path and can be pointed
+at environment-specific config via `workflow_dispatch`.

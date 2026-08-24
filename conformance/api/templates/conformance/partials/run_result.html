@@ -23,6 +23,23 @@
             <div class="metric"><strong>{{ plan_summary.mandatorySelected|default:"0" }}</strong><span>Mandatory selected</span></div>
             <div class="metric"><strong>{{ plan_summary.mandatoryDeselected|default:"0" }}</strong><span>Mandatory off</span></div>
         </div>
+        {% if catalogue_trace_summary %}
+            <h3>Catalogue traceability</h3>
+            <div class="grid">
+                <div class="metric"><strong>{{ catalogue_trace_summary.api }}</strong><span>{{ catalogue_trace_summary.standard }} {{ catalogue_trace_summary.version }}</span></div>
+                <div class="metric"><strong>{{ catalogue_trace_summary.catalogueVersion }}</strong><span>Catalogue version</span></div>
+                <div class="metric"><strong>{{ catalogue_trace_summary.generatedCount }}</strong><span>Generated test cases</span></div>
+                <div class="metric"><strong>{{ catalogue_trace_summary.endpointCount }}</strong><span>Selected endpoints</span></div>
+                <div class="metric"><strong>{{ catalogue_trace_summary.capabilityCount }}</strong><span>Selected capabilities</span></div>
+            </div>
+            {% if catalogue_trace_summary.nonCertifyingReasons %}
+                <ul class="issue-list">
+                    {% for reason in catalogue_trace_summary.nonCertifyingReasons %}
+                        <li>{{ reason }}</li>
+                    {% endfor %}
+                </ul>
+            {% endif %}
+        {% endif %}
     {% elif run.status == "failed" %}
         <p>{{ run.error|default:"Run failed internally" }}</p>
     {% else %}

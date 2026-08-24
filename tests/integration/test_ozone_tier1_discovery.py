@@ -42,9 +42,8 @@ _INTEGRATION_HTTP_TIMEOUT_SECONDS = 30.0
 def _v1_discovery_manifest(discovery_url: str) -> dict[str, JsonValue]:
     """Build a v1 manifest dict for a discovery-only smoke flow.
 
-    Mirrors the discovery step of ``config/manifest-v1-openid-jwks-example.json``
-    but parameterises the URL so it can be sourced from environment
-    configuration rather than a hardcoded value.
+    Uses an inline manifest shape so integration coverage does not depend on
+    participant-facing example files.
 
     Args:
         discovery_url: Absolute HTTPS URL of the OpenID discovery endpoint.
@@ -75,7 +74,7 @@ def _v1_discovery_manifest(discovery_url: str) -> dict[str, JsonValue]:
 def test_ozone_tier1_discovery(ozone_discovery_url: str) -> None:
     manifest = parse_manifest(_v1_discovery_manifest(ozone_discovery_url))
     with httpx.Client(timeout=_INTEGRATION_HTTP_TIMEOUT_SECONDS) as client:
-        result = run_manifest(manifest, environment="ozone-tier1", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "passed", result.to_json_object()
     assert len(result.steps) == 1
@@ -108,7 +107,7 @@ def test_ozone_tier1_invalid_path_is_recorded_not_raised(ozone_discovery_url: st
     # The success criterion is that this call does not raise; if it does, pytest
     # reports the exception and fails the test naturally.
     with httpx.Client(timeout=_INTEGRATION_HTTP_TIMEOUT_SECONDS) as client:
-        result = run_manifest(manifest, environment="ozone-tier1", client=client)
+        result = run_manifest(manifest, client=client)
 
     assert result.status == "failed"
     assert len(result.steps) == 1

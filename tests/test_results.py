@@ -1,12 +1,29 @@
+from datetime import UTC, datetime
 from types import MappingProxyType
 from typing import cast
 
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.model_bank_config import SuiteSelection
-from conformance.results import CheckStatus, StepResult
-from conformance.suite_catalog import resolve_suite
+from conformance.catalogue import (
+    AssertionOverride,
+    CatalogueAssertion,
+    CatalogueKey,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    CompiledTestPlan,
+    EndpointCapability,
+    EndpointRef,
+    ImplementedEndpoint,
+    RuntimeInputRequirement,
+    SecurityProfileApplicability,
+    TestCaseApplicability,
+    TestCatalogue,
+    TestPlanSpec,
+    compile_test_plan,
+)
+from conformance.json_types import JsonObject
+from conformance.results import CheckStatus, StepResult, build_smoke_check_result
 
 
 @pytest.mark.unit
@@ -61,7 +78,6 @@ def test_model_bank_result_includes_report_metadata(monkeypatch: pytest.MonkeyPa
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
@@ -81,7 +97,6 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
     plan = TestPlan(entries=(TestPlanEntry(step_id="a", mandatory=True, optional=False, selected=True),))
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="a", status="passed", message="ok", mandatory=True)],
         started_at=started,
         plan=plan,
@@ -100,6 +115,56 @@ def test_manifest_result_includes_report_metadata_without_changing_plan() -> Non
 
 
 @pytest.mark.unit
+def test_catalogue_result_serializes_capability_traceability_and_safe_runtime_snapshot(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Compiled catalogue result evidence includes capability traceability without secrets."""
+    from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
+
+    monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
+    compiled_plan = _compiled_capability_plan()
+
+    rendered = build_smoke_check_result(
+        [StepResult(name="accounts-balances-request", status="passed", message="ok", mandatory=True)],
+        started_at=datetime.now(UTC),
+        approved_release_policy=_approved_policy("1.0.0"),
+        certification_coverage="complete",
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=compiled_plan.traceability.non_certifying_reasons,
+    ).to_json_object()
+
+    catalogue = rendered["catalogue"]
+    eligibility = rendered["certificationEligibility"]
+    assert isinstance(catalogue, dict)
+    assert isinstance(eligibility, dict)
+    assert catalogue["selectedEndpoints"] == [
+        {
+            "method": "GET",
+            "path": "/open-banking/v4.0/aisp/accounts",
+            "resourceGroup": "Accounts",
+            "capabilities": ["accounts.balances"],
+        }
+    ]
+    selected_capabilities = cast("list[JsonObject]", catalogue["selectedCapabilities"])
+    assert [capability["capabilityId"] for capability in selected_capabilities] == [
+        "accounts.read",
+        "accounts.balances",
+    ]
+    applicability_decisions = cast("list[JsonObject]", catalogue["applicabilityDecisions"])
+    assert applicability_decisions[0]["reason"] == (
+        "applicable to selected profile, implemented endpoints, and selected capabilities"
+    )
+    runtime_snapshot = cast("list[JsonObject]", catalogue["runtimeInputSnapshot"])
+    assert runtime_snapshot[0]["value"] == "https://resource.example.com"
+    assert "value" not in runtime_snapshot[1]
+    assert catalogue["nonCertifyingReasons"] == [
+        "Assertion override supplied for accounts-balances.status-200: diagnostic import"
+    ]
+    assert eligibility["eligible"] is False
+    assert eligibility["reason"] == "Assertion override supplied for accounts-balances.status-200: diagnostic import"
+
+
+@pytest.mark.unit
 def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.MonkeyPatch) -> None:
     """Eligible when at least one mandatory step ran and all passed."""
     from datetime import UTC, datetime
@@ -114,7 +179,6 @@ def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.
         StepResult(name="opt", status="failed", message="boom", mandatory=False),
     ]
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
@@ -143,7 +207,6 @@ def test_eligibility_block_warn_on_mandatory_is_non_blocking(monkeypatch: pytest
         StepResult(name="m2", status="warn", message="deprecated", mandatory=True),
     ]
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=started,
         approved_release_policy=_approved_policy("1.2.3"),
@@ -166,7 +229,7 @@ def test_eligibility_block_failed_mandatory_blocks_with_reason() -> None:
         StepResult(name="m1", status="failed", message="boom", mandatory=True),
         StepResult(name="m2", status="passed", message="ok", mandatory=True),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["mandatoryFailed"] == 1
@@ -184,7 +247,7 @@ def test_eligibility_block_skipped_mandatory_blocks_with_reason() -> None:
     steps = [
         StepResult(name="m1", status="skipped", message="prereq failed", mandatory=True),
     ]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert "skipped" in str(block["reason"])
@@ -199,7 +262,7 @@ def test_eligibility_block_no_mandatory_means_not_eligible() -> None:
 
     started = datetime.now(UTC)
     steps = [StepResult(name="opt", status="passed", message="ok", mandatory=False)]
-    block = build_smoke_check_result("env", steps, started_at=started).to_json_object()["certificationEligibility"]
+    block = build_smoke_check_result(steps, started_at=started).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["mandatoryTotal"] == 0
@@ -218,7 +281,6 @@ def test_eligibility_approves_tool_version_listed_in_policy(monkeypatch: pytest.
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("4.5.6"),
@@ -251,7 +313,6 @@ def test_eligibility_rejects_tool_version_absent_from_policy(monkeypatch: pytest
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("9.9.9"),
@@ -282,7 +343,6 @@ def test_eligibility_rejects_absent_approved_release_policy(monkeypatch: pytest.
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         certification_coverage="complete",
@@ -311,7 +371,6 @@ def test_eligibility_collects_multiple_blocking_reasons(monkeypatch: pytest.Monk
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [
             StepResult(name="m1", status="failed", message="boom", mandatory=True),
             StepResult(name="m2", status="skipped", message="prereq failed", mandatory=True),
@@ -361,9 +420,7 @@ def test_eligibility_deselected_mandatory_blocks_with_dedicated_reason() -> None
     plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(["m"])
     started = datetime.now(UTC)
 
-    block = build_smoke_check_result("env", [], started_at=started, plan=plan).to_json_object()[
-        "certificationEligibility"
-    ]
+    block = build_smoke_check_result([], started_at=started, plan=plan).to_json_object()["certificationEligibility"]
     assert isinstance(block, dict)
     assert block["eligible"] is False
     assert block["reason"] == "Mandatory steps were deselected from the plan"
@@ -389,7 +446,6 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
     started = datetime.now(UTC)
 
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="opt", status="passed", message="ok")],
         started_at=started,
         plan=plan,
@@ -405,19 +461,11 @@ def test_eligibility_deselected_mandatory_precedence_over_no_mandatory() -> None
 
 @pytest.mark.unit
 def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps() -> None:
-    """Bundled AIS slice keeps mandatory accounting stable for result evidence."""
+    """Mandatory accounting remains stable for mixed manifest step outcomes."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
 
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-slice",
-        )
-    )
     status_by_step: dict[str, CheckStatus] = {
         "openid-discovery": "passed",
         "jwks-fetch": "warn",
@@ -431,20 +479,18 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
     }
     steps = [
         StepResult(
-            name=step.id,
-            status=status_by_step[step.id],
-            message=step.id,
-            mandatory=step.mandatory,
+            name=step_id,
+            status=status,
+            message=step_id,
+            mandatory=True,
         )
-        for step in resolved.manifest.steps
+        for step_id, status in status_by_step.items()
     ]
 
     block = build_smoke_check_result(
-        "env",
         steps,
         started_at=datetime.now(UTC),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
+        certification_coverage="partial",
     ).to_json_object()["certificationEligibility"]
 
     assert isinstance(block, dict)
@@ -466,34 +512,22 @@ def test_v4_ais_slice_eligibility_counts_warn_failed_and_skipped_mandatory_steps
 def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Passing baseline mandatory steps still cannot certify while coverage is partial."""
+    """Passing mandatory manifest steps still cannot certify while coverage is partial."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
     from conformance.version import CONFORMANCE_TOOL_VERSION_ENV
 
     monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, "1.0.0")
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-baseline",
-        )
-    )
     steps = [
-        StepResult(name=step.id, status="passed", message=step.id, mandatory=step.mandatory)
-        for step in resolved.manifest.steps
-        if step.mandatory
+        StepResult(name=f"mandatory-{index}", status="passed", message="passed", mandatory=True) for index in range(11)
     ]
 
     rendered = build_smoke_check_result(
-        "env",
         steps,
         started_at=datetime.now(UTC),
         approved_release_policy=_approved_policy("1.0.0"),
-        certification_coverage=resolved.manifest.certification_coverage,
-        suite_metadata=resolved.metadata,
+        certification_coverage="partial",
     ).to_json_object()
 
     block = rendered["certificationEligibility"]
@@ -503,15 +537,92 @@ def test_v4_ais_baseline_remains_ineligible_while_manifest_coverage_is_partial(
     assert block["mandatoryPassed"] == 11
     assert block["reason"] == "Manifest is not marked as complete certification coverage"
     assert block["reasons"] == ["Manifest is not marked as complete certification coverage"]
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/ais-certification-baseline",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-ais-certification-baseline.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "ais-certification-baseline",
-    }
+    assert "suite" not in rendered
+
+
+def _compiled_capability_plan() -> CompiledTestPlan:
+    """Build a compiled catalogue plan with required and optional capabilities.
+
+    Returns:
+        Compiled test plan with endpoint capability traceability and a
+        non-certifying assertion override.
+    """
+    endpoint = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    catalogue = TestCatalogue(
+        key=CatalogueKey(standard="open-banking", version="v4.0", api="ais"),
+        catalogue_version="test.capabilities.1",
+        capabilities=(
+            EndpointCapability(
+                capability_id="accounts.read",
+                label="Read accounts",
+                description="Required account-list baseline capability.",
+                required=True,
+                endpoint_refs=(endpoint,),
+            ),
+            EndpointCapability(
+                capability_id="accounts.balances",
+                label="Read account balances",
+                description="Optional balances capability for accounts.",
+                required=False,
+                endpoint_refs=(endpoint,),
+            ),
+        ),
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="accounts-balances",
+                name="Read account balances",
+                role="resource",
+                compliance_scope=("legacy-fcs-script:accounts-balances",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                    endpoint_refs=(endpoint,),
+                    required_capability_ids=("accounts.read", "accounts.balances"),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(
+                    RuntimeInputRequirement("resourceBaseUrl", "url", "Resource base URL"),
+                    RuntimeInputRequirement("accessToken", "string", "Access token", sensitive=True),
+                ),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="accounts-balances-request",
+                        name="GET account balances",
+                        method="GET",
+                        path="/open-banking/v4.0/aisp/accounts",
+                        runtime_input_refs=("resourceBaseUrl", "accessToken"),
+                    ),
+                ),
+                assertions=(CatalogueAssertion("status-200", "http_status", "HTTP 200", {"expected": 200}),),
+            ),
+        ),
+    )
+    return compile_test_plan(
+        catalogue,
+        TestPlanSpec(
+            schema_version="v1",
+            catalogue_key=catalogue.key,
+            security_profile="fapi1-advanced",
+            implemented_endpoints=(
+                ImplementedEndpoint(
+                    method="GET",
+                    path="/open-banking/v4.0/aisp/accounts",
+                    resource_group="Accounts",
+                    capability_ids=("accounts.balances",),
+                ),
+            ),
+            runtime_inputs={
+                "resourceBaseUrl": "https://resource.example.com",
+                "accessToken": "secret-access-token",
+            },
+            assertion_overrides=(
+                AssertionOverride(
+                    test_case_id="accounts-balances",
+                    assertion_id="status-200",
+                    reason="diagnostic import",
+                ),
+            ),
+        ),
+    )
 
 
 def _approved_policy(*approved_tool_versions: str) -> ApprovedReleasePolicy:
@@ -546,7 +657,6 @@ def test_plan_block_shape_stable() -> None:
     )
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="a", status="passed", message="ok", mandatory=True)],
         started_at=started,
         plan=plan,
@@ -570,7 +680,6 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
 
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
@@ -579,58 +688,18 @@ def test_plan_block_absent_when_no_plan_supplied() -> None:
 
 @pytest.mark.unit
 def test_suite_metadata_absent_when_not_supplied() -> None:
-    """Smoke checks and explicit manifest runs omit the suite metadata block."""
+    """Generated reports omit the removed legacy suite metadata block."""
     from datetime import UTC, datetime
 
     from conformance.results import build_smoke_check_result
 
     started = datetime.now(UTC)
     rendered = build_smoke_check_result(
-        "env",
         [StepResult(name="x", status="passed", message="ok")],
         started_at=started,
     ).to_json_object()
 
     assert "suite" not in rendered
-
-
-@pytest.mark.unit
-def test_suite_metadata_serialized_when_supplied() -> None:
-    """Config-resolved suite runs expose safe catalog metadata in results."""
-    from datetime import UTC, datetime
-
-    from conformance.results import build_smoke_check_result
-    from conformance.suite_catalog import SuiteMetadata
-
-    started = datetime.now(UTC)
-    metadata = SuiteMetadata(
-        catalog_id="ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        label="Open Banking Read/Write v4.0 FAPI 1 Advanced discovery/JWKS smoke suite",
-        standard="ob-read-write",
-        spec_version="v4.0",
-        profile="fapi1-advanced",
-        api="ais",
-        suite="discovery-jwks",
-        manifest_resource="ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        description="Smoke-level discovery and JWKS checks.",
-    )
-
-    rendered = build_smoke_check_result(
-        "env",
-        [StepResult(name="x", status="passed", message="ok")],
-        started_at=started,
-        suite_metadata=metadata,
-    ).to_json_object()
-
-    assert rendered["suite"] == {
-        "catalogId": "ob-read-write/v4.0/fapi1-advanced/discovery-jwks",
-        "manifestResource": "ob-read-write-v4.0-fapi1-advanced-discovery-jwks.json",
-        "standard": "ob-read-write",
-        "specVersion": "v4.0",
-        "profile": "fapi1-advanced",
-        "api": "ais",
-        "suite": "discovery-jwks",
-    }
 
 
 # ─── Packet B: certification coverage gating ─────────────────────────────────
@@ -653,7 +722,6 @@ def test_eligibility_partial_coverage_blocks_even_when_all_mandatory_pass(monkey
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("1.0.0"),
@@ -678,7 +746,6 @@ def test_eligibility_partial_coverage_reason_precedes_missing_policy(monkeypatch
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         certification_coverage="partial",
@@ -710,7 +777,6 @@ def test_eligibility_default_coverage_is_partial(monkeypatch: pytest.MonkeyPatch
     started = datetime.now(UTC)
 
     block = build_smoke_check_result(
-        "env",
         [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
         started_at=started,
         approved_release_policy=_approved_policy("1.0.0"),
@@ -735,7 +801,6 @@ def test_eligibility_coverage_block_present_in_json_output(monkeypatch: pytest.M
 
     for coverage in ("partial", "complete"):
         block = build_smoke_check_result(
-            "env",
             [StepResult(name="m1", status="passed", message="ok", mandatory=True)],
             started_at=started,
             approved_release_policy=_approved_policy("1.0.0"),
@@ -778,7 +843,6 @@ def test_eligibility_smoke_suite_manifests_are_partial(monkeypatch: pytest.Monke
         ]
         started = datetime.now(UTC)
         block = build_smoke_check_result(
-            "env",
             steps,
             started_at=started,
             approved_release_policy=_approved_policy("1.0.0"),

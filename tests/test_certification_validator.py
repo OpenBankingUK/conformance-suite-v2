@@ -16,9 +16,7 @@ from conformance.certification_validator import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, parse_manifest
-from conformance.model_bank_config import SuiteSelection
 from conformance.results import CheckStatus
-from conformance.suite_catalog import resolve_suite
 
 
 @pytest.mark.unit
@@ -157,11 +155,13 @@ def test_parse_approved_release_policy_accepts_schema_version_and_versions() -> 
 
 
 @pytest.mark.unit
-def test_example_approved_release_policy_is_parseable() -> None:
-    policy_path = Path(__file__).resolve().parents[1] / "config" / "approved-fcs-releases-example.json"
-    raw_policy = json.loads(policy_path.read_text(encoding="utf-8"))
-
-    policy = parse_approved_release_policy(raw_policy)
+def test_placeholder_approved_release_policy_shape_is_parseable() -> None:
+    policy = parse_approved_release_policy(
+        {
+            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+            "approvedToolVersions": ["EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION"],
+        }
+    )
 
     assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
     assert policy.approved_tool_versions == ("EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION",)
@@ -403,14 +403,20 @@ def test_validate_report_coverage_included_in_json_output() -> None:
 
 @pytest.mark.unit
 def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -> None:
-    """Bundled AIS slice exposes the protected resource step in validator counts."""
-    resolved = resolve_suite(
-        SuiteSelection(
-            standard="ob-read-write",
-            spec_version="v4.0",
-            profile="fapi1-advanced",
-            suite="ais-certification-slice",
-        )
+    """Inline manifest exposes protected resource skips in validator counts."""
+    manifest = _manifest_with_steps(
+        mandatory_step_ids=(
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
+            "psu-authorization",
+            "token-exchange",
+            "accounts-list",
+            "account-balances",
+            "account-transactions",
+        ),
+        optional_step_ids=(),
     )
     report = _report(
         tool_version="1.2.3",
@@ -431,10 +437,10 @@ def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -
         approved_tool_versions=("1.2.3",),
     )
 
-    result = validate_report(report=report, manifest=resolved.manifest, policy=policy)
+    result = validate_report(report=report, manifest=manifest, policy=policy)
 
     assert result.valid is False
-    assert result.reasons == ("mandatory_step_skipped", "manifest_coverage_partial")
+    assert result.reasons == ("mandatory_step_skipped",)
     rendered = result.to_json_object()
     mandatory = rendered["mandatory"]
     assert isinstance(mandatory, dict)

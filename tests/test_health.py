@@ -6,12 +6,15 @@ from config.settings import LEGACY_FCS_CALLBACK_HOST, _build_allowed_hosts
 
 
 @pytest.mark.integration
-def test_home_redirects_to_plan_builder() -> None:
-    """The base URL should land browser users on the plan builder."""
+def test_home_renders_browser_menu() -> None:
+    """The base URL should render the browser main menu."""
     response = Client().get("/")
 
-    assert response.status_code == 302
-    assert response["Location"] == "/plan/"
+    assert response.status_code == 200
+    content = response.content.decode("utf-8")
+    assert "Open Banking conformance suite" in content
+    assert "Create new test plan with builder" in content
+    assert "Import test plan" in content
 
 
 @pytest.mark.integration
@@ -20,6 +23,12 @@ def test_health_endpoint_returns_200() -> None:
     response = client.get("/health/")
     assert response.status_code == 200
     assert response.json() == {"status": "ok"}
+
+
+@pytest.mark.unit
+def test_default_session_backend_does_not_require_database_migrations() -> None:
+    """Browser wizard drafts should work before a local SQLite session table exists."""
+    assert settings.SESSION_ENGINE == "django.contrib.sessions.backends.file"
 
 
 @pytest.mark.integration
@@ -31,7 +40,7 @@ def test_unknown_browser_route_renders_friendly_404() -> None:
     content = response.content.decode("utf-8")
     assert "Page not found" in content
     assert "/not-a-real-page/" in content
-    assert "Open plan builder" in content
+    assert "Open main menu" in content
 
 
 @pytest.mark.integration
@@ -73,8 +82,8 @@ def test_home_accepts_legacy_fcs_host_header() -> None:
     with override_settings(ALLOWED_HOSTS=_build_allowed_hosts(debug=True)):
         response = Client(HTTP_HOST="0.0.0.0:8443").get("/")
 
-    assert response.status_code == 302
-    assert response["Location"] == "/plan/"
+    assert response.status_code == 200
+    assert "Open Banking conformance suite" in response.content.decode("utf-8")
 
 
 @pytest.mark.integration

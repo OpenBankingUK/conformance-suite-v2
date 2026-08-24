@@ -44,7 +44,6 @@ def _runtime_config_context() -> ExecutionContext:
     return ExecutionContext(
         config=RuntimeConfig(
             discovery_url="https://config.example.com/.well-known/openid-configuration",
-            environment="sandbox",
         )
     )
 
@@ -54,7 +53,6 @@ def _oauth_context() -> ExecutionContext:
     return ExecutionContext(
         config=RuntimeConfig(
             discovery_url="https://config.example.com/.well-known/openid-configuration",
-            environment="sandbox",
             oauth_resource_base_url="https://rs.example.com",
             oauth_client_id="my-client-id",
             oauth_redirect_uri="https://app.example.com/callback",
@@ -118,7 +116,9 @@ class TestRecordStep:
         new_ctx = record_step(ctx, "step-1", request, None)
 
         assert new_ctx.config == ctx.config
-        assert resolve_placeholders("${config.environment}", new_ctx) == "sandbox"
+        assert resolve_placeholders("${config.discoveryUrl}", new_ctx) == (
+            "https://config.example.com/.well-known/openid-configuration"
+        )
 
     def test_steps_isolated_from_caller_mutation(self) -> None:
         """ExecutionContext must copy the incoming steps mapping."""
@@ -298,10 +298,13 @@ class TestResolvePlaceholdersHappyPaths:
         result = resolve_placeholders("${config.discoveryUrl}", ctx)
         assert result == "https://config.example.com/.well-known/openid-configuration"
 
-    def test_resolves_config_environment(self) -> None:
+    def test_rejects_removed_config_environment(self) -> None:
+        """Environment is no longer an allowed runtime placeholder."""
         ctx = _runtime_config_context()
-        result = resolve_placeholders("env=${config.environment}", ctx)
-        assert result == "env=sandbox"
+
+        with pytest.raises(PlaceholderResolutionError, match="Unsupported config placeholder") as exc_info:
+            resolve_placeholders("env=${config.environment}", ctx)
+        assert "${config.oauth.openBankingIntentId}" in str(exc_info.value)
 
     def test_resolves_config_oauth_client_id(self) -> None:
         ctx = _oauth_context()
@@ -606,7 +609,6 @@ class TestResolvePlaceholdersErrors:
         ctx = ExecutionContext(
             config=RuntimeConfig(
                 discovery_url="https://config.example.com/.well-known/openid-configuration",
-                environment="sandbox",
                 oauth_client_id="my-client-id",
                 oauth_redirect_uri="https://app.example.com/callback",
             )
@@ -619,7 +621,6 @@ class TestResolvePlaceholdersErrors:
         ctx = ExecutionContext(
             config=RuntimeConfig(
                 discovery_url="https://config.example.com/.well-known/openid-configuration",
-                environment="sandbox",
                 oauth_client_id="my-client-id",
                 oauth_redirect_uri="https://app.example.com/callback",
             )
@@ -632,7 +633,6 @@ class TestResolvePlaceholdersErrors:
         ctx = ExecutionContext(
             config=RuntimeConfig(
                 discovery_url="https://config.example.com/.well-known/openid-configuration",
-                environment="sandbox",
                 oauth_client_id="my-client-id",
                 oauth_redirect_uri="https://app.example.com/callback",
             )
@@ -729,11 +729,11 @@ class TestResolveInStructure:
         from conformance.context import resolve_in_structure
 
         ctx = _runtime_config_context()
-        structure: JsonValue = {"target": "${config.discoveryUrl}", "environment": "${config.environment}"}
+        structure: JsonValue = {"target": "${config.discoveryUrl}", "static": "metadata-free"}
         result = resolve_in_structure(structure, ctx)
         assert result == {
             "target": "https://config.example.com/.well-known/openid-configuration",
-            "environment": "sandbox",
+            "static": "metadata-free",
         }
 
     def test_resolves_nested_list(self) -> None:

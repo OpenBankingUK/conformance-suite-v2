@@ -1,3 +1,4 @@
+import json
 import re
 from pathlib import Path
 from typing import cast
@@ -19,10 +20,6 @@ from conformance.manifest import (
     load_manifest,
     parse_manifest,
 )
-
-REPO_ROOT = Path(__file__).resolve().parents[1]
-EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v0-openid-jwks-example.json"
-PSU_EXAMPLE_MANIFEST_PATH = REPO_ROOT / "config" / "manifest-v1-psu-authorization-example.json"
 
 
 def valid_manifest() -> dict[str, JsonValue]:
@@ -74,8 +71,11 @@ def follow_up_config(raw_manifest: dict[str, JsonValue]) -> dict[str, JsonValue]
 
 
 @pytest.mark.unit
-def test_load_example_manifest_returns_typed_manifest() -> None:
-    manifest = load_manifest(EXAMPLE_MANIFEST_PATH)
+def test_load_manifest_returns_typed_manifest(tmp_path: Path) -> None:
+    manifest_path = tmp_path / "manifest.json"
+    manifest_path.write_text(json.dumps(valid_manifest()), encoding="utf-8")
+
+    manifest = load_manifest(manifest_path)
 
     assert manifest.schema_version == "v0"
     assert manifest.name == "Ozone OpenID discovery and JWKS smoke check"
@@ -763,12 +763,11 @@ def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
                 "request": {
                     "method": "POST",
                     "url": "${config.discoveryUrl}",
-                    "headers": {"X-Environment": "${config.environment}"},
+                    "headers": {"X-Discovery": "${config.discoveryUrl}"},
                     "body": {
                         "encoding": "json",
                         "value": {
                             "discovery": "${config.discoveryUrl}",
-                            "environment": "${config.environment}",
                         },
                     },
                 },
@@ -781,7 +780,7 @@ def test_parse_v1_manifest_accepts_safe_config_placeholders() -> None:
 
     step = cast("ManifestStep", manifest.steps[0])
     assert step.request.url == "${config.discoveryUrl}"
-    assert step.request.headers == {"X-Environment": "${config.environment}"}
+    assert step.request.headers == {"X-Discovery": "${config.discoveryUrl}"}
 
 
 @pytest.mark.unit
@@ -843,8 +842,17 @@ def test_parse_v1_manifest_rejects_unknown_config_placeholder() -> None:
         ],
     }
 
-    with pytest.raises(ManifestError, match="unsupported config placeholder"):
+    with pytest.raises(ManifestError, match="unsupported config placeholder") as exc_info:
         parse_manifest(raw_manifest)
+    message = str(exc_info.value)
+    for placeholder in (
+        "${config.oauth.authorizationEndpoint}",
+        "${config.oauth.issuer}",
+        "${config.oauth.tokenEndpoint}",
+        "${config.oauth.responseType}",
+        "${config.oauth.requestObjectSigningAlg}",
+    ):
+        assert placeholder in message
 
 
 @pytest.mark.unit
@@ -1048,19 +1056,6 @@ def test_parse_v1_manifest_coverage_type_is_literal() -> None:
 
     coverage: CertificationCoverage = manifest.certification_coverage
     assert coverage in ("partial", "complete")
-
-
-@pytest.mark.unit
-def test_load_bundled_discovery_jwks_suite_is_partial(
-    tmp_path: pytest.TempPathFactory,
-) -> None:
-    """Bundled discovery-jwks suite manifests must be explicitly marked as partial."""
-    suites_dir = REPO_ROOT / "conformance" / "suites"
-    for suite_path in suites_dir.glob("*discovery-jwks*.json"):
-        manifest = load_manifest(suite_path)
-        assert manifest.certification_coverage == "partial", (
-            f"{suite_path.name} must have certificationCoverage: partial"
-        )
 
 
 @pytest.mark.unit
@@ -2242,9 +2237,61 @@ def valid_psu_manifest() -> dict[str, JsonValue]:
 
 
 @pytest.mark.unit
-def test_parse_v1_manifest_loads_psu_authorization_example_file() -> None:
-    """The bundled v1 PSU example manifest parses and exposes the PSU step."""
-    manifest = load_manifest(PSU_EXAMPLE_MANIFEST_PATH)
+def test_parse_v1_manifest_loads_psu_authorization_file(tmp_path: Path) -> None:
+    """A v1 PSU manifest file parses and exposes the PSU step."""
+    manifest_path = tmp_path / "psu-manifest.json"
+    manifest_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "v1",
+                "name": "PSU authorization flow",
+                "steps": [
+                    {
+                        "id": "discovery",
+                        "name": "Discovery",
+                        "request": {"method": "GET", "url": "${config.discoveryUrl}"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                    {
+                        "kind": "psu-authorization",
+                        "id": "psu-authorization",
+                        "name": "PSU authorization",
+                        "mode": "manual",
+                        "authorizationEndpoint": "${steps.discovery.response.body.authorization_endpoint}",
+                        "clientId": "${config.oauth.clientId}",
+                        "redirectUri": "${config.oauth.redirectUri}",
+                        "requestObject": {
+                            "source": "fapi-signing",
+                            "audience": "${steps.discovery.response.body.issuer}",
+                        },
+                        "mandatory": True,
+                    },
+                    {
+                        "id": "token-exchange",
+                        "name": "Token exchange",
+                        "request": {
+                            "method": "POST",
+                            "url": "${steps.discovery.response.body.token_endpoint}",
+                            "body": {
+                                "encoding": "form",
+                                "fields": {
+                                    "grant_type": "authorization_code",
+                                    "code": "${steps.psu-authorization.response.body.code}",
+                                    "client_id": "${config.oauth.clientId}",
+                                    "redirect_uri": "${config.oauth.redirectUri}",
+                                },
+                            },
+                        },
+                        "tokenEndpointAuthPolicy": {"source": "fapi-signing"},
+                        "assertions": [{"type": "http_status", "expected": 200}],
+                    },
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    manifest = load_manifest(manifest_path)
     assert manifest.schema_version == "v1"
     assert len(manifest.steps) == 3
     discovery_step = manifest.steps[0]

@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>Runtime inputs</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="robots" content="noindex,nofollow">
+    <style>
+        :root { color-scheme: light; --bg: #f7f8fa; --panel: #ffffff; --border: #ccd3dc; --text: #1b1f24; --muted: #667085; --accent: #0b6bcb; --danger: #b42318; --warning: #a15c07; }
+        * { box-sizing: border-box; }
+        body { margin: 0; background: var(--bg); color: var(--text); font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; line-height: 1.5; }
+        main { width: min(1120px, calc(100% - 32px)); margin: 0 auto; padding: 32px 0 48px; }
+        header { display: flex; align-items: end; justify-content: space-between; gap: 16px; margin-bottom: 18px; }
+        h1, h2, h3 { margin: 0; line-height: 1.2; }
+        h1 { font-size: 1.75rem; }
+        h2 { font-size: 1.1rem; }
+        h3 { font-size: 1rem; }
+        .panel, .config-card { background: var(--panel); border: 1px solid var(--border); border-radius: 8px; padding: 18px; }
+        .config-card { margin-top: 14px; background: #fbfcfe; }
+        .muted, .helper { color: var(--muted); }
+        .helper { font-size: 0.9rem; }
+        .step-id, code { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.86rem; }
+        .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+        .field-row { margin-top: 12px; }
+        label { display: block; font-weight: 650; margin-bottom: 8px; }
+        input { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
+        .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
+        .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
+        .errorlist { list-style: none; border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
+        button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
+        .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
+        @media (max-width: 840px) { header, .grid { display: block; } .grid > div + div { margin-top: 12px; } }
+    </style>
+</head>
+<body>
+<main>
+    <header>
+        <div>
+            <h1>Runtime inputs</h1>
+            <div class="muted">Step 6 of the guided builder</div>
+        </div>
+        <a class="button secondary" href="{% url 'home' %}">Main menu</a>
+    </header>
+
+    <section class="panel" aria-labelledby="runtime-heading">
+        <h2 id="runtime-heading">PSU authorisation/runtime inputs</h2>
+        <p class="helper">These prompts are generated from selected endpoints and optional capabilities after business and communication settings have been applied.</p>
+        <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
+
+        {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
+        {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+
+        <form method="post" action="{% url 'builder-runtime-config' draft.draft_id %}">
+            {% csrf_token %}
+
+            {% for group in runtime_prompt_groups %}
+                <section class="config-card" aria-labelledby="runtime-heading-{{ forloop.counter }}">
+                    <h3 id="runtime-heading-{{ forloop.counter }}">{{ group.label }}</h3>
+                    <div class="grid field-row">
+                        {% for row in group.prompts %}
+                            <div>
+                                <label for="{{ row.field.id_for_label }}">{{ row.prompt.label }}</label>
+                                {{ row.field.errors }}
+                                <input id="{{ row.field.id_for_label }}"
+                                       name="{{ row.field.html_name }}"
+                                       type="{% if row.prompt.sensitive %}password{% elif row.prompt.input_type == "url" %}url{% else %}text{% endif %}"
+                                       value="{{ row.field.value|default_if_none:'' }}"
+                                       autocomplete="off">
+                                <div class="helper">
+                                    <span class="step-id">{{ row.prompt.input_id }}</span>
+                                    &middot; {{ row.prompt.input_type }}
+                                    {% if row.prompt.required %}&middot; required{% endif %}
+                                    {% if row.prompt.sensitive %}&middot; sensitive{% endif %}
+                                </div>
+                            </div>
+                        {% endfor %}
+                    </div>
+                </section>
+            {% empty %}
+                <section class="config-card">
+                    <h3>No generated runtime inputs</h3>
+                    <p class="helper">The selected endpoint scope has no remaining runtime artifacts to collect. Continue to review.</p>
+                </section>
+            {% endfor %}
+
+            <div class="actions">
+                <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Back to security</a>
+                <button type="submit">Review generated plan</button>
+            </div>
+        </form>
+    </section>
+</main>
+</body>
+</html>

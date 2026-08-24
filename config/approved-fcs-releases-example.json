@@ -1,7 +1,0 @@
-{
-  "schemaVersion": "v1",
-  "description": "Example only. Replace approvedToolVersions with the exact OBL-approved release versions before use.",
-  "approvedToolVersions": [
-    "EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION"
-  ]
-}

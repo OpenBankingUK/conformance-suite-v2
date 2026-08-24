@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 import secrets
 import threading
 import time
@@ -10,6 +11,7 @@ from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
 
@@ -26,6 +28,13 @@ from conformance.api.auth_session_store import (
 )
 from conformance.approved_releases import ApprovedReleasePolicy
 from conformance.assertions import AssertionResult, evaluate_assertion
+from conformance.catalogue import (
+    CatalogueAssertion,
+    CatalogueRequestStep,
+    CatalogueTestCase,
+    CompiledTestPlan,
+    RuntimeInputRequirement,
+)
 from conformance.context import (
     ExecutionContext,
     MissingPredecessorResponseError,
@@ -45,7 +54,11 @@ from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     FormBody,
     GeneratedRequestObject,
+    HeaderAssertion,
+    HttpStatusAssertion,
     JsonBody,
+    JsonFieldAssertion,
+    JsonFieldRule,
     Manifest,
     ManifestAssertion,
     ManifestError,
@@ -53,6 +66,9 @@ from conformance.manifest import (
     ManifestStep,
     ManifestTest,
     PsuAuthorizationStep,
+    ResponseSchemaAssertion,
+    ResponseSignaturePolicy,
+    StepPhase,
     V1Step,
     validate_header_value,
 )
@@ -64,6 +80,7 @@ from conformance.psu_authorization import (
     redirect_matches_registered_uri,
     synthesize_psu_response,
 )
+from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
 from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
@@ -72,7 +89,6 @@ from conformance.signing_service import (
     JwtSigningError,
     RequestObjectSigningInput,
 )
-from conformance.suite_catalog import SuiteMetadata
 from conformance.test_plan import TestPlan
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
@@ -86,6 +102,9 @@ for additional groups.
 
 _OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
 """Open Banking AIS consent-creation path requiring detached JWS support."""
+
+_CATALOGUE_PATH_VARIABLE_PATTERN = re.compile(r"\{([^}]+)\}")
+"""Pattern matching OpenAPI-style path variables in catalogue request paths."""
 
 
 def _normalize_url_path_for_match(path: str) -> str:
@@ -202,7 +221,6 @@ def _mask_result_url_query(url: str) -> str:
 def run_manifest(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger | None = None,
     plan: TestPlan | None = None,
@@ -211,7 +229,6 @@ def run_manifest(
     runtime_config: RuntimeConfig | None = None,
     fapi_signing_config: FapiSigningConfig | None = None,
     mtls_client_configured: bool = False,
-    suite_metadata: SuiteMetadata | None = None,
     approved_release_policy: ApprovedReleasePolicy | None = None,
 ) -> SmokeCheckResult:
     """Run a parsed manifest and return a structured smoke-check result.
@@ -221,7 +238,6 @@ def run_manifest(
 
     Args:
         manifest: Parsed and validated manifest to execute.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client used for network requests.
         execution_logger: Optional structured execution-log sink. Defaults to
             a :class:`NullExecutionLogger` for backwards-compatible callers
@@ -254,8 +270,6 @@ def run_manifest(
         mtls_client_configured: Whether the shared HTTP client was configured
             with an mTLS client certificate and private key. Used to fail
             ``tls_client_auth`` token steps clearly before dispatch.
-        suite_metadata: Optional catalog metadata describing a config-resolved
-            suite run. Omit for explicit manifests and legacy smoke checks.
         approved_release_policy: Optional approved-release policy used by the
             generated report's participant-side certification self-assessment.
 
@@ -265,16 +279,13 @@ def run_manifest(
     logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
     effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
     effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
-    run_started_payload: JsonObject = {"environment": environment, "schemaVersion": manifest.schema_version}
-    if suite_metadata is not None:
-        run_started_payload["suite"] = suite_metadata.to_json_object()
+    run_started_payload: JsonObject = {"schemaVersion": manifest.schema_version}
     logger_sink.emit("run-started", payload=run_started_payload)
     try:
         if manifest.schema_version == "v1":
             effective_plan = plan if plan is not None else TestPlan.default_plan_from_manifest(manifest)
             result = _run_manifest_v1(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 plan=effective_plan,
@@ -283,19 +294,16 @@ def run_manifest(
                 runtime_config=runtime_config,
                 fapi_signing_config=fapi_signing_config,
                 mtls_client_configured=mtls_client_configured,
-                suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
         else:
             result = _run_manifest_v0(
                 manifest,
-                environment=environment,
                 client=client,
                 execution_logger=logger_sink,
                 run_id=effective_run_id,
                 auth_session_store=effective_store,
                 runtime_config=runtime_config,
-                suite_metadata=suite_metadata,
                 approved_release_policy=approved_release_policy,
             )
     except Exception as error:
@@ -315,6 +323,599 @@ def run_manifest(
         },
     )
     return result
+
+
+def run_compiled_test_plan(
+    compiled_plan: CompiledTestPlan,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger | None = None,
+    run_id: str | None = None,
+    auth_session_store: AuthSessionStore | None = None,
+    runtime_config: RuntimeConfig | None = None,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
+    approved_release_policy: ApprovedReleasePolicy | None = None,
+) -> SmokeCheckResult:
+    """Run a compiled catalogue plan and return structured result evidence.
+
+    Args:
+        compiled_plan: Deterministic catalogue graph produced by the compiler.
+        runtime_inputs: Original runtime input mapping from the plan spec. This
+            may include sensitive values and is never persisted directly.
+        runtime_input_base_dir: Directory used to resolve runtime
+            ``file_reference`` values safely.
+        client: Preconfigured synchronous HTTP client used for network requests.
+        execution_logger: Optional structured execution-log sink.
+        run_id: Optional run identifier used for log/auth-session correlation.
+        auth_session_store: Optional PSU authorisation store.
+        runtime_config: Optional safe participant config values.
+        fapi_signing_config: Optional validated FAPI signing configuration.
+        mtls_client_configured: Whether the shared HTTP client has mTLS
+            credentials configured.
+        approved_release_policy: Optional approved-release policy used by the
+            report's certification self-assessment.
+
+    Returns:
+        Smoke-check result populated with catalogue traceability metadata.
+    """
+    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
+    effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
+    synthetic_manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        runtime_config=runtime_config,
+    )
+    logger_sink.emit(
+        "run-started",
+        payload={
+            "catalogue": {
+                "standard": compiled_plan.catalogue_key.standard,
+                "version": compiled_plan.catalogue_key.version,
+                "api": compiled_plan.catalogue_key.api,
+                "catalogueVersion": compiled_plan.catalogue_version,
+            },
+        },
+    )
+    try:
+        result = _run_manifest_v1(
+            synthetic_manifest,
+            client=client,
+            execution_logger=logger_sink,
+            plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
+            run_id=effective_run_id,
+            auth_session_store=effective_store,
+            runtime_config=runtime_config,
+            fapi_signing_config=fapi_signing_config,
+            mtls_client_configured=mtls_client_configured,
+            approved_release_policy=approved_release_policy,
+            compiled_plan=compiled_plan,
+        )
+    except Exception as error:
+        logger_sink.emit("application-error", payload={"message": str(error)})
+        raise
+    logger_sink.emit(
+        "run-completed",
+        payload={
+            "status": result.status,
+            "summary": {
+                "total": len(result.steps),
+                "passed": sum(1 for step in result.steps if step.status == "passed"),
+                "failed": sum(1 for step in result.steps if step.status == "failed"),
+                "warn": sum(1 for step in result.steps if step.status == "warn"),
+                "skipped": sum(1 for step in result.steps if step.status == "skipped"),
+            },
+        },
+    )
+    return result
+
+
+def _compiled_plan_to_manifest(
+    compiled_plan: CompiledTestPlan,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+) -> Manifest:
+    """Build an internal manifest facade for existing HTTP execution plumbing.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to execute.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+
+    Returns:
+        Synthetic v1 manifest containing one selected step per catalogue
+        request step.
+    """
+    steps: list[V1Step] = []
+    for test_case in compiled_plan.test_cases:
+        requirements = {requirement.input_id: requirement for requirement in test_case.runtime_input_requirements}
+        for request_step in test_case.request_steps:
+            steps.append(
+                _catalogue_request_step_to_manifest_step(
+                    test_case,
+                    request_step,
+                    runtime_inputs=runtime_inputs,
+                    runtime_input_base_dir=runtime_input_base_dir,
+                    runtime_config=runtime_config,
+                    requirements=requirements,
+                )
+            )
+    catalogue_name = (
+        f"{compiled_plan.catalogue_key.standard} "
+        f"{compiled_plan.catalogue_key.version} "
+        f"{compiled_plan.catalogue_key.api}"
+    )
+    return Manifest(
+        schema_version="v1",
+        name=catalogue_name,
+        certification_coverage="complete",
+        steps=tuple(steps),
+    )
+
+
+def _catalogue_request_step_to_manifest_step(
+    test_case: CatalogueTestCase,
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> ManifestStep:
+    """Convert one catalogue request skeleton into an executable HTTP step.
+
+    Args:
+        test_case: Catalogue test case that owns the request step.
+        request_step: Request skeleton to execute.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Manifest-compatible HTTP step for the existing executor.
+    """
+    resolved_url = _catalogue_request_url(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+    )
+    headers = _catalogue_request_headers(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+    )
+    body = _catalogue_request_body(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+    )
+    phase: StepPhase = "setup" if test_case.role in {"setup", "security", "token"} else "execution"
+    return ManifestStep(
+        id=request_step.step_id,
+        name=request_step.name,
+        request=ManifestRequest(
+            method=request_step.method,
+            url=resolved_url,
+            headers=headers,
+            body=body,
+        ),
+        assertions=tuple(_catalogue_assertion_to_manifest_assertion(assertion) for assertion in test_case.assertions),
+        mandatory=test_case.mandatory,
+        group="catalogue",
+        phase=phase,
+        response_signature_policy=(
+            ResponseSignaturePolicy(source="discovery-jwks") if test_case.response_signature_required else None
+        ),
+    )
+
+
+def _catalogue_request_url(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_config: RuntimeConfig | None,
+) -> str:
+    """Resolve a catalogue request path to an absolute HTTPS URL.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_config: Safe participant config values, used for discovery URL.
+
+    Returns:
+        Absolute URL to dispatch.
+
+    Raises:
+        ValueError: If a required runtime value for URL construction is absent
+            or cannot be represented as a string.
+    """
+    if request_step.path == "/.well-known/openid-configuration":
+        if runtime_config is None:
+            raise ValueError("Discovery catalogue step requires runtime config discoveryUrl")
+        return runtime_config.discovery_url
+
+    base_url = _required_runtime_string(runtime_inputs, "resourceBaseUrl")
+    resolved_path = _resolve_catalogue_path_variables(request_step, runtime_inputs=runtime_inputs)
+    return f"{base_url.rstrip('/')}/{resolved_path.lstrip('/')}"
+
+
+def _resolve_catalogue_path_variables(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+) -> str:
+    """Replace OpenAPI-style path variables with plan-spec runtime values.
+
+    Args:
+        request_step: Catalogue request skeleton with a standards path.
+        runtime_inputs: Original plan-spec runtime input mapping.
+
+    Returns:
+        Request path with ``{Variable}`` tokens substituted where present.
+
+    Raises:
+        ValueError: If a path variable cannot be matched to a runtime input.
+    """
+
+    def replace_variable(match: re.Match[str]) -> str:
+        """Return the runtime value for one matched path variable.
+
+        Args:
+            match: Regular-expression match for ``{Variable}``.
+
+        Returns:
+            Runtime input value converted to a string.
+
+        Raises:
+            ValueError: If no matching runtime input exists.
+        """
+        variable = match.group(1)
+        for candidate in _path_variable_input_candidates(variable, request_step.runtime_input_refs):
+            value = runtime_inputs.get(candidate)
+            if isinstance(value, str) and value:
+                return value
+        raise ValueError(f"Runtime input for path variable {{{variable}}} is missing")
+
+    return _CATALOGUE_PATH_VARIABLE_PATTERN.sub(replace_variable, request_step.path)
+
+
+def _path_variable_input_candidates(variable: str, runtime_input_refs: tuple[str, ...]) -> tuple[str, ...]:
+    """Return candidate runtime input ids for an OpenAPI path variable.
+
+    Args:
+        variable: Path variable name without braces.
+        runtime_input_refs: Runtime input ids referenced by the request step.
+
+    Returns:
+        Candidate input ids in precedence order.
+    """
+    lower_camel = variable[:1].lower() + variable[1:]
+    suffix_matches = tuple(ref for ref in runtime_input_refs if ref.lower().endswith(lower_camel.lower()))
+    return (variable, lower_camel, *suffix_matches)
+
+
+def _catalogue_request_headers(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> dict[str, str] | None:
+    """Build runtime headers for a catalogue request.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Header mapping, or ``None`` when no headers are needed.
+
+    Raises:
+        ValueError: If a referenced token/idempotency value cannot be resolved.
+    """
+    headers: dict[str, str] = {}
+    access_token = _optional_access_token(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        requirements=requirements,
+    )
+    if access_token is not None:
+        headers["Authorization"] = f"Bearer {access_token}"
+    if "idempotencyKey" in request_step.runtime_input_refs:
+        headers["x-idempotency-key"] = _required_runtime_string(runtime_inputs, "idempotencyKey")
+    return headers or None
+
+
+def _optional_access_token(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> str | None:
+    """Resolve a bearer token for a request when the catalogue asks for one.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Bearer token string, or ``None`` when the request does not require one.
+
+    Raises:
+        ValueError: If the token input is present but cannot be resolved.
+    """
+    for input_id in request_step.runtime_input_refs:
+        if input_id not in {"accessToken", "accessTokenRef", "invalidAccessToken"}:
+            continue
+        requirement = requirements.get(input_id)
+        if requirement is not None and requirement.input_type == "file_reference":
+            return _read_runtime_file_text(runtime_inputs, input_id, root=runtime_input_base_dir)
+        return _required_runtime_string(runtime_inputs, input_id)
+    return None
+
+
+def _catalogue_request_body(
+    request_step: CatalogueRequestStep,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> JsonBody | None:
+    """Build a JSON request body from a catalogue runtime file reference.
+
+    Args:
+        request_step: Catalogue request skeleton.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        JSON body for methods that send a body, or ``None`` when no body
+        reference is declared.
+
+    Raises:
+        ValueError: If a request body file reference is invalid.
+    """
+    if request_step.method not in {"POST", "PUT", "PATCH", "DELETE"}:
+        return None
+    for input_id in request_step.runtime_input_refs:
+        requirement = requirements.get(input_id)
+        if requirement is None or requirement.input_type != "file_reference" or "request" not in input_id.lower():
+            continue
+        return JsonBody(value=_read_runtime_json_file(runtime_inputs, input_id, root=runtime_input_base_dir))
+    return None
+
+
+def _read_runtime_json_file(
+    runtime_inputs: Mapping[str, JsonValue],
+    input_id: str,
+    *,
+    root: Path,
+) -> JsonValue:
+    """Read a JSON runtime file reference under the plan-spec directory.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Decoded JSON value from the referenced file.
+
+    Raises:
+        ValueError: If the reference is missing, escapes ``root``, or contains
+            invalid JSON.
+    """
+    path = _runtime_file_path(runtime_inputs, input_id, root=root)
+    try:
+        return cast("JsonValue", json.loads(path.read_text(encoding="utf-8")))
+    except json.JSONDecodeError as error:
+        raise ValueError(f"Runtime input file '{input_id}' must contain valid JSON: {error.msg}") from error
+    except OSError as error:
+        raise ValueError(f"Unable to read runtime input file '{input_id}': {error}") from error
+
+
+def _read_runtime_file_text(
+    runtime_inputs: Mapping[str, JsonValue],
+    input_id: str,
+    *,
+    root: Path,
+) -> str:
+    """Read a text runtime file reference under the plan-spec directory.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Stripped text content from the referenced file.
+
+    Raises:
+        ValueError: If the reference is missing, escapes ``root``, cannot be
+            read, or is empty.
+    """
+    path = _runtime_file_path(runtime_inputs, input_id, root=root)
+    try:
+        value = path.read_text(encoding="utf-8").strip()
+    except OSError as error:
+        raise ValueError(f"Unable to read runtime input file '{input_id}': {error}") from error
+    if not value:
+        raise ValueError(f"Runtime input file '{input_id}' must not be empty")
+    return value
+
+
+def _runtime_file_path(runtime_inputs: Mapping[str, JsonValue], input_id: str, *, root: Path) -> Path:
+    """Resolve a runtime file-reference path under a trusted root.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id that contains the file reference.
+        root: Directory that relative references are resolved under.
+
+    Returns:
+        Resolved file path.
+
+    Raises:
+        ValueError: If the runtime value is not a non-empty string or escapes
+            the supplied root.
+    """
+    raw_value = _required_runtime_string(runtime_inputs, input_id)
+    raw_path = Path(raw_value)
+    resolved_root = root.resolve()
+    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (resolved_root / raw_path).resolve()
+    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
+        raise ValueError(f"Runtime input file '{input_id}' must resolve inside the plan-spec directory")
+    return resolved_path
+
+
+def _required_runtime_string(runtime_inputs: Mapping[str, JsonValue], input_id: str) -> str:
+    """Extract a required runtime string value.
+
+    Args:
+        runtime_inputs: Original plan-spec runtime input mapping.
+        input_id: Runtime input id to read.
+
+    Returns:
+        Non-empty string runtime value.
+
+    Raises:
+        ValueError: If the value is absent or not a non-empty string.
+    """
+    value = runtime_inputs.get(input_id)
+    if not isinstance(value, str) or not value.strip():
+        raise ValueError(f"Runtime input '{input_id}' must be a non-empty string")
+    return value.strip()
+
+
+def _catalogue_assertion_to_manifest_assertion(assertion: CatalogueAssertion) -> ManifestAssertion:
+    """Convert a catalogue assertion into the executor's assertion model.
+
+    Args:
+        assertion: Catalogue assertion to convert.
+
+    Returns:
+        Manifest-compatible assertion dataclass.
+
+    Raises:
+        ValueError: If the assertion rule cannot be mapped to an executable
+            assertion shape.
+    """
+    if assertion.kind == "http_status":
+        expected = assertion.rule.get("expected")
+        if not isinstance(expected, int) or isinstance(expected, bool):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires integer rule.expected")
+        return HttpStatusAssertion(type="http_status", expected=expected)
+    if assertion.kind == "json_field":
+        return _catalogue_json_field_assertion(assertion)
+    if assertion.kind == "header":
+        return _catalogue_header_assertion(assertion)
+    return _catalogue_response_schema_assertion(assertion)
+
+
+def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldAssertion:
+    """Convert a catalogue JSON-field assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "json_field"``.
+
+    Returns:
+        Manifest-compatible JSON-field assertion.
+
+    Raises:
+        ValueError: If required rule keys are missing or invalid.
+    """
+    path = assertion.rule.get("path")
+    if not isinstance(path, str) or not path:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.path")
+    if assertion.rule.get("present") is True or assertion.rule.get("expected") == "present":
+        return JsonFieldAssertion(type="json_field", path=path, rule="required")
+    if "expected" in assertion.rule:
+        return JsonFieldAssertion(type="json_field", path=path, rule="equals", value=assertion.rule["expected"])
+    rule = assertion.rule.get("rule")
+    supported_simple_rules = {
+        "required",
+        "https_url",
+        "array",
+        "absent",
+        "string",
+        "number",
+        "boolean",
+        "object",
+        "non_empty_array",
+    }
+    if isinstance(rule, str) and rule in supported_simple_rules:
+        return JsonFieldAssertion(type="json_field", path=path, rule=cast(JsonFieldRule, rule))
+    raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a JSON-field rule")
+
+
+def _catalogue_header_assertion(assertion: CatalogueAssertion) -> HeaderAssertion:
+    """Convert a catalogue header assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "header"``.
+
+    Returns:
+        Manifest-compatible header assertion.
+
+    Raises:
+        ValueError: If required rule keys are missing or invalid.
+    """
+    name = assertion.rule.get("name", assertion.rule.get("header"))
+    if not isinstance(name, str) or not name:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires rule.name or rule.header")
+    if assertion.rule.get("required") is True or assertion.rule.get("presence") == "required":
+        return HeaderAssertion(type="header", name=name, rule="present")
+    contains = assertion.rule.get("contains")
+    if isinstance(contains, str) and contains:
+        return HeaderAssertion(type="header", name=name, rule="contains", value=contains)
+    expected = assertion.rule.get("expected")
+    if isinstance(expected, str) and expected:
+        return HeaderAssertion(type="header", name=name, rule="equals", value=expected)
+    raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a header rule")
+
+
+def _catalogue_response_schema_assertion(assertion: CatalogueAssertion) -> ResponseSchemaAssertion:
+    """Convert a catalogue response-schema assertion.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "response_schema"``.
+
+    Returns:
+        Manifest-compatible response-schema assertion.
+
+    Raises:
+        ValueError: If required schema rule keys are missing.
+    """
+    source = assertion.rule.get("source")
+    document = assertion.rule.get("document")
+    schema_ref = assertion.rule.get("schemaRef")
+    body_path = assertion.rule.get("bodyPath")
+    if source != "bundled_openapi" or not isinstance(document, str):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires bundled OpenAPI schema metadata")
+    return ResponseSchemaAssertion(
+        type="response_schema",
+        source="bundled_openapi",
+        document=document,
+        schema_ref=schema_ref if isinstance(schema_ref, str) else None,
+        body_path=body_path if isinstance(body_path, str) else None,
+    )
 
 
 def _logger_run_id(execution_logger: ExecutionLogger) -> str | None:
@@ -392,10 +993,73 @@ class _LazyFapiSigningService:
         return self._service
 
 
+class _ResponseSignatureJwksCache:
+    """Fetch and cache discovery JWKS for response signature validation."""
+
+    def __init__(self, client: httpx.Client) -> None:
+        """Initialise the JWKS cache.
+
+        Args:
+            client: HTTP client used for discovery and JWKS requests.
+        """
+        self._client = client
+        self._jwks: JsonObject | None = None
+        self._lock = threading.Lock()
+
+    def get(self, runtime_config: RuntimeConfig | None) -> JsonObject:
+        """Return the cached JWKS, fetching it from discovery when needed.
+
+        Args:
+            runtime_config: Runtime config containing the discovery URL.
+
+        Returns:
+            JWKS JSON object with a ``keys`` array.
+
+        Raises:
+            ValueError: If runtime config or discovery metadata is missing or
+                unsafe.
+            JsonHttpClientError: If discovery or JWKS HTTP retrieval fails.
+        """
+        if self._jwks is not None:
+            return self._jwks
+        with self._lock:
+            if self._jwks is None:
+                self._jwks = _fetch_response_signature_jwks(self._client, runtime_config)
+        return self._jwks
+
+
+def _fetch_response_signature_jwks(client: httpx.Client, runtime_config: RuntimeConfig | None) -> JsonObject:
+    """Fetch the JWKS advertised by the configured discovery document.
+
+    Args:
+        client: HTTP client used for discovery and JWKS requests.
+        runtime_config: Runtime config containing ``discoveryUrl``.
+
+    Returns:
+        JWKS JSON object.
+
+    Raises:
+        ValueError: If runtime config, ``jwks_uri``, or the JWKS shape is
+            invalid.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+    """
+    if runtime_config is None:
+        raise ValueError("Response signature validation requires runtime config discoveryUrl")
+    discovery_response = send_json(client, "GET", runtime_config.discovery_url)
+    jwks_uri = discovery_response.body.get("jwks_uri")
+    if not isinstance(jwks_uri, str) or not jwks_uri.strip():
+        raise ValueError("OpenID discovery response must contain jwks_uri for response signature validation")
+    validate_https_url(jwks_uri.strip(), label="discovery jwks_uri")
+    jwks_response = send_json(client, "GET", jwks_uri.strip())
+    keys = jwks_response.body.get("keys")
+    if not isinstance(keys, list):
+        raise ValueError("JWKS response must contain a keys array")
+    return dict(jwks_response.body)
+
+
 def _run_manifest_v1(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     plan: TestPlan,
@@ -404,8 +1068,8 @@ def _run_manifest_v1(
     runtime_config: RuntimeConfig | None,
     fapi_signing_config: FapiSigningConfig | None,
     mtls_client_configured: bool,
-    suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
+    compiled_plan: CompiledTestPlan | None = None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -424,7 +1088,6 @@ def _run_manifest_v1(
 
     Args:
         manifest: Parsed v1 manifest containing sequential steps.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink.
         plan: Test plan governing which steps run and which are skipped
@@ -442,10 +1105,10 @@ def _run_manifest_v1(
             generate runtime FAPI request-object JWTs for PSU steps.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
-        suite_metadata: Optional catalog metadata to embed in the result for
-            config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
+        compiled_plan: Optional compiled catalogue plan whose traceability
+            should be embedded in the result.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -455,6 +1118,7 @@ def _run_manifest_v1(
     steps: list[StepResult] = []
     context = ExecutionContext(config=runtime_config)
     fapi_signing_service = _LazyFapiSigningService(fapi_signing_config)
+    response_signature_jwks_cache = _ResponseSignatureJwksCache(client)
 
     # Emit one ``step-deselected`` event per deselected step before any
     # ``step-started`` event. Done up-front (rather than interleaved with
@@ -478,6 +1142,7 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(setup_steps)
 
@@ -492,18 +1157,58 @@ def _run_manifest_v1(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     steps.extend(execution_steps)
+    if compiled_plan is not None:
+        steps = _attach_catalogue_evidence_to_steps(steps, compiled_plan)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
         plan=plan,
-        suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
         certification_coverage=manifest.certification_coverage,
+        compiled_plan=compiled_plan,
+        non_certifying_reasons=(compiled_plan.traceability.non_certifying_reasons if compiled_plan is not None else ()),
     )
+
+
+def _attach_catalogue_evidence_to_steps(
+    steps: list[StepResult],
+    compiled_plan: CompiledTestPlan,
+) -> list[StepResult]:
+    """Attach catalogue role and compliance scope to step result evidence.
+
+    Args:
+        steps: Step results emitted by the internal HTTP executor.
+        compiled_plan: Compiled catalogue plan that owns the executed request
+            steps.
+
+    Returns:
+        Step results with ``details.catalogue`` populated for catalogue-backed
+        request steps.
+    """
+    request_metadata: dict[str, JsonObject] = {}
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            request_metadata[request_step.step_id] = {
+                "testCaseId": test_case.test_case_id,
+                "requestStepId": request_step.step_id,
+                "role": test_case.role,
+                "complianceScope": list(test_case.compliance_scope),
+            }
+
+    enriched_steps: list[StepResult] = []
+    for step in steps:
+        metadata = request_metadata.get(step.name)
+        if metadata is None:
+            enriched_steps.append(step)
+            continue
+        details = dict(step.details)
+        details["catalogue"] = metadata
+        enriched_steps.append(replace(step, details=details))
+    return enriched_steps
 
 
 def _execute_v1_step_sequence(
@@ -517,6 +1222,7 @@ def _execute_v1_step_sequence(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[list[StepResult], ExecutionContext]:
     """Execute an ordered sequence of selected v1 steps.
 
@@ -534,6 +1240,8 @@ def _execute_v1_step_sequence(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Ordered step results and the updated execution context after the
@@ -551,6 +1259,7 @@ def _execute_v1_step_sequence(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
         steps.append(step_result)
     return steps, context
@@ -568,6 +1277,7 @@ def _execute_v1_execution_groups_concurrently(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Execute execution-phase groups concurrently and merge deterministically.
 
@@ -589,6 +1299,8 @@ def _execute_v1_execution_groups_concurrently(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Executed step results sorted by original manifest order.
@@ -612,6 +1324,7 @@ def _execute_v1_execution_groups_concurrently(
                     fapi_signing_config,
                     fapi_signing_service,
                     mtls_client_configured,
+                    response_signature_jwks_cache,
                 )
             )
 
@@ -634,6 +1347,7 @@ def _execute_v1_group(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> list[StepResult]:
     """Run one execution group sequentially from the shared setup context.
 
@@ -650,6 +1364,8 @@ def _execute_v1_group(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         Step results for this group in group-local order.
@@ -664,6 +1380,7 @@ def _execute_v1_group(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache,
     )
     return group_steps
 
@@ -679,6 +1396,7 @@ def _execute_v1_manifest_step(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute one selected v1 step and preserve mandatory metadata.
 
@@ -696,6 +1414,8 @@ def _execute_v1_manifest_step(
             shared across selected steps in the current manifest run.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured for ``tls_client_auth`` steps.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -722,6 +1442,7 @@ def _execute_v1_manifest_step(
             fapi_signing_config=fapi_signing_config,
             fapi_signing_service=fapi_signing_service,
             mtls_client_configured=mtls_client_configured,
+            response_signature_jwks_cache=response_signature_jwks_cache,
         )
     if manifest_step.mandatory:
         step_result = replace(step_result, mandatory=True)
@@ -1537,6 +2258,7 @@ def _execute_v1_step(
     fapi_signing_config: FapiSigningConfig | None = None,
     fapi_signing_service: _LazyFapiSigningService | None = None,
     mtls_client_configured: bool = False,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache | None = None,
 ) -> tuple[StepResult, ExecutionContext]:
     """Execute a single v1 manifest step with placeholder resolution.
 
@@ -1563,6 +2285,9 @@ def _execute_v1_step(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Optional per-run cache for response JWS
+            verification keys. A cache is created when omitted for direct unit
+            callers.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1580,6 +2305,7 @@ def _execute_v1_step(
         fapi_signing_config=fapi_signing_config,
         fapi_signing_service=effective_fapi_signing_service,
         mtls_client_configured=mtls_client_configured,
+        response_signature_jwks_cache=response_signature_jwks_cache or _ResponseSignatureJwksCache(client),
     )
     execution_logger.emit(
         "step-completed",
@@ -1602,6 +2328,7 @@ def _execute_v1_step_inner(
     fapi_signing_config: FapiSigningConfig | None,
     fapi_signing_service: _LazyFapiSigningService | None,
     mtls_client_configured: bool,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
 ) -> tuple[StepResult, ExecutionContext]:
     """Inner step executor that emits per-stage events.
 
@@ -1619,6 +2346,8 @@ def _execute_v1_step_inner(
         fapi_signing_service: Optional lazy runtime signing-service cache.
         mtls_client_configured: Whether the shared HTTP client has mTLS
             client credentials configured.
+        response_signature_jwks_cache: Per-run cache for response JWS
+            verification keys.
 
     Returns:
         A tuple of the step result and the updated execution context.
@@ -1978,6 +2707,42 @@ def _execute_v1_step_inner(
         payload={"statusCode": response.status_code, "url": response.url},
     )
 
+    try:
+        response_signature_evidence = _validate_response_signature_if_required(
+            manifest_step=manifest_step,
+            response=response,
+            context=context,
+            response_signature_jwks_cache=response_signature_jwks_cache,
+        )
+    except (JsonHttpClientError, HttpsUrlValidationError, ResponseSignatureValidationError, ValueError) as error:
+        execution_logger.emit(
+            "response-signature-invalid",
+            step_id=manifest_step.id,
+            payload={"message": str(error)},
+        )
+        response_evidence["responseSignature"] = {"status": "failed", "message": str(error)}
+        return (
+            _attach_evidence(
+                StepResult(
+                    name=manifest_step.id,
+                    status="failed",
+                    message=f"Response signature validation failed: {error}",
+                    url=resolved_url,
+                    status_code=response.status_code,
+                ),
+                request_evidence=request_evidence,
+                response_evidence=response_evidence,
+            ),
+            new_context,
+        )
+    if response_signature_evidence is not None:
+        execution_logger.emit(
+            "response-signature-validated",
+            step_id=manifest_step.id,
+            payload=response_signature_evidence,
+        )
+        response_evidence["responseSignature"] = {"status": "passed", **response_signature_evidence}
+
     # Evaluate assertions
     step_result = _build_assertion_step(
         name=manifest_step.id,
@@ -2030,6 +2795,47 @@ def _record_runtime_token_if_present(
     if not isinstance(access_token, str) or not access_token:
         return context
     return record_token(context, token_id=token_id, access_token=access_token)
+
+
+def _validate_response_signature_if_required(
+    *,
+    manifest_step: ManifestStep,
+    response: JsonHttpResponse,
+    context: ExecutionContext,
+    response_signature_jwks_cache: _ResponseSignatureJwksCache,
+) -> JsonObject | None:
+    """Validate a required response detached JWS and return evidence.
+
+    Args:
+        manifest_step: Executed HTTP step whose policy may require validation.
+        response: JSON HTTP response received for the step.
+        context: Execution context containing runtime config.
+        response_signature_jwks_cache: Per-run cache for discovery JWKS.
+
+    Returns:
+        Non-secret response-signature evidence when validation was required and
+        passed, otherwise ``None``.
+
+    Raises:
+        ValueError: If the response-signature source is unsupported.
+        JsonHttpClientError: If discovery or JWKS retrieval fails.
+        HttpsUrlValidationError: If discovery advertises an unsafe JWKS URL.
+        ResponseSignatureValidationError: If the signature itself is invalid.
+    """
+    policy = manifest_step.response_signature_policy
+    if policy is None:
+        return None
+    if policy.source != "discovery-jwks":
+        raise ValueError("Unsupported response signature validation source")
+    signature = response.headers.get("x-jws-signature")
+    if signature is None or not signature.strip():
+        raise ResponseSignatureValidationError("x-jws-signature header is missing")
+    validation = validate_ob_response_signature(
+        signature=signature,
+        payload=response.body_bytes,
+        jwks=response_signature_jwks_cache.get(context.config),
+    )
+    return validation.to_json_object()
 
 
 def _skipped_step(
@@ -2179,13 +2985,11 @@ def _serialize_json_request_body(body: JsonValue) -> bytes:
 def _run_manifest_v0(
     manifest: Manifest,
     *,
-    environment: str,
     client: httpx.Client,
     execution_logger: ExecutionLogger,
     run_id: str,
     auth_session_store: AuthSessionStore,
     runtime_config: RuntimeConfig | None,
-    suite_metadata: SuiteMetadata | None,
     approved_release_policy: ApprovedReleasePolicy | None,
 ) -> SmokeCheckResult:
     """Execute a v0 manifest preserving original skip-on-fail semantics.
@@ -2197,7 +3001,6 @@ def _run_manifest_v0(
 
     Args:
         manifest: Parsed v0 manifest containing tests with optional followUp.
-        environment: Environment name copied into the result file.
         client: Preconfigured synchronous HTTP client.
         execution_logger: Structured execution-log sink threaded through to
             each desugared v1 step.
@@ -2208,8 +3011,6 @@ def _run_manifest_v0(
             mirroring ``run_id`` for the same reason.
         runtime_config: Optional safe participant config values available to
             desugared step placeholder resolution.
-        suite_metadata: Optional catalog metadata to embed in the result for
-            config-resolved suite runs.
         approved_release_policy: Optional approved-release policy used by the
             generated report's certification self-assessment.
 
@@ -2312,10 +3113,8 @@ def _run_manifest_v0(
                 steps.append(follow_up_result)
 
     return build_smoke_check_result(
-        environment,
         steps,
         started_at=started_at,
-        suite_metadata=suite_metadata,
         approved_release_policy=approved_release_policy,
     )
 

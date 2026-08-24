@@ -16,7 +16,7 @@ import functools
 import ipaddress
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -34,11 +34,17 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.json_types import JsonObject
-from conformance.manifest import ManifestError, load_manifest_from_object
+from conformance.catalogue import (
+    CatalogueError,
+    CompiledTestPlan,
+    TestPlanSpec,
+    compile_test_plan,
+    compile_test_plan_document,
+    parse_test_plan_document,
+)
+from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
+from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
-from conformance.suite_catalog import SuiteCatalogError, SuiteMetadata, resolve_suite
-from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
 
@@ -221,15 +227,11 @@ def _require_loopback[**P](
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
-    The request body must be a JSON object with a required ``config`` key
-    (model-bank config object) and an optional ``manifest`` key (v0/v1
-    manifest object). When ``manifest`` is omitted and ``config.testSuite``
-    is present, the selected bundled suite manifest is resolved instead;
-    otherwise the request runs the legacy smoke check. An optional
-    ``deselectStepIds`` array of step ids may be supplied for inline or
-    config-resolved manifests; each id is validated against the manifest at
-    request time and any unknown id returns HTTP 400. ``deselectStepIds``
-    without either manifest source is rejected.
+    The request body must be a JSON object with required ``config`` and
+    ``planSpec`` keys. The v1 or v2 plan spec is compiled against the bundled
+    catalogues before the asynchronous run starts, so participants receive
+    immediate feedback for unsupported catalogues, unknown endpoints, missing
+    runtime inputs, or invalid assertion overrides.
     The run executes asynchronously in a background thread; the response
     returns immediately with the run ID and status.
 
@@ -258,23 +260,17 @@ def create_run(request: HttpRequest) -> JsonResponse:
 
     if not isinstance(body, dict):
         return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
+    unknown_keys = sorted(set(body) - {"config", "planSpec"})
+    if unknown_keys:
+        return JsonResponse({"error": f"Unknown request field(s): {', '.join(unknown_keys)}"}, status=400)
 
     raw_config = body.get("config")
     if raw_config is None or not isinstance(raw_config, dict):
         return JsonResponse({"error": '"config" key is required and must be a JSON object'}, status=400)
 
-    raw_manifest = body.get("manifest")
-    if raw_manifest is not None and not isinstance(raw_manifest, dict):
-        return JsonResponse({"error": '"manifest" must be a JSON object if provided'}, status=400)
-
-    raw_deselect = body.get("deselectStepIds")
-    if raw_deselect is not None and (
-        not isinstance(raw_deselect, list) or not all(isinstance(step_id, str) for step_id in raw_deselect)
-    ):
-        return JsonResponse(
-            {"error": '"deselectStepIds" must be an array of strings'},
-            status=400,
-        )
+    raw_plan_spec = body.get("planSpec")
+    if raw_plan_spec is None or not isinstance(raw_plan_spec, dict):
+        return JsonResponse({"error": '"planSpec" key is required and must be a JSON object'}, status=400)
 
     # Validate config eagerly so the caller gets immediate feedback.
     # base_dir anchors relative TLS certificate paths in the request body to
@@ -285,40 +281,28 @@ def create_run(request: HttpRequest) -> JsonResponse:
     except ConfigError as error:
         return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
 
-    # Validate manifest eagerly if provided.
-    manifest = None
-    plan: TestPlan | None = None
-    suite_metadata: SuiteMetadata | None = None
-    if raw_manifest is not None:
-        try:
-            manifest = load_manifest_from_object(raw_manifest)
-        except ManifestError as error:
-            return JsonResponse({"error": f"Manifest validation failed: {error}"}, status=400)
-    elif config.test_suite is not None:
-        try:
-            resolved_suite = resolve_suite(config.test_suite)
-        except SuiteCatalogError as error:
-            return JsonResponse({"error": f"Suite resolution failed: {error}"}, status=400)
-        manifest = resolved_suite.manifest
-        suite_metadata = resolved_suite.metadata
-    elif raw_deselect is not None:
-        return JsonResponse(
-            {"error": '"deselectStepIds" is only valid with an inline "manifest" or config.testSuite'},
-            status=400,
-        )
-
-    if manifest is not None:
-        # Build the default plan, then narrow via deselection. ValueError
-        # from with_deselection means the caller named an unknown step —
-        # surface as 400 so the participant can correct the request rather
-        # than discover the typo after the run starts.
-        try:
-            plan = TestPlan.default_plan_from_manifest(manifest).with_deselection(raw_deselect or [])
-        except ValueError as error:
-            return JsonResponse({"error": f"Plan validation failed: {error}"}, status=400)
+    try:
+        plan_document = parse_test_plan_document(raw_plan_spec)
+        if isinstance(plan_document, TestPlanSpec):
+            plan_spec = plan_document
+            compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
+            runtime_inputs = plan_spec.runtime_inputs
+        else:
+            compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
+            runtime_inputs = plan_document.runtime_inputs
+        api_file_reference_error = _api_file_reference_error(compiled_plan, runtime_inputs)
+        if api_file_reference_error is not None:
+            return api_file_reference_error
+    except CatalogueError as error:
+        return JsonResponse({"error": f"Plan-spec validation failed: {error}"}, status=400)
 
     try:
-        response_body = start_run(config=config, manifest=manifest, plan=plan, suite_metadata=suite_metadata)
+        response_body = start_run(
+            config=config,
+            compiled_plan=compiled_plan,
+            runtime_inputs=runtime_inputs,
+            runtime_input_base_dir=Path.cwd(),
+        )
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},
@@ -326,6 +310,42 @@ def create_run(request: HttpRequest) -> JsonResponse:
         )
 
     return JsonResponse(response_body, status=201)
+
+
+def _api_file_reference_error(
+    compiled_plan: CompiledTestPlan,
+    runtime_inputs: Mapping[str, JsonValue],
+) -> JsonResponse | None:
+    """Return a 400 response when an API plan would read server-local files.
+
+    Args:
+        compiled_plan: Compiled catalogue plan used to identify selected runtime
+            input types.
+        runtime_inputs: Participant-supplied runtime inputs keyed by input id.
+
+    Returns:
+        Error response when any selected ``file_reference`` input is supplied,
+        otherwise ``None``.
+    """
+    file_reference_input_ids = sorted(
+        trace.input_id
+        for trace in compiled_plan.traceability.runtime_input_snapshot
+        if trace.input_type == "file_reference"
+        and trace.input_id in runtime_inputs
+        and runtime_inputs[trace.input_id] is not None
+    )
+    if not file_reference_input_ids:
+        return None
+    joined_input_ids = ", ".join(file_reference_input_ids)
+    return JsonResponse(
+        {
+            "error": (
+                "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
+                f"{joined_input_ids}"
+            )
+        },
+        status=400,
+    )
 
 
 @_require_loopback
