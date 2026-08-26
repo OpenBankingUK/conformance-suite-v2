@@ -6,6 +6,8 @@ from pathlib import Path
 
 import pytest
 
+import conformance.test_plan_validation as validation_module
+from conformance.catalogue import PlanDocumentV2
 from conformance.test_plan_validation import (
     TestPlanValidationError as PlanValidationError,
 )
@@ -81,6 +83,34 @@ def test_validate_test_plan_for_load_reports_schema_errors() -> None:
     assert validation.execution_mode == "development"
     assert validation.issues[0].layer == "schema"
     assert "metadata" in validation.issues[0].message
+
+
+@pytest.mark.unit
+def test_non_canonical_validation_preserves_raw_development_mode(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Non-canonical rejection results preserve explicit raw execution mode."""
+    parsed_document = PlanDocumentV2(
+        schema_version="v2",
+        scheme="open-banking-uk",
+        specification="read-write",
+        version="4.0.1",
+        security_profile="FAPI1_ADVANCED",
+        resource_groups=(),
+        config={},
+        runtime_inputs={},
+    )
+    raw_plan = {"schemaVersion": "v2", "executionMode": "development"}
+    monkeypatch.setattr(validation_module, "parse_test_plan_document", lambda _: parsed_document)
+
+    load_validation = validate_test_plan_for_load(raw_plan)
+    run_validation = validate_test_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    assert load_validation.valid is False
+    assert load_validation.execution_mode == "development"
+    assert run_validation.valid is False
+    assert run_validation.execution_mode == "development"
 
 
 @pytest.mark.unit

@@ -307,7 +307,7 @@ def prepare_test_plan_for_run(
     if not isinstance(parsed, PlanDocumentV2) or parsed.schema_version != "1.0":
         result = TestPlanValidationResult(
             schema_version=parsed.schema_version,
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(
                 TestPlanValidationIssue(
                     "schema",
@@ -395,7 +395,7 @@ def validate_test_plan_for_load(raw_plan: object) -> TestPlanValidationResult:
     if not isinstance(parsed, PlanDocumentV2) or parsed.schema_version != "1.0":
         return TestPlanValidationResult(
             schema_version=parsed.schema_version,
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(
                 TestPlanValidationIssue(
                     "schema",
