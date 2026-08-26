@@ -3479,9 +3479,7 @@ def test_compiled_cbpii_manifest_preserves_captured_consent_id_url(tmp_path: Pat
         runtime_config=None,
     )
 
-    urls_by_step_id = {
-        step.id: step.request.url for step in manifest.steps if isinstance(step, ManifestStep)
-    }
+    urls_by_step_id = {step.id: step.request.url for step in manifest.steps if isinstance(step, ManifestStep)}
     assert urls_by_step_id["cbpii-consent-delete-request"] == (
         "https://resource.example.com/open-banking/v4.0/cbpii/funds-confirmation-consents/"
         "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
