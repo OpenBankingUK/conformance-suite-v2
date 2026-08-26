@@ -44,9 +44,10 @@ profiles remain applicability filters, not duplicate catalogues.
 
 Capability selections are recorded in three places:
 
-1. `planSpec.implementedEndpoints[].capabilities` records optional capabilities
-   explicitly declared by the participant. Required baseline capabilities may be
-   omitted because the compiler selects them automatically.
+1. `resourceGroups[].endpoints[].capabilities` in schemaVersion `1.0` test
+   plans records optional capabilities explicitly declared by the participant.
+   Required baseline capabilities may be omitted because the compiler selects
+   them automatically.
 2. Compiler traceability records `selectedCapabilities` with method, path,
    capability ID, label, and required/optional status.
 3. Result JSON and run detail surface selected endpoint/capability counts,

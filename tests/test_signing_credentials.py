@@ -43,13 +43,12 @@ def _write_signing_pair(certificate_root: Path, *, stem: str) -> tuple[Path, Pat
 
 
 def _build_signing_config(
-    certificate_root: Path,
+    _certificate_root: Path,
     *,
     certificate_path: Path,
     private_key_path: Path,
 ) -> FapiSigningConfig:
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="signing-key-001",
@@ -93,23 +92,26 @@ def test_load_signing_credentials_rejects_missing_files(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_load_signing_credentials_rejects_paths_outside_certificate_root(tmp_path: Path) -> None:
+def test_load_signing_credentials_accepts_absolute_paths_without_shared_root(tmp_path: Path) -> None:
+    """Signing certificate and private-key paths do not need a shared configured root."""
     certificate_root = tmp_path / "certs"
+    key_root = tmp_path / "keys"
     certificate_root.mkdir()
-    outside_path = tmp_path / "outside.crt"
-    outside_path.write_text("outside", encoding="utf-8")
+    key_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    moved_private_key_path = key_root / private_key_path.name
+    private_key_path.replace(moved_private_key_path)
 
-    with pytest.raises(
-        SigningCredentialError,
-        match="fapiSigning.signingCertificatePath must resolve inside certificatePathRoot",
-    ):
-        load_signing_credentials(
-            _build_signing_config(
-                certificate_root,
-                certificate_path=outside_path,
-                private_key_path=certificate_root / "missing.key",
-            )
+    credentials = load_signing_credentials(
+        _build_signing_config(
+            certificate_root,
+            certificate_path=certificate_path,
+            private_key_path=moved_private_key_path,
         )
+    )
+
+    assert b"BEGIN CERTIFICATE" in credentials.signing_certificate_pem
+    assert b"BEGIN " + b"PRIVATE KEY" in credentials.signing_private_key_pem
 
 
 @pytest.mark.unit

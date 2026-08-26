@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import copy
 import json
-import math
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Literal, cast
@@ -52,9 +51,6 @@ class OAuthConfig:
         authorization_endpoint: Optional HTTPS authorisation endpoint override
             for environments whose client registration targets a legacy
             endpoint instead of the endpoint published by discovery.
-        open_banking_intent_id: Optional pre-existing Open Banking consent id
-            exposed to starter manifests as
-            ``${config.oauth.openBankingIntentId}``.
         resource_base_url: Optional HTTPS AIS protected-resource base URL used
             by bundled manifests before manifest-owned Open Banking API paths.
             Callers must not include the ``/open-banking/...`` path prefix.
@@ -62,69 +58,30 @@ class OAuthConfig:
         token_endpoint: Optional HTTPS token endpoint override.
         response_type: Optional OAuth response type used for PSU
             authorisation requests.
-        acr_values_supported: ACR values advertised or selected for PSU
-            authorisation requests.
         request_object_signing_alg: Optional JAR request-object signing
             algorithm value.
     """
 
-    client_id: str
-    redirect_uri: str
+    client_id: str | None = None
+    redirect_uri: str | None = None
     authorization_endpoint: str | None = None
-    open_banking_intent_id: str | None = None
     resource_base_url: str | None = None
     issuer: str | None = None
     token_endpoint: str | None = None
     response_type: str | None = None
-    acr_values_supported: tuple[str, ...] = ()
     request_object_signing_alg: str | None = None
 
 
 @dataclass(frozen=True)
 class ResourceServerConfig:
-    """Resource-server defaults carried by legacy FCS-style config.
+    """Resource-server defaults carried by the JSON-first config.
 
     Attributes:
         base_url: HTTPS protected-resource base URL used by catalogue API
             runtime inputs.
-        x_fapi_financial_id: Optional ``x-fapi-financial-id`` header value.
-        send_x_fapi_customer_ip_address: Whether resource requests should send
-            ``x-fapi-customer-ip-address`` when a value is configured.
-        x_fapi_customer_ip_address: Optional customer IP header value.
     """
 
     base_url: str | None = None
-    x_fapi_financial_id: str | None = None
-    send_x_fapi_customer_ip_address: bool = False
-    x_fapi_customer_ip_address: str | None = None
-
-
-@dataclass(frozen=True)
-class ClientCredentialsConfig:
-    """Secret client-auth values preserved outside safe OAuth placeholders.
-
-    Attributes:
-        client_secret: Optional OAuth client secret for legacy
-            client-secret-based flows. The current FAPI runner does not expose
-            this through ``${config.oauth.*}`` placeholders.
-    """
-
-    client_secret: str | None = None
-
-
-@dataclass(frozen=True)
-class OpenBankingSignatureConfig:
-    """Open Banking detached-signature metadata from legacy FCS config.
-
-    Attributes:
-        tpp_signature_issuer: Optional Open Banking organisation or SSA issuer
-            value used by detached JWS profiles.
-        tpp_signature_tan: Optional trust anchor name used by detached JWS
-            profiles.
-    """
-
-    tpp_signature_issuer: str | None = None
-    tpp_signature_tan: str | None = None
 
 
 @dataclass(frozen=True)
@@ -147,8 +104,6 @@ class FapiSigningConfig:
     """FAPI signing and token client-auth configuration kept out of placeholders.
 
     Attributes:
-        certificate_path_root: Root directory under which signing certificate
-            and private-key paths must resolve.
         signing_certificate_path: X.509 certificate path used for PS256 JOSE
             signing operations such as request objects and private-key JWT
             client assertions.
@@ -163,7 +118,6 @@ class FapiSigningConfig:
             the token endpoint.
     """
 
-    certificate_path_root: Path
     signing_certificate_path: Path
     signing_private_key_path: Path
     key_id: str
@@ -196,8 +150,7 @@ class ModelBankConfig:
     """Validated inputs needed to run the current model-bank smoke check.
 
     Attributes:
-        discovery_url: HTTPS OpenID Provider discovery document URL.
-        timeout_seconds: Per-request timeout for model-bank HTTP calls.
+        discovery_url: Optional HTTPS OpenID Provider discovery document URL.
         follow_up_mode: Whether to fetch JWKS after discovery succeeds.
         tls: Transport TLS settings for the HTTP client.
         result_output_path: Path where the structured JSON result should be written.
@@ -212,24 +165,19 @@ class ModelBankConfig:
         oauth: Optional narrow OAuth participant config for
             ``${config.oauth.*}`` placeholder resolution. Contains only
             non-secret values (``clientId``, ``redirectUri``, optional
-            ``authorizationEndpoint``, optional ``openBankingIntentId``, and
-            optional ``resourceBaseUrl``).
+            ``authorizationEndpoint`` and optional ``resourceBaseUrl``).
             Absent when the participant config omits an ``oauth`` section.
         fapi_signing: Optional FAPI signing and client-auth configuration kept
             outside the runtime placeholder allow-list. Contains signing key
             metadata and filesystem paths resolved under the configured
             certificate root.
-        resource_server: Optional resource-server target/header defaults used
-            by catalogue-driven resource calls.
-        client_credentials: Optional secret client-auth values preserved
-            outside safe placeholder resolution.
-        open_banking: Optional Open Banking detached-signature metadata.
+        resource_server: Optional resource-server target used by
+            catalogue-driven resource calls.
         business_defaults: AIS, PIS, CBPII, and conditional-property defaults
             used by the v2 builder and catalogue runtime derivation.
     """
 
-    discovery_url: str
-    timeout_seconds: float = 10.0
+    discovery_url: str | None = None
     follow_up_mode: FollowUpMode = "jwks"
     tls: TlsConfig = field(default_factory=TlsConfig)
     result_output_path: Path = Path("out/test-results.json")
@@ -238,8 +186,6 @@ class ModelBankConfig:
     oauth: OAuthConfig | None = None
     fapi_signing: FapiSigningConfig | None = None
     resource_server: ResourceServerConfig | None = None
-    client_credentials: ClientCredentialsConfig | None = None
-    open_banking: OpenBankingSignatureConfig | None = None
     business_defaults: BusinessDefaultsConfig = field(default_factory=BusinessDefaultsConfig)
 
 
@@ -299,7 +245,6 @@ def parse_model_bank_config(
         allowed_keys={
             "environment",
             "discoveryUrl",
-            "timeoutSeconds",
             "followUp",
             "tls",
             "fapiSigning",
@@ -308,8 +253,6 @@ def parse_model_bank_config(
             "approvedReleasePolicyPath",
             "oauth",
             "resourceServer",
-            "clientCredentials",
-            "openBanking",
             "ais",
             "pis",
             "cbpii",
@@ -317,11 +260,9 @@ def parse_model_bank_config(
         },
         location="config",
     )
-
-    discovery_url = _required_https_url(raw_config, "discoveryUrl")
-    timeout_seconds = _optional_positive_number(raw_config, "timeoutSeconds", default=10.0)
+    discovery_url = _optional_https_url(raw_config, "discoveryUrl")
     follow_up_mode = _parse_follow_up(raw_config)
-    tls = _parse_tls_config(raw_config, base_dir=base_dir)
+    tls = _parse_tls_config(raw_config)
     result_output_path = _optional_path(
         raw_config,
         "resultOutputPath",
@@ -336,15 +277,12 @@ def parse_model_bank_config(
     )
     approved_release_policy = _optional_approved_release_policy(raw_config, root=base_dir)
     oauth = _parse_oauth_config(raw_config)
-    fapi_signing = _parse_fapi_signing_config(raw_config, base_dir=base_dir)
+    fapi_signing = _parse_fapi_signing_config(raw_config)
     resource_server = _parse_resource_server_config(raw_config)
-    client_credentials = _parse_client_credentials_config(raw_config)
-    open_banking = _parse_open_banking_config(raw_config)
     business_defaults = _parse_business_defaults_config(raw_config)
 
     return ModelBankConfig(
         discovery_url=discovery_url,
-        timeout_seconds=timeout_seconds,
         follow_up_mode=follow_up_mode,
         tls=tls,
         result_output_path=result_output_path,
@@ -353,8 +291,6 @@ def parse_model_bank_config(
         oauth=oauth,
         fapi_signing=fapi_signing,
         resource_server=resource_server,
-        client_credentials=client_credentials,
-        open_banking=open_banking,
         business_defaults=business_defaults,
     )
 
@@ -403,9 +339,8 @@ def _optional_approved_release_policy(raw_config: dict[str, JsonValue], *, root:
 def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
     """Parse the optional ``oauth`` section of a participant config.
 
-    Only the safe, non-secret fields ``clientId``, ``redirectUri``, and the
-    optional ``authorizationEndpoint``, ``openBankingIntentId``, and
-    ``resourceBaseUrl`` are accepted. Client secrets, private keys, TLS
+    Only safe, non-secret fields are accepted.
+    Client secrets, private keys, TLS
     paths, and JWS signing material are explicitly excluded from this
     boundary; adding them here would expose credential material through
     ``${config.oauth.*}`` placeholders in bundled manifests.
@@ -420,8 +355,7 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
 
     Raises:
         ConfigError: If ``oauth`` is not a JSON object, contains unknown
-            keys, omits required fields, or one of the URL fields is not a
-            valid HTTPS URL.
+            keys, or one of the URL fields is not a valid HTTPS URL.
     """
     raw_oauth = raw_config.get("oauth")
     if raw_oauth is None:
@@ -437,40 +371,35 @@ def _parse_oauth_config(raw_config: dict[str, JsonValue]) -> OAuthConfig | None:
             "authorizationEndpoint",
             "issuer",
             "tokenEndpoint",
-            "openBankingIntentId",
             "resourceBaseUrl",
             "responseType",
-            "acrValuesSupported",
             "requestObjectSigningAlg",
         },
         location="oauth",
     )
 
-    client_id = _required_string_at(raw_oauth, "clientId", location="oauth")
-    redirect_uri_str = _required_string_at(raw_oauth, "redirectUri", location="oauth")
+    client_id = _optional_string_at(raw_oauth, "clientId", location="oauth")
+    redirect_uri_str = _optional_string_at(raw_oauth, "redirectUri", location="oauth")
     authorization_endpoint = _optional_https_url_at(raw_oauth, "authorizationEndpoint", location="oauth")
     issuer = _optional_https_url_at(raw_oauth, "issuer", location="oauth")
     token_endpoint = _optional_https_url_at(raw_oauth, "tokenEndpoint", location="oauth")
-    open_banking_intent_id = _optional_string_at(raw_oauth, "openBankingIntentId", location="oauth")
     resource_base_url = _optional_https_url_at(raw_oauth, "resourceBaseUrl", location="oauth")
     response_type = _optional_string_at(raw_oauth, "responseType", location="oauth")
-    acr_values_supported = _optional_string_array_at(raw_oauth, "acrValuesSupported", location="oauth")
     request_object_signing_alg = _optional_string_at(raw_oauth, "requestObjectSigningAlg", location="oauth")
-    try:
-        validate_oauth_redirect_uri(redirect_uri_str, label="oauth.redirectUri")
-    except HttpsUrlValidationError as error:
-        raise ConfigError(str(error)) from error
+    if redirect_uri_str is not None:
+        try:
+            validate_oauth_redirect_uri(redirect_uri_str, label="oauth.redirectUri")
+        except HttpsUrlValidationError as error:
+            raise ConfigError(str(error)) from error
 
     return OAuthConfig(
         client_id=client_id,
         redirect_uri=redirect_uri_str,
         authorization_endpoint=authorization_endpoint,
-        open_banking_intent_id=open_banking_intent_id,
         resource_base_url=resource_base_url,
         issuer=issuer,
         token_endpoint=token_endpoint,
         response_type=response_type,
-        acr_values_supported=acr_values_supported,
         request_object_signing_alg=request_object_signing_alg,
     )
 
@@ -499,92 +428,12 @@ def _parse_resource_server_config(raw_config: dict[str, JsonValue]) -> ResourceS
         raw_resource_server,
         allowed_keys={
             "baseUrl",
-            "xFapiFinancialId",
-            "sendXFapiCustomerIpAddress",
-            "xFapiCustomerIpAddress",
         },
         location="resourceServer",
     )
 
     return ResourceServerConfig(
         base_url=_optional_https_url_at(raw_resource_server, "baseUrl", location="resourceServer"),
-        x_fapi_financial_id=_optional_string_at(
-            raw_resource_server,
-            "xFapiFinancialId",
-            location="resourceServer",
-        ),
-        send_x_fapi_customer_ip_address=_optional_boolean_at(
-            raw_resource_server,
-            "sendXFapiCustomerIpAddress",
-            location="resourceServer",
-            default=False,
-        ),
-        x_fapi_customer_ip_address=_optional_string_at(
-            raw_resource_server,
-            "xFapiCustomerIpAddress",
-            location="resourceServer",
-        ),
-    )
-
-
-def _parse_client_credentials_config(raw_config: dict[str, JsonValue]) -> ClientCredentialsConfig | None:
-    """Parse optional secret client-credential values.
-
-    Args:
-        raw_config: Top-level raw configuration dictionary from the JSON
-            config file or API request.
-
-    Returns:
-        Parsed client credentials, or ``None`` when the section is omitted.
-
-    Raises:
-        ConfigError: If ``clientCredentials`` is not a JSON object, contains
-            unknown keys, or contains invalid field values.
-    """
-    raw_credentials = raw_config.get("clientCredentials")
-    if raw_credentials is None:
-        return None
-    if not isinstance(raw_credentials, dict):
-        raise ConfigError("clientCredentials must be a JSON object")
-    _reject_unknown_keys(raw_credentials, allowed_keys={"clientSecret"}, location="clientCredentials")
-
-    return ClientCredentialsConfig(
-        client_secret=_optional_string_at(raw_credentials, "clientSecret", location="clientCredentials")
-    )
-
-
-def _parse_open_banking_config(raw_config: dict[str, JsonValue]) -> OpenBankingSignatureConfig | None:
-    """Parse optional Open Banking signature metadata.
-
-    Args:
-        raw_config: Top-level raw configuration dictionary from the JSON
-            config file or API request.
-
-    Returns:
-        Parsed Open Banking metadata, or ``None`` when the section is omitted.
-
-    Raises:
-        ConfigError: If ``openBanking`` is not a JSON object, contains unknown
-            keys, or contains invalid field values.
-    """
-    raw_open_banking = raw_config.get("openBanking")
-    if raw_open_banking is None:
-        return None
-    if not isinstance(raw_open_banking, dict):
-        raise ConfigError("openBanking must be a JSON object")
-    _reject_unknown_keys(
-        raw_open_banking,
-        allowed_keys={"tppSignatureIssuer", "tppSignatureTan"},
-        location="openBanking",
-    )
-
-    return OpenBankingSignatureConfig(
-        tpp_signature_issuer=_optional_string_at(
-            raw_open_banking,
-            "tppSignatureIssuer",
-            location="openBanking",
-        ),
-        tpp_signature_tan=_optional_string_at(raw_open_banking, "tppSignatureTan", location="openBanking"),
     )
 
 
@@ -610,7 +459,7 @@ def _parse_business_defaults_config(raw_config: dict[str, JsonValue]) -> Busines
     )
 
 
-def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> FapiSigningConfig | None:
+def _parse_fapi_signing_config(raw_config: dict[str, JsonValue]) -> FapiSigningConfig | None:
     """Parse the optional ``fapiSigning`` section of a participant config.
 
     This section is intentionally separate from ``oauth`` so bundled manifest
@@ -620,8 +469,6 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Args:
         raw_config: Top-level raw configuration dictionary from the JSON
             config file or API request.
-        base_dir: Directory of the config file, used as the default
-            ``certificatePathRoot`` for signing material.
 
     Returns:
         Parsed ``FapiSigningConfig``, or ``None`` when the config omits the
@@ -630,7 +477,7 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     Raises:
         ConfigError: If ``fapiSigning`` is not a JSON object, contains unknown
             keys, omits required values, specifies an unsupported token-endpoint
-            auth method, or points to paths that escape ``certificatePathRoot``.
+                auth method, or contains non-absolute signing paths.
     """
     raw_fapi_signing = raw_config.get("fapiSigning")
     if raw_fapi_signing is None:
@@ -641,7 +488,6 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     _reject_unknown_keys(
         raw_fapi_signing,
         allowed_keys={
-            "certificatePathRoot",
             "signingCertificatePath",
             "signingPrivateKeyPath",
             "kid",
@@ -652,22 +498,8 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
         location="fapiSigning",
     )
 
-    certificate_root = _optional_path(
-        raw_fapi_signing,
-        "certificatePathRoot",
-        base_dir=base_dir,
-        default=base_dir,
-    )
-    signing_certificate_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingCertificatePath",
-        root=certificate_root,
-    )
-    signing_private_key_path = _optional_child_path(
-        raw_fapi_signing,
-        "signingPrivateKeyPath",
-        root=certificate_root,
-    )
+    signing_certificate_path = _optional_absolute_path(raw_fapi_signing, "signingCertificatePath")
+    signing_private_key_path = _optional_absolute_path(raw_fapi_signing, "signingPrivateKeyPath")
     if signing_certificate_path is None or signing_private_key_path is None:
         raise ConfigError(
             "fapiSigning.signingCertificatePath and fapiSigning.signingPrivateKeyPath must be supplied together"
@@ -683,9 +515,7 @@ def _parse_fapi_signing_config(raw_config: dict[str, JsonValue], *, base_dir: Pa
     )
     if token_endpoint_auth_method not in {"private_key_jwt", "tls_client_auth"}:
         raise ConfigError("fapiSigning.tokenEndpointAuthMethod must be one of: private_key_jwt, tls_client_auth")
-
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
         signing_certificate_path=signing_certificate_path,
         signing_private_key_path=signing_private_key_path,
         key_id=key_id,
@@ -727,27 +557,23 @@ def _parse_follow_up(raw_config: dict[str, JsonValue]) -> FollowUpMode:
     raise ConfigError("followUp.mode must be one of: jwks, discovery_only")
 
 
-def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> TlsConfig:
+def _parse_tls_config(raw_config: dict[str, JsonValue]) -> TlsConfig:
     """Parse the optional ``tls`` section of a model bank config dict.
 
     If the key is absent a zero-value ``TlsConfig`` (no custom TLS) is
-    returned.  Relative certificate paths are resolved against ``base_dir``.
-    ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be supplied
-    together or not at all.
+    returned. ``clientCertificatePath`` and ``clientPrivateKeyPath`` must be
+    supplied together or not at all. All supplied paths must be absolute.
 
     Args:
         raw_config: Top-level raw configuration dictionary.
-        base_dir: Directory of the config file, used as the root for resolving
-            relative certificate paths.
 
     Returns:
         A populated ``TlsConfig`` dataclass.
 
     Raises:
         ConfigError: If ``tls`` is not a JSON object, contains unknown keys,
-            specifies paths that escape ``certificatePathRoot``, specifies
-            paths that do not exist, or supplies only one of the client
-            certificate / private key pair.
+            specifies non-absolute paths, specifies paths that do not exist, or
+            supplies only one of the client certificate / private key pair.
     """
     raw_tls = raw_config.get("tls")
     if raw_tls is None:
@@ -757,14 +583,13 @@ def _parse_tls_config(raw_config: dict[str, JsonValue], *, base_dir: Path) -> Tl
 
     _reject_unknown_keys(
         raw_tls,
-        allowed_keys={"certificatePathRoot", "caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
+        allowed_keys={"caBundlePath", "clientCertificatePath", "clientPrivateKeyPath"},
         location="tls",
     )
 
-    certificate_root = _optional_path(raw_tls, "certificatePathRoot", base_dir=base_dir, default=base_dir)
-    ca_bundle_path = _optional_existing_child_path(raw_tls, "caBundlePath", root=certificate_root)
-    client_certificate_path = _optional_existing_child_path(raw_tls, "clientCertificatePath", root=certificate_root)
-    client_private_key_path = _optional_existing_child_path(raw_tls, "clientPrivateKeyPath", root=certificate_root)
+    ca_bundle_path = _optional_existing_absolute_path(raw_tls, "caBundlePath")
+    client_certificate_path = _optional_existing_absolute_path(raw_tls, "clientCertificatePath")
+    client_private_key_path = _optional_existing_absolute_path(raw_tls, "clientPrivateKeyPath")
 
     if (client_certificate_path is None) != (client_private_key_path is None):
         raise ConfigError("clientCertificatePath and clientPrivateKeyPath must be supplied together")
@@ -836,6 +661,32 @@ def _required_https_url(raw_config: dict[str, JsonValue], key: str) -> str:
     except HttpsUrlValidationError as error:
         raise ConfigError(str(error)) from error
     return value
+
+
+def _optional_https_url(raw_config: dict[str, JsonValue], key: str) -> str | None:
+    """Extract and validate an optional HTTPS URL from raw config.
+
+    Args:
+        raw_config: Raw configuration dictionary.
+        key: Configuration key to extract.
+
+    Returns:
+        Validated HTTPS URL string, or ``None`` when the key is absent.
+
+    Raises:
+        ConfigError: If the value is present but empty or not a valid HTTPS URL.
+    """
+    value = raw_config.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, str) or not value.strip():
+        raise ConfigError(f"{key} must be a non-empty string")
+    stripped_value = value.strip()
+    try:
+        validate_https_url(stripped_value, label=key)
+    except HttpsUrlValidationError as error:
+        raise ConfigError(str(error)) from error
+    return stripped_value
 
 
 def _optional_https_url_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str | None:
@@ -918,35 +769,6 @@ def _optional_boolean_at(
     return value
 
 
-def _optional_string_array_at(raw_config: dict[str, JsonValue], key: str, *, location: str) -> tuple[str, ...]:
-    """Extract an optional array of non-empty strings from a nested config dict.
-
-    Args:
-        raw_config: Raw nested configuration dictionary.
-        key: Configuration key to extract.
-        location: Dot-path prefix used in validation error messages.
-
-    Returns:
-        Tuple of stripped string values, or an empty tuple when the key is
-        absent.
-
-    Raises:
-        ConfigError: If the key is present but is not an array of non-empty
-            strings.
-    """
-    value = raw_config.get(key)
-    if value is None:
-        return ()
-    if not isinstance(value, list):
-        raise ConfigError(f"{location}.{key} must be a JSON array")
-    values: list[str] = []
-    for index, item in enumerate(value):
-        if not isinstance(item, str) or not item.strip():
-            raise ConfigError(f"{location}.{key}[{index}] must be a non-empty string")
-        values.append(item.strip())
-    return tuple(values)
-
-
 def _optional_json_object(raw_config: dict[str, JsonValue], key: str, *, location: str) -> JsonObject:
     """Extract an optional JSON object section.
 
@@ -992,33 +814,6 @@ def _optional_json_array(raw_config: dict[str, JsonValue], key: str, *, location
     return tuple(copy.deepcopy(item) for item in value)
 
 
-def _optional_positive_number(raw_config: dict[str, JsonValue], key: str, *, default: float) -> float:
-    """Extract an optional positive finite number from a raw config dict.
-
-    If the key is absent, ``default`` is returned unchanged.  ``bool``
-    values are explicitly rejected even though they are a subtype of ``int``
-    in Python.
-
-    Args:
-        raw_config: Raw configuration dictionary to read from.
-        key: Dictionary key whose value must be a positive finite number.
-        default: Value to return when the key is absent.
-
-    Returns:
-        The extracted number as a ``float``, or ``default``.
-
-    Raises:
-        ConfigError: If the value is present but is not a positive finite
-            number (including bool, negative, zero, or non-finite).
-    """
-    value = raw_config.get(key)
-    if value is None:
-        return default
-    if not isinstance(value, int | float) or isinstance(value, bool) or not math.isfinite(value) or value <= 0:
-        raise ConfigError(f"{key} must be a positive number")
-    return float(value)
-
-
 def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path, default: Path) -> Path:
     """Extract an optional filesystem path, resolving relative paths safely.
 
@@ -1058,26 +853,23 @@ def _optional_path(raw_config: dict[str, JsonValue], key: str, *, base_dir: Path
     return base_relative_path
 
 
-def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root`` and point to an existing file.
+def _optional_absolute_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional absolute file path without touching the filesystem.
 
-    Enforces a path-traversal guard: the resolved path must be ``root`` itself
-    or a descendant of ``root``.  Both absolute and relative path strings are
-    accepted; relative paths are resolved against ``root``.
+    Signing material existence and PEM validation is intentionally deferred to
+    runtime credential loading so config parsing does not eagerly read private
+    material.
 
     Args:
         raw_config: Raw configuration dictionary to read from.
         key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside (the
-            ``certificatePathRoot``).
 
     Returns:
-        Absolute resolved ``Path`` when the key is present, or ``None``.
+        Resolved absolute ``Path`` when the key is present, or ``None``.
 
     Raises:
         ConfigError: If the key is present but the value is not a non-empty
-            string, the resolved path escapes ``root``, or the path does not
-            point to an existing file.
+            string or is not absolute.
     """
     value = raw_config.get(key)
     if value is None:
@@ -1085,50 +877,32 @@ def _optional_existing_child_path(raw_config: dict[str, JsonValue], key: str, *,
     if not isinstance(value, str) or not value.strip():
         raise ConfigError(f"{key} must be a non-empty string when supplied")
 
-    raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
+    path = Path(value.strip())
+    if not path.is_absolute():
+        raise ConfigError(f"{key} must be an absolute file path")
+    return path.resolve()
 
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
-    if not resolved_path.is_file():
+
+def _optional_existing_absolute_path(raw_config: dict[str, JsonValue], key: str) -> Path | None:
+    """Extract an optional absolute file path that must already exist.
+
+    Args:
+        raw_config: Raw configuration dictionary to read from.
+        key: Dictionary key whose value is a path string.
+
+    Returns:
+        Resolved absolute ``Path`` when the key is present, or ``None``.
+
+    Raises:
+        ConfigError: If the key is present but is not an absolute file path, or
+            the resolved path does not point to an existing file.
+    """
+    path = _optional_absolute_path(raw_config, key)
+    if path is None:
+        return None
+    if not path.is_file():
         raise ConfigError(f"{key} must point to an existing file")
-    return resolved_path
-
-
-def _optional_child_path(raw_config: dict[str, JsonValue], key: str, *, root: Path) -> Path | None:
-    """Extract an optional path that must resolve inside ``root``.
-
-    Unlike :func:`_optional_existing_child_path`, this helper does not touch
-    the filesystem. It is used for config sections whose file existence and PEM
-    validity must be deferred until execution time so config parsing can remain
-    placeholder-safe without eagerly loading signing material.
-
-    Args:
-        raw_config: Raw configuration dictionary to read from.
-        key: Dictionary key whose value is a path string.
-        root: Directory that the resolved path must reside inside.
-
-    Returns:
-        Absolute resolved ``Path`` when the key is present, or ``None``.
-
-    Raises:
-        ConfigError: If the key is present but the value is not a non-empty
-            string or the resolved path escapes ``root``.
-    """
-    value = raw_config.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, str) or not value.strip():
-        raise ConfigError(f"{key} must be a non-empty string when supplied")
-
-    raw_path = Path(value.strip())
-    resolved_path = raw_path.resolve() if raw_path.is_absolute() else (root / raw_path).resolve()
-    resolved_root = root.resolve()
-
-    if resolved_path != resolved_root and resolved_root not in resolved_path.parents:
-        raise ConfigError(f"{key} must resolve inside certificatePathRoot")
-    return resolved_path
+    return path
 
 
 def _reject_unknown_keys(raw_config: dict[str, JsonValue], *, allowed_keys: set[str], location: str) -> None:

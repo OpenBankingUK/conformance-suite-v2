@@ -16,6 +16,7 @@ from conformance.catalogue import (
     TestCaseRole,
     TestCatalogue,
 )
+from conformance.catalogues.common import open_banking_request_headers_for
 
 PIS_PAYMENT_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
 """Catalogue boundary for PIS payment coverage imported from legacy FCS manifests."""
@@ -35,20 +36,15 @@ _ACCESS_TOKEN_REF = RuntimeInputRequirement(
     input_type="file_reference",
     label="Access token runtime reference",
     sensitive=True,
+    source="token",
 )
 """Reference to a runtime token artifact used for authorization headers."""
-
-_IDEMPOTENCY_KEY = RuntimeInputRequirement(
-    input_id="idempotencyKey",
-    input_type="string",
-    label="x-idempotency-key header",
-)
-"""Idempotency key sent on payment-resource POST operations."""
 
 _DOMESTIC_PAYMENT_CONSENT_ID = RuntimeInputRequirement(
     input_id="domesticPaymentConsentId",
     input_type="string",
     label="Domestic payment consent identifier",
+    source="captured",
 )
 """Consent identifier returned by domestic-payment consent creation."""
 
@@ -56,6 +52,7 @@ _DOMESTIC_PAYMENT_ID = RuntimeInputRequirement(
     input_id="domesticPaymentId",
     input_type="string",
     label="Domestic payment identifier",
+    source="captured",
 )
 """Payment identifier returned by domestic-payment submission."""
 
@@ -63,6 +60,7 @@ _DOMESTIC_SCHEDULED_PAYMENT_CONSENT_ID = RuntimeInputRequirement(
     input_id="domesticScheduledPaymentConsentId",
     input_type="string",
     label="Domestic scheduled payment consent identifier",
+    source="captured",
 )
 """Consent identifier returned by domestic-scheduled consent creation."""
 
@@ -70,6 +68,7 @@ _DOMESTIC_SCHEDULED_PAYMENT_ID = RuntimeInputRequirement(
     input_id="domesticScheduledPaymentId",
     input_type="string",
     label="Domestic scheduled payment identifier",
+    source="captured",
 )
 """Payment identifier returned by domestic-scheduled submission."""
 
@@ -77,6 +76,7 @@ _DOMESTIC_STANDING_ORDER_CONSENT_ID = RuntimeInputRequirement(
     input_id="domesticStandingOrderConsentId",
     input_type="string",
     label="Domestic standing-order consent identifier",
+    source="captured",
 )
 """Consent identifier returned by domestic-standing-order consent creation."""
 
@@ -84,6 +84,7 @@ _DOMESTIC_STANDING_ORDER_ID = RuntimeInputRequirement(
     input_id="domesticStandingOrderId",
     input_type="string",
     label="Domestic standing-order identifier",
+    source="captured",
 )
 """Standing-order identifier returned by domestic-standing-order submission."""
 
@@ -91,6 +92,7 @@ _INTERNATIONAL_PAYMENT_CONSENT_ID = RuntimeInputRequirement(
     input_id="internationalPaymentConsentId",
     input_type="string",
     label="International payment consent identifier",
+    source="captured",
 )
 """Consent identifier returned by international-payment consent creation."""
 
@@ -98,6 +100,7 @@ _INTERNATIONAL_PAYMENT_ID = RuntimeInputRequirement(
     input_id="internationalPaymentId",
     input_type="string",
     label="International payment identifier",
+    source="captured",
 )
 """Payment identifier returned by international-payment submission."""
 
@@ -105,6 +108,7 @@ _INTERNATIONAL_SCHEDULED_PAYMENT_CONSENT_ID = RuntimeInputRequirement(
     input_id="internationalScheduledPaymentConsentId",
     input_type="string",
     label="International scheduled payment consent identifier",
+    source="captured",
 )
 """Consent identifier returned by international-scheduled consent creation."""
 
@@ -112,7 +116,43 @@ _INTERNATIONAL_SCHEDULED_PAYMENT_ID = RuntimeInputRequirement(
     input_id="internationalScheduledPaymentId",
     input_type="string",
     label="International scheduled payment identifier",
+    source="captured",
 )
+
+_PIS_RESOURCE_AUTH_ID = "pis-payment-access"
+"""Semantic authorization id for PIS resource API requests."""
+
+_PIS_CAPTURED_PATH_VALUES = {
+    "{domesticPaymentConsentId}": (
+        "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}"
+    ),
+    "{domesticPaymentId}": "${steps.pis-v4-domestic-payment-create-request.response.body.Data.DomesticPaymentId}",
+    "{domesticScheduledPaymentConsentId}": (
+        "${steps.pis-v4-domestic-scheduled-payment-consent-create-request.response.body.Data.ConsentId}"
+    ),
+    "{domesticScheduledPaymentId}": (
+        "${steps.pis-v4-domestic-scheduled-payment-create-request.response.body.Data.DomesticScheduledPaymentId}"
+    ),
+    "{domesticStandingOrderConsentId}": (
+        "${steps.pis-v4-domestic-standing-order-consent-create-request.response.body.Data.ConsentId}"
+    ),
+    "{domesticStandingOrderId}": (
+        "${steps.pis-v4-domestic-standing-order-create-request.response.body.Data.DomesticStandingOrderId}"
+    ),
+    "{internationalPaymentConsentId}": (
+        "${steps.pis-v4-international-payment-consent-create-request.response.body.Data.ConsentId}"
+    ),
+    "{internationalPaymentId}": (
+        "${steps.pis-v4-international-payment-create-request.response.body.Data.InternationalPaymentId}"
+    ),
+    "{internationalScheduledPaymentConsentId}": (
+        "${steps.pis-v4-international-scheduled-payment-consent-create-request.response.body.Data.ConsentId}"
+    ),
+    "{internationalScheduledPaymentId}": (
+        "${steps.pis-v4-international-scheduled-payment-create-request.response.body.Data.InternationalScheduledPaymentId}"
+    ),
+}
+"""Captured response-field placeholders for PIS path parameters."""
 """Payment identifier returned by international-scheduled submission."""
 
 
@@ -373,6 +413,9 @@ def _build_case(
     Returns:
         Fully-defined catalogue test case with endpoint/profile applicability.
     """
+    request_path = _path_with_captured_pis_values(path)
+    runtime_input_refs = tuple(requirement.input_id for requirement in runtime_inputs if requirement.source == "plan")
+    required_token_id = _PIS_RESOURCE_AUTH_ID if _ACCESS_TOKEN_REF in runtime_inputs else None
     return CatalogueTestCase(
         test_case_id=test_case_id,
         name=name,
@@ -395,13 +438,30 @@ def _build_case(
                 step_id=f"{test_case_id}-request",
                 name=name,
                 method=method,
-                path=path,
-                runtime_input_refs=tuple(requirement.input_id for requirement in runtime_inputs),
+                path=request_path,
+                runtime_input_refs=runtime_input_refs,
+                headers=open_banking_request_headers_for(require_idempotency=method in {"POST", "PUT", "PATCH"}),
+                required_token_id=required_token_id,
             ),
         ),
         assertions=assertions,
         response_signature_required=bool(_RESPONSE_SIGNATURE_SCRIPT_IDS.intersection((*scripts_31, *scripts_40))),
     )
+
+
+def _path_with_captured_pis_values(path: str) -> str:
+    """Return ``path`` with PIS resource ids resolved from captured responses.
+
+    Args:
+        path: Standards path template that may contain OpenAPI path variables.
+
+    Returns:
+        Request path containing execution-context placeholders for captured ids.
+    """
+    resolved_path = path
+    for variable, placeholder in _PIS_CAPTURED_PATH_VALUES.items():
+        resolved_path = resolved_path.replace(variable, placeholder)
+    return resolved_path
 
 
 PIS_PAYMENT_CATALOGUE = TestCatalogue(
@@ -415,7 +475,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="consent",
             method="POST",
             path="/open-banking/v4.0/pisp/domestic-payment-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-100100", "OB-301-DOP-100300", "OB-313-DOP-100100"),
             scripts_40=("OB-400-DOP-100100", "OB-400-DOP-100300"),
             legacy_assertion_ids=(
@@ -453,7 +513,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="security",
             method="POST",
             path="/open-banking/v4.0/pisp/domestic-payment-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-100110", "OB-316-DOP-100310"),
             scripts_40=("OB-400-DOP-100110", "OB-316-DOP-100310"),
             legacy_assertion_ids=(
@@ -539,7 +599,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _DOMESTIC_PAYMENT_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-100600",),
@@ -582,7 +641,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="consent",
             method="POST",
             path="/open-banking/v4.0/pisp/domestic-scheduled-payment-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-100800", "OB-301-DOP-100810", "OB-301-DOP-100820"),
             scripts_40=("OB-400-DOP-100800", "OB-400-DOP-100810", "OB-400-DOP-100820"),
             legacy_assertion_ids=(
@@ -634,7 +693,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _DOMESTIC_SCHEDULED_PAYMENT_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-101000", "OB-301-DOP-101101"),
@@ -677,7 +735,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="consent",
             method="POST",
             path="/open-banking/v4.0/pisp/domestic-standing-order-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-101200",),
             scripts_40=("OB-400-DOP-101200",),
             legacy_assertion_ids=(
@@ -725,7 +783,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _DOMESTIC_STANDING_ORDER_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-101401",),
@@ -771,7 +828,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _DOMESTIC_STANDING_ORDER_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-101400", "OB-301-DOP-1015003"),
@@ -795,7 +851,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="consent",
             method="POST",
             path="/open-banking/v4.0/pisp/international-payment-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-101600",),
             scripts_40=("OB-400-DOP-101600",),
             legacy_assertion_ids=(
@@ -843,7 +899,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _INTERNATIONAL_PAYMENT_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-101800",),
@@ -886,7 +941,7 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             role="consent",
             method="POST",
             path="/open-banking/v4.0/pisp/international-scheduled-payment-consents",
-            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF, _IDEMPOTENCY_KEY),
+            runtime_inputs=(_RESOURCE_BASE_URL, _ACCESS_TOKEN_REF),
             scripts_31=("OB-301-DOP-102000",),
             scripts_40=("OB-400-DOP-102000",),
             legacy_assertion_ids=(
@@ -938,7 +993,6 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
             runtime_inputs=(
                 _RESOURCE_BASE_URL,
                 _ACCESS_TOKEN_REF,
-                _IDEMPOTENCY_KEY,
                 _INTERNATIONAL_SCHEDULED_PAYMENT_CONSENT_ID,
             ),
             scripts_31=("OB-301-DOP-102200",),

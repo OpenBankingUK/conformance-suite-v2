@@ -10,6 +10,7 @@ from conformance.catalogue import (
     CatalogueTestCase,
     EndpointCapability,
     EndpointRef,
+    GeneratedRuntimeValue,
     HttpMethod,
     RuntimeInputRequirement,
     SecurityProfileApplicability,
@@ -17,6 +18,7 @@ from conformance.catalogue import (
     TestCaseRole,
     TestCatalogue,
 )
+from conformance.catalogues.common import open_banking_request_headers_for
 
 AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
 """Catalogue boundary for AIS accounts-and-transactions legacy FCS import."""
@@ -43,11 +45,13 @@ _ACCESS_TOKEN = RuntimeInputRequirement(
     input_type="string",
     label="AIS access token",
     sensitive=True,
+    source="token",
 )
 _CONSENTED_ACCOUNT_ID = RuntimeInputRequirement(
     input_id="consentedAccountId",
     input_type="string",
     label="Consented account identifier",
+    source="fixture",
 )
 _INVALID_ACCESS_TOKEN = RuntimeInputRequirement(
     input_id="invalidAccessToken",
@@ -55,28 +59,30 @@ _INVALID_ACCESS_TOKEN = RuntimeInputRequirement(
     label="Invalid AIS access token for unauthorized checks",
     required=False,
     sensitive=True,
-)
-_X_FAPI_INTERACTION_ID = RuntimeInputRequirement(
-    input_id="xFapiInteractionId",
-    input_type="string",
-    label="Expected x-fapi-interaction-id playback value",
-    required=False,
+    source="generated",
 )
 _FROM_BOOKING_DATE_TIME = RuntimeInputRequirement(
     input_id="fromBookingDateTime",
     input_type="string",
     label="Optional transaction from-booking-date-time filter",
     required=False,
+    source="fixture",
 )
 _TO_BOOKING_DATE_TIME = RuntimeInputRequirement(
     input_id="toBookingDateTime",
     input_type="string",
     label="Optional transaction to-booking-date-time filter",
     required=False,
+    source="fixture",
 )
 
 _COMMON_RESOURCE_RUNTIME_REQUIREMENTS = (_RESOURCE_BASE_URL, _ACCESS_TOKEN)
 _ACCOUNT_RESOURCE_RUNTIME_REQUIREMENTS = (_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID)
+_AIS_RESOURCE_AUTH_ID = "ais-account-access"
+"""Semantic authorization id for AIS resource API requests."""
+
+_AIS_FIXTURE_ACCOUNT_ID = "fixture-account-id"
+"""Stable catalogue-owned account id used by account-scoped AIS fixtures."""
 
 
 def _applicability(
@@ -185,7 +191,21 @@ def _case(
     Returns:
         A fully populated ``CatalogueTestCase`` ready for compilation.
     """
-    runtime_input_refs = tuple(requirement.input_id for requirement in runtime_requirements)
+    is_open_banking_api_request = request_path.startswith(_AIS_BASE_PATH)
+    runtime_input_refs = tuple(
+        requirement.input_id for requirement in runtime_requirements if requirement.source == "plan"
+    )
+    request_path = request_path.replace("{AccountId}", _AIS_FIXTURE_ACCOUNT_ID)
+    request_headers = open_banking_request_headers_for() if is_open_banking_api_request else ()
+    required_token_id = (
+        _AIS_RESOURCE_AUTH_ID
+        if _ACCESS_TOKEN in runtime_requirements and _INVALID_ACCESS_TOKEN not in runtime_requirements
+        else None
+    )
+    produced_token_id = _AIS_RESOURCE_AUTH_ID if role == "token" else None
+    generated_values: dict[str, GeneratedRuntimeValue] = (
+        {"invalidAccessToken": "invalid-access-token"} if _INVALID_ACCESS_TOKEN in runtime_requirements else {}
+    )
     return CatalogueTestCase(
         test_case_id=test_case_id,
         name=name,
@@ -202,6 +222,10 @@ def _case(
                 method=request_method,
                 path=request_path,
                 runtime_input_refs=runtime_input_refs,
+                headers=request_headers,
+                generated_values=generated_values,
+                required_token_id=required_token_id,
+                produced_token_id=produced_token_id,
             ),
         ),
         assertions=assertions,
@@ -454,7 +478,11 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             mandatory=False,
             request_method="GET",
             request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}",
-            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID, _X_FAPI_INTERACTION_ID),
+            runtime_requirements=(
+                _RESOURCE_BASE_URL,
+                _ACCESS_TOKEN,
+                _CONSENTED_ACCOUNT_ID,
+            ),
             assertions=(
                 _assertion(
                     "fapi-playback",
@@ -479,7 +507,11 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             mandatory=False,
             request_method="GET",
             request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}/foobar",
-            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID),
+            runtime_requirements=(
+                _RESOURCE_BASE_URL,
+                _ACCESS_TOKEN,
+                _CONSENTED_ACCOUNT_ID,
+            ),
             assertions=(
                 _assertion(
                     "status-404",
@@ -530,7 +562,11 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             mandatory=False,
             request_method="GET",
             request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}/balances",
-            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID, _X_FAPI_INTERACTION_ID),
+            runtime_requirements=(
+                _RESOURCE_BASE_URL,
+                _ACCESS_TOKEN,
+                _CONSENTED_ACCOUNT_ID,
+            ),
             assertions=(
                 _assertion(
                     "fapi-playback",
@@ -648,7 +684,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             mandatory=False,
             request_method="GET",
             request_path=f"{_AIS_BASE_PATH}/accounts/{{AccountId}}/transactions",
-            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID, _X_FAPI_INTERACTION_ID),
+            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _CONSENTED_ACCOUNT_ID),
             assertions=(
                 _assertion(
                     "fapi-playback",
@@ -740,7 +776,7 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
             mandatory=False,
             request_method="GET",
             request_path=f"{_AIS_BASE_PATH}/transactions",
-            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN, _X_FAPI_INTERACTION_ID),
+            runtime_requirements=(_RESOURCE_BASE_URL, _ACCESS_TOKEN),
             assertions=(
                 _assertion(
                     "fapi-playback",

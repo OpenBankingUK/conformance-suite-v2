@@ -511,12 +511,21 @@ VALID_CONFIG = {
     "discoveryUrl": "https://example.com/.well-known/openid-configuration",
 }
 
-VALID_PLAN_SPEC = {
-    "schemaVersion": "v1",
-    "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
-    "securityProfile": "fapi1-advanced",
-    "implementedEndpoints": [],
-    "runtimeInputs": {},
+VALID_TEST_PLAN = {
+    "schemaVersion": "1.0",
+    "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+    "securityEnvironment": {
+        "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+        "resourceBaseUrl": "https://resource.example.com",
+    },
+    "resourceGroups": [
+        {
+            "id": "AIS",
+            "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
+        }
+    ],
+    "businessTestData": {},
+    "metadata": {},
 }
 
 
@@ -661,25 +670,25 @@ class TestCreateRunEndpoint:
         assert response.status_code == 400
         assert "JSON object" in response.json()["error"]
 
-    def test_rejects_missing_config(self) -> None:
+    def test_rejects_missing_test_plan(self) -> None:
         client = Client()
         response = client.post("/api/runs/", data=json.dumps({}), content_type="application/json")
         assert response.status_code == 400
-        assert "config" in response.json()["error"]
+        assert "schemaVersion 1.0 test plan" in response.json()["error"]
 
-    def test_rejects_invalid_config(self) -> None:
+    def test_rejects_legacy_config_plan_spec_shape(self) -> None:
         client = Client()
-        body = {"config": {"environment": "test"}, "planSpec": VALID_PLAN_SPEC}  # missing discoveryUrl
+        body = {"config": {"environment": "test"}, "planSpec": {"schemaVersion": "v1"}}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Config validation failed" in response.json()["error"]
+        assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
 
     def test_rejects_removed_manifest_field(self) -> None:
         client = Client()
         body = {"config": VALID_CONFIG, "manifest": {"schemaVersion": "v99"}}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Unknown request field(s): manifest" in response.json()["error"]
+        assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_start_run_derives_default_plan_and_persists_selected_steps(self, mock_execute: Mock) -> None:
@@ -886,7 +895,7 @@ class TestCreateRunEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_and_returns_201(self, mock_execute: Mock) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
         data = response.json()
@@ -903,7 +912,7 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args is not None
         assert mock_execute.call_args.args[0] == data["id"]
         assert mock_execute.call_args.args[2] is not None
-        assert mock_execute.call_args.args[3] == {}
+        assert "accessToken" not in mock_execute.call_args.args[3]
         assert mock_execute.call_args.args[5:] == (None, None)
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
@@ -928,7 +937,7 @@ class TestCreateRunEndpoint:
                     "endpoints": [{"method": "GET", "path": "/open-banking/v4.0/aisp/accounts"}],
                 }
             ],
-            "businessTestData": {"inputs": {"accessToken": {"value": "secret-access-token"}}},
+            "businessTestData": {},
             "metadata": {"aspspName": "Example Bank"},
         }
 
@@ -943,11 +952,7 @@ class TestCreateRunEndpoint:
         assert record.plan_snapshot["schemaVersion"] == "1.0"
         business_data = record.plan_snapshot["businessTestData"]
         assert isinstance(business_data, dict)
-        inputs = business_data["inputs"]
-        assert isinstance(inputs, dict)
-        access_token = inputs["accessToken"]
-        assert isinstance(access_token, dict)
-        assert access_token["value"] == ""
+        assert "inputs" not in business_data
         assert "secret-access-token" not in json.dumps(record.plan_snapshot)
         assert record.validation_result is not None
         assert record.validation_result["valid"] is True
@@ -958,7 +963,7 @@ class TestCreateRunEndpoint:
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_canonical_plan_spec_with_separate_config(self, mock_execute: Mock) -> None:
-        """Canonical plans must not be mixed with the legacy config/planSpec request shape."""
+        """Legacy config/planSpec requests are no longer accepted."""
         client = Client()
         body = {
             "config": VALID_CONFIG,
@@ -977,29 +982,19 @@ class TestCreateRunEndpoint:
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
         assert response.status_code == 400
-        assert "do not combine" in response.json()["error"]
+        assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
         mock_execute.assert_not_called()
 
-    @patch("conformance.api.views.resolve_catalogue")
     @patch("conformance.api.run_lifecycle._execute_run")
-    def test_rejects_file_reference_runtime_inputs(
-        self,
-        mock_execute: Mock,
-        mock_resolve_catalogue: Mock,
-    ) -> None:
-        """REST launches must not read server-local file-reference inputs."""
-        mock_resolve_catalogue.return_value = _file_reference_catalogue()
+    def test_creates_run_from_nested_canonical_test_plan(self, mock_execute: Mock) -> None:
+        """REST API accepts canonical test plans under the testPlan key."""
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": _file_reference_plan_spec_json()}
+        body = {"testPlan": VALID_TEST_PLAN}
 
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
-        assert response.status_code == 400
-        assert response.json()["error"] == (
-            "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
-            "requestBodyRef"
-        )
-        mock_execute.assert_not_called()
+        assert response.status_code == 201
+        assert mock_execute.call_args is not None
 
     def test_rejects_removed_deselect_field(self) -> None:
         """``deselectStepIds`` is no longer a public API field."""
@@ -1007,12 +1002,12 @@ class TestCreateRunEndpoint:
         body = {"config": VALID_CONFIG, "deselectStepIds": ["a"]}
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 400
-        assert "Unknown request field(s): deselectStepIds" in response.json()["error"]
+        assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
 
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_rejects_second_concurrent_run(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         first = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert first.status_code == 201
         second = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -1035,7 +1030,7 @@ class TestGetRunStatusEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_run_status(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/")
@@ -1115,7 +1110,7 @@ class TestGetRunResultEndpoint:
     @patch("conformance.api.run_lifecycle._execute_run")
     def test_returns_409_when_run_not_complete(self, mock_execute: object) -> None:
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         create_resp = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         run_id = create_resp.json()["id"]
         response = client.get(f"/api/runs/{run_id}/result/")
@@ -1280,14 +1275,14 @@ class TestLoopbackGuard:
     def test_loopback_request_is_allowed_by_default(self) -> None:
         # Django test client uses REMOTE_ADDR=127.0.0.1 by default.
         client = Client()
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         with patch("conformance.api.run_lifecycle._execute_run"):
             response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 201
 
     def test_non_loopback_request_is_rejected_with_403(self) -> None:
         client = Client(REMOTE_ADDR="10.0.0.5")
-        body = {"config": VALID_CONFIG, "planSpec": VALID_PLAN_SPEC}
+        body = VALID_TEST_PLAN
         response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
         assert response.status_code == 403
         assert "loopback" in response.json()["error"].lower()

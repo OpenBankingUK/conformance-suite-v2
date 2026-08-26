@@ -38,14 +38,14 @@
     <header>
         <div>
             <h1>Discovery configuration</h1>
-            <div class="muted">Step 4 of the guided builder</div>
+            <div class="muted">Step 2: security environment discovery</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="discovery-heading">
         <h2 id="discovery-heading">OpenID discovery</h2>
-        <p class="helper">Enter the `.well-known/openid-configuration` URL. The builder will try to fetch metadata for the next step, but you can still continue and fill values manually if the fetch fails.</p>
+        <p class="helper">Optionally enter the `.well-known/openid-configuration` URL for this executable test plan. The builder will try to fetch metadata for the next security step, but you can leave it blank and fill values manually.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if discovery_metadata.fetch_error %}
@@ -56,22 +56,17 @@
         <form method="post" action="{% url 'builder-discovery-config' draft.draft_id %}">
             {% csrf_token %}
             <section class="config-card">
-                <div class="grid field-row">
+                <div class="field-row">
                     <div>
                         <label for="{{ form.discovery_url.id_for_label }}">Discovery URL</label>
                         {{ form.discovery_url.errors }}
                         <input id="{{ form.discovery_url.id_for_label }}" name="discovery_url" type="url" value="{{ form.discovery_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
                     </div>
-                    <div>
-                        <label for="{{ form.timeout_seconds.id_for_label }}">Timeout seconds</label>
-                        {{ form.timeout_seconds.errors }}
-                        <input id="{{ form.timeout_seconds.id_for_label }}" name="timeout_seconds" type="number" step="0.1" value="{{ form.timeout_seconds.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
                 </div>
             </section>
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Back to business config</a>
+                <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Back to specification</a>
                 <button type="submit">Continue to OAuth/FAPI security</button>
             </div>
         </form>

@@ -41,6 +41,31 @@ def run_model_bank_smoke_check(
 
     try:
         try:
+            if config.discovery_url is None:
+                message = "discoveryUrl is required for the model-bank smoke check"
+                logger_sink.emit(
+                    "application-error",
+                    step_id="openid-discovery",
+                    payload={"message": message},
+                )
+                steps.append(
+                    StepResult(
+                        name="openid-discovery",
+                        status="failed",
+                        message=message,
+                    )
+                )
+                logger_sink.emit(
+                    "step-completed",
+                    step_id="openid-discovery",
+                    payload={"status": "failed", "message": message},
+                )
+                return _finalise(
+                    steps,
+                    started_at=started_at,
+                    logger_sink=logger_sink,
+                    approved_release_policy=config.approved_release_policy,
+                )
             if model_bank_client is None:
                 model_bank_client = OzoneModelBankClient.from_config(config)
 

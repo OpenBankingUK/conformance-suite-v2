@@ -17,7 +17,7 @@ from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunRecord, RunStore, run_store
-from conformance.catalogue import CompiledTestPlan
+from conformance.catalogue import CatalogueRequestStep, CompiledTestPlan
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -26,7 +26,12 @@ from conformance.execution_log import (
     NullExecutionLogger,
     warn_if_developer_mode,
 )
-from conformance.executor import run_compiled_test_plan, run_manifest
+from conformance.executor import (
+    compiled_plan_synthetic_inline_steps,
+    compiled_plan_synthetic_setup_steps,
+    run_compiled_test_plan,
+    run_manifest,
+)
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import Manifest, PsuAuthorizationStep, V1Step
@@ -256,9 +261,23 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
         compiled_plan: Compiled catalogue plan selected for launch.
 
     Returns:
-        Tuple of selected request-step snapshots in compiled execution order.
+        Tuple of selected setup and request-step snapshots in compiled execution
+        order.
     """
     planned_steps: list[RunPlanStep] = []
+    for setup_step in compiled_plan_synthetic_setup_steps(compiled_plan):
+        planned_steps.append(
+            RunPlanStep(
+                step_id=setup_step.id,
+                name=setup_step.name,
+                kind=_manifest_step_kind(setup_step),
+                group=setup_step.group,
+                phase=setup_step.phase,
+                mandatory=setup_step.mandatory,
+                optional=setup_step.optional,
+                order=len(planned_steps),
+            )
+        )
     for test_case in compiled_plan.test_cases:
         for request_step in test_case.request_steps:
             planned_steps.append(
@@ -273,7 +292,48 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
                     order=len(planned_steps),
                 )
             )
+            planned_steps.extend(
+                _compiled_plan_inline_steps_snapshot(
+                    compiled_plan,
+                    request_step,
+                    start_order=len(planned_steps),
+                )
+            )
     return tuple(planned_steps)
+
+
+def _compiled_plan_inline_steps_snapshot(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+    *,
+    start_order: int,
+) -> list[RunPlanStep]:
+    """Build pending-run snapshot entries for synthetic inline runtime steps.
+
+    Args:
+        compiled_plan: Compiled catalogue plan selected for launch.
+        request_step: Catalogue request step most recently added to the
+            snapshot.
+        start_order: Snapshot order assigned to the first synthetic inline
+            step.
+
+    Returns:
+        Ordered snapshot entries for synthetic runtime steps inserted after
+        ``request_step``.
+    """
+    return [
+        RunPlanStep(
+            step_id=inline_step.id,
+            name=inline_step.name,
+            kind=_manifest_step_kind(inline_step),
+            group=inline_step.group,
+            phase=inline_step.phase,
+            mandatory=inline_step.mandatory,
+            optional=inline_step.optional,
+            order=start_order + offset,
+        )
+        for offset, inline_step in enumerate(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
+    ]
 
 
 def _manifest_step_kind(step: V1Step) -> str:
@@ -339,7 +399,6 @@ def _execute_run(
         else:
             try:
                 http_client = build_json_http_client(
-                    timeout_seconds=config.timeout_seconds,
                     ca_bundle_path=config.tls.ca_bundle_path,
                     client_certificate_path=config.tls.client_certificate_path,
                     client_private_key_path=config.tls.client_private_key_path,
@@ -359,9 +418,6 @@ def _execute_run(
                     ),
                     oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
                     oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
-                    oauth_open_banking_intent_id=(
-                        config.oauth.open_banking_intent_id if config.oauth is not None else None
-                    ),
                     oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
                     oauth_request_object_signing_alg=(
                         config.oauth.request_object_signing_alg if config.oauth is not None else None

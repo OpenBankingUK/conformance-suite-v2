@@ -189,6 +189,34 @@ def _plan_spec_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, object]:
     }
 
 
+def _canonical_plan_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, object]:
+    """Build a canonical JSON-first test plan selecting the accounts fixture endpoint.
+
+    Args:
+        capabilities: Endpoint-scoped optional capabilities to declare.
+
+    Returns:
+        Canonical schemaVersion ``1.0`` test plan.
+    """
+    endpoint: dict[str, object] = {
+        "method": "GET",
+        "path": "/open-banking/v4.0/aisp/accounts",
+    }
+    if capabilities:
+        endpoint["capabilities"] = list(capabilities)
+    return {
+        "schemaVersion": "1.0",
+        "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://rs.example.com",
+        },
+        "resourceGroups": [{"id": "AIS", "label": "Accounts", "endpoints": [endpoint]}],
+        "businessTestData": {"inputs": {"accessToken": {"value": "secret-access-token"}}},
+        "metadata": {},
+    }
+
+
 def _plan_document_v2_json(*, capabilities: tuple[str, ...] = ()) -> dict[str, object]:
     """Build a v2 shared plan document for CLI/API parsing.
 
@@ -332,42 +360,43 @@ def test_run_compiled_plan_preserves_masked_evidence_and_catalogue_trace(tmp_pat
 
 
 @pytest.mark.unit
-def test_cli_executes_plan_spec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "config.json"
+def test_cli_executes_canonical_test_plan(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     plan_path = tmp_path / "plan.json"
-    config_path.write_text(json.dumps(_config_json(tmp_path)), encoding="utf-8")
-    plan_path.write_text(json.dumps(_plan_spec_json()), encoding="utf-8")
+    plan_path.write_text(json.dumps(_canonical_plan_json()), encoding="utf-8")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"Data": {}}, headers={"x-fapi-interaction-id": "interaction-1"})
 
-    monkeypatch.setattr(cli, "resolve_catalogue", lambda _key: _test_catalogue())
+    monkeypatch.setattr("conformance.test_plan_validation.supported_catalogues", lambda: (_test_catalogue(),))
     monkeypatch.setattr(httpx, "Client", _mock_client_factory(handler))
+    monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path), "--plan-spec", str(plan_path)])
+    exit_code = cli.run(["--test-plan", str(plan_path)])
 
-    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
     assert exit_code == 0
-    assert result["catalogue"]["api"] == "ais"
+    assert result["catalogue"]["api"] == "read-write"
     assert result["steps"][0]["details"]["catalogue"]["testCaseId"] == "accounts-read"
 
 
 @pytest.mark.unit
-def test_cli_executes_capability_selected_plan_spec(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "config.json"
+def test_cli_executes_capability_selected_canonical_test_plan(
+    monkeypatch: pytest.MonkeyPatch,
+    tmp_path: Path,
+) -> None:
     plan_path = tmp_path / "plan.json"
-    config_path.write_text(json.dumps(_config_json(tmp_path)), encoding="utf-8")
-    plan_path.write_text(json.dumps(_plan_spec_json(capabilities=("accounts.balances",))), encoding="utf-8")
+    plan_path.write_text(json.dumps(_canonical_plan_json(capabilities=("accounts.balances",))), encoding="utf-8")
 
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(200, json={"Data": {}}, headers={"x-fapi-interaction-id": "interaction-1"})
 
-    monkeypatch.setattr(cli, "resolve_catalogue", lambda _key: _test_catalogue())
+    monkeypatch.setattr("conformance.test_plan_validation.supported_catalogues", lambda: (_test_catalogue(),))
     monkeypatch.setattr(httpx, "Client", _mock_client_factory(handler))
+    monkeypatch.chdir(tmp_path)
 
-    exit_code = cli.run([str(config_path), "--plan-spec", str(plan_path)])
+    exit_code = cli.run(["--test-plan", str(plan_path)])
 
-    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
+    result = json.loads((tmp_path / "out" / "test-results.json").read_text(encoding="utf-8"))
     assert exit_code == 0
     assert result["catalogue"]["generatedTestCaseIds"] == ["accounts-read", "accounts-balances"]
     assert result["catalogue"]["selectedEndpoints"][0]["capabilities"] == ["accounts.balances"]
@@ -390,51 +419,33 @@ def test_cli_executes_capability_selected_plan_spec(monkeypatch: pytest.MonkeyPa
 
 
 @pytest.mark.unit
-def test_cli_executes_v2_plan_document(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    config_path = tmp_path / "config.json"
+def test_cli_rejects_removed_plan_spec_flag(tmp_path: Path) -> None:
     plan_path = tmp_path / "plan.json"
-    config_path.write_text(json.dumps(_config_json(tmp_path)), encoding="utf-8")
     plan_path.write_text(json.dumps(_plan_document_v2_json(capabilities=("accounts.balances",))), encoding="utf-8")
 
-    def handler(request: httpx.Request) -> httpx.Response:
-        return httpx.Response(200, json={"Data": {}}, headers={"x-fapi-interaction-id": "interaction-1"})
+    exit_code = cli.run(["--plan-spec", str(plan_path)])
 
-    monkeypatch.setattr(cli, "supported_catalogues", lambda: (_test_catalogue(),))
-    monkeypatch.setattr(httpx, "Client", _mock_client_factory(handler))
-
-    exit_code = cli.run([str(config_path), "--plan-spec", str(plan_path)])
-
-    result = json.loads((tmp_path / "result.json").read_text(encoding="utf-8"))
-    assert exit_code == 0
-    assert result["catalogue"]["standard"] == "open-banking-uk"
-    assert result["catalogue"]["version"] == "4.0.1"
-    assert result["catalogue"]["api"] == "read-write"
-    assert result["catalogue"]["generatedTestCaseIds"] == ["accounts-read", "accounts-balances"]
-    assert result["catalogue"]["selectedEndpoints"][0]["resourceGroup"] == "ais.accounts"
+    assert exit_code == 2
 
 
 @pytest.mark.integration
-def test_api_create_run_accepts_plan_spec(tmp_path: Path) -> None:
+def test_api_create_run_rejects_removed_plan_spec(tmp_path: Path) -> None:
     body = {"config": _config_json(tmp_path), "planSpec": _plan_spec_json()}
 
-    with (
-        patch("conformance.api.views.resolve_catalogue", return_value=_test_catalogue()),
-        patch("conformance.api.views.start_run", return_value={"id": "run-1", "status": "pending"}) as start_run_mock,
-    ):
+    with patch("conformance.api.views.start_run", return_value={"id": "run-1", "status": "pending"}) as start_run_mock:
         response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
-    assert response.status_code == 201
-    assert response.json()["id"] == "run-1"
-    assert start_run_mock.call_args.kwargs["compiled_plan"].catalogue_key == CATALOGUE_KEY
-    assert start_run_mock.call_args.kwargs["runtime_inputs"]["accessToken"] == "secret-access-token"
+    assert response.status_code == 400
+    assert "Legacy run request field(s) are no longer supported" in response.json()["error"]
+    start_run_mock.assert_not_called()
 
 
 @pytest.mark.integration
-def test_api_create_run_accepts_capability_selected_plan_spec(tmp_path: Path) -> None:
-    body = {"config": _config_json(tmp_path), "planSpec": _plan_spec_json(capabilities=("accounts.balances",))}
+def test_api_create_run_accepts_capability_selected_canonical_test_plan(tmp_path: Path) -> None:
+    body = _canonical_plan_json(capabilities=("accounts.balances",))
 
     with (
-        patch("conformance.api.views.resolve_catalogue", return_value=_test_catalogue()),
+        patch("conformance.test_plan_validation.supported_catalogues", return_value=(_test_catalogue(),)),
         patch("conformance.api.views.start_run", return_value={"id": "run-1", "status": "pending"}) as start_run_mock,
     ):
         response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -449,11 +460,11 @@ def test_api_create_run_accepts_capability_selected_plan_spec(tmp_path: Path) ->
 
 
 @pytest.mark.integration
-def test_api_create_run_accepts_v2_plan_document(tmp_path: Path) -> None:
-    body = {"config": _config_json(tmp_path), "planSpec": _plan_document_v2_json(capabilities=("accounts.balances",))}
+def test_api_create_run_accepts_nested_canonical_test_plan(tmp_path: Path) -> None:
+    body = {"testPlan": _canonical_plan_json(capabilities=("accounts.balances",))}
 
     with (
-        patch("conformance.api.views.supported_catalogues", return_value=(_test_catalogue(),)),
+        patch("conformance.test_plan_validation.supported_catalogues", return_value=(_test_catalogue(),)),
         patch("conformance.api.views.start_run", return_value={"id": "run-1", "status": "pending"}) as start_run_mock,
     ):
         response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
@@ -471,11 +482,11 @@ def test_api_create_run_accepts_v2_plan_document(tmp_path: Path) -> None:
 
 
 @pytest.mark.integration
-def test_api_create_run_rejects_unknown_capability_selected_plan_spec(tmp_path: Path) -> None:
-    """REST plan-spec validation rejects capability ids outside the catalogue contract."""
-    body = {"config": _config_json(tmp_path), "planSpec": _plan_spec_json(capabilities=("accounts.unknown",))}
+def test_api_create_run_rejects_unknown_capability_selected_plan(tmp_path: Path) -> None:
+    """REST test-plan validation rejects capability ids outside the catalogue contract."""
+    body = _canonical_plan_json(capabilities=("accounts.unknown",))
 
-    with patch("conformance.api.views.resolve_catalogue", return_value=_test_catalogue()):
+    with patch("conformance.test_plan_validation.supported_catalogues", return_value=(_test_catalogue(),)):
         response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
     assert response.status_code == 400
@@ -489,4 +500,4 @@ def test_api_create_run_rejects_removed_manifest_field(tmp_path: Path) -> None:
     response = Client().post("/api/runs/", data=json.dumps(body), content_type="application/json")
 
     assert response.status_code == 400
-    assert "Unknown request field(s): manifest" in response.json()["error"]
+    assert "Legacy run request field(s) are no longer supported" in response.json()["error"]

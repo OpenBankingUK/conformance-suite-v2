@@ -60,7 +60,6 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
         },
         "securityEnvironment": {
             "type": "object",
-            "required": ["discoveryUrl"],
             "additionalProperties": False,
             "properties": {
                 "name": {"type": "string", "minLength": 1},
@@ -68,7 +67,6 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                 "issuer": {"type": "string", "minLength": 1},
                 "authorizationEndpoint": {"type": "string", "minLength": 1},
                 "tokenEndpoint": {"type": "string", "minLength": 1},
-                "jwksUri": {"type": "string", "minLength": 1},
                 "clientAuthMethod": {"enum": ["private_key_jwt", "tls_client_auth"]},
                 "signingAlgorithm": {"type": "string", "minLength": 1},
                 "mtls": {
@@ -76,30 +74,20 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                     "additionalProperties": False,
                     "properties": {
                         "enabled": {"type": "boolean"},
-                        "certificateRef": {"type": "string", "minLength": 1},
-                        "privateKeyRef": {"type": "string", "minLength": 1},
-                        "caBundleRef": {"type": "string", "minLength": 1},
-                        "certificatePathRoot": {"type": "string", "minLength": 1},
+                        "certificatePath": {"type": "string", "minLength": 1},
+                        "privateKeyPath": {"type": "string", "minLength": 1},
+                        "caBundlePath": {"type": "string", "minLength": 1},
                     },
                 },
                 "clientId": {"type": "string", "minLength": 1},
                 "redirectUri": {"type": "string", "minLength": 1},
-                "openBankingIntentId": {"type": "string", "minLength": 1},
                 "resourceBaseUrl": {"type": "string", "minLength": 1},
                 "responseType": {"type": "string", "minLength": 1},
-                "acrValuesSupported": {"type": "array", "items": {"type": "string", "minLength": 1}},
-                "signingCertificateRef": {"type": "string", "minLength": 1},
-                "signingPrivateKeyRef": {"type": "string", "minLength": 1},
+                "signingCertificatePath": {"type": "string", "minLength": 1},
+                "signingPrivateKeyPath": {"type": "string", "minLength": 1},
                 "signingKeyId": {"type": "string", "minLength": 1},
                 "clientAssertionIssuer": {"type": "string", "minLength": 1},
                 "clientAssertionSubject": {"type": "string", "minLength": 1},
-                "tppSignatureIssuer": {"type": "string", "minLength": 1},
-                "tppSignatureTan": {"type": "string", "minLength": 1},
-                "caBundleRef": {"type": "string", "minLength": 1},
-                "xFapiFinancialId": {"type": "string", "minLength": 1},
-                "sendXFapiCustomerIpAddress": {"type": "boolean"},
-                "xFapiCustomerIpAddress": {"type": "string", "minLength": 1},
-                "timeoutSeconds": {"type": "number", "exclusiveMinimum": 0},
             },
         },
         "resourceGroups": {
@@ -319,7 +307,7 @@ def prepare_test_plan_for_run(
     if not isinstance(parsed, PlanDocumentV2) or parsed.schema_version != "1.0":
         result = TestPlanValidationResult(
             schema_version=parsed.schema_version,
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(
                 TestPlanValidationIssue(
                     "schema",
@@ -404,15 +392,15 @@ def validate_test_plan_for_load(raw_plan: object) -> TestPlanValidationResult:
             execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(TestPlanValidationIssue("schema", "error", str(error)),),
         )
-    if not isinstance(parsed, PlanDocumentV2):
+    if not isinstance(parsed, PlanDocumentV2) or parsed.schema_version != "1.0":
         return TestPlanValidationResult(
             schema_version=parsed.schema_version,
-            execution_mode="certification",
+            execution_mode=_execution_mode_from_raw(raw_plan),
             issues=(
                 TestPlanValidationIssue(
                     "schema",
                     "error",
-                    "Browser import requires a shared JSON-first test plan document.",
+                    "Browser import requires a canonical schemaVersion 1.0 test plan document.",
                 ),
             ),
         )
@@ -592,7 +580,30 @@ def _compiled_plan_issues(
         issues.append(TestPlanValidationIssue("semantic", severity, reason))
     if not compiled_plan.test_cases:
         issues.append(TestPlanValidationIssue("semantic", "error", "Test plan does not select any executable tests."))
+    if any(test_case.response_signature_required for test_case in compiled_plan.test_cases) and not _has_discovery_url(
+        document
+    ):
+        issues.append(
+            TestPlanValidationIssue(
+                "security",
+                "error",
+                "securityEnvironment.discoveryUrl is required because the selected run validates response signatures.",
+            )
+        )
     return tuple(issues)
+
+
+def _has_discovery_url(document: PlanDocumentV2) -> bool:
+    """Return whether a parsed plan carries a non-empty discovery URL.
+
+    Args:
+        document: Parsed canonical test-plan document.
+
+    Returns:
+        True when the plan has a configured discovery URL.
+    """
+    value = document.security_environment.get("discoveryUrl") or document.config.get("discoveryUrl")
+    return isinstance(value, str) and bool(value.strip())
 
 
 def _catalogue_error_layer(message: str) -> ValidationLayer:
@@ -672,6 +683,7 @@ def _is_sensitive_key(key: str) -> bool:
             "accountid",
             "accountids",
             "identification",
+            "xfapicustomeripaddress",
             "xfapifinancialid",
         }
     )

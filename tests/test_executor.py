@@ -1,5 +1,6 @@
 import json
 import secrets
+import uuid
 from collections.abc import Callable
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -24,6 +25,7 @@ from conformance.execution_log import BufferedExecutionLogger
 from conformance.executor import _execute_v1_psu_step, run_manifest
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
+    PSU_AUTHORIZATION_TIMEOUT_SECONDS,
     GeneratedRequestObject,
     Manifest,
     ManifestRequest,
@@ -152,7 +154,6 @@ def _executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
     certificate_root.mkdir()
     certificate_path, private_key_path = _write_executor_signing_pair(certificate_root, stem="executor-signing")
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="executor-signing-key",
@@ -178,7 +179,6 @@ def _invalid_executor_signing_config(tmp_path: Path) -> FapiSigningConfig:
     certificate_path.write_bytes(b"invalid certificate data")
     private_key_path.write_bytes(b"invalid private key data")
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="invalid-executor-signing-key",
@@ -3058,6 +3058,434 @@ def test_run_manifest_request_sent_masks_authorization_header() -> None:
     assert headers["Authorization"] == "***"
 
 
+@pytest.mark.integration
+def test_run_compiled_test_plan_sends_catalogue_request_headers(tmp_path: Path) -> None:
+    """Compiled catalogue execution sends selected-run request metadata headers.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import (
+        CatalogueAssertion,
+        CatalogueKey,
+        CatalogueRequestHeader,
+        CatalogueRequestStep,
+        CatalogueTestCase,
+        ImplementedEndpoint,
+        RuntimeInputRequirement,
+        SecurityProfileApplicability,
+        TestCaseApplicability,
+        TestCatalogue,
+        TestPlanSpec,
+        compile_test_plan,
+    )
+    from conformance.executor import run_compiled_test_plan
+
+    catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
+    catalogue = TestCatalogue(
+        key=catalogue_key,
+        catalogue_version="2026.7.0",
+        test_cases=(
+            CatalogueTestCase(
+                test_case_id="pis-submit",
+                name="Submit payment",
+                role="resource",
+                compliance_scope=("OBRW v4.0 PIS submit",),
+                applicability=TestCaseApplicability(
+                    security_profiles=SecurityProfileApplicability(profiles=("all",)),
+                ),
+                mandatory=True,
+                runtime_input_requirements=(RuntimeInputRequirement("resourceBaseUrl", "url", "Resource base URL"),),
+                request_steps=(
+                    CatalogueRequestStep(
+                        step_id="pis-submit-request",
+                        name="Submit payment",
+                        method="POST",
+                        path="/open-banking/v4.0/pisp/domestic-payments",
+                        runtime_input_refs=("resourceBaseUrl",),
+                        headers=(
+                            CatalogueRequestHeader("x-fapi-interaction-id", generated_value="uuid4"),
+                            CatalogueRequestHeader("x-idempotency-key", generated_value="uuid4"),
+                        ),
+                    ),
+                ),
+                assertions=(
+                    CatalogueAssertion("status-201", "http_status", "Payment is accepted", {"expected": 201}),
+                    CatalogueAssertion(
+                        "interaction-playback",
+                        "header",
+                        "Response replays x-fapi-interaction-id",
+                        {"name": "x-fapi-interaction-id", "rule": "playback"},
+                    ),
+                ),
+            ),
+        ),
+    )
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=catalogue_key,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-payments",
+                resource_group="Payments",
+            ),
+        ),
+        runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
+    )
+    compiled_plan = compile_test_plan(catalogue, spec)
+    observed_headers: dict[str, str] = {}
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound headers and return a successful response.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Mocked successful payment response.
+        """
+        observed_headers.update(dict(request.headers))
+        return httpx.Response(
+            201,
+            headers={"x-fapi-interaction-id": request.headers["x-fapi-interaction-id"]},
+            json={"Data": {"PaymentId": "payment-123"}},
+        )
+
+    execution_logger = BufferedExecutionLogger(run_id="compiled-plan-run", developer_mode=False)
+    with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
+        result = run_compiled_test_plan(
+            compiled_plan,
+            runtime_inputs=spec.runtime_inputs,
+            runtime_input_base_dir=tmp_path,
+            client=client,
+            execution_logger=execution_logger,
+        )
+
+        assert result.status == "passed"
+        uuid.UUID(observed_headers["x-fapi-interaction-id"])
+        uuid.UUID(observed_headers["x-idempotency-key"])
+        request_events = [event for event in execution_logger.events() if event.type == "request-sent"]
+        assert len(request_events) == 1
+        event_headers = request_events[0].payload["headers"]
+        assert isinstance(event_headers, dict)
+        assert event_headers["x-fapi-interaction-id"] == observed_headers["x-fapi-interaction-id"]
+        assert event_headers["x-idempotency-key"] == observed_headers["x-idempotency-key"]
+
+
+@pytest.mark.unit
+def test_compiled_cbpii_manifest_uses_configured_debtor_account(tmp_path: Path) -> None:
+    """CBPII consent body uses participant debtor-account config."""
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import JsonBody
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=CBPII_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+    )
+
+    cbpii_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
+    assert isinstance(cbpii_step, ManifestStep)
+    body = cbpii_step.request.body
+    assert isinstance(body, JsonBody)
+    assert body.value == {
+        "Data": {
+            "DebtorAccount": {
+                "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                "Identification": "12345678901234",
+                "Name": "Model Bank Account",
+            },
+            "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        }
+    }
+
+
+@pytest.mark.unit
+def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) -> None:
+    """CBPII catalogue runs acquire the semantic funds-confirmation token at runtime.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import FormBody
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=CBPII_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+    )
+
+    token_step = manifest.steps[0]
+    assert isinstance(token_step, ManifestStep)
+    assert token_step.id == "setup-token-cbpii-client-credentials"
+    assert token_step.phase == "setup"
+    assert token_step.produces_token_id == "cbpii-client-credentials"  # noqa: S105 - semantic token id fixture
+    assert token_step.token_endpoint_auth_policy is not None
+    assert token_step.request.url == "${config.oauth.tokenEndpoint}"
+    assert isinstance(token_step.request.body, FormBody)
+    assert token_step.request.body.fields == {
+        "grant_type": "client_credentials",
+        "scope": "fundsconfirmations",
+        "client_id": "${config.oauth.clientId}",
+    }
+    cbpii_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
+    assert isinstance(cbpii_step, ManifestStep)
+    assert cbpii_step.request.headers is not None
+    assert cbpii_step.required_token_id == "cbpii-client-credentials"  # noqa: S105 - semantic token id fixture
+    assert cbpii_step.request.headers["Authorization"] == "Bearer ${tokens.cbpii-client-credentials.access_token}"
+
+
+@pytest.mark.unit
+def test_compiled_cbpii_manifest_uses_v4_status_codes(tmp_path: Path) -> None:
+    """CBPII v4 status assertions use OB status codes, not long-form labels.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import JsonFieldAssertion
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=CBPII_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents/{consentId}",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+    )
+
+    create_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
+    get_step = next(step for step in manifest.steps if step.id == "cbpii-consent-get-authorised-request")
+    assert isinstance(create_step, ManifestStep)
+    assert isinstance(get_step, ManifestStep)
+    create_status = next(
+        assertion
+        for assertion in create_step.assertions
+        if isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Status"
+    )
+    get_status = next(
+        assertion
+        for assertion in get_step.assertions
+        if isinstance(assertion, JsonFieldAssertion) and assertion.path == "Data.Status"
+    )
+    assert create_status.value == "AWAU"
+    assert get_status.value == "AUTH"
+
+
+@pytest.mark.unit
+def test_compiled_cbpii_manifest_adds_authorisation_code_setup(tmp_path: Path) -> None:
+    """CBPII funds confirmations use a PSU-authorised token bound to ConsentId.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import (
+        FormBody,
+        GeneratedRequestObject,
+        JsonBody,
+        ManifestStep,
+        PsuAuthorizationStep,
+    )
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=CBPII_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmations",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+    )
+
+    step_ids = [step.id for step in manifest.steps]
+    create_index = step_ids.index("cbpii-consent-create-core-request")
+    psu_step = manifest.steps[create_index + 1]
+    token_step = manifest.steps[create_index + 2]
+    assert isinstance(psu_step, PsuAuthorizationStep)
+    assert psu_step.id == "setup-cbpii-consent-authorisation"
+    assert psu_step.scope == "openid fundsconfirmations"
+    assert isinstance(psu_step.request_object, GeneratedRequestObject)
+    assert psu_step.request_object.audience == "${config.oauth.issuer}"
+    assert psu_step.request_object.openbanking_intent_id == (
+        "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
+    )
+
+    assert isinstance(token_step, ManifestStep)
+    assert token_step.id == "setup-token-cbpii-funds-confirmation"
+    assert token_step.produces_token_id == "cbpii-funds-confirmation"  # noqa: S105 - semantic token id fixture
+    assert isinstance(token_step.request.body, FormBody)
+    assert token_step.request.body.fields["grant_type"] == "authorization_code"
+    assert token_step.request.body.fields["code"] == ("${steps.setup-cbpii-consent-authorisation.response.body.code}")
+
+    funds_confirmation_step = next(
+        step for step in manifest.steps if step.id == "cbpii-funds-confirmation-create-request"
+    )
+    assert isinstance(funds_confirmation_step, ManifestStep)
+    assert funds_confirmation_step.required_token_id == "cbpii-funds-confirmation"  # noqa: S105 - semantic token id fixture
+    assert isinstance(funds_confirmation_step.request.body, JsonBody)
+    funds_confirmation_body = funds_confirmation_step.request.body.value
+    assert isinstance(funds_confirmation_body, dict)
+    funds_confirmation_data = funds_confirmation_body["Data"]
+    assert isinstance(funds_confirmation_data, dict)
+    cbpii_reference = funds_confirmation_data["Reference"]
+    assert isinstance(cbpii_reference, str)
+    assert len(cbpii_reference) == 32
+
+
+@pytest.mark.unit
+def test_compiled_cbpii_manifest_preserves_captured_consent_id_url(tmp_path: Path) -> None:
+    """CBPII dependent resource URLs keep captured consent-id placeholders.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=CBPII_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+            ImplementedEndpoint(
+                method="DELETE",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents/{consentId}",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=None,
+    )
+
+    urls_by_step_id = {step.id: step.request.url for step in manifest.steps if isinstance(step, ManifestStep)}
+    assert urls_by_step_id["cbpii-consent-delete-request"] == (
+        "https://resource.example.com/open-banking/v4.0/cbpii/funds-confirmation-consents/"
+        "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
+    )
+
+
 @pytest.mark.unit
 def test_run_manifest_emits_placeholder_error_event() -> None:
     """Unresolvable placeholder produces a placeholder-error event for the failing step."""
@@ -3094,6 +3522,47 @@ def test_run_manifest_emits_placeholder_error_event() -> None:
 
     types = [event.type for event in execution_logger.events()]
     assert "placeholder-error" in types
+
+
+@pytest.mark.unit
+def test_run_manifest_skips_step_when_runtime_token_setup_is_missing() -> None:
+    """A protected-resource step skips when its runtime token was not produced."""
+    from conformance.manifest import parse_manifest as parse_v1
+
+    v1_manifest = parse_v1(
+        {
+            "schemaVersion": "v1",
+            "name": "missing token",
+            "steps": [
+                {
+                    "id": "resource",
+                    "name": "Protected resource",
+                    "request": {
+                        "method": "GET",
+                        "url": "https://resource.example.com/data",
+                        "headers": {
+                            "Authorization": "Bearer ${tokens.cbpii-funds-confirmation.access_token}",
+                        },
+                    },
+                    "assertions": [{"type": "http_status", "expected": 200}],
+                },
+            ],
+        }
+    )
+
+    requested = False
+
+    def handler(_request: httpx.Request) -> httpx.Response:
+        nonlocal requested
+        requested = True
+        return httpx.Response(200, json={})
+
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(v1_manifest, client=client)
+
+    assert requested is False
+    assert result.steps[0].status == "skipped"
+    assert "Token 'cbpii-funds-confirmation' not found" in result.steps[0].message
 
 
 @pytest.mark.unit
@@ -3481,7 +3950,6 @@ def _psu_manual_step(**overrides: Any) -> PsuAuthorizationStep:
         "scope": "openid accounts",
         "state": "s" * 32,
         "request_object": None,
-        "timeout_seconds": 2,
         "mandatory": False,
         "optional": False,
     }
@@ -3605,7 +4073,7 @@ def test_psu_manual_step_times_out() -> None:
     """Manual mode fails when no callback resolves before the deadline."""
     fake_clock = _FakeClock()
     result, context = _execute_v1_psu_step(
-        _psu_manual_step(timeout_seconds=1),
+        _psu_manual_step(),
         context=ExecutionContext(),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
         run_id="run-timeout",
@@ -3616,7 +4084,7 @@ def test_psu_manual_step_times_out() -> None:
     )
 
     assert result.status == "failed"
-    assert result.details["timeoutSeconds"] == 1
+    assert result.details["timeoutSeconds"] == PSU_AUTHORIZATION_TIMEOUT_SECONDS
     assert result.details["request"] != {}
     assert context.steps["psu"].response is None
 
@@ -3629,7 +4097,6 @@ def test_psu_manual_timeout_masks_authorization_url_query_evidence() -> None:
         _psu_manual_step(
             authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
             request_object="signed.request.jwt",
-            timeout_seconds=1,
         ),
         context=ExecutionContext(),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
@@ -3663,7 +4130,6 @@ def test_psu_manual_timeout_developer_mode_keeps_authorization_url_query_unmaske
         _psu_manual_step(
             authorization_endpoint="https://auth.example.com/authorize?client_assertion=inline.assertion",
             request_object="signed.request.jwt",
-            timeout_seconds=1,
         ),
         context=ExecutionContext(),
         client=httpx.Client(transport=httpx.MockTransport(lambda _request: httpx.Response(500))),
@@ -3968,7 +4434,6 @@ def test_run_manifest_mandatory_psu_timeout_counts_as_mandatory_failed(monkeypat
                 "clientId": "client-123",
                 "redirectUri": "https://conformance.example.com/callback",
                 "state": "t" * 32,
-                "timeoutSeconds": 1,
                 "mandatory": True,
             }
         ],

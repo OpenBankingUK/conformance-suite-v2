@@ -53,6 +53,7 @@ SENSITIVE_HEADER_NAMES: Final[frozenset[str]] = frozenset(
         "cookie",
         "set-cookie",
         "x-api-key",
+        "x-fapi-customer-ip-address",
         "x-fapi-financial-id",
         "x-jws-signature",
     }

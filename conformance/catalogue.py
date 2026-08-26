@@ -28,6 +28,20 @@ type HttpMethod = Literal["GET", "POST", "PUT", "PATCH", "DELETE"]
 type RuntimeInputType = Literal["string", "number", "boolean", "json", "url", "file_reference"]
 """Runtime input value types accepted by catalogue test cases."""
 
+type RuntimeInputSource = Literal["plan", "fixture", "generated", "captured", "token"]
+"""Runtime data source categories used to keep generated data out of plans."""
+
+type GeneratedHeaderValue = Literal["uuid4"]
+"""Generated outbound header value strategies supported by catalogue request steps."""
+
+type GeneratedRuntimeValue = Literal[
+    "uuid4",
+    "uuid4-hex",
+    "invalid-resource-id",
+    "invalid-access-token",
+]
+"""Generated runtime value strategies supported by catalogue request steps."""
+
 type TestCaseRole = Literal["setup", "security", "resource", "consent", "token"]
 """Execution/compliance role assigned to catalogue test cases."""
 
@@ -90,7 +104,6 @@ _SUPPORTED_PLAN_EXECUTION_MODES = {"certification", "development"}
 
 _MODEL_BANK_CONFIG_KEYS = {
     "discoveryUrl",
-    "timeoutSeconds",
     "followUp",
     "tls",
     "fapiSigning",
@@ -99,14 +112,25 @@ _MODEL_BANK_CONFIG_KEYS = {
     "approvedReleasePolicyPath",
     "oauth",
     "resourceServer",
-    "clientCredentials",
-    "openBanking",
     "ais",
     "pis",
     "cbpii",
     "conditionalProperties",
 }
 """Executable model-bank config keys derivable from a canonical test plan."""
+
+_OBSOLETE_MODEL_BANK_CONFIG_KEYS = {"timeoutSeconds"}
+"""Previously accepted config keys that must not become runtime inputs."""
+
+_REQUEST_HEADER_RUNTIME_INPUT_IDS = {
+    "idempotencyKey",
+    "xCustomerUserAgent",
+    "xFapiAuthDate",
+    "xFapiCustomerIpAddress",
+    "xFapiFinancialId",
+    "xFapiInteractionId",
+}
+"""Runtime input ids that represent outbound Open Banking request headers."""
 
 
 @dataclass(frozen=True)
@@ -235,6 +259,12 @@ class RuntimeInputRequirement:
         label: Human-readable label suitable for UI prompts.
         required: Whether compilation must fail when the value is absent.
         sensitive: Whether the value must be omitted from trace snapshots.
+        description: Optional participant-facing guidance explaining how the
+            runtime value affects the selected run.
+        source: Where the runtime value comes from. Only ``"plan"`` values are
+            participant-authored config; fixture, generated, captured, and token
+            values are resolved during execution preparation or request
+            dispatch.
     """
 
     input_id: str
@@ -242,6 +272,25 @@ class RuntimeInputRequirement:
     label: str
     required: bool = True
     sensitive: bool = False
+    description: str | None = None
+    source: RuntimeInputSource = "plan"
+
+
+@dataclass(frozen=True)
+class CatalogueRequestHeader:
+    """Outbound request header sourced from runtime data or generated at dispatch.
+
+    Attributes:
+        name: HTTP header name to send on the generated request.
+        input_id: Runtime input identifier that supplies the header value when
+            the value must come from the plan.
+        generated_value: Strategy used to generate the value at request-dispatch
+            time when the header should not be plan-authored.
+    """
+
+    name: str
+    input_id: str | None = None
+    generated_value: GeneratedHeaderValue | None = None
 
 
 @dataclass(frozen=True)
@@ -254,6 +303,16 @@ class CatalogueRequestStep:
         method: HTTP method to execute.
         path: Standards path to resolve against participant runtime config.
         runtime_input_refs: Runtime input identifiers consumed by this step.
+        headers: Outbound request headers sourced from runtime inputs.
+        body_template: Optional catalogue-owned JSON request body template.
+            String leaves may contain ``${steps.*}`` placeholders for captured
+            response values and ``${generated.*}`` placeholders for per-run
+            generated values.
+        generated_values: Runtime value strategies scoped to this request step.
+        required_token_id: Optional semantic token id used to build the
+            ``Authorization`` header from runtime token state.
+        produced_token_id: Optional semantic token id populated from an
+            ``access_token`` response body field.
     """
 
     step_id: str
@@ -261,6 +320,11 @@ class CatalogueRequestStep:
     method: HttpMethod
     path: str
     runtime_input_refs: tuple[str, ...] = ()
+    headers: tuple[CatalogueRequestHeader, ...] = ()
+    body_template: JsonValue | None = None
+    generated_values: Mapping[str, GeneratedRuntimeValue] = field(default_factory=lambda: MappingProxyType({}))
+    required_token_id: str | None = None
+    produced_token_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -708,6 +772,33 @@ def model_bank_config_from_plan_document(document: PlanDocumentV2) -> JsonObject
         :func:`conformance.model_bank_config.parse_model_bank_config`.
     """
     return {key: _copy_json_value(value) for key, value in document.config.items() if key in _MODEL_BANK_CONFIG_KEYS}
+
+
+def security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Build canonical security environment metadata from editable plan config.
+
+    Args:
+        config: Draft executable config collected by the browser builder.
+
+    Returns:
+        Canonical ``securityEnvironment`` object for a JSON-first test plan.
+
+    Raises:
+        CatalogueError: If no non-empty discovery URL can be represented.
+    """
+    return _security_environment_from_plan_config(config)
+
+
+def business_test_data_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
+    """Build canonical business test data from editable plan config.
+
+    Args:
+        config: Draft executable config collected by the browser builder.
+
+    Returns:
+        Canonical ``businessTestData`` object for a JSON-first test plan.
+    """
+    return _business_test_data_from_plan_config(config)
 
 
 def supported_plan_document_boundaries(catalogues: Iterable[TestCatalogue]) -> tuple[PlanDocumentBoundary, ...]:
@@ -1779,46 +1870,35 @@ def _parse_canonical_security_environment(raw_environment: Mapping[str, JsonValu
             "issuer",
             "authorizationEndpoint",
             "tokenEndpoint",
-            "jwksUri",
             "clientAuthMethod",
             "signingAlgorithm",
             "mtls",
             "clientId",
             "redirectUri",
-            "openBankingIntentId",
             "resourceBaseUrl",
             "responseType",
-            "acrValuesSupported",
-            "signingCertificateRef",
-            "signingPrivateKeyRef",
+            "signingCertificatePath",
+            "signingPrivateKeyPath",
             "signingKeyId",
             "clientAssertionIssuer",
             "clientAssertionSubject",
-            "tppSignatureIssuer",
-            "tppSignatureTan",
-            "caBundleRef",
-            "xFapiFinancialId",
-            "sendXFapiCustomerIpAddress",
-            "xFapiCustomerIpAddress",
-            "timeoutSeconds",
         },
         location="testPlan.securityEnvironment",
     )
-    discovery_url = _required_string(raw_environment, "discoveryUrl", location="testPlan.securityEnvironment")
-    try:
-        validate_https_url(discovery_url, label="testPlan.securityEnvironment.discoveryUrl")
-    except HttpsUrlValidationError as error:
-        raise CatalogueError(str(error)) from error
     parsed = _copy_json_mapping(raw_environment)
+    discovery_url = parsed.get("discoveryUrl")
+    if discovery_url is not None:
+        if not isinstance(discovery_url, str) or not discovery_url.strip():
+            raise CatalogueError("testPlan.securityEnvironment.discoveryUrl must be a non-empty string")
+        try:
+            validate_https_url(discovery_url.strip(), label="testPlan.securityEnvironment.discoveryUrl")
+        except HttpsUrlValidationError as error:
+            raise CatalogueError(str(error)) from error
+        parsed["discoveryUrl"] = discovery_url.strip()
     if "mtls" in parsed:
         _parse_canonical_mtls(_json_object(parsed["mtls"], location="testPlan.securityEnvironment.mtls"))
     if "clientAuthMethod" in parsed:
         _parse_canonical_client_auth_method(parsed["clientAuthMethod"])
-    if "acrValuesSupported" in parsed:
-        _parse_string_array_value(
-            parsed["acrValuesSupported"],
-            location="testPlan.securityEnvironment.acrValuesSupported",
-        )
     return parsed
 
 
@@ -1833,13 +1913,13 @@ def _parse_canonical_mtls(raw_mtls: Mapping[str, JsonValue]) -> None:
     """
     _reject_unknown_keys(
         raw_mtls,
-        allowed_keys={"enabled", "certificateRef", "privateKeyRef", "caBundleRef", "certificatePathRoot"},
+        allowed_keys={"enabled", "certificatePath", "privateKeyPath", "caBundlePath"},
         location="testPlan.securityEnvironment.mtls",
     )
     enabled = raw_mtls.get("enabled")
     if enabled is not None and not isinstance(enabled, bool):
         raise CatalogueError("testPlan.securityEnvironment.mtls.enabled must be a JSON boolean")
-    for key in ("certificateRef", "privateKeyRef", "caBundleRef", "certificatePathRoot"):
+    for key in ("certificatePath", "privateKeyPath", "caBundlePath"):
         value = raw_mtls.get(key)
         if value is not None and (not isinstance(value, str) or not value.strip()):
             raise CatalogueError(f"testPlan.securityEnvironment.mtls.{key} must be a non-empty string when present")
@@ -2030,13 +2110,10 @@ def _config_from_security_environment(security_environment: Mapping[str, JsonVal
     Returns:
         Model-bank config fields derived from the canonical security section.
     """
-    config: JsonObject = {"discoveryUrl": _copy_json_value(security_environment["discoveryUrl"])}
-    _copy_optional_top_level_value(
-        config,
-        security_environment,
-        source_key="timeoutSeconds",
-        target_key="timeoutSeconds",
-    )
+    config: JsonObject = {}
+    discovery_url = security_environment.get("discoveryUrl")
+    if discovery_url is not None:
+        config["discoveryUrl"] = _copy_json_value(discovery_url)
     oauth = _oauth_config_from_security_environment(security_environment)
     if oauth:
         config["oauth"] = oauth
@@ -2049,9 +2126,6 @@ def _config_from_security_environment(security_environment: Mapping[str, JsonVal
     resource_server = _resource_server_config_from_security_environment(security_environment)
     if resource_server:
         config["resourceServer"] = resource_server
-    open_banking = _open_banking_config_from_security_environment(security_environment)
-    if open_banking:
-        config["openBanking"] = open_banking
     return config
 
 
@@ -2079,22 +2153,10 @@ def _oauth_config_from_security_environment(security_environment: Mapping[str, J
     _copy_optional_top_level_value(
         oauth,
         security_environment,
-        source_key="openBankingIntentId",
-        target_key="openBankingIntentId",
-    )
-    _copy_optional_top_level_value(
-        oauth,
-        security_environment,
         source_key="resourceBaseUrl",
         target_key="resourceBaseUrl",
     )
     _copy_optional_top_level_value(oauth, security_environment, source_key="responseType", target_key="responseType")
-    _copy_optional_top_level_value(
-        oauth,
-        security_environment,
-        source_key="acrValuesSupported",
-        target_key="acrValuesSupported",
-    )
     _copy_optional_top_level_value(
         oauth,
         security_environment,
@@ -2120,13 +2182,13 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
     _copy_optional_top_level_value(
         signing,
         security_environment,
-        source_key="signingCertificateRef",
+        source_key="signingCertificatePath",
         target_key="signingCertificatePath",
     )
     _copy_optional_top_level_value(
         signing,
         security_environment,
-        source_key="signingPrivateKeyRef",
+        source_key="signingPrivateKeyPath",
         target_key="signingPrivateKeyPath",
     )
     _copy_optional_top_level_value(signing, security_environment, source_key="signingKeyId", target_key="kid")
@@ -2148,14 +2210,6 @@ def _fapi_signing_config_from_security_environment(security_environment: Mapping
         source_key="clientAuthMethod",
         target_key="tokenEndpointAuthMethod",
     )
-    raw_mtls = security_environment.get("mtls")
-    if isinstance(raw_mtls, dict):
-        _copy_optional_top_level_value(
-            signing,
-            raw_mtls,
-            source_key="certificatePathRoot",
-            target_key="certificatePathRoot",
-        )
     required_fields = {
         "signingCertificatePath",
         "signingPrivateKeyPath",
@@ -2179,10 +2233,9 @@ def _tls_config_from_security_environment(security_environment: Mapping[str, Jso
     raw_mtls = security_environment.get("mtls")
     mtls = raw_mtls if isinstance(raw_mtls, dict) else {}
     tls: JsonObject = {}
-    _copy_optional_top_level_value(tls, mtls, source_key="certificatePathRoot", target_key="certificatePathRoot")
-    _copy_optional_top_level_value(tls, mtls, source_key="caBundleRef", target_key="caBundlePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="certificateRef", target_key="clientCertificatePath")
-    _copy_optional_top_level_value(tls, mtls, source_key="privateKeyRef", target_key="clientPrivateKeyPath")
+    _copy_optional_top_level_value(tls, mtls, source_key="caBundlePath", target_key="caBundlePath")
+    _copy_optional_top_level_value(tls, mtls, source_key="certificatePath", target_key="clientCertificatePath")
+    _copy_optional_top_level_value(tls, mtls, source_key="privateKeyPath", target_key="clientPrivateKeyPath")
     return tls
 
 
@@ -2202,50 +2255,7 @@ def _resource_server_config_from_security_environment(security_environment: Mapp
         source_key="resourceBaseUrl",
         target_key="baseUrl",
     )
-    _copy_optional_top_level_value(
-        resource_server,
-        security_environment,
-        source_key="xFapiFinancialId",
-        target_key="xFapiFinancialId",
-    )
-    _copy_optional_top_level_value(
-        resource_server,
-        security_environment,
-        source_key="sendXFapiCustomerIpAddress",
-        target_key="sendXFapiCustomerIpAddress",
-    )
-    _copy_optional_top_level_value(
-        resource_server,
-        security_environment,
-        source_key="xFapiCustomerIpAddress",
-        target_key="xFapiCustomerIpAddress",
-    )
     return resource_server
-
-
-def _open_banking_config_from_security_environment(security_environment: Mapping[str, JsonValue]) -> JsonObject:
-    """Return Open Banking signature config from canonical security metadata.
-
-    Args:
-        security_environment: Canonical ``securityEnvironment`` object.
-
-    Returns:
-        Open Banking signature config object, or an empty object when absent.
-    """
-    open_banking: JsonObject = {}
-    _copy_optional_top_level_value(
-        open_banking,
-        security_environment,
-        source_key="tppSignatureIssuer",
-        target_key="tppSignatureIssuer",
-    )
-    _copy_optional_top_level_value(
-        open_banking,
-        security_environment,
-        source_key="tppSignatureTan",
-        target_key="tppSignatureTan",
-    )
-    return open_banking
 
 
 def _config_from_business_test_data(business_test_data: Mapping[str, JsonValue]) -> JsonObject:
@@ -2377,6 +2387,8 @@ def _parse_plan_document_v2(spec: Mapping[str, JsonValue]) -> PlanDocumentV2:
     raw_config = _required_object(spec, "config", location="planSpec")
     config = _copy_json_mapping(raw_config)
     config.pop("environment", None)
+    for obsolete_key in _OBSOLETE_MODEL_BANK_CONFIG_KEYS:
+        config.pop(obsolete_key, None)
     return PlanDocumentV2(
         schema_version="v2",
         scheme=_required_string(spec, "scheme", location="planSpec"),
@@ -2544,8 +2556,20 @@ def _business_test_data_for_export(document: PlanDocumentV2) -> JsonObject:
         Business test-data object in canonical PRD shape.
     """
     if document.business_test_data:
-        return {key: _copy_json_value(value) for key, value in document.business_test_data.items()}
-    return _business_test_data_from_plan_config(document.config)
+        return _exportable_business_test_data(document.business_test_data)
+    return _exportable_business_test_data(_business_test_data_from_plan_config(document.config))
+
+
+def _exportable_business_test_data(business_test_data: Mapping[str, JsonValue]) -> JsonObject:
+    """Return business data safe for canonical plan export.
+
+    Args:
+        business_test_data: Parsed canonical business data.
+
+    Returns:
+        Business data without legacy value-wrapper runtime inputs.
+    """
+    return {key: _copy_json_value(value) for key, value in business_test_data.items() if key != "inputs"}
 
 
 def _canonical_resource_group_for_export(resource_group: PlanResourceGroup) -> JsonValue:
@@ -2584,22 +2608,13 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
         config: Model-bank config section preserved by a plan document.
 
     Returns:
-        Canonical security environment object.
-
-    Raises:
-        CatalogueError: If no non-empty discovery URL can be represented in the
-            canonical export.
+        Canonical security environment object, including discovery URL only when
+        configured.
     """
     discovery_url = config.get("discoveryUrl")
-    if not isinstance(discovery_url, str) or not discovery_url.strip():
-        raise CatalogueError("Cannot serialize canonical test plan without securityEnvironment.discoveryUrl")
-    security_environment: JsonObject = {"discoveryUrl": discovery_url.strip()}
-    _copy_optional_top_level_value(
-        security_environment,
-        config,
-        source_key="timeoutSeconds",
-        target_key="timeoutSeconds",
-    )
+    security_environment: JsonObject = {}
+    if isinstance(discovery_url, str) and discovery_url.strip():
+        security_environment["discoveryUrl"] = discovery_url.strip()
     oauth = config.get("oauth")
     if isinstance(oauth, dict):
         _copy_optional_top_level_value(security_environment, oauth, source_key="issuer", target_key="issuer")
@@ -2620,12 +2635,6 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
         _copy_optional_top_level_value(
             security_environment,
             oauth,
-            source_key="openBankingIntentId",
-            target_key="openBankingIntentId",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            oauth,
             source_key="resourceBaseUrl",
             target_key="resourceBaseUrl",
         )
@@ -2634,12 +2643,6 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             oauth,
             source_key="responseType",
             target_key="responseType",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            oauth,
-            source_key="acrValuesSupported",
-            target_key="acrValuesSupported",
         )
         _copy_optional_top_level_value(
             security_environment,
@@ -2659,13 +2662,13 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             security_environment,
             fapi_signing,
             source_key="signingCertificatePath",
-            target_key="signingCertificateRef",
+            target_key="signingCertificatePath",
         )
         _copy_optional_top_level_value(
             security_environment,
             fapi_signing,
             source_key="signingPrivateKeyPath",
-            target_key="signingPrivateKeyRef",
+            target_key="signingPrivateKeyPath",
         )
         _copy_optional_top_level_value(security_environment, fapi_signing, source_key="kid", target_key="signingKeyId")
         _copy_optional_top_level_value(
@@ -2688,38 +2691,6 @@ def _security_environment_from_plan_config(config: Mapping[str, JsonValue]) -> J
             resource_server,
             source_key="baseUrl",
             target_key="resourceBaseUrl",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            resource_server,
-            source_key="xFapiFinancialId",
-            target_key="xFapiFinancialId",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            resource_server,
-            source_key="sendXFapiCustomerIpAddress",
-            target_key="sendXFapiCustomerIpAddress",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            resource_server,
-            source_key="xFapiCustomerIpAddress",
-            target_key="xFapiCustomerIpAddress",
-        )
-    open_banking = config.get("openBanking")
-    if isinstance(open_banking, dict):
-        _copy_optional_top_level_value(
-            security_environment,
-            open_banking,
-            source_key="tppSignatureIssuer",
-            target_key="tppSignatureIssuer",
-        )
-        _copy_optional_top_level_value(
-            security_environment,
-            open_banking,
-            source_key="tppSignatureTan",
-            target_key="tppSignatureTan",
         )
     return security_environment
 
@@ -2763,12 +2734,11 @@ def _merge_mtls_export(security_environment: JsonObject, config: Mapping[str, Js
     if not isinstance(tls, dict):
         return
     mtls: JsonObject = {}
-    _copy_optional_top_level_value(mtls, tls, source_key="certificatePathRoot", target_key="certificatePathRoot")
-    _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundleRef")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificateRef")
-    _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyRef")
+    _copy_optional_top_level_value(mtls, tls, source_key="caBundlePath", target_key="caBundlePath")
+    _copy_optional_top_level_value(mtls, tls, source_key="clientCertificatePath", target_key="certificatePath")
+    _copy_optional_top_level_value(mtls, tls, source_key="clientPrivateKeyPath", target_key="privateKeyPath")
     if mtls:
-        mtls["enabled"] = "certificateRef" in mtls and "privateKeyRef" in mtls
+        mtls["enabled"] = "certificatePath" in mtls and "privateKeyPath" in mtls
         security_environment["mtls"] = mtls
 
 
@@ -2792,7 +2762,8 @@ def _business_test_data_from_plan_config(config: Mapping[str, JsonValue]) -> Jso
     top_level_runtime_inputs = {
         key: _copy_json_value(value)
         for key, value in config.items()
-        if key not in _MODEL_BANK_CONFIG_KEYS | {"inputs", "runtimeInputs"} and not isinstance(value, dict | list)
+        if key not in _MODEL_BANK_CONFIG_KEYS | _OBSOLETE_MODEL_BANK_CONFIG_KEYS | {"inputs", "runtimeInputs"}
+        and not isinstance(value, dict | list)
     }
     if top_level_runtime_inputs and "runtimeInputs" not in business_test_data:
         business_test_data["runtimeInputs"] = top_level_runtime_inputs
@@ -3084,30 +3055,6 @@ def _merge_structured_runtime_inputs(runtime_inputs: JsonObject, config: Mapping
             "resourceBaseUrl",
             oauth.get("resourceBaseUrl"),
             location="planSpec.config.oauth.resourceBaseUrl",
-        )
-
-    ais = _optional_runtime_config_object(config, "ais")
-    if ais is not None:
-        resource_ids = _optional_nested_runtime_config_object(ais, "resourceIds")
-        if resource_ids is not None:
-            account_id = _first_object_string(resource_ids.get("accountIds"), "accountId")
-            _merge_optional_structured_runtime_input(
-                runtime_inputs,
-                "consentedAccountId",
-                account_id,
-                location="planSpec.config.ais.resourceIds.accountIds[0].accountId",
-            )
-        _merge_optional_structured_runtime_input(
-            runtime_inputs,
-            "fromBookingDateTime",
-            ais.get("transactionFromDate"),
-            location="planSpec.config.ais.transactionFromDate",
-        )
-        _merge_optional_structured_runtime_input(
-            runtime_inputs,
-            "toBookingDateTime",
-            ais.get("transactionToDate"),
-            location="planSpec.config.ais.transactionToDate",
         )
 
     cbpii = _optional_runtime_config_object(config, "cbpii")
@@ -3688,12 +3635,30 @@ def _runtime_input_snapshot(
         CatalogueError: If required values are missing or typed incorrectly.
     """
     requirements = _combined_runtime_requirements(cases_by_id, ordered_ids)
+    _reject_unsupported_request_header_runtime_inputs(requirements, runtime_inputs)
     traces: list[RuntimeInputTrace] = []
     for requirement in requirements:
         provided = requirement.input_id in runtime_inputs and runtime_inputs[requirement.input_id] is not None
+        value = runtime_inputs.get(requirement.input_id)
+        if requirement.source != "plan":
+            if provided:
+                raise CatalogueError(
+                    f"Runtime input '{requirement.input_id}' is {requirement.source}-sourced "
+                    "and cannot be supplied in test plan config"
+                )
+            traces.append(
+                RuntimeInputTrace(
+                    input_id=requirement.input_id,
+                    input_type=requirement.input_type,
+                    required=False,
+                    sensitive=requirement.sensitive,
+                    provided=False,
+                    value=None,
+                )
+            )
+            continue
         if requirement.required and not provided:
             raise CatalogueError(f"Required runtime input '{requirement.input_id}' is missing")
-        value = runtime_inputs.get(requirement.input_id)
         if provided and value is not None:
             _validate_runtime_input_value(requirement, value)
         traces.append(
@@ -3707,6 +3672,31 @@ def _runtime_input_snapshot(
             )
         )
     return tuple(traces)
+
+
+def _reject_unsupported_request_header_runtime_inputs(
+    requirements: tuple[RuntimeInputRequirement, ...],
+    runtime_inputs: Mapping[str, JsonValue],
+) -> None:
+    """Reject request-header inputs that no selected catalogue case can consume.
+
+    Args:
+        requirements: Combined runtime requirements for selected cases.
+        runtime_inputs: Runtime values supplied by the plan spec.
+
+    Raises:
+        CatalogueError: If a supplied request-header input is not declared by
+            the selected run.
+    """
+    supported_input_ids = {requirement.input_id for requirement in requirements}
+    unsupported = sorted(
+        input_id
+        for input_id in runtime_inputs
+        if input_id in _REQUEST_HEADER_RUNTIME_INPUT_IDS and input_id not in supported_input_ids
+    )
+    if unsupported:
+        unsupported_list = ", ".join(unsupported)
+        raise CatalogueError(f"Unsupported request header runtime input(s) for selected scope: {unsupported_list}")
 
 
 def _combined_runtime_requirements(
@@ -3726,6 +3716,7 @@ def _combined_runtime_requirements(
         CatalogueError: If the same runtime input id has conflicting metadata.
     """
     requirements_by_id: dict[str, RuntimeInputRequirement] = {}
+    requirement_positions: dict[str, int] = {}
     ordered_requirements: list[RuntimeInputRequirement] = []
     for case_id in ordered_ids:
         for requirement in cases_by_id[case_id].runtime_input_requirements:
@@ -3736,10 +3727,24 @@ def _combined_runtime_requirements(
             existing = requirements_by_id.get(requirement.input_id)
             if existing is None:
                 requirements_by_id[requirement.input_id] = requirement
+                requirement_positions[requirement.input_id] = len(ordered_requirements)
                 ordered_requirements.append(requirement)
                 continue
-            if existing != requirement:
+            if existing.input_type != requirement.input_type:
                 raise CatalogueError(f"Runtime input '{requirement.input_id}' has conflicting catalogue requirements")
+            if existing.source != requirement.source:
+                raise CatalogueError(f"Runtime input '{requirement.input_id}' has conflicting catalogue data sources")
+            merged_requirement = RuntimeInputRequirement(
+                input_id=existing.input_id,
+                input_type=existing.input_type,
+                label=existing.label,
+                required=existing.required or requirement.required,
+                sensitive=existing.sensitive or requirement.sensitive,
+                description=existing.description or requirement.description,
+                source=existing.source,
+            )
+            requirements_by_id[requirement.input_id] = merged_requirement
+            ordered_requirements[requirement_positions[requirement.input_id]] = merged_requirement
     return tuple(ordered_requirements)
 
 

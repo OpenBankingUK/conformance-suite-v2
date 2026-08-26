@@ -52,14 +52,13 @@ class OzoneModelBankClient:
         """Build a model-bank client from validated runtime configuration.
 
         Args:
-            config: Model-bank configuration containing timeout and TLS paths.
+            config: Model-bank configuration containing TLS paths.
 
         Returns:
             Client ready to fetch discovery and JWKS metadata.
         """
         return cls(
             build_json_http_client(
-                timeout_seconds=config.timeout_seconds,
                 ca_bundle_path=config.tls.ca_bundle_path,
                 client_certificate_path=config.tls.client_certificate_path,
                 client_private_key_path=config.tls.client_private_key_path,

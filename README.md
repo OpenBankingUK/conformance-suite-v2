@@ -11,19 +11,20 @@ The supported workflow is:
 
 1. Open the browser main menu at `/`.
 2. Choose **Create a new test plan with builder** or **Import test plan**.
-3. For a new plan, select the scheme, specification, and version. The page then
-   shows resource groups only when the selected specification defines them, such
-   as Read/Write Account and Transaction or Payment Initiation.
-4. Select implemented endpoints inside the chosen resource groups when the
+3. For a new plan, select the scheme, specification, and version.
+4. Enter the single security environment for the plan, starting with the OpenID
+   discovery URL and then confirming OAuth/FAPI, mTLS, and resource-server
+   values.
+5. Select one or more compatible resource groups, such as Read/Write Account and
+   Transaction or Payment Initiation.
+6. Select implemented endpoints inside the chosen resource groups when the
    selected specification is catalogue-backed.
-5. Review the endpoint capabilities shown inline on each selected endpoint card.
+7. Review the endpoint capabilities shown inline on each selected endpoint card.
    Required capabilities are checked and locked; optional capabilities are
    unchecked until the participant declares that behaviour as implemented.
-6. Provide config through staged pages: business/request defaults first,
-   discovery URL next, OAuth/FAPI/security settings after discovery metadata is
-   available, and generated runtime artifacts last. Domain-specific fields
-   appear only for the selected endpoint scope.
-7. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
+8. Provide resource-group-specific business data and generated runtime artifacts.
+   Domain-specific fields appear only for the selected endpoint scope.
+9. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
    run.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
@@ -65,7 +66,7 @@ UK Read/Write boundary for now.
     "resourceBaseUrl": "https://resource.example.com",
     "mtls": {
       "enabled": true,
-      "certificateRef": "transport-cert.pem"
+      "certificatePath": "/absolute/path/to/transport-cert.pem"
     }
   },
   "resourceGroups": ["AIS"],
@@ -85,14 +86,12 @@ UK Read/Write boundary for now.
 objects with explicit endpoint/capability selections for builder exports. Required
 endpoint capabilities may be omitted because the compiler selects them
 automatically for implemented endpoints. Optional capabilities must be listed
-under their endpoint to generate implementation-dependent tests. The lower-level
-v1 per-catalogue plan spec and legacy v2 shared plan document remain accepted by
-older CLI/API paths for compatibility, but the browser import/export flow emits
-schemaVersion `1.0` plans. `config.testSuite`, public `--manifest`, public
-`--deselect`, REST `manifest`, and REST `deselectStepIds` are intentionally
-rejected. Mandatory applicable catalogue tests cannot be arbitrarily deselected.
-v1 assertion overrides are import-only, recorded, and make the run
-non-certifying.
+under their endpoint to generate implementation-dependent tests. Public browser,
+CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
+`config.testSuite`, public `--manifest`, public `--deselect`, public
+`--plan-spec`, REST `manifest`, REST `planSpec`, and REST `deselectStepIds` are
+intentionally rejected. Mandatory applicable catalogue tests cannot be
+arbitrarily deselected.
 
 ## Browser and REST launch
 
@@ -164,7 +163,7 @@ CLI exit codes are:
 | --- | --- |
 | `0` | All selected checks passed. |
 | `1` | Execution completed with failed checks. |
-| `2` | Config, plan-spec, or catalogue compilation input was invalid. |
+| `2` | Config, canonical test plan, or catalogue compilation input was invalid. |
 | `3` | Result or execution-log output could not be written. |
 
 Set `CONFORMANCE_DEVELOPER_MODE=true` only for local debugging. It disables

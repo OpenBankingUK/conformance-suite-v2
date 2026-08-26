@@ -20,6 +20,7 @@ from conformance.catalogue import (
     TestCaseRole,
     TestCatalogue,
 )
+from conformance.catalogues.common import open_banking_request_headers_for
 from conformance.json_types import JsonValue
 
 type _CatalogueFamily = Literal["vrp", "cvrp"]
@@ -49,6 +50,7 @@ _ACCESS_TOKEN = RuntimeInputRequirement(
     input_type="string",
     label="Authorised access token",
     sensitive=True,
+    source="token",
 )
 """Shared runtime requirement for an OAuth2 access token used in API calls."""
 
@@ -57,6 +59,7 @@ _CONSENT_ID = RuntimeInputRequirement(
     input_type="string",
     label="Domestic VRP consent identifier",
     required=False,
+    source="captured",
 )
 """Runtime identifier for VRP consent resources captured or supplied at execution time."""
 
@@ -65,6 +68,7 @@ _INITIAL_PAYMENT_ID = RuntimeInputRequirement(
     input_type="string",
     label="Initial domestic VRP payment identifier",
     required=False,
+    source="captured",
 )
 """Runtime identifier for the first created domestic VRP payment resource."""
 
@@ -73,7 +77,17 @@ _REPEATED_PAYMENT_ID = RuntimeInputRequirement(
     input_type="string",
     label="Repeated domestic VRP payment identifier",
     required=False,
+    source="captured",
 )
+_VRP_RESOURCE_AUTH_ID = "vrp-payment-access"
+"""Semantic authorization id for VRP and cVRP resource API requests."""
+
+_VRP_CAPTURED_PATH_VALUES = {
+    "{consentId}": "${steps.vrp-consent-create-awaiting-authorisation-request.response.body.Data.ConsentId}",
+    "{initialPaymentId}": ("${steps.vrp-initial-payment-create-request.response.body.Data.DomesticVRPId}"),
+    "{repeatedPaymentId}": ("${steps.vrp-repeated-payment-create-request.response.body.Data.DomesticVRPId}"),
+}
+"""Captured response-field placeholders for VRP path parameters."""
 """Runtime identifier for repeated domestic VRP payment resources."""
 
 _VRP_CORE_CAPABILITY = "vrp.core"
@@ -505,7 +519,11 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
     Returns:
         A concrete catalogue test case for the chosen family.
     """
-    runtime_input_refs = tuple(requirement.input_id for requirement in blueprint.runtime_input_requirements)
+    runtime_input_refs = tuple(
+        requirement.input_id for requirement in blueprint.runtime_input_requirements if requirement.source == "plan"
+    )
+    request_path = _path_with_captured_vrp_values(family, blueprint.path)
+    required_token_id = _VRP_RESOURCE_AUTH_ID if _ACCESS_TOKEN in blueprint.runtime_input_requirements else None
     required_capability_ids = [_VRP_CORE_CAPABILITY] if family == "vrp" else [_CVRP_CORE_CAPABILITY]
     if blueprint.requires_funds_confirmation_capability:
         required_capability_ids.append(
@@ -529,8 +547,12 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
                 step_id=f"{_case_id(family, blueprint.id_suffix)}-request",
                 name=blueprint.name,
                 method=blueprint.method,
-                path=blueprint.path,
+                path=request_path,
                 runtime_input_refs=runtime_input_refs,
+                headers=open_banking_request_headers_for(
+                    require_idempotency=blueprint.method in {"POST", "PUT", "PATCH"}
+                ),
+                required_token_id=required_token_id,
             ),
         ),
         assertions=_build_assertions(blueprint.assertion_ids),
@@ -541,6 +563,22 @@ def _build_family_case(family: _CatalogueFamily, blueprint: _LegacyCaseBlueprint
             )
         ),
     )
+
+
+def _path_with_captured_vrp_values(family: _CatalogueFamily, path: str) -> str:
+    """Return a VRP path with captured resource ids bound to this family.
+
+    Args:
+        family: Catalogue family name.
+        path: Standards path template that may contain OpenAPI path variables.
+
+    Returns:
+        Request path containing execution-context placeholders for captured ids.
+    """
+    resolved_path = path
+    for variable, placeholder in _VRP_CAPTURED_PATH_VALUES.items():
+        resolved_path = resolved_path.replace(variable, placeholder.replace("steps.vrp-", f"steps.{family}-"))
+    return resolved_path
 
 
 def _build_family_cases(family: _CatalogueFamily) -> tuple[CatalogueTestCase, ...]:

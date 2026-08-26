@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+from conformance.catalogue import CatalogueError, ImplementedEndpoint, TestPlanSpec, compile_test_plan
 from conformance.catalogues.cbpii import CBPII_CATALOGUE_KEY, CBPII_CATALOGUE_VERSION, CBPII_FCS_CATALOGUE
 from conformance.json_types import JsonValue
 
@@ -13,14 +13,9 @@ def _runtime_inputs() -> dict[str, JsonValue]:
     """Build the runtime inputs needed by the CBPII catalogue fixtures."""
     return {
         "resourceBaseUrl": "https://rs.example.com",
-        "accessToken": "token-value",
         "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
-        "debtorAccountIdentification": "12345678901",
-        "debtorAccountName": "Jane Doe",
-        "fundsConfirmationConsentRequestRef": "fixtures/ob-funds-confirmation-consent.json",
-        "fundsConfirmationRequestRef": "fixtures/ob-funds-confirmation.json",
-        "uniqueCbpiiReference": "cbpii-reference-001",
-        "invalidFundsConfirmationConsentId": "invalid-consent-id",
+        "debtorAccountIdentification": "12345678901234",
+        "debtorAccountName": "Model Bank Account",
     }
 
 
@@ -134,12 +129,45 @@ def test_compile_surfaces_cbpii_runtime_input_requirements() -> None:
     compiled = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
     traces = {trace.input_id: trace for trace in compiled.traceability.runtime_input_snapshot}
-    assert traces["accessToken"].provided is True
+    assert traces["accessToken"].provided is False
     assert traces["accessToken"].sensitive is True
     assert traces["accessToken"].value is None
+    assert traces["debtorAccountSchemeName"].required is True
+    assert traces["debtorAccountSchemeName"].provided is True
+    assert traces["debtorAccountSchemeName"].value == "UK.OBIE.SortCodeAccountNumber"
+    assert traces["debtorAccountIdentification"].required is True
+    assert traces["debtorAccountIdentification"].provided is True
+    assert traces["debtorAccountIdentification"].value is None
+    assert traces["debtorAccountName"].required is True
+    assert traces["debtorAccountName"].provided is True
+    assert traces["debtorAccountName"].value == "Model Bank Account"
     assert traces["fundsConfirmationConsentId"].required is False
     assert traces["fundsConfirmationConsentId"].provided is False
-    assert traces["invalidFundsConfirmationConsentId"].provided is True
+    assert traces["invalidFundsConfirmationConsentId"].provided is False
+
+
+@pytest.mark.unit
+def test_compile_requires_cbpii_debtor_account_config() -> None:
+    """CBPII consent creation requires participant/model-bank debtor account data."""
+    spec = _spec(
+        endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+    )
+    spec = TestPlanSpec(
+        schema_version=spec.schema_version,
+        catalogue_key=spec.catalogue_key,
+        security_profile=spec.security_profile,
+        implemented_endpoints=spec.implemented_endpoints,
+        runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
+    )
+
+    with pytest.raises(CatalogueError, match="Required runtime input 'debtorAccountSchemeName' is missing"):
+        compile_test_plan(CBPII_FCS_CATALOGUE, spec)
 
 
 @pytest.mark.unit

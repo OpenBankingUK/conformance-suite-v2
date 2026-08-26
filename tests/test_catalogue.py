@@ -9,6 +9,7 @@ from conformance.catalogue import (
     CatalogueAssertion,
     CatalogueError,
     CatalogueKey,
+    CatalogueRequestHeader,
     CatalogueRequestStep,
     CatalogueTestCase,
     EndpointCapability,
@@ -136,7 +137,7 @@ def _capability(
 
 @pytest.mark.unit
 def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
-    """Structured v2 config defaults feed catalogue runtime inputs."""
+    """Structured v2 config keeps fixture data separate from runtime inputs."""
     document = parse_test_plan_document(
         {
             "schemaVersion": "v2",
@@ -165,12 +166,63 @@ def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
 
     assert isinstance(document, PlanDocumentV2)
     assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
-    assert document.runtime_inputs["consentedAccountId"] == "account-123"
-    assert document.runtime_inputs["fromBookingDateTime"] == "2026-01-01T00:00:00Z"
-    assert document.runtime_inputs["toBookingDateTime"] == "2026-01-31T23:59:59Z"
+    assert "consentedAccountId" not in document.runtime_inputs
+    assert "fromBookingDateTime" not in document.runtime_inputs
+    assert "toBookingDateTime" not in document.runtime_inputs
     assert document.runtime_inputs["debtorAccountSchemeName"] == "UK.OBIE.SortCodeAccountNumber"
     assert document.runtime_inputs["debtorAccountIdentification"] == "12345678901234"
     assert document.runtime_inputs["debtorAccountName"] == "Model Bank Account"
+
+
+@pytest.mark.unit
+def test_compile_rejects_unsupported_request_header_runtime_inputs() -> None:
+    """Header-like runtime inputs must be declared by the selected catalogue."""
+    catalogue = _catalogue(_case("accounts-list"))
+
+    with pytest.raises(
+        CatalogueError,
+        match="Unsupported request header runtime input\\(s\\) for selected scope: xFapiFinancialId",
+    ):
+        compile_test_plan(catalogue, _spec(runtime_inputs={"xFapiFinancialId": "financial-id"}))
+
+
+@pytest.mark.unit
+def test_compile_accepts_declared_version_specific_request_header_runtime_input() -> None:
+    """Future catalogue imports can opt in to currently unsupported headers."""
+    header_requirement = RuntimeInputRequirement(
+        input_id="xFapiFinancialId",
+        input_type="string",
+        label="x-fapi-financial-id header",
+        sensitive=True,
+    )
+    case = CatalogueTestCase(
+        test_case_id="accounts-list-with-financial-id",
+        name="Accounts list with financial id",
+        role="resource",
+        compliance_scope=("future-version fixture",),
+        applicability=TestCaseApplicability(
+            security_profiles=_profile("all"),
+            endpoint_refs=(EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts"),),
+        ),
+        mandatory=True,
+        runtime_input_requirements=(header_requirement,),
+        request_steps=(
+            CatalogueRequestStep(
+                step_id="accounts-list-with-financial-id-request",
+                name="Fetch resource",
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts",
+                headers=(CatalogueRequestHeader(name="x-fapi-financial-id", input_id="xFapiFinancialId"),),
+            ),
+        ),
+        assertions=(CatalogueAssertion("status-200", "http_status", "HTTP status is 200", {"expected": 200}),),
+    )
+
+    compiled = compile_test_plan(_catalogue(case), _spec(runtime_inputs={"xFapiFinancialId": "financial-id"}))
+
+    snapshot = {entry.input_id: entry for entry in compiled.traceability.runtime_input_snapshot}
+    assert snapshot["xFapiFinancialId"].provided is True
+    assert snapshot["xFapiFinancialId"].value is None
 
 
 @pytest.mark.unit
@@ -537,15 +589,14 @@ def test_parse_test_plan_document_v2_serializes_nested_scope_and_config() -> Non
         ],
         "businessTestData": {
             "runtimeInputs": {"resourceBaseUrl": "https://rs.example.com"},
-            "inputs": {"accessToken": {"value": "secret-access-token"}},
         },
         "metadata": {},
     }
 
 
 @pytest.mark.unit
-def test_legacy_v2_to_canonical_export_rejects_missing_discovery_url() -> None:
-    """Legacy documents cannot be serialized as canonical plans without discovery URL."""
+def test_legacy_v2_to_canonical_export_allows_missing_discovery_url() -> None:
+    """Legacy documents can serialize manual security config without discovery."""
     document = parse_test_plan_document(
         {
             "schemaVersion": "v2",
@@ -554,13 +605,13 @@ def test_legacy_v2_to_canonical_export_rejects_missing_discovery_url() -> None:
             "version": "4.0.1",
             "securityProfile": "fapi1-advanced",
             "scope": {"resourceGroups": []},
-            "config": {"resourceBaseUrl": "https://rs.example.com"},
+            "config": {"resourceServer": {"baseUrl": "https://rs.example.com"}},
         }
     )
 
     assert isinstance(document, PlanDocumentV2)
-    with pytest.raises(CatalogueError, match="securityEnvironment.discoveryUrl"):
-        plan_document_to_json_object(document)
+    exported = plan_document_to_json_object(document)
+    assert exported["securityEnvironment"] == {"resourceBaseUrl": "https://rs.example.com"}
 
 
 @pytest.mark.unit
@@ -604,7 +655,7 @@ def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -
             "clientAuthMethod": "private_key_jwt",
             "signingAlgorithm": "PS256",
             "resourceBaseUrl": "https://rs.example.com",
-            "mtls": {"enabled": True, "certificateRef": "transport.pem"},
+            "mtls": {"enabled": True, "certificatePath": "/absolute/path/transport.pem"},
         },
         "resourceGroups": ["AIS"],
         "businessTestData": {
@@ -634,8 +685,95 @@ def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -
     assert isinstance(resource_ids, dict)
     assert resource_ids["accountIds"] == [{"accountId": "account-123"}]
     assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
-    assert document.runtime_inputs["consentedAccountId"] == "account-123"
+    assert "consentedAccountId" not in document.runtime_inputs
     assert document.runtime_inputs["accessToken"] == "secret-access-token"
+
+
+@pytest.mark.unit
+def test_parse_canonical_plan_document_rejects_security_timeout() -> None:
+    """Canonical security environments do not accept configurable HTTP timeouts."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+        },
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "timeoutSeconds": 60,
+        },
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    with pytest.raises(CatalogueError, match="Unknown testPlan.securityEnvironment field\\(s\\): timeoutSeconds"):
+        parse_test_plan_document(raw_spec)
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("field_name", "value"),
+    [
+        ("openBankingIntentId", "consent-789"),
+        ("acrValuesSupported", ["urn:openbanking:psd2:sca"]),
+        ("jwksUri", "https://auth.example.com/jwks"),
+        ("tppSignatureIssuer", "synthetic-org-id"),
+        ("tppSignatureTan", "openbanking.org.uk"),
+        ("xFapiFinancialId", "financial-id"),
+        ("sendXFapiCustomerIpAddress", True),
+        ("xFapiCustomerIpAddress", "203.0.113.10"),
+    ],
+)
+def test_parse_canonical_plan_document_rejects_removed_security_fields(
+    field_name: str,
+    value: JsonValue,
+) -> None:
+    """Canonical security environments reject removed participant config fields."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+        },
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            field_name: value,
+        },
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    with pytest.raises(CatalogueError, match=rf"Unknown testPlan.securityEnvironment field\(s\): {field_name}"):
+        parse_test_plan_document(raw_spec)
+
+
+@pytest.mark.unit
+def test_parse_canonical_plan_document_rejects_mtls_certificate_path_root() -> None:
+    """Canonical mTLS config uses direct path fields rather than a shared root."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI1_ADVANCED",
+        },
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "mtls": {"certificatePathRoot": "/absolute/path/certs"},
+        },
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    with pytest.raises(
+        CatalogueError, match=r"Unknown testPlan.securityEnvironment\.mtls field\(s\): certificatePathRoot"
+    ):
+        parse_test_plan_document(raw_spec)
 
 
 @pytest.mark.unit

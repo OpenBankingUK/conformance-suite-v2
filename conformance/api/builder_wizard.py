@@ -7,7 +7,7 @@ from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
 from pathlib import Path
-from typing import cast
+from typing import Literal, cast
 
 from django import forms
 
@@ -20,11 +20,14 @@ from conformance.catalogue import (
     PlanDocumentBoundary,
     PlanDocumentV2,
     RuntimeInputRequirement,
+    SecurityProfile,
     TestCatalogue,
+    business_test_data_from_plan_config,
     catalogue_areas_for_plan_document_boundary,
     compile_test_plan_document,
     parse_test_plan_document,
     plan_document_to_json_object,
+    security_environment_from_plan_config,
     supported_plan_document_boundaries,
 )
 from conformance.catalogue_registry import supported_catalogues
@@ -51,6 +54,14 @@ _API_LABELS = {
 }
 """Participant-facing labels for Read/Write catalogue API-family groups."""
 
+_CANONICAL_RESOURCE_GROUP_ID_BY_API = {
+    "ais": "AIS",
+    "pis": "PIS",
+    "cbpii": "CBPII",
+    "vrp": "VRP",
+}
+"""Canonical JSON-first resource-group ids keyed by internal catalogue API."""
+
 _API_PATH_SEGMENTS = {"ais": "aisp", "pis": "pisp", "cbpii": "cbpii", "vrp": "vrp", "cvrp": "cvrp"}
 """Path segments used to infer resource-group labels from bundled catalogues."""
 
@@ -62,7 +73,6 @@ _RUNTIME_INPUT_PREFIX = "runtime_input__"
 
 _MODEL_CONFIG_KEYS = {
     "discoveryUrl",
-    "timeoutSeconds",
     "followUp",
     "tls",
     "fapiSigning",
@@ -71,8 +81,6 @@ _MODEL_CONFIG_KEYS = {
     "approvedReleasePolicyPath",
     "oauth",
     "resourceServer",
-    "clientCredentials",
-    "openBanking",
     "ais",
     "pis",
     "cbpii",
@@ -82,14 +90,11 @@ _MODEL_CONFIG_KEYS = {
 
 _STRUCTURED_CONFIG_RUNTIME_INPUT_IDS = {
     "resourceBaseUrl",
-    "consentedAccountId",
-    "fromBookingDateTime",
-    "toBookingDateTime",
     "debtorAccountSchemeName",
     "debtorAccountIdentification",
     "debtorAccountName",
 }
-"""Runtime inputs that have first-class grouped-config equivalents."""
+"""Plan-authored runtime inputs that have first-class grouped-config equivalents."""
 
 _BUSINESS_CONFIG_KEYS = frozenset({"ais", "pis", "cbpii", "conditionalProperties"})
 """Config keys owned by the business/request defaults step."""
@@ -101,16 +106,23 @@ _SECURITY_CONFIG_KEYS = frozenset(
     {
         "oauth",
         "resourceServer",
-        "clientCredentials",
         "fapiSigning",
         "tls",
-        "openBanking",
     }
 )
 """Config keys owned by the OAuth/FAPI/security step."""
 
+SecurityRequirementStatus = Literal["required", "conditional", "optional"]
+"""User-facing field requirement status values for builder security fields."""
+
 _RUNTIME_CONFIG_KEYS = frozenset({"inputs"})
 """Config keys owned by the runtime-artifact step."""
+
+_SUPPORTED_SECURITY_PROFILE_OPTIONS: tuple[tuple[SecurityProfile, str], ...] = (
+    ("fapi1-advanced", "FAPI 1 Advanced"),
+    ("fapi2", "FAPI 2"),
+)
+"""Security-profile choices exposed by the specification step."""
 
 
 @dataclass(frozen=True)
@@ -118,7 +130,7 @@ class _ResourceGroupMetadata:
     """Participant-facing high-level resource-group metadata.
 
     Attributes:
-        group_id: Stable id written by the builder into v2 plan documents.
+        group_id: Stable id used by the builder for resource-group selection.
         label: Human-readable resource area label.
     """
 
@@ -157,7 +169,7 @@ class SchemeOption:
     """One scheme option rendered by the first wizard step.
 
     Attributes:
-        value: Stable scheme identifier written into the v2 plan document.
+        value: Stable scheme identifier selected by the wizard.
         label: Participant-facing scheme label.
     """
 
@@ -186,7 +198,7 @@ class VersionOption:
     """One specification-version option rendered by the first wizard step.
 
     Attributes:
-        value: Stable specification version written into the v2 plan document.
+        value: Stable specification version selected by the wizard.
         label: Participant-facing version label.
         scheme: Scheme value that owns this version.
         specification: Specification value that owns this version.
@@ -307,6 +319,7 @@ class WizardRuntimeInputPrompt:
         sensitive: Whether the value is secret-bearing and must be masked.
         value: Current draft value as a display string.
         group: Participant-facing config group for this prompt.
+        description: Optional participant-facing guidance for this prompt.
     """
 
     input_id: str
@@ -317,6 +330,7 @@ class WizardRuntimeInputPrompt:
     sensitive: bool
     value: str
     group: str
+    description: str | None = None
 
 
 @dataclass(frozen=True)
@@ -355,6 +369,27 @@ class ConfigVisibility:
     show_business_defaults: bool
 
 
+@dataclass(frozen=True)
+class SecurityFieldMetadata:
+    """Participant-facing metadata for one security configuration field.
+
+    Attributes:
+        name: Django form field name.
+        status: Run-derived requirement status.
+        label: Human-readable status label.
+        type_hint: Concise expected type or format.
+        description: Short explanation of what the value affects.
+        requirement: Short explanation of why the status applies.
+    """
+
+    name: str
+    status: SecurityRequirementStatus
+    label: str
+    type_hint: str
+    description: str
+    requirement: str
+
+
 _FULL_CONFIG_VISIBILITY = ConfigVisibility(
     selected_api_ids=frozenset({"ais", "pis", "cbpii", "vrp"}),
     show_ais=True,
@@ -364,6 +399,153 @@ _FULL_CONFIG_VISIBILITY = ConfigVisibility(
     show_business_defaults=True,
 )
 """Default grouped-config visibility used outside a scoped wizard draft."""
+
+_SECURITY_FIELD_METADATA: tuple[SecurityFieldMetadata, ...] = (
+    SecurityFieldMetadata(
+        name="oauth_client_id",
+        status="conditional",
+        label="Conditional",
+        type_hint="String",
+        description="OAuth client identifier used by PSU authorisation and manifest-driven OAuth requests.",
+        requirement="Required only when the selected run includes OAuth or PSU flows that reference client_id.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_redirect_uri",
+        status="conditional",
+        label="Conditional",
+        type_hint="HTTPS URL",
+        description="Redirect URI registered for the OAuth client.",
+        requirement="Required only when the selected run performs browser/PSU authorisation or resolves redirect_uri.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_authorization_endpoint",
+        status="conditional",
+        label="Conditional",
+        type_hint="HTTPS URL",
+        description="Authorisation endpoint override for OAuth/PSU flows.",
+        requirement="Required only when a selected flow directly uses an authorisation endpoint override.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_issuer",
+        status="conditional",
+        label="Conditional",
+        type_hint="HTTPS URL",
+        description="OpenID Provider issuer value exposed to manifest placeholders.",
+        requirement="Required only when a selected manifest step references the issuer placeholder.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_token_endpoint",
+        status="conditional",
+        label="Conditional",
+        type_hint="HTTPS URL",
+        description="Token endpoint override for token-exchange flows.",
+        requirement="Required only when a selected token step uses a config token endpoint rather than discovery.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_response_type",
+        status="conditional",
+        label="Conditional",
+        type_hint="String, for example code id_token",
+        description="OAuth response_type value for authorisation requests.",
+        requirement="Required only when a selected OAuth flow resolves response_type from config.",
+    ),
+    SecurityFieldMetadata(
+        name="oauth_request_object_signing_alg",
+        status="conditional",
+        label="Conditional",
+        type_hint="JOSE alg, for example PS256",
+        description="Request-object signing algorithm exposed to manifest placeholders.",
+        requirement="Required only when a selected flow resolves the request object signing algorithm from config.",
+    ),
+    SecurityFieldMetadata(
+        name="resource_server_base_url",
+        status="conditional",
+        label="Conditional",
+        type_hint="HTTPS URL without the Open Banking API path",
+        description="Protected-resource base URL used to build selected AIS, PIS, CBPII, and VRP API requests.",
+        requirement="Required when selected catalogue cases require the resourceBaseUrl runtime input.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_token_endpoint_auth_method",
+        status="conditional",
+        label="Conditional",
+        type_hint="Enum: private_key_jwt or tls_client_auth",
+        description="FAPI token endpoint client-authentication mode.",
+        requirement="Required when FAPI signing/client-auth is configured for selected token or signing flows.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_kid",
+        status="conditional",
+        label="Conditional",
+        type_hint="String",
+        description="JOSE key identifier placed in signed request objects and private-key JWTs.",
+        requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_certificate_path",
+        status="conditional",
+        label="Conditional",
+        type_hint="Absolute file path",
+        description="X.509 certificate used by runtime FAPI signing.",
+        requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_private_key_path",
+        status="conditional",
+        label="Conditional",
+        type_hint="Absolute file path",
+        description="Private key paired with the signing certificate.",
+        requirement="Required with the rest of the FAPI signing group when selected flows need runtime signing.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_client_assertion_issuer",
+        status="conditional",
+        label="Conditional",
+        type_hint="String",
+        description="iss claim used when the runner signs private-key JWT client assertions.",
+        requirement="Required with the rest of the FAPI signing group when selected flows need private_key_jwt.",
+    ),
+    SecurityFieldMetadata(
+        name="signing_client_assertion_subject",
+        status="conditional",
+        label="Conditional",
+        type_hint="String",
+        description="sub claim used when the runner signs private-key JWT client assertions.",
+        requirement="Required with the rest of the FAPI signing group when selected flows need private_key_jwt.",
+    ),
+    SecurityFieldMetadata(
+        name="tls_ca_bundle_path",
+        status="optional",
+        label="Optional",
+        type_hint="Absolute file path",
+        description="Custom CA bundle used to verify the ASPSP TLS certificate.",
+        requirement="Only needed for environments that use a private or non-standard issuing CA.",
+    ),
+    SecurityFieldMetadata(
+        name="tls_client_certificate_path",
+        status="conditional",
+        label="Conditional",
+        type_hint="Absolute file path",
+        description="Client certificate used by the HTTP client for mTLS.",
+        requirement=(
+            "Required with the private key when the selected environment or tls_client_auth flow requires mTLS."
+        ),
+    ),
+    SecurityFieldMetadata(
+        name="tls_client_private_key_path",
+        status="conditional",
+        label="Conditional",
+        type_hint="Absolute file path",
+        description="Private key paired with the mTLS client certificate.",
+        requirement=(
+            "Required with the client certificate when the selected environment or tls_client_auth flow requires mTLS."
+        ),
+    ),
+)
+"""Security form metadata independent of discovery-prefilled values."""
+
+_SECURITY_FIELD_METADATA_BY_NAME = {metadata.name: metadata for metadata in _SECURITY_FIELD_METADATA}
+"""Security form metadata keyed by Django form field name."""
 
 
 @dataclass
@@ -386,20 +568,23 @@ class _ResourceGroupAccumulator:
 
 
 class CatalogueBoundaryForm(forms.Form):
-    """Form for selecting the wizard's catalogue boundary and resource groups.
+    """Form for selecting the wizard's catalogue boundary.
 
     Attributes:
         scheme: Standards scheme selector.
         specification: Specification family selector filtered by scheme.
         version: Specification-version selector filtered by scheme and
             specification.
-        resource_groups: High-level resource groups selected for the endpoint
-            step.
+        security_profile: Security profile selector written into the canonical
+            test plan's specification profile.
+        resource_groups: Deprecated compatibility field ignored by the
+            specification/profile step.
     """
 
     scheme: forms.ChoiceField = forms.ChoiceField(label="Scheme")
     specification: forms.ChoiceField = forms.ChoiceField(label="Specification")
     version: forms.ChoiceField = forms.ChoiceField(label="Version")
+    security_profile: forms.ChoiceField = forms.ChoiceField(label="Security profile", required=False)
     resource_groups: forms.MultipleChoiceField = forms.MultipleChoiceField(required=False)
 
     def __init__(
@@ -424,6 +609,7 @@ class CatalogueBoundaryForm(forms.Form):
         self._validate_resource_groups = validate_resource_groups
         effective_initial = _effective_initial(initial, boundaries=self._boundaries)
         selected_boundary = _boundary_from_form_values(data, effective_initial, boundaries=self._boundaries)
+        effective_initial.setdefault("security_profile", "fapi1-advanced")
         self.selected_boundary = selected_boundary
         selected_resource_groups = _raw_or_initial_values(data, effective_initial, "resource_groups")
         self.resource_group_hierarchy = catalogue_scope_hierarchy(
@@ -448,6 +634,7 @@ class CatalogueBoundaryForm(forms.Form):
         cast(forms.ChoiceField, self.fields["version"]).choices = [
             (option.value, option.label) for option in version_options(boundaries=self._boundaries)
         ]
+        cast(forms.ChoiceField, self.fields["security_profile"]).choices = security_profile_options()
         cast(forms.MultipleChoiceField, self.fields["resource_groups"]).choices = [
             (group.id, group.label) for group in self.resource_group_hierarchy.resource_groups
         ]
@@ -475,9 +662,12 @@ class CatalogueBoundaryForm(forms.Form):
                 "Choose a supported scheme, specification, and version from the available catalogue options.",
                 code="unsupported_boundary",
             )
-        resource_group_ids = _cleaned_string_tuple(cleaned_data.get("resource_groups"))
-        if self._validate_resource_groups and boundary_requires_resource_groups(selected) and not resource_group_ids:
-            self.add_error("resource_groups", "Select at least one resource group.")
+        security_profile = cleaned_data.get("security_profile") or "fapi1-advanced"
+        supported_values = {value for value, _label in security_profile_options()}
+        if security_profile not in supported_values:
+            supported = ", ".join(label for _value, label in security_profile_options())
+            self.add_error("security_profile", f"Choose a supported security profile: {supported}.")
+        cleaned_data["security_profile"] = security_profile
         return cleaned_data
 
     @property
@@ -655,38 +845,24 @@ class ExecutionConfigForm(forms.Form):
 
     Attributes:
         discovery_url: OpenID discovery document URL.
-        timeout_seconds: Optional per-request timeout.
         oauth_client_id: Optional OAuth client id.
         oauth_redirect_uri: Optional OAuth redirect URI.
         oauth_authorization_endpoint: Optional authorization endpoint override.
         oauth_issuer: Optional OpenID issuer URL.
         oauth_token_endpoint: Optional token endpoint URL.
-        oauth_open_banking_intent_id: Optional pre-existing consent/intent id.
         oauth_resource_base_url: Optional OAuth resource server base URL.
         oauth_response_type: Optional OAuth response type.
-        oauth_acr_values_supported: Optional ACR values JSON array.
         oauth_request_object_signing_alg: Optional request-object signing alg.
-        client_credentials_client_secret: Optional client secret retained in a
-            secret-bearing config section.
         resource_server_base_url: Optional protected-resource base URL.
-        resource_server_x_fapi_financial_id: Optional x-fapi-financial-id.
-        resource_server_send_x_fapi_customer_ip_address: Whether to send the
-            x-fapi-customer-ip-address header.
-        resource_server_x_fapi_customer_ip_address: Optional customer IP value.
-        signing_certificate_path_root: Optional signing certificate path root.
-        signing_certificate_path: Optional signing certificate path.
-        signing_private_key_path: Optional signing private-key path.
+        signing_certificate_path: Optional absolute signing certificate path.
+        signing_private_key_path: Optional absolute signing private-key path.
         signing_kid: Optional JOSE key id.
         signing_client_assertion_issuer: Optional private-key JWT issuer.
         signing_client_assertion_subject: Optional private-key JWT subject.
         signing_token_endpoint_auth_method: Optional token endpoint auth method.
-        open_banking_tpp_signature_issuer: Optional detached-JWS issuer
-            metadata.
-        open_banking_tpp_signature_tan: Optional detached-JWS TAN metadata.
-        tls_certificate_path_root: Optional TLS certificate path root.
-        tls_ca_bundle_path: Optional CA bundle path.
-        tls_client_certificate_path: Optional mTLS client certificate path.
-        tls_client_private_key_path: Optional mTLS private-key path.
+        tls_ca_bundle_path: Optional absolute CA bundle path.
+        tls_client_certificate_path: Optional absolute mTLS client certificate path.
+        tls_client_private_key_path: Optional absolute mTLS private-key path.
         ais_resource_ids_json: Optional AIS resource ids JSON object.
         ais_transaction_from_date: Optional transaction lower date bound.
         ais_transaction_to_date: Optional transaction upper date bound.
@@ -707,7 +883,6 @@ class ExecutionConfigForm(forms.Form):
     """
 
     discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
-    timeout_seconds: forms.FloatField = forms.FloatField(label="Timeout seconds", required=False, min_value=0)
     oauth_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
     oauth_redirect_uri: forms.CharField = forms.CharField(label="Redirect URI", required=False)
     oauth_authorization_endpoint: forms.CharField = forms.CharField(
@@ -716,38 +891,21 @@ class ExecutionConfigForm(forms.Form):
     )
     oauth_issuer: forms.CharField = forms.CharField(label="Issuer", required=False)
     oauth_token_endpoint: forms.CharField = forms.CharField(label="Token endpoint", required=False)
-    oauth_open_banking_intent_id: forms.CharField = forms.CharField(label="Open Banking intent ID", required=False)
     oauth_resource_base_url: forms.CharField = forms.CharField(label="OAuth resource base URL", required=False)
     oauth_response_type: forms.CharField = forms.CharField(label="Response type", required=False)
-    oauth_acr_values_supported: forms.CharField = forms.CharField(
-        label="ACR values supported",
-        required=False,
-        widget=forms.Textarea,
-    )
     oauth_request_object_signing_alg: forms.CharField = forms.CharField(
         label="Request object signing algorithm",
         required=False,
     )
-    client_credentials_client_secret: forms.CharField = forms.CharField(label="Client secret", required=False)
     resource_server_base_url: forms.CharField = forms.CharField(label="Resource server base URL", required=False)
-    resource_server_x_fapi_financial_id: forms.CharField = forms.CharField(
-        label="x-fapi-financial-id",
+    signing_certificate_path: forms.CharField = forms.CharField(
+        label="Signing certificate absolute path",
         required=False,
     )
-    resource_server_send_x_fapi_customer_ip_address: forms.BooleanField = forms.BooleanField(
-        label="Send x-fapi-customer-ip-address",
+    signing_private_key_path: forms.CharField = forms.CharField(
+        label="Signing private key absolute path",
         required=False,
     )
-    resource_server_x_fapi_customer_ip_address: forms.CharField = forms.CharField(
-        label="x-fapi-customer-ip-address",
-        required=False,
-    )
-    signing_certificate_path_root: forms.CharField = forms.CharField(
-        label="Signing certificate path root",
-        required=False,
-    )
-    signing_certificate_path: forms.CharField = forms.CharField(label="Signing certificate path", required=False)
-    signing_private_key_path: forms.CharField = forms.CharField(label="Signing private key path", required=False)
     signing_kid: forms.CharField = forms.CharField(label="Signing key ID", required=False)
     signing_client_assertion_issuer: forms.CharField = forms.CharField(
         label="Client assertion issuer",
@@ -761,12 +919,15 @@ class ExecutionConfigForm(forms.Form):
         label="Token endpoint auth method",
         required=False,
     )
-    open_banking_tpp_signature_issuer: forms.CharField = forms.CharField(label="TPP signature issuer", required=False)
-    open_banking_tpp_signature_tan: forms.CharField = forms.CharField(label="TPP signature TAN", required=False)
-    tls_certificate_path_root: forms.CharField = forms.CharField(label="TLS certificate path root", required=False)
-    tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle path", required=False)
-    tls_client_certificate_path: forms.CharField = forms.CharField(label="mTLS client certificate path", required=False)
-    tls_client_private_key_path: forms.CharField = forms.CharField(label="mTLS client private key path", required=False)
+    tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle absolute path", required=False)
+    tls_client_certificate_path: forms.CharField = forms.CharField(
+        label="mTLS client certificate absolute path",
+        required=False,
+    )
+    tls_client_private_key_path: forms.CharField = forms.CharField(
+        label="mTLS client private key absolute path",
+        required=False,
+    )
     ais_resource_ids_json: forms.CharField = forms.CharField(
         label="AIS resource IDs JSON",
         required=False,
@@ -888,7 +1049,7 @@ class ExecutionConfigForm(forms.Form):
         """Validate the executable model-bank portion of a v2 config object.
 
         Args:
-            config: Draft v2 plan-document config object.
+            config: Draft executable config object.
         """
         try:
             parse_model_bank_config(model_bank_config_from_plan_config(config), base_dir=Path.cwd())
@@ -1045,6 +1206,10 @@ class BusinessConfigForm(forms.Form):
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        if self.config_visibility.show_cbpii:
+            self.fields["cbpii_debtor_account_scheme_name"].required = True
+            self.fields["cbpii_debtor_account_identification"].required = True
+            self.fields["cbpii_debtor_account_name"].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the business-default partial config.
@@ -1065,12 +1230,10 @@ class DiscoveryConfigForm(forms.Form):
 
     Attributes:
         discovery_url: OpenID discovery document URL.
-        timeout_seconds: Optional per-request timeout.
         config: Parsed partial v2 config owned by this step.
     """
 
-    discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=True)
-    timeout_seconds: forms.FloatField = forms.FloatField(label="Timeout seconds", required=False, min_value=0)
+    discovery_url: forms.CharField = forms.CharField(label="Discovery URL", required=False)
 
     config: JsonObject | None = None
 
@@ -1102,6 +1265,8 @@ class DiscoveryConfigForm(forms.Form):
                 conformance-suite URL validator.
         """
         value = cast(str, self.cleaned_data["discovery_url"]).strip()
+        if not value:
+            return ""
         try:
             validate_https_url(value, label="discoveryUrl")
         except HttpsUrlValidationError as error:
@@ -1131,31 +1296,18 @@ class SecurityConfigForm(forms.Form):
         oauth_authorization_endpoint: Optional authorization endpoint override.
         oauth_issuer: Optional OpenID issuer URL.
         oauth_token_endpoint: Optional token endpoint URL.
-        oauth_open_banking_intent_id: Optional pre-existing consent/intent id.
         oauth_response_type: Optional OAuth response type.
-        oauth_acr_values_supported: Optional ACR values JSON array.
         oauth_request_object_signing_alg: Optional request-object signing alg.
-        client_credentials_client_secret: Optional client secret retained in a
-            secret-bearing config section.
         resource_server_base_url: Optional protected-resource base URL.
-        resource_server_x_fapi_financial_id: Optional x-fapi-financial-id.
-        resource_server_send_x_fapi_customer_ip_address: Whether to send the
-            x-fapi-customer-ip-address header.
-        resource_server_x_fapi_customer_ip_address: Optional customer IP value.
-        signing_certificate_path_root: Optional signing certificate path root.
-        signing_certificate_path: Optional signing certificate path.
-        signing_private_key_path: Optional signing private-key path.
+        signing_certificate_path: Optional absolute signing certificate path.
+        signing_private_key_path: Optional absolute signing private-key path.
         signing_kid: Optional JOSE key id.
         signing_client_assertion_issuer: Optional private-key JWT issuer.
         signing_client_assertion_subject: Optional private-key JWT subject.
         signing_token_endpoint_auth_method: Optional token endpoint auth method.
-        open_banking_tpp_signature_issuer: Optional detached-JWS issuer
-            metadata.
-        open_banking_tpp_signature_tan: Optional detached-JWS TAN metadata.
-        tls_certificate_path_root: Optional TLS certificate path root.
-        tls_ca_bundle_path: Optional CA bundle path.
-        tls_client_certificate_path: Optional mTLS client certificate path.
-        tls_client_private_key_path: Optional mTLS private-key path.
+        tls_ca_bundle_path: Optional absolute CA bundle path.
+        tls_client_certificate_path: Optional absolute mTLS client certificate path.
+        tls_client_private_key_path: Optional absolute mTLS private-key path.
         config: Parsed partial v2 config owned by this step.
     """
 
@@ -1167,37 +1319,20 @@ class SecurityConfigForm(forms.Form):
     )
     oauth_issuer: forms.CharField = forms.CharField(label="Issuer", required=False)
     oauth_token_endpoint: forms.CharField = forms.CharField(label="Token endpoint", required=False)
-    oauth_open_banking_intent_id: forms.CharField = forms.CharField(label="Open Banking intent ID", required=False)
     oauth_response_type: forms.CharField = forms.CharField(label="Response type", required=False)
-    oauth_acr_values_supported: forms.CharField = forms.CharField(
-        label="ACR values supported",
-        required=False,
-        widget=forms.Textarea,
-    )
     oauth_request_object_signing_alg: forms.CharField = forms.CharField(
         label="Request object signing algorithm",
         required=False,
     )
-    client_credentials_client_secret: forms.CharField = forms.CharField(label="Client secret", required=False)
     resource_server_base_url: forms.CharField = forms.CharField(label="Resource server base URL", required=False)
-    resource_server_x_fapi_financial_id: forms.CharField = forms.CharField(
-        label="x-fapi-financial-id",
+    signing_certificate_path: forms.CharField = forms.CharField(
+        label="Signing certificate absolute path",
         required=False,
     )
-    resource_server_send_x_fapi_customer_ip_address: forms.BooleanField = forms.BooleanField(
-        label="Send x-fapi-customer-ip-address",
+    signing_private_key_path: forms.CharField = forms.CharField(
+        label="Signing private key absolute path",
         required=False,
     )
-    resource_server_x_fapi_customer_ip_address: forms.CharField = forms.CharField(
-        label="x-fapi-customer-ip-address",
-        required=False,
-    )
-    signing_certificate_path_root: forms.CharField = forms.CharField(
-        label="Signing certificate path root",
-        required=False,
-    )
-    signing_certificate_path: forms.CharField = forms.CharField(label="Signing certificate path", required=False)
-    signing_private_key_path: forms.CharField = forms.CharField(label="Signing private key path", required=False)
     signing_kid: forms.CharField = forms.CharField(label="Signing key ID", required=False)
     signing_client_assertion_issuer: forms.CharField = forms.CharField(
         label="Client assertion issuer",
@@ -1211,12 +1346,15 @@ class SecurityConfigForm(forms.Form):
         label="Token endpoint auth method",
         required=False,
     )
-    open_banking_tpp_signature_issuer: forms.CharField = forms.CharField(label="TPP signature issuer", required=False)
-    open_banking_tpp_signature_tan: forms.CharField = forms.CharField(label="TPP signature TAN", required=False)
-    tls_certificate_path_root: forms.CharField = forms.CharField(label="TLS certificate path root", required=False)
-    tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle path", required=False)
-    tls_client_certificate_path: forms.CharField = forms.CharField(label="mTLS client certificate path", required=False)
-    tls_client_private_key_path: forms.CharField = forms.CharField(label="mTLS client private key path", required=False)
+    tls_ca_bundle_path: forms.CharField = forms.CharField(label="CA bundle absolute path", required=False)
+    tls_client_certificate_path: forms.CharField = forms.CharField(
+        label="mTLS client certificate absolute path",
+        required=False,
+    )
+    tls_client_private_key_path: forms.CharField = forms.CharField(
+        label="mTLS client private key absolute path",
+        required=False,
+    )
 
     config: JsonObject | None = None
 
@@ -1251,6 +1389,30 @@ class SecurityConfigForm(forms.Form):
         """
         base_cleaned_data = super().clean()
         cleaned_data: dict[str, object] = {} if base_cleaned_data is None else dict(base_cleaned_data)
+        if self.errors:
+            return cleaned_data
+        signing_fields = (
+            "signing_certificate_path",
+            "signing_private_key_path",
+            "signing_kid",
+            "signing_client_assertion_issuer",
+            "signing_client_assertion_subject",
+            "signing_token_endpoint_auth_method",
+        )
+        if any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields):
+            for field_name in signing_fields:
+                if _cleaned_optional_string(cleaned_data.get(field_name)) is None:
+                    self.add_error(field_name, "Complete every FAPI signing field, or leave the whole group blank.")
+
+        mtls_certificate = _cleaned_optional_string(cleaned_data.get("tls_client_certificate_path"))
+        mtls_private_key = _cleaned_optional_string(cleaned_data.get("tls_client_private_key_path"))
+        if (mtls_certificate is None) != (mtls_private_key is None):
+            message = "mTLS client certificate and private key must be supplied together."
+            if mtls_certificate is None:
+                self.add_error("tls_client_certificate_path", message)
+            if mtls_private_key is None:
+                self.add_error("tls_client_private_key_path", message)
+
         if self.errors:
             return cleaned_data
         self.config = _security_config_from_fields(cleaned_data)
@@ -1526,6 +1688,15 @@ def version_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None)
     )
 
 
+def security_profile_options() -> tuple[tuple[SecurityProfile, str], ...]:
+    """Return security-profile choices for the specification step.
+
+    Returns:
+        Security profile value/label pairs in display order.
+    """
+    return _SUPPORTED_SECURITY_PROFILE_OPTIONS
+
+
 def endpoint_capability_value(*, endpoint_id: str, capability_id: str) -> str:
     """Return the form value for an endpoint-scoped capability.
 
@@ -1562,14 +1733,13 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
     """Return grouped-config form initial values from a v2 config object.
 
     Args:
-        config: Draft v2 plan-document config object.
+        config: Draft executable config object.
 
     Returns:
         Initial form values keyed by grouped-config field name.
     """
     initial: dict[str, object] = {
         "discovery_url": _string_config_value(config, "discoveryUrl"),
-        "timeout_seconds": _scalar_config_value(config, "timeoutSeconds"),
     }
     oauth = _object_config_value(config, "oauth")
     initial.update(
@@ -1579,34 +1749,20 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
             "oauth_authorization_endpoint": _string_config_value(oauth, "authorizationEndpoint"),
             "oauth_issuer": _string_config_value(oauth, "issuer"),
             "oauth_token_endpoint": _string_config_value(oauth, "tokenEndpoint"),
-            "oauth_open_banking_intent_id": _string_config_value(oauth, "openBankingIntentId"),
             "oauth_resource_base_url": _string_config_value(oauth, "resourceBaseUrl"),
             "oauth_response_type": _string_config_value(oauth, "responseType"),
-            "oauth_acr_values_supported": _json_config_value(oauth, "acrValuesSupported"),
             "oauth_request_object_signing_alg": _string_config_value(oauth, "requestObjectSigningAlg"),
         }
     )
-    client_credentials = _object_config_value(config, "clientCredentials")
-    initial["client_credentials_client_secret"] = _string_config_value(client_credentials, "clientSecret")
     resource_server = _object_config_value(config, "resourceServer")
     initial.update(
         {
             "resource_server_base_url": _string_config_value(resource_server, "baseUrl"),
-            "resource_server_x_fapi_financial_id": _string_config_value(resource_server, "xFapiFinancialId"),
-            "resource_server_send_x_fapi_customer_ip_address": _boolean_config_value(
-                resource_server,
-                "sendXFapiCustomerIpAddress",
-            ),
-            "resource_server_x_fapi_customer_ip_address": _string_config_value(
-                resource_server,
-                "xFapiCustomerIpAddress",
-            ),
         }
     )
     signing = _object_config_value(config, "fapiSigning")
     initial.update(
         {
-            "signing_certificate_path_root": _string_config_value(signing, "certificatePathRoot"),
             "signing_certificate_path": _string_config_value(signing, "signingCertificatePath"),
             "signing_private_key_path": _string_config_value(signing, "signingPrivateKeyPath"),
             "signing_kid": _string_config_value(signing, "kid"),
@@ -1615,17 +1771,9 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
             "signing_token_endpoint_auth_method": _string_config_value(signing, "tokenEndpointAuthMethod"),
         }
     )
-    open_banking = _object_config_value(config, "openBanking")
-    initial.update(
-        {
-            "open_banking_tpp_signature_issuer": _string_config_value(open_banking, "tppSignatureIssuer"),
-            "open_banking_tpp_signature_tan": _string_config_value(open_banking, "tppSignatureTan"),
-        }
-    )
     tls = _object_config_value(config, "tls")
     initial.update(
         {
-            "tls_certificate_path_root": _string_config_value(tls, "certificatePathRoot"),
             "tls_ca_bundle_path": _string_config_value(tls, "caBundlePath"),
             "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
             "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
@@ -1664,7 +1812,7 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
     """Return business-default form initial values from a v2 config object.
 
     Args:
-        config: Draft v2 plan-document config object.
+        config: Draft executable config object.
 
     Returns:
         Initial form values keyed by business-default field name.
@@ -1733,14 +1881,13 @@ def discovery_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, 
     """Return discovery form initial values from a v2 config object.
 
     Args:
-        config: Draft v2 plan-document config object.
+        config: Draft executable config object.
 
     Returns:
         Initial form values keyed by discovery field name.
     """
     initial: dict[str, object] = {
         "discovery_url": _string_config_value(config, "discoveryUrl"),
-        "timeout_seconds": _scalar_config_value(config, "timeoutSeconds"),
     }
     return initial
 
@@ -1752,7 +1899,7 @@ def security_config_form_initial(
     """Return security form initial values from config and discovery metadata.
 
     Args:
-        config: Draft v2 plan-document config object.
+        config: Draft executable config object.
         discovery_metadata: Session-only discovery metadata used for defaults.
 
     Returns:
@@ -1761,9 +1908,7 @@ def security_config_form_initial(
     oauth = _object_config_value(config, "oauth")
     resource_server = _object_config_value(config, "resourceServer")
     signing = _object_config_value(config, "fapiSigning")
-    open_banking = _object_config_value(config, "openBanking")
     tls = _object_config_value(config, "tls")
-    client_credentials = _object_config_value(config, "clientCredentials")
     initial: dict[str, object] = {
         "oauth_client_id": _string_config_value(oauth, "clientId"),
         "oauth_redirect_uri": _string_config_value(oauth, "redirectUri"),
@@ -1780,35 +1925,18 @@ def security_config_form_initial(
             discovery_metadata,
             "token_endpoint",
         ),
-        "oauth_open_banking_intent_id": _string_config_value(oauth, "openBankingIntentId"),
         "oauth_response_type": _string_config_value(oauth, "responseType")
         or _single_discovery_list_value(discovery_metadata, "response_types_supported"),
-        "oauth_acr_values_supported": _json_config_value(oauth, "acrValuesSupported")
-        or _discovery_list_json(discovery_metadata, "acr_values_supported"),
         "oauth_request_object_signing_alg": _string_config_value(oauth, "requestObjectSigningAlg")
         or _single_discovery_list_value(discovery_metadata, "request_object_signing_alg_values_supported"),
-        "client_credentials_client_secret": _string_config_value(client_credentials, "clientSecret"),
         "resource_server_base_url": _string_config_value(resource_server, "baseUrl")
         or _string_config_value(oauth, "resourceBaseUrl"),
-        "resource_server_x_fapi_financial_id": _string_config_value(resource_server, "xFapiFinancialId"),
-        "resource_server_send_x_fapi_customer_ip_address": _boolean_config_value(
-            resource_server,
-            "sendXFapiCustomerIpAddress",
-        ),
-        "resource_server_x_fapi_customer_ip_address": _string_config_value(
-            resource_server,
-            "xFapiCustomerIpAddress",
-        ),
-        "signing_certificate_path_root": _string_config_value(signing, "certificatePathRoot"),
         "signing_certificate_path": _string_config_value(signing, "signingCertificatePath"),
         "signing_private_key_path": _string_config_value(signing, "signingPrivateKeyPath"),
         "signing_kid": _string_config_value(signing, "kid"),
         "signing_client_assertion_issuer": _string_config_value(signing, "clientAssertionIssuer"),
         "signing_client_assertion_subject": _string_config_value(signing, "clientAssertionSubject"),
         "signing_token_endpoint_auth_method": _string_config_value(signing, "tokenEndpointAuthMethod"),
-        "open_banking_tpp_signature_issuer": _string_config_value(open_banking, "tppSignatureIssuer"),
-        "open_banking_tpp_signature_tan": _string_config_value(open_banking, "tppSignatureTan"),
-        "tls_certificate_path_root": _string_config_value(tls, "certificatePathRoot"),
         "tls_ca_bundle_path": _string_config_value(tls, "caBundlePath"),
         "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
         "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
@@ -1893,10 +2021,10 @@ def merge_runtime_input_config(config: Mapping[str, JsonValue], section_config: 
 
 
 def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonObject:
-    """Extract executable model-bank config fields from v2 plan config.
+    """Extract executable model-bank config fields from editable plan config.
 
     Args:
-        config: v2 plan-document config object, which may also contain
+        config: Builder config object, which may also contain
             catalogue runtime inputs under ``inputs`` or ``runtimeInputs``.
 
     Returns:
@@ -1907,14 +2035,15 @@ def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonO
 
 
 def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> PlanDocumentV2:
-    """Build a parsed v2 plan document from a wizard draft.
+    """Build a parsed canonical test plan document from a wizard draft.
 
     Args:
         draft: Session-backed builder draft.
         config: Optional config object to use instead of ``draft.config``.
 
     Returns:
-        Parsed v2 plan document suitable for compile, export, or launch.
+        Parsed schemaVersion ``1.0`` plan document suitable for compile, export,
+        or launch.
 
     Raises:
         CatalogueError: If the draft is incomplete or contains stale scope ids.
@@ -1952,56 +2081,122 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
                     draft.endpoint_capability_ids.get(legacy_endpoint_id, ()),
                 )
             )
-            raw_endpoint: JsonObject = {
-                "method": endpoint.method,
-                "path": endpoint.path,
-                "operationId": endpoint.operation_id,
-            }
-            if capability_ids:
-                raw_endpoint["capabilities"] = list(capability_ids)
-            raw_endpoints.append(raw_endpoint)
-        raw_groups.append({"id": group.id, "label": group.label, "endpoints": raw_endpoints})
+            raw_endpoints.append(_raw_canonical_endpoint(endpoint, capability_ids))
+        if raw_endpoints:
+            raw_groups.append(_raw_canonical_resource_group(group=group, endpoints=raw_endpoints))
 
     unknown_endpoint_ids = selected_endpoint_ids - included_endpoint_ids
     if unknown_endpoint_ids:
         raise CatalogueError(f"Unknown endpoint id(s): {', '.join(sorted(unknown_endpoint_ids))}")
 
-    scope: JsonObject = {"resourceGroups": raw_groups}
-    raw_document: JsonObject = {
-        "schemaVersion": "v2",
-        "scheme": boundary.scheme,
-        "specification": boundary.specification,
-        "version": boundary.version,
-        "securityProfile": draft.security_profile,
-        "scope": scope,
-        "config": _copy_json_mapping(config if config is not None else draft.config),
-    }
-    document = parse_test_plan_document(raw_document)
-    if not isinstance(document, PlanDocumentV2):
-        raise CatalogueError("Builder drafts must produce a v2 plan document")
-    return PlanDocumentV2(
-        schema_version=document.schema_version,
-        scheme=document.scheme,
-        specification=document.specification,
-        version=document.version,
-        security_profile=document.security_profile,
-        resource_groups=document.resource_groups,
-        config=document.config,
-        runtime_inputs=document.runtime_inputs,
-        security_environment=_merged_plan_context(draft.security_environment, document.security_environment),
-        business_test_data=_merged_plan_context(draft.business_test_data, document.business_test_data),
-        metadata=_copy_json_mapping(draft.metadata),
-        execution_mode=draft.execution_mode,
+    config_object = _copy_json_mapping(config if config is not None else draft.config)
+    security_environment = _merged_plan_context(
+        draft.security_environment,
+        security_environment_from_plan_config(config_object),
     )
+    business_test_data = _merged_plan_context(
+        draft.business_test_data,
+        business_test_data_from_plan_config(config_object),
+    )
+    raw_plan: JsonObject = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": boundary.version,
+            "profile": _canonical_security_profile(draft.security_profile),
+        },
+        "executionMode": draft.execution_mode,
+        "securityEnvironment": security_environment,
+        "resourceGroups": raw_groups,
+        "businessTestData": business_test_data,
+        "metadata": _copy_json_mapping(draft.metadata),
+    }
+    document = parse_test_plan_document(raw_plan)
+    if not isinstance(document, PlanDocumentV2):
+        raise CatalogueError("Builder drafts must produce a canonical test plan document")
+    return document
+
+
+def _canonical_security_profile(security_profile: str) -> str:
+    """Return the canonical JSON-first security profile value.
+
+    Args:
+        security_profile: Internal compiler security profile.
+
+    Returns:
+        Canonical profile string used by exported JSON-first test plans.
+    """
+    profiles = {"fapi1-advanced": "FAPI1_ADVANCED", "fapi2": "FAPI2", "all": "ALL"}
+    return profiles.get(security_profile, security_profile)
+
+
+def _canonical_resource_group_id(api: str) -> str:
+    """Return the canonical JSON-first resource-group id for an API family.
+
+    Args:
+        api: Internal catalogue API family id.
+
+    Returns:
+        Canonical resource-group id.
+
+    Raises:
+        CatalogueError: If the API family cannot be represented in the
+            JSON-first resource-group model.
+    """
+    canonical_id = _CANONICAL_RESOURCE_GROUP_ID_BY_API.get(api)
+    if canonical_id is None:
+        raise CatalogueError(f"Unsupported resource group API for canonical JSON export: {api}")
+    return canonical_id
+
+
+def _raw_canonical_resource_group(
+    *,
+    group: ResourceGroupOption,
+    endpoints: list[JsonValue],
+) -> JsonObject:
+    """Return one canonical resource-group object for selected endpoints.
+
+    Args:
+        group: Selected resource-group option from the current scope hierarchy.
+        endpoints: Endpoint objects selected within the group.
+
+    Returns:
+        Canonical detailed ``resourceGroups`` entry.
+    """
+    return {
+        "id": _canonical_resource_group_id(group.api),
+        "label": group.label,
+        "endpoints": endpoints,
+    }
+
+
+def _raw_canonical_endpoint(endpoint: EndpointOption, capability_ids: tuple[str, ...]) -> JsonObject:
+    """Return one canonical endpoint declaration for a selected endpoint.
+
+    Args:
+        endpoint: Selected endpoint option.
+        capability_ids: Optional capability ids selected under the endpoint.
+
+    Returns:
+        Canonical endpoint object.
+    """
+    raw_endpoint: JsonObject = {
+        "method": endpoint.method,
+        "path": endpoint.path,
+        "operationId": endpoint.operation_id,
+    }
+    if capability_ids:
+        raw_endpoint["capabilities"] = list(capability_ids)
+    return raw_endpoint
 
 
 def draft_scope_from_plan_document(
     document: PlanDocumentV2,
 ) -> tuple[tuple[str, ...], tuple[str, ...], dict[str, tuple[str, ...]]]:
-    """Return draft scope ids decoded from an imported v2 plan document.
+    """Return draft scope ids decoded from an imported test-plan document.
 
     Args:
-        document: Parsed v2 plan document imported through the browser.
+        document: Parsed canonical test-plan document imported through the browser.
 
     Returns:
         Tuple of resource-group ids, endpoint ids, and endpoint capability ids
@@ -2057,10 +2252,10 @@ def runtime_input_prompts_for_draft(draft: BuilderDraft) -> tuple[WizardRuntimeI
 
 
 def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return runtime prompts derived from a v2 plan document.
+    """Return runtime prompts derived from a canonical test-plan document.
 
     Args:
-        document: Parsed v2 plan document.
+        document: Parsed canonical test-plan document.
 
     Returns:
         Runtime prompts in compiler trace order.
@@ -2084,7 +2279,10 @@ def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[W
         ):
             continue
         requirement = requirements.get(trace.input_id)
+        if requirement is not None and requirement.source != "plan":
+            continue
         label = requirement.label if requirement is not None else trace.input_id
+        description = requirement.description if requirement is not None else None
         prompts.append(
             WizardRuntimeInputPrompt(
                 input_id=trace.input_id,
@@ -2095,6 +2293,7 @@ def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[W
                 sensitive=trace.sensitive,
                 value=_display_json_value(actual_values.get(trace.input_id)),
                 group=_runtime_prompt_group(trace.input_id, trace.input_type),
+                description=description,
             )
         )
     return tuple(prompts)
@@ -2117,24 +2316,34 @@ def config_visibility_for_draft(draft: BuilderDraft) -> ConfigVisibility:
 
 
 def config_visibility_for_plan_document(document: PlanDocumentV2) -> ConfigVisibility:
-    """Return grouped-config field visibility for a v2 plan document.
+    """Return grouped-config field visibility for a canonical test-plan document.
 
     Args:
-        document: Parsed v2 plan document with selected resource groups and
+        document: Parsed canonical test-plan document with selected resource groups and
             endpoints.
 
     Returns:
         Visibility flags for domain-specific grouped config fields.
     """
     selected_api_ids = _selected_endpoint_api_ids(document)
+    show_cbpii = "cbpii" in selected_api_ids
     return ConfigVisibility(
         selected_api_ids=selected_api_ids,
-        show_ais="ais" in selected_api_ids,
-        show_pis="pis" in selected_api_ids,
-        show_cbpii="cbpii" in selected_api_ids,
+        show_ais=False,
+        show_pis=False,
+        show_cbpii=show_cbpii,
         show_vrp="vrp" in selected_api_ids,
-        show_business_defaults=bool({"ais", "pis", "cbpii"} & selected_api_ids),
+        show_business_defaults=show_cbpii,
     )
+
+
+def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
+    """Return security field metadata keyed by form field name.
+
+    Returns:
+        Mapping of security form field names to participant-facing metadata.
+    """
+    return dict(_SECURITY_FIELD_METADATA_BY_NAME)
 
 
 def plan_document_with_runtime_placeholders(
@@ -2144,12 +2353,12 @@ def plan_document_with_runtime_placeholders(
     """Return a copy of ``document`` with missing required runtime inputs filled.
 
     Args:
-        document: Parsed v2 plan document to copy.
+        document: Parsed canonical test-plan document to copy.
         requirements: Runtime requirements or prompts whose required missing
             values should be substituted for preview compilation only.
 
     Returns:
-        Parsed v2 plan document with placeholder runtime values.
+        Parsed canonical test-plan document with placeholder runtime values.
     """
     return _plan_document_with_config(document, _config_with_runtime_placeholders(document.config, requirements))
 
@@ -2161,7 +2370,7 @@ def missing_required_runtime_inputs(
     """Return required runtime prompts absent from a plan document.
 
     Args:
-        document: Parsed v2 plan document with actual participant config.
+        document: Parsed canonical test-plan document with actual participant config.
         prompts: Runtime prompts derived from selected scope.
 
     Returns:
@@ -2180,10 +2389,10 @@ def plan_document_to_export_json(
     sensitive_runtime_input_ids: Iterable[str],
     include_secrets: bool,
 ) -> JsonObject:
-    """Return browser export JSON for a v2 plan document.
+    """Return browser export JSON for a canonical test-plan document.
 
     Args:
-        document: Parsed v2 plan document to export.
+        document: Parsed canonical test-plan document to export.
         sensitive_runtime_input_ids: Runtime input ids marked sensitive by the
             compiler trace.
         include_secrets: Whether to include actual secret-bearing values.
@@ -2539,9 +2748,6 @@ def _discovery_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObj
     """
     config: JsonObject = {}
     _set_optional_string(config, "discoveryUrl", cleaned_data.get("discovery_url"))
-    timeout_seconds = cleaned_data.get("timeout_seconds")
-    if isinstance(timeout_seconds, int | float) and not isinstance(timeout_seconds, bool):
-        config["timeoutSeconds"] = timeout_seconds
     return config
 
 
@@ -2566,40 +2772,25 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
             "authorizationEndpoint": "oauth_authorization_endpoint",
             "issuer": "oauth_issuer",
             "tokenEndpoint": "oauth_token_endpoint",
-            "openBankingIntentId": "oauth_open_banking_intent_id",
             "responseType": "oauth_response_type",
             "requestObjectSigningAlg": "oauth_request_object_signing_alg",
         },
     )
-    _set_optional_json_array(oauth, "acrValuesSupported", cleaned_data.get("oauth_acr_values_supported"))
     if oauth:
         config["oauth"] = oauth
-
-    client_credentials = _nested_object_from_fields(
-        cleaned_data,
-        {"clientSecret": "client_credentials_client_secret"},
-    )
-    if client_credentials:
-        config["clientCredentials"] = client_credentials
 
     resource_server = _nested_object_from_fields(
         cleaned_data,
         {
             "baseUrl": "resource_server_base_url",
-            "xFapiFinancialId": "resource_server_x_fapi_financial_id",
-            "xFapiCustomerIpAddress": "resource_server_x_fapi_customer_ip_address",
         },
     )
-    send_customer_ip = cleaned_data.get("resource_server_send_x_fapi_customer_ip_address")
-    if isinstance(send_customer_ip, bool):
-        resource_server["sendXFapiCustomerIpAddress"] = send_customer_ip
     if resource_server:
         config["resourceServer"] = resource_server
 
     signing = _nested_object_from_fields(
         cleaned_data,
         {
-            "certificatePathRoot": "signing_certificate_path_root",
             "signingCertificatePath": "signing_certificate_path",
             "signingPrivateKeyPath": "signing_private_key_path",
             "kid": "signing_kid",
@@ -2611,20 +2802,9 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
     if signing:
         config["fapiSigning"] = signing
 
-    open_banking = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "tppSignatureIssuer": "open_banking_tpp_signature_issuer",
-            "tppSignatureTan": "open_banking_tpp_signature_tan",
-        },
-    )
-    if open_banking:
-        config["openBanking"] = open_banking
-
     tls = _nested_object_from_fields(
         cleaned_data,
         {
-            "certificatePathRoot": "tls_certificate_path_root",
             "caBundlePath": "tls_ca_bundle_path",
             "clientCertificatePath": "tls_client_certificate_path",
             "clientPrivateKeyPath": "tls_client_private_key_path",
@@ -2679,16 +2859,13 @@ def _config_from_grouped_fields(
         config_visibility: Scope-derived structured-field visibility.
 
     Returns:
-        v2 plan-document config object.
+        builder config object.
 
     Raises:
         ValidationError: If a typed runtime input value is malformed.
     """
     config: JsonObject = {}
     _set_optional_string(config, "discoveryUrl", cleaned_data.get("discovery_url"))
-    timeout_seconds = cleaned_data.get("timeout_seconds")
-    if isinstance(timeout_seconds, int | float) and not isinstance(timeout_seconds, bool):
-        config["timeoutSeconds"] = timeout_seconds
 
     oauth = _nested_object_from_fields(
         cleaned_data,
@@ -2698,41 +2875,26 @@ def _config_from_grouped_fields(
             "authorizationEndpoint": "oauth_authorization_endpoint",
             "issuer": "oauth_issuer",
             "tokenEndpoint": "oauth_token_endpoint",
-            "openBankingIntentId": "oauth_open_banking_intent_id",
             "resourceBaseUrl": "oauth_resource_base_url",
             "responseType": "oauth_response_type",
             "requestObjectSigningAlg": "oauth_request_object_signing_alg",
         },
     )
-    _set_optional_json_array(oauth, "acrValuesSupported", cleaned_data.get("oauth_acr_values_supported"))
     if oauth:
         config["oauth"] = oauth
-
-    client_credentials = _nested_object_from_fields(
-        cleaned_data,
-        {"clientSecret": "client_credentials_client_secret"},
-    )
-    if client_credentials:
-        config["clientCredentials"] = client_credentials
 
     resource_server = _nested_object_from_fields(
         cleaned_data,
         {
             "baseUrl": "resource_server_base_url",
-            "xFapiFinancialId": "resource_server_x_fapi_financial_id",
-            "xFapiCustomerIpAddress": "resource_server_x_fapi_customer_ip_address",
         },
     )
-    send_customer_ip = cleaned_data.get("resource_server_send_x_fapi_customer_ip_address")
-    if isinstance(send_customer_ip, bool):
-        resource_server["sendXFapiCustomerIpAddress"] = send_customer_ip
     if resource_server:
         config["resourceServer"] = resource_server
 
     signing = _nested_object_from_fields(
         cleaned_data,
         {
-            "certificatePathRoot": "signing_certificate_path_root",
             "signingCertificatePath": "signing_certificate_path",
             "signingPrivateKeyPath": "signing_private_key_path",
             "kid": "signing_kid",
@@ -2744,20 +2906,9 @@ def _config_from_grouped_fields(
     if signing:
         config["fapiSigning"] = signing
 
-    open_banking = _nested_object_from_fields(
-        cleaned_data,
-        {
-            "tppSignatureIssuer": "open_banking_tpp_signature_issuer",
-            "tppSignatureTan": "open_banking_tpp_signature_tan",
-        },
-    )
-    if open_banking:
-        config["openBanking"] = open_banking
-
     tls = _nested_object_from_fields(
         cleaned_data,
         {
-            "certificatePathRoot": "tls_certificate_path_root",
             "caBundlePath": "tls_ca_bundle_path",
             "clientCertificatePath": "tls_client_certificate_path",
             "clientPrivateKeyPath": "tls_client_private_key_path",
@@ -2943,6 +3094,8 @@ def _runtime_requirements_for_boundary(boundary: PlanDocumentBoundary) -> dict[s
                     label=existing.label,
                     required=existing.required or requirement.required,
                     sensitive=existing.sensitive or requirement.sensitive,
+                    description=existing.description or requirement.description,
+                    source=existing.source,
                 )
     return requirements
 
@@ -2975,6 +3128,8 @@ def _runtime_requirements_for_test_cases(test_cases: Iterable[CatalogueTestCase]
                 label=existing.label,
                 required=existing.required or normalised_requirement.required,
                 sensitive=existing.sensitive or normalised_requirement.sensitive,
+                description=existing.description or normalised_requirement.description,
+                source=existing.source,
             )
     return requirements
 
@@ -2996,6 +3151,8 @@ def _normalised_runtime_requirement_label(requirement: RuntimeInputRequirement) 
         label="Resource server base URL",
         required=requirement.required,
         sensitive=requirement.sensitive,
+        description=requirement.description,
+        source=requirement.source,
     )
 
 
@@ -3003,15 +3160,16 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
     """Return a parsed copy of a plan document with replaced config.
 
     Args:
-        document: Existing parsed v2 plan document.
-        config: Replacement v2 config object.
+        document: Existing parsed canonical test-plan document.
+        config: Replacement executable config object.
 
     Returns:
-        Parsed v2 plan document with runtime inputs re-derived from config.
+        Parsed canonical test-plan document with runtime inputs re-derived from
+        config.
 
     Raises:
         CatalogueError: If serialisation or parsing unexpectedly produces a
-            non-v2 plan document.
+            non-canonical test-plan document.
     """
     return PlanDocumentV2(
         schema_version=document.schema_version,
@@ -3067,6 +3225,8 @@ def _config_with_runtime_placeholders(
     updated = _copy_json_mapping(config)
     current_values = _runtime_input_values_from_config(updated)
     for requirement in requirements:
+        if isinstance(requirement, RuntimeInputRequirement) and requirement.source != "plan":
+            continue
         if not requirement.required:
             continue
         if _runtime_input_is_present(current_values.get(requirement.input_id)):
@@ -3124,6 +3284,8 @@ def _runtime_prompt_group(input_id: str, input_type: str) -> str:
         Participant-facing config group label.
     """
     normalized = input_id.lower()
+    if normalized.startswith("xfapi") or normalized.startswith("xcustomer") or normalized == "idempotencykey":
+        return "Request metadata and headers"
     if input_type == "url" or "baseurl" in normalized or normalized.endswith("url"):
         return "Resource server targets"
     return "PSU authorisation/runtime inputs"
@@ -3133,7 +3295,7 @@ def _runtime_input_values_from_config(config: Mapping[str, JsonValue]) -> JsonOb
     """Derive runtime input values from a v2 config object.
 
     Args:
-        config: v2 plan-document config object.
+        config: Builder config object.
 
     Returns:
         Flat runtime-input mapping mirroring catalogue parser behaviour.
@@ -3166,23 +3328,12 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
 
     Args:
         values: Mutable flat runtime-input mapping.
-        config: v2 plan-document config object.
+        config: Builder config object.
     """
     resource_server = _object_config_value(config, "resourceServer")
     _set_derived_runtime_value(values, "resourceBaseUrl", resource_server.get("baseUrl"))
     oauth = _object_config_value(config, "oauth")
     _set_derived_runtime_value(values, "resourceBaseUrl", oauth.get("resourceBaseUrl"))
-
-    ais = _object_config_value(config, "ais")
-    resource_ids = _object_config_value(ais, "resourceIds")
-    _set_derived_runtime_value(
-        values,
-        "consentedAccountId",
-        _first_form_config_object_string(resource_ids.get("accountIds"), "accountId"),
-    )
-    _set_derived_runtime_value(values, "fromBookingDateTime", ais.get("transactionFromDate"))
-    _set_derived_runtime_value(values, "toBookingDateTime", ais.get("transactionToDate"))
-
     cbpii = _object_config_value(config, "cbpii")
     debtor_account = _object_config_value(cbpii, "debtorAccount")
     _set_derived_runtime_value(values, "debtorAccountSchemeName", debtor_account.get("schemeName"))
@@ -3298,7 +3449,7 @@ def _is_sensitive_config_key(key: str) -> bool:
         or "secret" in normalized
         or "password" in normalized
         or "privatekey" in normalized
-        or normalized in {"identification", "accountid", "statementid", "xfapifinancialid"}
+        or normalized in {"identification", "accountid", "statementid", "xfapicustomeripaddress", "xfapifinancialid"}
     )
 
 
@@ -3721,7 +3872,8 @@ def _endpoint_id_for_resource_group_endpoint(
     """Return the wizard endpoint id for an imported v2 endpoint.
 
     Args:
-        document: Imported v2 plan document carrying the selected boundary.
+        document: Imported canonical test-plan document carrying the selected
+            boundary.
         resource_group_id: Resource-group id from the imported document.
         endpoint_ref: Endpoint reference nested under the resource group.
 
@@ -3751,7 +3903,7 @@ def _selected_endpoint_api_ids(document: PlanDocumentV2) -> frozenset[str]:
     """Return API families represented by selected plan endpoints.
 
     Args:
-        document: Parsed v2 plan document.
+        document: Parsed canonical test-plan document.
 
     Returns:
         Internal catalogue API-family ids for selected endpoints.
@@ -3790,7 +3942,7 @@ def _api_from_resource_group_id(resource_group_id: str) -> str | None:
     """Return the API-family prefix from a builder resource-group id.
 
     Args:
-        resource_group_id: Resource-group id from a v2 plan document.
+        resource_group_id: Resource-group id from a canonical test-plan document.
 
     Returns:
         API-family id when the resource group is canonical, high-level, or uses
