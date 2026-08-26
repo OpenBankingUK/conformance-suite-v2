@@ -10,15 +10,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.catalogue import (
-    CatalogueError,
-    CompiledTestPlan,
-    TestPlanSpec,
-    compile_test_plan,
-    compile_test_plan_document,
-    parse_test_plan_document,
-)
-from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
+from conformance.catalogue import CompiledTestPlan
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -38,7 +30,7 @@ logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check from config/plan-spec input or a canonical test plan.
+    """Run a conformance check from config input or a canonical test plan.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -51,11 +43,6 @@ def run(argv: Sequence[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Run a conformance check")
     parser.add_argument("config", nargs="?", type=Path, help="Path to the model-bank JSON config")
     parser.add_argument(
-        "--plan-spec",
-        type=Path,
-        help="Optional catalogue plan-spec JSON file to compile and execute",
-    )
-    parser.add_argument(
         "--test-plan",
         type=Path,
         help="Canonical schemaVersion 1.0 test plan JSON file to validate and execute",
@@ -64,8 +51,6 @@ def run(argv: Sequence[str] | None = None) -> int:
         args = parser.parse_args(argv)
         if args.config is None and args.test_plan is None:
             parser.error("config is required unless --test-plan is supplied")
-        if args.test_plan is not None and args.plan_spec is not None:
-            parser.error("--test-plan cannot be combined with --plan-spec")
         if args.test_plan is not None and args.config is not None:
             parser.error("--test-plan already contains execution config; do not pass a separate config")
     except SystemExit as error:
@@ -120,37 +105,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             logger.error("Config error: %s", error)
             return 2
 
-        if args.plan_spec is None:
-            result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
-        else:
-            try:
-                raw_spec = json.loads(args.plan_spec.read_text(encoding="utf-8"))
-                plan_document = parse_test_plan_document(raw_spec)
-                if isinstance(plan_document, TestPlanSpec):
-                    plan_spec = plan_document
-                    compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
-                    runtime_inputs = plan_spec.runtime_inputs
-                else:
-                    compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
-                    runtime_inputs = plan_document.runtime_inputs
-            except json.JSONDecodeError as error:
-                logger.error("Plan-spec JSON error: %s", error.msg)
-                return 2
-            except OSError as error:
-                logger.error("Unable to read plan spec: %s", error)
-                return 2
-            except CatalogueError as error:
-                logger.error("Plan-spec error: %s", error)
-                return 2
-
-            result = _run_cli_compiled_plan(
-                config=config,
-                compiled_plan=compiled_plan,
-                runtime_inputs=runtime_inputs,
-                runtime_input_base_dir=args.plan_spec.parent,
-                logger_sink=logger_sink,
-                run_id=run_id,
-            )
+        result = run_model_bank_smoke_check(config, execution_logger=logger_sink)
 
     result_object = result.to_json_object()
     if plan_snapshot is not None:
@@ -174,7 +129,7 @@ def run(argv: Sequence[str] | None = None) -> int:
         logger.error("Unable to write execution log to %s: %s", config.execution_log_path, error)
         return 3
 
-    run_label = f"Test plan run ({args.test_plan})" if args.test_plan is not None else _legacy_run_label(args.plan_spec)
+    run_label = f"Test plan run ({args.test_plan})" if args.test_plan is not None else "Model-bank smoke check"
     if result.status == "passed":
         logger.info(
             "%s passed; wrote %s and %s",
@@ -216,7 +171,6 @@ def _run_cli_compiled_plan(
         Smoke-check result returned by the executor.
     """
     http_client = build_json_http_client(
-        timeout_seconds=config.timeout_seconds,
         ca_bundle_path=config.tls.ca_bundle_path,
         client_certificate_path=config.tls.client_certificate_path,
         client_private_key_path=config.tls.client_private_key_path,
@@ -240,9 +194,6 @@ def _run_cli_compiled_plan(
                 ),
                 oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
                 oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
-                oauth_open_banking_intent_id=(
-                    config.oauth.open_banking_intent_id if config.oauth is not None else None
-                ),
                 oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
                 oauth_request_object_signing_alg=(
                     config.oauth.request_object_signing_alg if config.oauth is not None else None
@@ -256,15 +207,3 @@ def _run_cli_compiled_plan(
         )
     finally:
         http_client.close()
-
-
-def _legacy_run_label(plan_spec_path: Path | None) -> str:
-    """Return the CLI log label for legacy config/plan-spec execution.
-
-    Args:
-        plan_spec_path: Optional legacy plan-spec path supplied on the CLI.
-
-    Returns:
-        Human-readable run label for the final log line.
-    """
-    return f"Catalogue plan run ({plan_spec_path})" if plan_spec_path is not None else "Model-bank smoke check"

@@ -63,11 +63,7 @@ def test_compile_selects_ais_cases_for_implemented_endpoints_and_dependencies() 
                     capability_ids=("ais.transactions.date-range-filtering",),
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessToken": "access-token",
-                "consentedAccountId": "account-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
@@ -110,11 +106,7 @@ def test_compile_excludes_optional_ais_transaction_cases_when_date_range_capabil
                     resource_group="Transactions",
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessToken": "access-token",
-                "consentedAccountId": "account-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
@@ -157,11 +149,7 @@ def test_compile_preserves_ais_generated_ids_and_legacy_provenance() -> None:
                     capability_ids=("ais.transactions.date-range-filtering",),
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessToken": "access-token",
-                "consentedAccountId": "account-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
@@ -192,22 +180,23 @@ def test_compile_surfaces_runtime_input_requirements_for_selected_ais_cases() ->
                     resource_group="Accounts",
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessToken": "access-token",
-                "consentedAccountId": "account-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
     snapshot = {entry.input_id: entry for entry in compiled.traceability.runtime_input_snapshot}
     assert snapshot["resourceBaseUrl"].provided is True
     assert snapshot["resourceBaseUrl"].value == "https://rs.example.com"
+    assert snapshot["accessToken"].provided is False
     assert snapshot["accessToken"].sensitive is True
     assert snapshot["accessToken"].value is None
+    assert snapshot["consentedAccountId"].provided is False
     assert snapshot["invalidAccessToken"].required is False
     assert snapshot["invalidAccessToken"].provided is False
-    assert snapshot["xFapiInteractionId"].required is False
+    assert "xFapiAuthDate" not in snapshot
+    assert "xFapiCustomerIpAddress" not in snapshot
+    assert "xCustomerUserAgent" not in snapshot
+    assert "xFapiInteractionId" not in snapshot
 
 
 @pytest.mark.unit

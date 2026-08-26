@@ -9,18 +9,82 @@ from django.contrib.sessions.backends.signed_cookies import SessionStore
 
 from conformance.api.builder_draft_store import SessionBuilderDraftStore
 from conformance.api.builder_wizard import (
+    BusinessConfigForm,
     CatalogueBoundaryForm,
+    ConfigVisibility,
+    DiscoveryConfigForm,
     ExecutionConfigForm,
     ScopeSelectionForm,
+    SecurityConfigForm,
     catalogue_boundary_continue_blocker,
     catalogue_boundary_options,
     catalogue_scope_hierarchy,
     config_visibility_for_draft,
     endpoint_capability_value,
+    merge_discovery_config,
     plan_document_from_draft,
     runtime_input_prompts_for_draft,
 )
 from conformance.catalogue import PlanDocumentBoundary
+from conformance.json_types import JsonValue
+
+DISCOVERY_CONFIG = {"discoveryUrl": "https://example.com/.well-known/openid-configuration"}
+"""Minimal discovery config needed to build canonical draft documents."""
+
+
+@pytest.mark.unit
+def test_discovery_config_form_only_stores_discovery_url() -> None:
+    """Discovery form ignores stale timeout submissions from older builders."""
+    form = DiscoveryConfigForm(
+        data={
+            "discovery_url": "https://example.com/.well-known/openid-configuration",
+            "timeout_seconds": "60",
+        },
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    expected_config = {"discoveryUrl": "https://example.com/.well-known/openid-configuration"}
+    assert form.config == expected_config
+    stale_config: dict[str, JsonValue] = {"discoveryUrl": "https://old.example.com", "timeoutSeconds": 60}
+    assert merge_discovery_config(stale_config, form.config) == expected_config
+
+
+@pytest.mark.unit
+def test_discovery_config_form_allows_blank_for_manual_security_entry() -> None:
+    """Discovery form can clear discovery config and continue to manual entry."""
+    form = DiscoveryConfigForm(data={"discovery_url": ""})
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {}
+    stale_config: dict[str, JsonValue] = {"discoveryUrl": "https://old.example.com"}
+    assert merge_discovery_config(stale_config, form.config) == {}
+
+
+@pytest.mark.unit
+def test_security_config_form_allows_run_dependent_fields_to_be_blank() -> None:
+    """Security form defers run-dependent requiredness until scope is selected."""
+    form = SecurityConfigForm(data={})
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {}
+
+
+@pytest.mark.unit
+def test_security_config_form_requires_complete_conditional_groups() -> None:
+    """Conditional security groups must be supplied all together."""
+    form = SecurityConfigForm(
+        data={
+            "oauth_client_id": "client-123",
+            "oauth_redirect_uri": "https://client.example.com/callback",
+            "resource_server_base_url": "https://resource.example.com",
+            "signing_kid": "kid-123",
+            "tls_client_certificate_path": "/certs/client.pem",
+        }
+    )
+
+    assert form.is_valid() is False
+    assert "Complete every FAPI signing field" in form.errors["signing_certificate_path"][0]
+    assert "mTLS client certificate and private key" in form.errors["tls_client_private_key_path"][0]
 
 
 @pytest.mark.unit
@@ -90,25 +154,24 @@ def test_session_builder_draft_store_persists_grouped_config() -> None:
 
 @pytest.mark.unit
 def test_catalogue_boundary_form_accepts_compile_ready_v2_boundary() -> None:
-    """The first wizard step accepts the Read/Write v2 boundary backed by bundled catalogues."""
+    """The first wizard step accepts the Read/Write boundary backed by bundled catalogues."""
     form = CatalogueBoundaryForm(
         data={
             "scheme": "open-banking-uk",
             "specification": "read-write",
             "version": "4.0.1",
-            "resource_groups": ["account-and-transaction"],
         }
     )
 
     assert form.is_valid(), form.errors.as_json()
-    assert form.selected_resource_group_ids == ("account-and-transaction",)
+    assert form.selected_resource_group_ids == ()
     assert PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1") in catalogue_boundary_options()
     assert PlanDocumentBoundary("open-banking-uk", "dynamic-client-registration", "3.4") in catalogue_boundary_options()
 
 
 @pytest.mark.unit
-def test_catalogue_boundary_form_requires_resource_group_selection() -> None:
-    """The first wizard step requires at least one high-level resource group."""
+def test_catalogue_boundary_form_defers_resource_group_selection() -> None:
+    """The first wizard step defers high-level resource-group selection."""
     form = CatalogueBoundaryForm(
         data={
             "scheme": "open-banking-uk",
@@ -117,8 +180,8 @@ def test_catalogue_boundary_form_requires_resource_group_selection() -> None:
         }
     )
 
-    assert form.is_valid() is False
-    assert "Select at least one resource group." in form.errors["resource_groups"][0]
+    assert form.is_valid(), form.errors.as_json()
+    assert form.selected_resource_group_ids == ()
 
 
 @pytest.mark.unit
@@ -257,6 +320,7 @@ def test_catalogue_scope_hierarchy_excludes_cvrp_from_open_banking_boundary() ->
             endpoint_ids=(vrp_endpoint.id,),
             endpoint_capability_ids={},
         )
+        .with_config(config=DISCOVERY_CONFIG)
     )
     document = plan_document_from_draft(draft)
     selected_endpoints = [
@@ -276,6 +340,7 @@ def test_catalogue_scope_hierarchy_excludes_cvrp_from_open_banking_boundary() ->
             endpoint_ids=(legacy_endpoint_id,),
             endpoint_capability_ids={},
         )
+        .with_config(config=DISCOVERY_CONFIG)
     )
     legacy_document = plan_document_from_draft(legacy_draft)
     legacy_selected_endpoints = [
@@ -378,6 +443,8 @@ def test_grouped_config_form_builds_runtime_inputs_for_selected_scope() -> None:
         resource_group_ids=("account-and-transaction",),
         endpoint_ids=(endpoint.id,),
         endpoint_capability_ids={},
+    ).with_config(
+        config=DISCOVERY_CONFIG,
     )
 
     prompts = runtime_input_prompts_for_draft(draft)
@@ -385,7 +452,6 @@ def test_grouped_config_form_builds_runtime_inputs_for_selected_scope() -> None:
         data={
             "discovery_url": "https://example.com/.well-known/openid-configuration",
             "runtime_input__resourceBaseUrl": "https://resource.example.com",
-            "runtime_input__accessToken": "secret-access-token",
         },
         runtime_prompts=prompts,
     )
@@ -394,12 +460,11 @@ def test_grouped_config_form_builds_runtime_inputs_for_selected_scope() -> None:
     assert form.config is not None
     assert form.config["inputs"] == {
         "resourceBaseUrl": {"value": "https://resource.example.com"},
-        "accessToken": {"value": "secret-access-token"},
     }
 
     document = plan_document_from_draft(draft.with_config(config=form.config))
     assert document.runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-    assert document.runtime_inputs["accessToken"] == "secret-access-token"
+    assert "accessToken" not in document.runtime_inputs
 
 
 @pytest.mark.unit
@@ -429,11 +494,17 @@ def test_runtime_prompt_labels_follow_selected_endpoint_scope() -> None:
         resource_group_ids=("payment-initiation",),
         endpoint_ids=(endpoint.id,),
         endpoint_capability_ids={},
+    ).with_config(
+        config=DISCOVERY_CONFIG,
     )
 
-    labels_by_id = {prompt.input_id: prompt.label for prompt in runtime_input_prompts_for_draft(draft)}
+    prompts = runtime_input_prompts_for_draft(draft)
+    labels_by_id = {prompt.input_id: prompt.label for prompt in prompts}
+    groups_by_id = {prompt.input_id: prompt.group for prompt in prompts}
 
     assert labels_by_id["resourceBaseUrl"] == "Resource server base URL"
+    assert "xFapiCustomerIpAddress" not in labels_by_id
+    assert "Request metadata and headers" not in groups_by_id.values()
     assert "AIS resource server base URL" not in labels_by_id.values()
 
 
@@ -448,15 +519,8 @@ def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
             "oauth_issuer": "https://auth.example.com",
             "oauth_token_endpoint": "https://auth.example.com/token",
             "oauth_response_type": "code id_token",
-            "oauth_acr_values_supported": '["urn:openbanking:psd2:sca"]',
             "oauth_request_object_signing_alg": "PS256",
-            "client_credentials_client_secret": "synthetic-client-secret",  # pragma: allowlist secret
             "resource_server_base_url": "https://resource.example.com",
-            "resource_server_x_fapi_financial_id": "financial-id",
-            "resource_server_send_x_fapi_customer_ip_address": "on",
-            "resource_server_x_fapi_customer_ip_address": "203.0.113.10",
-            "open_banking_tpp_signature_issuer": "synthetic-org-id",
-            "open_banking_tpp_signature_tan": "openbanking.org.uk",
             "ais_resource_ids_json": '{"accountIds": [{"accountId": "account-123"}]}',
             "ais_transaction_from_date": "2026-01-01T00:00:00Z",
             "ais_transaction_to_date": "2026-01-31T23:59:59Z",
@@ -486,14 +550,10 @@ def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
         "tokenEndpoint": "https://auth.example.com/token",
         "responseType": "code id_token",
         "requestObjectSigningAlg": "PS256",
-        "acrValuesSupported": ["urn:openbanking:psd2:sca"],
     }
-    assert form.config["resourceServer"] == {
-        "baseUrl": "https://resource.example.com",
-        "xFapiFinancialId": "financial-id",
-        "xFapiCustomerIpAddress": "203.0.113.10",
-        "sendXFapiCustomerIpAddress": True,
-    }
+    assert form.config["resourceServer"] == {"baseUrl": "https://resource.example.com"}
+    assert "clientCredentials" not in form.config
+    assert "openBanking" not in form.config
     pis = form.config["pis"]
     assert isinstance(pis, dict)
     assert pis["paymentFrequency"] == "Monthly"
@@ -504,6 +564,16 @@ def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
     assert isinstance(debtor_account, dict)
     assert debtor_account["identification"] == "12345678901234"
     assert form.config["conditionalProperties"] == [{"id": "standing-order.number-of-payments"}]
+
+
+@pytest.mark.unit
+def test_grouped_config_form_omits_resource_server_for_unchecked_customer_ip_toggle() -> None:
+    """Unchecked customer-IP toggle alone does not create a resourceServer config."""
+    form = ExecutionConfigForm(data={})
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config is not None
+    assert "resourceServer" not in form.config
 
 
 @pytest.mark.unit
@@ -545,10 +615,10 @@ def test_structured_config_values_remove_duplicate_runtime_prompts() -> None:
     prompts = runtime_input_prompts_for_draft(draft)
 
     assert document.runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-    assert document.runtime_inputs["consentedAccountId"] == "account-123"
+    assert "consentedAccountId" not in document.runtime_inputs
     assert "resourceBaseUrl" not in {prompt.input_id for prompt in prompts}
     assert "consentedAccountId" not in {prompt.input_id for prompt in prompts}
-    assert "accessToken" in {prompt.input_id for prompt in prompts}
+    assert "accessToken" not in {prompt.input_id for prompt in prompts}
 
 
 @pytest.mark.unit
@@ -578,15 +648,86 @@ def test_config_visibility_uses_selected_endpoint_apis() -> None:
         resource_group_ids=("account-and-transaction", "payment-initiation", "confirmation-of-funds"),
         endpoint_ids=(ais_endpoint.id,),
         endpoint_capability_ids={},
+    ).with_config(
+        config=DISCOVERY_CONFIG,
     )
 
     visibility = config_visibility_for_draft(draft)
 
     assert visibility.selected_api_ids == frozenset({"ais"})
-    assert visibility.show_ais is True
+    assert visibility.show_ais is False
     assert visibility.show_pis is False
     assert visibility.show_cbpii is False
+    assert visibility.show_business_defaults is False
+
+
+@pytest.mark.unit
+def test_config_visibility_restores_cbpii_business_defaults() -> None:
+    """CBPII endpoint selections show the Confirmation of Funds business fields."""
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+    )
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=("confirmation-of-funds",),
+    )
+    cbpii_endpoint = next(
+        endpoint
+        for group in hierarchy.resource_groups
+        for endpoint in group.endpoints
+        if endpoint.path == "/open-banking/v4.0/cbpii/funds-confirmation-consents"
+    )
+    draft = draft.with_scope_selection(
+        resource_group_ids=("confirmation-of-funds",),
+        endpoint_ids=(cbpii_endpoint.id,),
+        endpoint_capability_ids={},
+    ).with_config(config=DISCOVERY_CONFIG)
+
+    visibility = config_visibility_for_draft(draft)
+
+    assert visibility.selected_api_ids == frozenset({"cbpii"})
+    assert visibility.show_ais is False
+    assert visibility.show_pis is False
+    assert visibility.show_cbpii is True
     assert visibility.show_business_defaults is True
+
+
+@pytest.mark.unit
+def test_business_config_form_requires_cbpii_debtor_account_values() -> None:
+    """CBPII business config serializes debtor account values into structured config."""
+    form = BusinessConfigForm(
+        data={
+            "cbpii_debtor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+            "cbpii_debtor_account_identification": "12345678901234",
+            "cbpii_debtor_account_name": "Model Bank Account",
+        },
+        config_visibility=ConfigVisibility(
+            selected_api_ids=frozenset({"cbpii"}),
+            show_ais=False,
+            show_pis=False,
+            show_cbpii=True,
+            show_vrp=False,
+            show_business_defaults=True,
+        ),
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "cbpii": {
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "12345678901234",
+                "name": "Model Bank Account",
+            }
+        }
+    }
 
 
 @pytest.mark.unit
@@ -616,6 +757,8 @@ def test_scoped_config_form_prunes_out_of_scope_business_defaults() -> None:
         resource_group_ids=("account-and-transaction",),
         endpoint_ids=(ais_endpoint.id,),
         endpoint_capability_ids={},
+    ).with_config(
+        config=DISCOVERY_CONFIG,
     )
 
     form = ExecutionConfigForm(
@@ -635,7 +778,7 @@ def test_scoped_config_form_prunes_out_of_scope_business_defaults() -> None:
 
     assert form.is_valid(), form.errors.as_json()
     assert form.config is not None
-    assert "ais" in form.config
+    assert "ais" not in form.config
     assert "pis" not in form.config
     assert "cbpii" not in form.config
     assert "conditionalProperties" not in form.config

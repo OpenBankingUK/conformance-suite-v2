@@ -104,7 +104,7 @@
 
         .field-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 12px;
             margin-top: 16px;
         }
@@ -212,29 +212,28 @@
 <main>
     <header>
         <div>
-            <h1>Choose test plan catalogue</h1>
-            <div class="muted">Step 1 of the new guided builder</div>
+            <h1>Choose specification</h1>
+            <div class="muted">Step 1: specification and profile</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="catalogue-boundary-heading">
-        <h2 id="catalogue-boundary-heading">Scheme, specification, version, and resource groups</h2>
-        <p class="helper">Select the catalogue boundary first. Resource groups appear only for specifications that define them.</p>
+        <h2 id="catalogue-boundary-heading">Scheme, specification, and version</h2>
+        <p class="helper">Select the Open Banking catalogue boundary first. You will enter the security environment before choosing resource groups.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if saved %}
-            <div class="message success">Catalogue boundary and resource groups saved.</div>
+            <div class="message success">Specification saved.</div>
         {% endif %}
-        <div class="message info">Choose the catalogue boundary and resource groups first; endpoints and scoped features are selected on the next step.</div>
+        <div class="message info">Next you will define the single security environment used by this executable test plan.</div>
         {% if catalogue_boundary_blocker %}
             <div class="message info">{{ catalogue_boundary_blocker }}</div>
         {% endif %}
 
         <form method="post"
               action="{% url 'builder-catalogue-boundary' draft.draft_id %}"
-              data-boundary-form
-              data-resource-groups-url="{% url 'builder-catalogue-resource-groups' draft.draft_id %}">
+              data-boundary-form>
             {% csrf_token %}
             {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
 
@@ -273,13 +272,21 @@
                         {% endfor %}
                     </select>
                 </div>
-            </div>
 
-            {% include "conformance/partials/builder_catalogue_resource_groups.html" %}
+                <div>
+                    <label for="{{ form.security_profile.id_for_label }}">Security profile</label>
+                    {{ form.security_profile.errors }}
+                    <select id="{{ form.security_profile.id_for_label }}" name="security_profile">
+                        {% for value,label in form.security_profile.field.choices %}
+                            <option value="{{ value }}" {% if form.security_profile.value == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
 
             <div class="actions">
                 <a class="button secondary" href="{% url 'home' %}">Cancel</a>
-                <button type="submit" data-continue-button>Continue to endpoints</button>
+                <button type="submit" data-continue-button>Continue to discovery</button>
             </div>
         </form>
     </section>
@@ -295,7 +302,6 @@
         const specification = form.querySelector("[data-specification-select]");
         const version = form.querySelector("[data-version-select]");
         const continueButton = form.querySelector("[data-continue-button]");
-        let activeRequest = null;
 
         const selectFirstVisible = (select) => {
             const selected = select.selectedOptions[0];
@@ -308,85 +314,11 @@
             }
         };
 
-        const csrfToken = () => {
-            const input = form.querySelector("input[name='csrfmiddlewaretoken']");
-            return input instanceof HTMLInputElement ? input.value : "";
-        };
-
         const updateContinueState = () => {
-            const section = document.querySelector("#catalogue-resource-groups");
-            if (!(continueButton instanceof HTMLButtonElement) || !section) {
+            if (!(continueButton instanceof HTMLButtonElement)) {
                 return;
             }
-            const selectorOnly = section.dataset.selectorOnly === "true";
-            const requiresResourceGroups = section.dataset.requiresResourceGroups === "true";
-            const selectedResourceGroups = form.querySelectorAll("input[name='resource_groups']:checked").length;
-            continueButton.disabled = selectorOnly || (requiresResourceGroups && selectedResourceGroups === 0);
-        };
-
-        const syncResourceCardState = (target) => {
-            if (!(target instanceof HTMLInputElement) || target.name !== "resource_groups") {
-                return;
-            }
-            const card = target.closest(".resource-card");
-            if (card) {
-                card.classList.toggle("selected", target.checked);
-            }
-            updateContinueState();
-        };
-
-        const replaceResourceGroups = (html) => {
-            const current = document.querySelector("#catalogue-resource-groups");
-            if (!current) {
-                return;
-            }
-            const parsed = new DOMParser().parseFromString(html, "text/html");
-            const replacement = parsed.querySelector("#catalogue-resource-groups");
-            if (!replacement) {
-                throw new Error("Resource-group refresh did not return the expected fragment.");
-            }
-            current.replaceWith(replacement);
-            updateContinueState();
-        };
-
-        const refreshResourceGroups = async () => {
-            const current = document.querySelector("#catalogue-resource-groups");
-            if (activeRequest) {
-                activeRequest.abort();
-            }
-            const request = new AbortController();
-            activeRequest = request;
-            if (current) {
-                current.setAttribute("aria-busy", "true");
-            }
-            try {
-                const response = await fetch(form.dataset.resourceGroupsUrl || form.action, {
-                    method: "POST",
-                    body: new FormData(form),
-                    credentials: "same-origin",
-                    signal: request.signal,
-                    headers: {
-                        "X-CSRFToken": csrfToken(),
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                });
-                if (!response.ok) {
-                    throw new Error(`Resource-group refresh failed with HTTP ${response.status}.`);
-                }
-                replaceResourceGroups(await response.text());
-            } catch (error) {
-                if (!(error instanceof DOMException) || error.name !== "AbortError") {
-                    console.error(error);
-                }
-            } finally {
-                const refreshed = document.querySelector("#catalogue-resource-groups");
-                if (refreshed) {
-                    refreshed.removeAttribute("aria-busy");
-                }
-                if (activeRequest === request) {
-                    activeRequest = null;
-                }
-            }
+            continueButton.disabled = false;
         };
 
         const syncOptions = () => {
@@ -407,17 +339,14 @@
             selectFirstVisible(version);
         };
 
-        const syncBoundaryAndRefreshGroups = () => {
+        const syncBoundary = () => {
             syncOptions();
-            void refreshResourceGroups();
+            updateContinueState();
         };
 
-        scheme.addEventListener("change", syncBoundaryAndRefreshGroups);
-        specification.addEventListener("change", syncBoundaryAndRefreshGroups);
-        version.addEventListener("change", refreshResourceGroups);
-        form.addEventListener("change", (event) => {
-            syncResourceCardState(event.target);
-        });
+        scheme.addEventListener("change", syncBoundary);
+        specification.addEventListener("change", syncBoundary);
+        version.addEventListener("change", updateContinueState);
         syncOptions();
         updateContinueState();
     })();

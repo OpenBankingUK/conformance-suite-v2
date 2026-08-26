@@ -4,25 +4,16 @@ from __future__ import annotations
 
 import json
 from collections.abc import Iterator
-from typing import cast
 from unittest.mock import Mock, patch
 
 import pytest
 from django.test import Client
 
-from conformance.api.builder_wizard import catalogue_scope_hierarchy, endpoint_capability_value
-from conformance.api.plan_builder import CatalogueEndpointOption, PlanBuilderForm, guided_flow_context
-from conformance.api.run_store import RunConflictError, RunPlanStep, run_store
+from conformance.api.builder_wizard import EndpointOption, catalogue_scope_hierarchy, endpoint_capability_value
+from conformance.api.run_store import RunPlanStep, run_store
 from conformance.catalogue import PlanDocumentBoundary
 from conformance.http import JsonHttpResponse
-from conformance.json_types import JsonValue
 from conformance.ozone_client import DiscoveryDocument
-
-VALID_CONFIG: dict[str, JsonValue] = {
-    "environment": "test-env",
-    "discoveryUrl": "https://example.com/.well-known/openid-configuration",
-}
-"""Minimal config used by browser UI tests."""
 
 
 @pytest.fixture(autouse=True)
@@ -35,82 +26,6 @@ def _reset_global_stores() -> Iterator[None]:
     run_store.reset()
     yield
     run_store.reset()
-
-
-def _endpoint_id_for(*, api: str, path: str) -> str:
-    """Return the rendered endpoint option id for a catalogue path.
-
-    Args:
-        api: API family for the option.
-        path: Standards endpoint path.
-
-    Returns:
-        Stable browser form id for the endpoint.
-
-    Raises:
-        AssertionError: If the endpoint is not rendered by the guided context.
-    """
-    context = guided_flow_context(PlanBuilderForm())
-    for option in cast(tuple[CatalogueEndpointOption, ...], context["guided_endpoint_options"]):
-        if option.api == api and option.path == path:
-            return option.id
-    raise AssertionError(f"Endpoint option not found for {api} {path}")
-
-
-def _ais_accounts_endpoint_id() -> str:
-    """Return the AIS accounts-list endpoint id.
-
-    Returns:
-        Endpoint id for ``GET /open-banking/v4.0/aisp/accounts``.
-    """
-    return _endpoint_id_for(api="ais", path="/open-banking/v4.0/aisp/accounts")
-
-
-def _plan_form_data(
-    *,
-    endpoint_ids: list[str] | None = None,
-    capability_values: list[str] | None = None,
-    runtime_inputs: dict[str, str] | None = None,
-) -> dict[str, object]:
-    """Build form data for plan preview and launch requests.
-
-    Args:
-        endpoint_ids: Implemented endpoint ids submitted by checkboxes.
-        capability_values: Endpoint capability checkbox values submitted by
-            endpoint cards.
-        runtime_inputs: Runtime input id/value strings to submit.
-
-    Returns:
-        Form-encoded payload dictionary accepted by Django's test client.
-    """
-    data: dict[str, object] = {
-        "config_json": json.dumps(VALID_CONFIG),
-        "plan_spec_json": "",
-        "guided_standard": "open-banking",
-        "guided_spec_version": "v4.0",
-        "guided_api": "ais",
-        "guided_security_profile": "fapi1-advanced",
-        "implemented_endpoint_ids": endpoint_ids or [],
-        "implemented_endpoint_capabilities": capability_values or [],
-    }
-    for input_id, value in (runtime_inputs or {}).items():
-        data[f"runtime_input__{input_id}"] = value
-    return data
-
-
-def _valid_plan_form_data() -> dict[str, object]:
-    """Build a valid AIS endpoint-selected form payload.
-
-    Returns:
-        Form data that compiles the AIS accounts-list catalogue plan.
-    """
-    return _plan_form_data(
-        endpoint_ids=[_ais_accounts_endpoint_id()],
-        runtime_inputs={
-            "resourceBaseUrl": "https://resource.example.com",
-            "accessToken": "secret-access-token",
-        },
-    )
 
 
 def _run_id_from_redirect(location: str) -> str:
@@ -137,13 +52,96 @@ def _draft_id_from_builder_redirect(location: str) -> str:
     return location.rstrip("/").rsplit("/", maxsplit=2)[-2]
 
 
+def _valid_security_form_data(**overrides: str) -> dict[str, str]:
+    """Build valid guided security-step form data.
+
+    Args:
+        overrides: Field values to override in the default valid submission.
+
+    Returns:
+        Form data containing the security fields required to continue to scope.
+    """
+    data = {
+        "oauth_client_id": "client-123",
+        "oauth_redirect_uri": "https://client.example.com/callback",
+        "resource_server_base_url": "https://resource.example.com",
+    }
+    data.update(overrides)
+    return data
+
+
+def _scope_endpoint(*, selected_resource_group_id: str, path: str) -> EndpointOption:
+    """Return a rendered scope endpoint for a resource group and path.
+
+    Args:
+        selected_resource_group_id: Resource-group id to reveal in the scope hierarchy.
+        path: Standards endpoint path to find.
+
+    Returns:
+        Matching endpoint option.
+
+    Raises:
+        AssertionError: If the endpoint is not available in the selected group.
+    """
+    hierarchy = catalogue_scope_hierarchy(
+        PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1"),
+        selected_resource_group_ids=(selected_resource_group_id,),
+    )
+    for group in hierarchy.resource_groups:
+        for endpoint in group.endpoints:
+            if endpoint.path == path:
+                return endpoint
+    raise AssertionError(f"Endpoint option not found for {path}")
+
+
+def _scope_location_after_security(client: Client) -> str:
+    """Create a draft and return its scope URL after security settings are saved.
+
+    Args:
+        client: Django test client that owns the builder session.
+
+    Returns:
+        Scope route location for the draft.
+    """
+    create_response = client.post("/builder/new/")
+    catalogue_response = client.post(
+        create_response["Location"],
+        data={
+            "scheme": "open-banking-uk",
+            "specification": "read-write",
+            "version": "4.0.1",
+        },
+    )
+    discovery_response = client.post(
+        catalogue_response["Location"],
+        data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
+    )
+    security_response = client.post(
+        discovery_response["Location"],
+        data=_valid_security_form_data(),
+    )
+    return str(security_response["Location"])
+
+
+def _assert_requirement_badge(content: str, label: str, badge: str) -> None:
+    """Assert that a rendered field label includes a requirement badge.
+
+    Args:
+        content: Rendered HTML response body.
+        label: Field label text expected before the badge.
+        badge: Requirement badge text expected after the label.
+    """
+    expected = f'{label} <span class="requirement-badge {badge.lower()}">{badge}</span>'
+    assert expected in content
+
+
 @pytest.mark.integration
 @pytest.mark.django_db
 class TestBuilderWizardUi:
-    """Browser coverage for the new multi-page builder entry and first step."""
+    """Browser coverage for the canonical multi-page builder flow."""
 
-    def test_new_builder_redirects_to_scheme_specification_version_step(self) -> None:
-        """POST /builder/new/ creates a session draft and renders wizard step one."""
+    def test_new_builder_starts_with_specification_only(self) -> None:
+        """POST /builder/new/ creates a draft and renders specification/profile step one."""
         client = Client()
 
         response = client.post("/builder/new/")
@@ -156,116 +154,121 @@ class TestBuilderWizardUi:
         step_response = client.get(location)
         assert step_response.status_code == 200
         content = step_response.content.decode("utf-8")
-        assert "Choose test plan catalogue" in content
-        assert "Scheme, specification, version, and resource groups" in content
+        assert "Choose specification" in content
+        assert "Step 1: specification and profile" in content
         assert "Open Banking UK" in content
         assert "Read/Write" in content
-        assert "Dynamic Client Registration (DCR)" in content
         assert "4.0.1" in content
-        assert "3.4" in content
-        assert "account-and-transaction" in content
-        assert "payment-initiation" in content
-        assert "cvrp" not in content.lower()
+        assert 'name="resource_groups"' not in content
         assert "Implemented endpoints" not in content
         assert "Plan spec JSON" not in content
 
-    def test_catalogue_boundary_post_saves_draft_values(self) -> None:
-        """The first wizard step saves selected catalogue values and moves to scope."""
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_builder_pages_show_required_and_optional_field_badges(self, mock_fetch_discovery: Mock) -> None:
+        """Builder pages label representative user-entered fields by requiredness."""
+        mock_fetch_discovery.return_value = {}
         client = Client()
         create_response = client.post("/builder/new/")
-        location = create_response["Location"]
-        draft_id = _draft_id_from_builder_redirect(location)
 
-        response = client.post(
-            location,
+        catalogue_response = client.get(create_response["Location"])
+        assert catalogue_response.status_code == 200
+        catalogue_content = catalogue_response.content.decode("utf-8")
+        assert "requirement-badge" not in catalogue_content
+
+        saved_catalogue_response = client.post(
+            create_response["Location"],
             data={
                 "scheme": "open-banking-uk",
                 "specification": "read-write",
                 "version": "4.0.1",
-                "resource_groups": ["account-and-transaction", "payment-initiation"],
+            },
+        )
+        discovery_response = client.get(saved_catalogue_response["Location"])
+        assert discovery_response.status_code == 200
+        discovery_content = discovery_response.content.decode("utf-8")
+        assert "requirement-badge" not in discovery_content
+        assert "leave it blank and fill values manually" in discovery_content
+
+        saved_discovery_response = client.post(
+            saved_catalogue_response["Location"],
+            data={"discovery_url": ""},
+        )
+        mock_fetch_discovery.assert_not_called()
+        security_response = client.get(saved_discovery_response["Location"])
+        assert security_response.status_code == 200
+        security_content = security_response.content.decode("utf-8")
+        _assert_requirement_badge(security_content, "Client ID", "Conditional")
+        _assert_requirement_badge(security_content, "Authorization endpoint", "Conditional")
+        _assert_requirement_badge(security_content, "Resource server base URL", "Conditional")
+        _assert_requirement_badge(security_content, "Signing key ID", "Conditional")
+        assert "These fields are included only when they can affect execution" in security_content
+        assert "Type: HTTPS URL" in security_content
+        assert "FAPI signing fields are conditional" in security_content
+        assert "mTLS client certificate and private key are conditional" in security_content
+
+        saved_security_response = client.post(
+            saved_discovery_response["Location"],
+            data={},
+        )
+        scope_response = client.get(saved_security_response["Location"])
+        assert scope_response.status_code == 200
+        assert "baseline and optional labels describe generated conformance coverage" in scope_response.content.decode(
+            "utf-8"
+        )
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
+        )
+        saved_scope_response = client.post(
+            saved_security_response["Location"],
+            data={
+                "resource_groups": ["account-and-transaction"],
+                "endpoints": [endpoint.id],
+                "endpoint_capabilities": [
+                    endpoint_capability_value(
+                        endpoint_id=endpoint.id,
+                        capability_id="ais.transactions.date-range-filtering",
+                    )
+                ],
+            },
+        )
+        business_response = client.get(saved_scope_response["Location"])
+        assert business_response.status_code == 200
+        business_content = business_response.content.decode("utf-8")
+        assert "No business data inputs" in business_content
+
+        saved_business_response = client.post(saved_scope_response["Location"], data={})
+        runtime_response = client.get(saved_business_response["Location"])
+        assert runtime_response.status_code == 200
+        runtime_content = runtime_response.content.decode("utf-8")
+        _assert_requirement_badge(runtime_content, "Resource server base URL", "Required")
+        assert "accessToken" not in runtime_content
+
+    def test_catalogue_boundary_post_continues_to_discovery(self) -> None:
+        """The first wizard step saves the specification and moves to discovery."""
+        client = Client()
+        create_response = client.post("/builder/new/")
+        draft_id = _draft_id_from_builder_redirect(create_response["Location"])
+
+        response = client.post(
+            create_response["Location"],
+            data={
+                "scheme": "open-banking-uk",
+                "specification": "read-write",
+                "version": "4.0.1",
             },
         )
 
         assert response.status_code == 302
-        assert response["Location"] == f"/builder/{draft_id}/scope/"
-
-        saved_response = client.get(response["Location"])
-        assert saved_response.status_code == 200
-        content = saved_response.content.decode("utf-8")
-        assert "Select test plan endpoints" in content
-        assert "Endpoints and scoped features" in content
-        assert "hx-post" in content
-        assert "data-scope-form" in content
-        assert "fetch(" in content
-        assert "account-and-transaction" in content
-        assert "payment-initiation" in content
-        assert "cvrp" not in content.lower()
-        assert "GET /aisp/transactions" in content
-        assert "GET /pisp/domestic-payments" in content
-        assert "GET /open-banking/v4.0/aisp/transactions" not in content
-        assert "GET /open-banking/v4.0/pisp/domestic-payments" not in content
-        assert "Select all endpoints" in content
-        assert "Deselect all endpoints" in content
-        assert "data-endpoint-bulk-action" in content
-        assert "Operation <code>" not in content
-
-    def test_catalogue_boundary_post_requires_resource_group(self) -> None:
-        """The first wizard step does not continue until at least one resource group is selected."""
-        client = Client()
-        create_response = client.post("/builder/new/")
-
-        response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-            },
-        )
-
-        assert response.status_code == 400
-        content = response.content.decode("utf-8")
-        assert "Select at least one resource group." in content
-
-    def test_catalogue_resource_groups_fragment_updates_for_selected_boundary(self) -> None:
-        """The catalogue page resource groups are rendered from the selected boundary."""
-        client = Client()
-        create_response = client.post("/builder/new/")
-        draft_id = _draft_id_from_builder_redirect(create_response["Location"])
-
-        read_write_response = client.post(
-            f"/builder/{draft_id}/catalogue/resource-groups/",
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-        )
-        dcr_response = client.post(
-            f"/builder/{draft_id}/catalogue/resource-groups/",
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "dynamic-client-registration",
-                "version": "3.4",
-                "resource_groups": ["account-and-transaction"],
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-        )
-
-        assert read_write_response.status_code == 200
-        read_write_content = read_write_response.content.decode("utf-8")
-        assert 'value="account-and-transaction"' in read_write_content
-        assert "Payment Initiation" in read_write_content
-
-        assert dcr_response.status_code == 200
-        dcr_content = dcr_response.content.decode("utf-8")
-        assert "Dynamic Client Registration v3.4 is shown as a selector-only example." in dcr_content
-        assert 'name="resource_groups"' not in dcr_content
-        assert "Account and Transaction" not in dcr_content
+        assert response["Location"] == f"/builder/{draft_id}/config/discovery/"
+        discovery_response = client.get(response["Location"])
+        assert discovery_response.status_code == 200
+        content = discovery_response.content.decode("utf-8")
+        assert "Step 2: security environment discovery" in content
+        assert "Optionally enter the `.well-known/openid-configuration` URL" in content
 
     def test_selector_only_dcr_boundary_blocks_continuation(self) -> None:
-        """DCR can demonstrate boundary-specific groups without continuing to launch flow."""
+        """DCR can be displayed but still cannot continue into the executable flow."""
         client = Client()
         create_response = client.post("/builder/new/")
         draft_id = _draft_id_from_builder_redirect(create_response["Location"])
@@ -276,22 +279,45 @@ class TestBuilderWizardUi:
                 "scheme": "open-banking-uk",
                 "specification": "dynamic-client-registration",
                 "version": "3.4",
-                "resource_groups": ["account-and-transaction"],
             },
         )
 
         assert response.status_code == 400
         content = response.content.decode("utf-8")
         assert "Dynamic Client Registration v3.4 is shown as a selector-only example." in content
-        assert "Select at least one resource group." not in content
-        assert "Account and Transaction" not in content
 
         scope_response = client.get(f"/builder/{draft_id}/scope/")
         assert scope_response.status_code == 302
         assert scope_response["Location"] == f"/builder/{draft_id}/catalogue/"
 
-    def test_scope_step_filters_endpoints_and_features_via_dynamic_fragment(self) -> None:
-        """The dynamic scope fragment reveals endpoints and features under selected parents."""
+    def test_scope_allows_security_environment_to_be_empty_before_resource_groups(self) -> None:
+        """The scope step can be opened before optional security fields are filled."""
+        client = Client()
+        create_response = client.post("/builder/new/")
+        draft_id = _draft_id_from_builder_redirect(create_response["Location"])
+        client.post(
+            create_response["Location"],
+            data={
+                "scheme": "open-banking-uk",
+                "specification": "read-write",
+                "version": "4.0.1",
+            },
+        )
+
+        response = client.get(f"/builder/{draft_id}/scope/")
+
+        assert response.status_code == 200
+        assert "Select test plan endpoints" in response.content.decode("utf-8")
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_security_step_continues_to_resource_group_scope(self, mock_fetch_discovery: Mock) -> None:
+        """Security details are collected before resource groups and endpoint selections."""
+        mock_fetch_discovery.return_value = {
+            "issuer": "https://example.com",
+            "authorization_endpoint": "https://example.com/authorize",
+            "token_endpoint": "https://example.com/token",
+            "jwks_uri": "https://example.com/jwks",
+        }
         client = Client()
         create_response = client.post("/builder/new/")
         catalogue_response = client.post(
@@ -300,21 +326,38 @@ class TestBuilderWizardUi:
                 "scheme": "open-banking-uk",
                 "specification": "read-write",
                 "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
             },
         )
-        scope_location = catalogue_response["Location"]
-        draft_id = _draft_id_from_builder_redirect(scope_location)
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("account-and-transaction",),
+        discovery_response = client.post(
+            catalogue_response["Location"],
+            data={"discovery_url": "https://example.com/.well-known/openid-configuration"},
         )
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/transactions"
+
+        security_response = client.post(
+            discovery_response["Location"],
+            data=_valid_security_form_data(),
+        )
+
+        assert security_response.status_code == 302
+        assert security_response["Location"].endswith("/scope/")
+        scope_response = client.get(security_response["Location"])
+        assert scope_response.status_code == 200
+        content = scope_response.content.decode("utf-8")
+        assert "Steps 4 and 5: resource groups, endpoints, and capabilities" in content
+        assert "account-and-transaction" in content
+        assert "payment-initiation" in content
+        assert "GET /aisp/transactions" not in content
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_step_filters_endpoints_and_features_via_dynamic_fragment(self, mock_fetch_discovery: Mock) -> None:
+        """The dynamic scope fragment reveals endpoints and features under selected parents."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        draft_id = _draft_id_from_builder_redirect(scope_location)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
         )
 
         response = client.post(
@@ -338,77 +381,15 @@ class TestBuilderWizardUi:
         assert "ais.transactions.date-range-filtering" in content
         assert "GET /open-banking/v4.0/pisp/domestic-payments" not in content
 
-    def test_scope_step_dynamic_fragment_prunes_stale_children(self) -> None:
-        """Dynamic refresh drops endpoint selections after their resource group is cleared."""
-        client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
-            },
-        )
-        scope_location = catalogue_response["Location"]
-        draft_id = _draft_id_from_builder_redirect(scope_location)
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("account-and-transaction",),
-        )
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/transactions"
-        )
-
-        response = client.post(
-            f"/builder/{draft_id}/scope/options/",
-            data={
-                "resource_groups": [],
-                "endpoints": [endpoint.id],
-                "endpoint_capabilities": [
-                    endpoint_capability_value(
-                        endpoint_id=endpoint.id,
-                        capability_id="ais.transactions.date-range-filtering",
-                    )
-                ],
-            },
-            HTTP_X_REQUESTED_WITH="XMLHttpRequest",
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "No resource groups are selected." in content
-        assert "ais.transactions.date-range-filtering" not in content
-
-    def test_scope_step_saves_selected_resource_endpoint_and_feature(self) -> None:
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_scope_step_saves_selected_resource_endpoint_and_feature(self, mock_fetch_discovery: Mock) -> None:
         """POST /builder/<draft>/scope/ stores selected scope values and continues."""
+        mock_fetch_discovery.return_value = {}
         client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
-            },
-        )
-        scope_location = catalogue_response["Location"]
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("account-and-transaction",),
-        )
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/transactions"
+        scope_location = _scope_location_after_security(client)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/transactions",
         )
 
         response = client.post(
@@ -430,106 +411,69 @@ class TestBuilderWizardUi:
         saved_response = client.get(response["Location"])
         assert saved_response.status_code == 200
         content = saved_response.content.decode("utf-8")
-        assert "Business configuration" in content
+        assert "Business test data" in content
         assert "Resource server targets" not in content
         assert "accessToken" not in content
-        assert "Consented account identifier" in content
-        assert "Advanced AIS resource IDs JSON" in content
-        assert "Domestic creditor account JSON" not in content
-        assert "CBPII debtor account JSON" not in content
-
-    def test_config_step_renders_payment_defaults_for_payment_scope(self) -> None:
-        """The config page shows payment defaults only for selected PIS endpoints."""
-        client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["payment-initiation"],
-            },
-        )
-        scope_location = catalogue_response["Location"]
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("payment-initiation",),
-        )
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/pisp/domestic-payments"
-        )
-        scope_response = client.post(
-            scope_location,
-            data={"resource_groups": ["payment-initiation"], "endpoints": [endpoint.id]},
-        )
-
-        response = client.get(scope_response["Location"])
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Domestic creditor account JSON" in content
-        assert "AIS resource IDs JSON" not in content
-        assert "CBPII debtor account JSON" not in content
-
-    def test_catalogue_resource_group_change_prunes_stale_endpoint_scope(self) -> None:
-        """Changing page-one resource groups removes endpoints outside the new scope."""
-        client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
-            },
-        )
-        scope_location = catalogue_response["Location"]
-        draft_id = _draft_id_from_builder_redirect(scope_location)
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        ais_hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("account-and-transaction",),
-        )
-        ais_endpoint = next(
-            endpoint
-            for group in ais_hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/accounts"
-        )
-        first_scope_response = client.post(
-            scope_location,
-            data={"resource_groups": ["account-and-transaction"], "endpoints": [ais_endpoint.id]},
-        )
-        assert first_scope_response.status_code == 302
-
-        changed_catalogue_response = client.post(
-            f"/builder/{draft_id}/catalogue/",
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["payment-initiation"],
-            },
-        )
-
-        assert changed_catalogue_response.status_code == 302
-        changed_scope_response = client.get(changed_catalogue_response["Location"])
-        assert changed_scope_response.status_code == 200
-        content = changed_scope_response.content.decode("utf-8")
-        assert "payment-initiation" in content
-        assert "account-and-transaction" not in content
-        assert "GET /open-banking/v4.0/aisp/accounts" not in content
-        assert "GET /pisp/domestic-payments" in content
+        assert "Consented account identifier" not in content
+        assert "Advanced AIS resource IDs JSON" not in content
+        assert "No business data inputs required" in content
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
-    def test_config_steps_save_grouped_values_and_render_review(self, mock_fetch_discovery: Mock) -> None:
-        """Staged config saves grouped values and renders masked review output."""
+    def test_business_config_step_shows_cbpii_debtor_account_inputs(self, mock_fetch_discovery: Mock) -> None:
+        """CBPII selections collect participant debtor-account business data."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="confirmation-of-funds",
+            path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+        )
+
+        response = client.post(
+            scope_location,
+            data={
+                "resource_groups": ["confirmation-of-funds"],
+                "endpoints": [endpoint.id],
+            },
+        )
+
+        assert response.status_code == 302
+        content_response = client.get(response["Location"])
+        assert content_response.status_code == 200
+        content = content_response.content.decode("utf-8")
+        assert "Confirmation of Funds" in content
+        assert "Debtor account scheme" in content
+        assert "Debtor account identification" in content
+        assert "Debtor account name" in content
+        assert "No business data inputs required" not in content
+
+        saved_response = client.post(
+            response["Location"],
+            data={
+                "cbpii_debtor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+                "cbpii_debtor_account_identification": "12345678901234",
+                "cbpii_debtor_account_name": "Model Bank Account",
+            },
+        )
+        runtime_response = client.post(saved_response["Location"], data={})
+        draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
+        export_response = client.get(f"/builder/{draft_id}/export.json")
+
+        assert export_response.status_code == 200
+        exported = export_response.json()
+        assert exported["businessTestData"]["cbpii"] == {
+            "debtorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "",
+                "name": "Model Bank Account",
+            }
+        }
+        assert "inputs" not in exported["businessTestData"]
+        assert "accessToken" not in json.dumps(exported)
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_full_guided_flow_exports_canonical_json_and_masks_secrets(self, mock_fetch_discovery: Mock) -> None:
+        """The reordered wizard exports canonical JSON-first plans from review."""
         mock_fetch_discovery.return_value = {
             "issuer": "https://example.com",
             "authorization_endpoint": "https://example.com/authorize",
@@ -537,70 +481,17 @@ class TestBuilderWizardUi:
             "jwks_uri": "https://example.com/jwks",
         }
         client = Client()
-        create_response = client.post("/builder/new/")
-        catalogue_response = client.post(
-            create_response["Location"],
-            data={
-                "scheme": "open-banking-uk",
-                "specification": "read-write",
-                "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
-            },
-        )
-        scope_location = catalogue_response["Location"]
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(
-            boundary,
-            selected_resource_group_ids=("account-and-transaction",),
-        )
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/accounts"
+        scope_location = _scope_location_after_security(client)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
         )
         scope_response = client.post(
             scope_location,
             data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
         )
-
-        business_response = client.post(
-            scope_response["Location"],
-            data={
-                "ais_consented_account_id": "account-123",
-                "pis_creditor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
-                "cbpii_debtor_account_json": (
-                    '{"schemeName": "UK.OBIE.SortCodeAccountNumber", '
-                    '"identification": "12345678901234", "name": "Model Bank Account"}'
-                ),
-                "conditional_properties_json": '[{"id": "standing-order.number-of-payments"}]',
-            },
-        )
-
-        assert business_response.status_code == 302
-        assert business_response["Location"].endswith("/config/discovery/")
-        discovery_form_response = client.get(business_response["Location"])
-        discovery_form_content = discovery_form_response.content.decode("utf-8")
-        assert "Environment" not in discovery_form_content
-        assert "Follow-up mode" not in discovery_form_content
-        discovery_response = client.post(
-            business_response["Location"],
-            data={
-                "discovery_url": "https://example.com/.well-known/openid-configuration",
-            },
-        )
-        assert discovery_response.status_code == 302
-        assert discovery_response["Location"].endswith("/config/security/")
-        security_response = client.post(
-            discovery_response["Location"],
-            data={"resource_server_base_url": "https://resource.example.com"},
-        )
-        assert security_response.status_code == 302
-        assert security_response["Location"].endswith("/config/runtime/")
-        runtime_response = client.post(
-            security_response["Location"],
-            data={"runtime_input__accessToken": "secret-access-token"},
-        )
+        business_response = client.post(scope_response["Location"], data={})
+        runtime_response = client.post(business_response["Location"], data={})
 
         assert runtime_response.status_code == 302
         assert runtime_response["Location"].endswith("/review/")
@@ -608,19 +499,25 @@ class TestBuilderWizardUi:
         assert review_response.status_code == 200
         content = review_response.content.decode("utf-8")
         assert "Review generated test plan" in content
-        assert "Generated tests" in content
         assert "Safe export preview" in content
-        assert "secret-access-token" not in content
-        assert "accessToken" in content
-        assert "&quot;value&quot;: &quot;&quot;" in content
+        assert "accessToken" not in content
+        assert "fixture-account-id" not in content
         draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
+
         safe_export = client.get(f"/builder/{draft_id}/export.json")
-        assert safe_export.json()["schemaVersion"] == "1.0"
-        assert safe_export.json()["securityEnvironment"]["resourceBaseUrl"] == "https://resource.example.com"
-        assert safe_export.json()["businessTestData"]["ais"]["accountIds"][0] == ""
-        assert "pis" not in safe_export.json()["businessTestData"]
-        assert "cbpii" not in safe_export.json()["businessTestData"]
-        assert "conditionalProperties" not in safe_export.json()["businessTestData"]
+
+        assert safe_export.status_code == 200
+        exported = safe_export.json()
+        assert exported["schemaVersion"] == "1.0"
+        assert exported["specification"] == {
+            "family": "OBL_READ_WRITE",
+            "profile": "FAPI1_ADVANCED",
+            "version": "4.0.1",
+        }
+        assert exported["resourceGroups"][0]["id"] == "AIS"
+        assert exported["securityEnvironment"]["resourceBaseUrl"] == "https://resource.example.com"
+        assert "ais" not in exported["businessTestData"]
+        assert "inputs" not in exported["businessTestData"]
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_discovery_metadata_prefills_security_and_exports_accepted_values(
@@ -635,7 +532,6 @@ class TestBuilderWizardUi:
             "jwks_uri": "https://auth.example.com/jwks",
             "token_endpoint_auth_methods_supported": ["private_key_jwt", "tls_client_auth"],
             "response_types_supported": ["code id_token"],
-            "acr_values_supported": ["urn:openbanking:psd2:sca"],
             "request_object_signing_alg_values_supported": ["PS256"],
         }
         client = Client()
@@ -646,27 +542,11 @@ class TestBuilderWizardUi:
                 "scheme": "open-banking-uk",
                 "specification": "read-write",
                 "version": "4.0.1",
-                "resource_groups": ["account-and-transaction"],
             },
         )
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("account-and-transaction",))
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/aisp/accounts"
-        )
-        scope_response = client.post(
-            catalogue_response["Location"],
-            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
-        )
-        business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
         discovery_response = client.post(
-            business_response["Location"],
-            data={
-                "discovery_url": "https://auth.example.com/.well-known/openid-configuration",
-            },
+            catalogue_response["Location"],
+            data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
         )
 
         security_response = client.get(discovery_response["Location"])
@@ -677,11 +557,7 @@ class TestBuilderWizardUi:
         assert "private_key_jwt, tls_client_auth" in content
         assert "JWKS URI" in content
         assert "https://auth.example.com/jwks" in content
-        assert "JWKS check" not in content
-        assert "JWKS key count" not in content
         assert 'value="https://auth.example.com/token"' in content
-        assert "Inferred from discovery" not in content
-        assert "inferred from discovery" in content
 
         security_save = client.post(
             discovery_response["Location"],
@@ -692,12 +568,20 @@ class TestBuilderWizardUi:
                 "oauth_issuer": "https://auth.example.com",
                 "oauth_token_endpoint": "https://auth.example.com/token",
                 "oauth_response_type": "code id_token",
-                "oauth_acr_values_supported": '["urn:openbanking:psd2:sca"]',
                 "oauth_request_object_signing_alg": "PS256",
                 "resource_server_base_url": "https://resource.example.com",
             },
         )
-        runtime_response = client.post(security_save["Location"], data={"runtime_input__accessToken": "token-value"})
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts",
+        )
+        scope_response = client.post(
+            security_save["Location"],
+            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
+        )
+        business_response = client.post(scope_response["Location"], data={"ais_consented_account_id": "account-123"})
+        runtime_response = client.post(business_response["Location"], data={})
         draft_id = _draft_id_from_builder_redirect(runtime_response["Location"])
 
         exported = client.get(f"/builder/{draft_id}/export.json").json()["securityEnvironment"]
@@ -724,34 +608,11 @@ class TestBuilderWizardUi:
                 "scheme": "open-banking-uk",
                 "specification": "read-write",
                 "version": "4.0.1",
-                "resource_groups": ["payment-initiation"],
-            },
-        )
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("payment-initiation",))
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/pisp/domestic-payments"
-        )
-        scope_response = client.post(
-            catalogue_response["Location"],
-            data={"resource_groups": ["payment-initiation"], "endpoints": [endpoint.id]},
-        )
-        business_response = client.post(
-            scope_response["Location"],
-            data={
-                "pis_creditor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
-                "pis_creditor_account_identification": "12345678901234",
-                "pis_creditor_account_name": "Model Bank Payee",
             },
         )
         discovery_response = client.post(
-            business_response["Location"],
-            data={
-                "discovery_url": "https://auth.example.com/.well-known/openid-configuration",
-            },
+            catalogue_response["Location"],
+            data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
         )
 
         security_response = client.get(discovery_response["Location"])
@@ -763,7 +624,7 @@ class TestBuilderWizardUi:
         assert "Resource server base URL" in content
 
     def test_discovery_step_prefills_metadata_without_fetching_jwks(self) -> None:
-        """The discovery wizard fetches OpenID metadata only, even with a blank timeout."""
+        """The discovery wizard fetches OpenID metadata only with the fixed timeout."""
         client = Client()
         create_response = client.post("/builder/new/")
         catalogue_response = client.post(
@@ -772,22 +633,11 @@ class TestBuilderWizardUi:
                 "scheme": "open-banking-uk",
                 "specification": "read-write",
                 "version": "4.0.1",
-                "resource_groups": ["payment-initiation"],
             },
         )
-        boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
-        hierarchy = catalogue_scope_hierarchy(boundary, selected_resource_group_ids=("payment-initiation",))
-        endpoint = next(
-            endpoint
-            for group in hierarchy.resource_groups
-            for endpoint in group.endpoints
-            if endpoint.path == "/open-banking/v4.0/pisp/domestic-payments"
-        )
-        scope_response = client.post(
-            catalogue_response["Location"],
-            data={"resource_groups": ["payment-initiation"], "endpoints": [endpoint.id]},
-        )
-        business_response = client.post(scope_response["Location"], data={})
+        form_response = client.get(catalogue_response["Location"])
+        assert form_response.status_code == 200
+        assert "Timeout seconds" not in form_response.content.decode("utf-8")
 
         with (
             patch("conformance.api.ui_views.build_json_http_client") as mock_build_http_client,
@@ -817,14 +667,12 @@ class TestBuilderWizardUi:
             )
 
             discovery_response = client.post(
-                business_response["Location"],
-                data={
-                    "discovery_url": "https://auth.example.com/.well-known/openid-configuration",
-                },
+                catalogue_response["Location"],
+                data={"discovery_url": "https://auth.example.com/.well-known/openid-configuration"},
             )
 
         assert discovery_response.status_code == 302
-        mock_build_http_client.assert_called_once_with(timeout_seconds=10.0)
+        mock_build_http_client.assert_called_once_with()
         mock_client_type.assert_called_once_with(http_client)
         model_bank_client.fetch_discovery_document.assert_called_once_with(
             "https://auth.example.com/.well-known/openid-configuration"
@@ -870,11 +718,7 @@ class TestBuilderWizardUi:
                     ],
                 }
             ],
-            "businessTestData": {
-                "inputs": {
-                    "accessToken": {"value": "secret-access-token"},
-                },
-            },
+            "businessTestData": {},
             "metadata": {"aspspName": "Example Bank"},
         }
 
@@ -886,7 +730,6 @@ class TestBuilderWizardUi:
         assert review_response.status_code == 200
         review_content = review_response.content.decode("utf-8")
         assert "Ready to launch" in review_content
-        assert "secret-access-token" not in review_content
         legacy_secret_export_href = f'href="{review_location.replace("/review/", "/export.json")}?include_secrets=1"'
         assert legacy_secret_export_href not in review_content
         assert 'name="include_secrets" value="1"' in review_content
@@ -903,9 +746,8 @@ class TestBuilderWizardUi:
         assert "environment" not in safe_export.json()
         assert "environment" not in secret_export.json()
         assert safe_export.json()["resourceGroups"][0]["id"] == "AIS"
-        assert safe_export.json()["businessTestData"]["inputs"]["accessToken"]["value"] == ""
-        assert "secret-access-token" not in safe_export.content.decode("utf-8")
-        assert secret_export.json()["businessTestData"]["inputs"]["accessToken"]["value"] == "secret-access-token"
+        assert "inputs" not in safe_export.json()["businessTestData"]
+        assert "inputs" not in secret_export.json()["businessTestData"]
 
         launch_response = client.post(f"/builder/{draft_id}/launch/")
 
@@ -914,7 +756,10 @@ class TestBuilderWizardUi:
         compiled_plan = mock_start_run.call_args.kwargs["compiled_plan"]
         runtime_inputs = mock_start_run.call_args.kwargs["runtime_inputs"]
         assert "ais-at-accounts-list-200" in compiled_plan.traceability.generated_test_case_ids
-        assert runtime_inputs["accessToken"] == "secret-access-token"
+        assert dict(runtime_inputs) == {
+            "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://resource.example.com",
+        }
         assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
         validation_result = mock_start_run.call_args.kwargs["validation_result"]
         assert isinstance(validation_result, dict)
@@ -925,8 +770,8 @@ class TestBuilderWizardUi:
         assert isinstance(metadata, dict)
         assert metadata["aspspName"] == "Example Bank"
 
-    def test_import_rejects_legacy_v2_without_discovery_url(self) -> None:
-        """Legacy v2 imports must include discovery URL before canonical export/review."""
+    def test_import_rejects_legacy_v2_documents(self) -> None:
+        """Browser import accepts only canonical schemaVersion 1.0 plans."""
         client = Client()
         plan_document = {
             "schemaVersion": "v2",
@@ -935,188 +780,21 @@ class TestBuilderWizardUi:
             "version": "4.0.1",
             "securityProfile": "fapi1-advanced",
             "scope": {"resourceGroups": []},
-            "config": {},
+            "config": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
         }
 
         response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
 
         assert response.status_code == 400
-        assert "Legacy v2 imports must include config.discoveryUrl" in response.content.decode("utf-8")
+        assert "canonical schemaVersion 1.0 test plan document" in response.content.decode("utf-8")
 
+    def test_removed_single_page_builder_routes_return_404(self) -> None:
+        """The legacy /plan/ builder routes are no longer mounted."""
+        client = Client()
 
-@pytest.mark.integration
-class TestPlanBuilderUi:
-    """Browser coverage for the participant plan-builder views."""
-
-    def test_plan_builder_get_renders_endpoint_selection_form(self) -> None:
-        """GET /plan/ renders the endpoint-selected plan-builder form."""
-        response = Client().get("/plan/")
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Test plan builder" in content
-        assert "Catalogue endpoint selection" in content
-        assert "Implemented endpoints" in content
-        assert "implemented_endpoint_capabilities" in content
-        assert "Required" in content
-        assert "Optional" in content
-        assert "ais.transactions.date-range-filtering" in content
-        assert "/open-banking/v4.0/aisp/accounts" in content
-        assert "Plan spec JSON" in content
-        assert "Advanced JSON import/export" in content
-        assert "Bundled suite" not in content
-        assert "Manifest JSON" not in content
-        assert "Model bank example" not in content
-        assert "selected_step_ids" not in content
-        assert "deselect_step_ids" not in content
-        assert "hx-post" not in content
-
-    def test_preview_post_renders_rich_read_only_generated_plan(self) -> None:
-        """POST /plan/preview/ renders read-only generated catalogue rows."""
-        response = Client().post("/plan/preview/", data=_valid_plan_form_data())
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Open Banking v4.0 AIS" in content
-        assert "Generated tests" in content
-        assert "Implemented endpoints" in content
-        assert "Selected capabilities" in content
-        assert "Certification plan eligible" in content
-        assert "Generated plan preview" in content
-        assert "Secret-safe plan spec export" in content
-        assert "Selected endpoint" in content
-        assert "Runtime/auth" in content
-        assert "Audit details" in content
-        assert "ais-at-accounts-list-200" in content
-        assert "selected_step_ids" not in content
-        assert '"accessToken"' not in content.split("Secret-safe plan spec export", maxsplit=1)[1]
-
-    def test_preview_post_returns_400_for_missing_runtime_input(self) -> None:
-        """Missing selected-endpoint runtime data renders validation errors with HTTP 400."""
-        response = Client().post(
-            "/plan/preview/",
-            data=_plan_form_data(endpoint_ids=[_ais_accounts_endpoint_id()]),
-        )
-
-        assert response.status_code == 400
-        content = response.content.decode("utf-8")
-        assert "Required runtime input" in content
-        assert "AIS resource server base URL" in content
-        assert "AIS access token" in content
-
-    def test_preview_post_warns_for_imported_assertion_overrides(self) -> None:
-        """Imported assertion overrides render as prominent non-certifying warnings."""
-        raw_plan_spec: dict[str, JsonValue] = {
-            "schemaVersion": "v1",
-            "catalogue": {"standard": "open-banking", "version": "v4.0", "api": "ais"},
-            "securityProfile": "fapi1-advanced",
-            "implementedEndpoints": [
-                {
-                    "method": "GET",
-                    "path": "/open-banking/v4.0/aisp/accounts",
-                    "resourceGroup": "Accounts",
-                }
-            ],
-            "runtimeInputs": {
-                "resourceBaseUrl": "https://resource.example.com",
-                "accessToken": "secret-access-token",
-            },
-            "assertionOverrides": [
-                {
-                    "testCaseId": "ais-at-accounts-list-200",
-                    "assertionId": "status-200",
-                    "reason": "participant diagnostic import",
-                }
-            ],
-        }
-
-        response = Client().post(
-            "/plan/preview/",
-            data={
-                "config_json": json.dumps(VALID_CONFIG),
-                "plan_spec_json": json.dumps(raw_plan_spec),
-                "guided_standard": "open-banking",
-                "guided_spec_version": "v4.0",
-                "guided_api": "ais",
-                "implemented_endpoint_ids": [],
-                "implemented_endpoint_capabilities": [],
-            },
-        )
-
-        assert response.status_code == 200
-        content = response.content.decode("utf-8")
-        assert "Certification plan ineligible" in content
-        assert "Non-certifying imported override" in content
-        assert "participant diagnostic import" in content
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_starts_compiled_catalogue_run(self, mock_start_run: Mock) -> None:
-        """Launch validates the form and hands compiled catalogue state to lifecycle code."""
-        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
-
-        response = Client().post("/plan/launch/", data=_valid_plan_form_data())
-
-        assert response.status_code == 302
-        assert response["Location"] == "/runs/run-123/"
-        assert mock_start_run.call_count == 1
-        assert mock_start_run.call_args.kwargs["browser_psu_prompts"] is True
-        compiled_plan = mock_start_run.call_args.kwargs["compiled_plan"]
-        runtime_inputs = mock_start_run.call_args.kwargs["runtime_inputs"]
-        assert "ais-at-accounts-list-200" in compiled_plan.traceability.generated_test_case_ids
-        assert runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-        assert runtime_inputs["accessToken"] == "secret-access-token"
-        assert "manifest" not in mock_start_run.call_args.kwargs
-        assert "plan" not in mock_start_run.call_args.kwargs
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_renders_conflict_when_run_is_active(self, mock_start_run: Mock) -> None:
-        """Active-run conflicts render HTTP 409 with a detail-page link."""
-        mock_start_run.side_effect = RunConflictError("active-run")
-
-        response = Client().post("/plan/launch/", data=_valid_plan_form_data())
-
-        assert response.status_code == 409
-        content = response.content.decode("utf-8")
-        assert "A run is already active" in content
-        assert "/runs/active-run/" in content
-
-    def test_post_views_are_csrf_protected(self) -> None:
-        """Browser POST routes require the Django CSRF token when enforcement is enabled."""
-        client = Client(enforce_csrf_checks=True)
-
-        rejected = client.post("/plan/preview/", data=_valid_plan_form_data())
-
-        assert rejected.status_code == 403
-
-        get_response = client.get("/plan/")
-        csrf_token = get_response.cookies["csrftoken"].value
-        accepted = client.post(
-            "/plan/preview/",
-            data={**_valid_plan_form_data(), "csrfmiddlewaretoken": csrf_token},
-        )
-        assert accepted.status_code == 200
-
-    @patch("conformance.api.ui_views.start_run")
-    def test_launch_post_is_csrf_protected(self, mock_start_run: Mock) -> None:
-        """Launch POST rejects missing CSRF tokens and accepts token-backed submissions."""
-        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
-        client = Client(enforce_csrf_checks=True)
-
-        rejected = client.post("/plan/launch/", data=_valid_plan_form_data())
-
-        assert rejected.status_code == 403
-        mock_start_run.assert_not_called()
-
-        get_response = client.get("/plan/")
-        csrf_token = get_response.cookies["csrftoken"].value
-        accepted = client.post(
-            "/plan/launch/",
-            data={**_valid_plan_form_data(), "csrfmiddlewaretoken": csrf_token},
-        )
-
-        assert accepted.status_code == 302
-        assert accepted["Location"] == "/runs/run-123/"
-        assert mock_start_run.call_count == 1
+        assert client.get("/plan/").status_code == 404
+        assert client.post("/plan/preview/", data={}).status_code == 404
+        assert client.post("/plan/launch/", data={}).status_code == 404
 
 
 @pytest.mark.integration

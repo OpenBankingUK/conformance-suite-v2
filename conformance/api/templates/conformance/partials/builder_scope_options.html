@@ -1,9 +1,26 @@
 <section id="scope-options">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {{ form.resource_groups.errors }}
 
-    {% for group in selected_resource_groups %}
-        <input type="hidden" name="resource_groups" value="{{ group.id }}">
-    {% endfor %}
+    <section aria-labelledby="resource-groups-heading">
+        <h3 id="resource-groups-heading">Resource groups</h3>
+        <p class="helper">Select one or more groups that use the security environment from the previous step.</p>
+        <div class="resource-grid">
+            {% for group in hierarchy.resource_groups %}
+                <label class="resource-card{% if group.selected %} selected{% endif %}">
+                    <input type="checkbox"
+                           name="resource_groups"
+                           value="{{ group.id }}"
+                           {% if group.selected %}checked{% endif %}>
+                    <strong>{{ group.label }}</strong>
+                    <br>
+                    <span class="helper">{{ group.endpoint_count }} endpoints</span>
+                </label>
+            {% empty %}
+                <div class="message info">No resource groups are available for this catalogue boundary.</div>
+            {% endfor %}
+        </div>
+    </section>
 
     {% if selected_resource_groups %}
         <div class="scope-bulk-actions" aria-label="Endpoint bulk actions">
@@ -60,7 +77,7 @@
                 </section>
             {% endfor %}
         {% else %}
-            <div class="message info">No resource groups are selected. Go back to catalogue and resource groups to choose a scope.</div>
+            <div class="message info">No resource groups are selected yet. Select at least one group to reveal its endpoints.</div>
         {% endif %}
     </div>
 </section>

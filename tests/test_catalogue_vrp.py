@@ -54,10 +54,7 @@ def test_compile_selects_vrp_cases_for_endpoint_and_includes_dependencies() -> N
                     resource_group="DomesticVRP",
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://resource.example.com",
-                "accessToken": "opaque-access-token",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
         ),
     )
 
@@ -89,10 +86,7 @@ def test_compile_selects_cvrp_cases_and_surfaces_required_capabilities() -> None
                     resource_group="DomesticVRP",
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://resource.example.com",
-                "accessToken": "opaque-access-token",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
         ),
     )
 
@@ -108,7 +102,7 @@ def test_compile_selects_cvrp_cases_and_surfaces_required_capabilities() -> None
 
     runtime_inputs_by_id = {item.input_id: item for item in compiled.traceability.runtime_input_snapshot}
     assert runtime_inputs_by_id["resourceBaseUrl"].value == "https://resource.example.com"
-    assert runtime_inputs_by_id["accessToken"].provided is True
+    assert runtime_inputs_by_id["accessToken"].provided is False
     assert runtime_inputs_by_id["accessToken"].value is None
 
 
@@ -172,11 +166,7 @@ def test_optional_funds_confirmation_capabilities_are_selected_only_when_declare
         _spec(
             catalogue_key=catalogue.key,
             endpoints=implemented_endpoints,
-            runtime_inputs={
-                "resourceBaseUrl": "https://resource.example.com",
-                "accessToken": "opaque-access-token",
-                "domesticVrpConsentId": "consent-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
         ),
     )
     assert compiled_without_optional.test_cases == ()
@@ -203,11 +193,7 @@ def test_optional_funds_confirmation_capabilities_are_selected_only_when_declare
                     capability_ids=(optional_capability_id,),
                 ),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://resource.example.com",
-                "accessToken": "opaque-access-token",
-                "domesticVrpConsentId": "consent-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://resource.example.com"},
         ),
     )
     assert [test_case.test_case_id for test_case in compiled_with_optional.test_cases] == [
@@ -222,8 +208,8 @@ def test_optional_funds_confirmation_capabilities_are_selected_only_when_declare
         (optional_capability_id, False),
     ]
     runtime_inputs_by_id = {item.input_id: item for item in compiled_with_optional.traceability.runtime_input_snapshot}
-    assert runtime_inputs_by_id["domesticVrpConsentId"].provided is True
-    assert runtime_inputs_by_id["domesticVrpConsentId"].value == "consent-123"
+    assert runtime_inputs_by_id["domesticVrpConsentId"].provided is False
+    assert runtime_inputs_by_id["domesticVrpConsentId"].value is None
 
 
 @pytest.mark.unit

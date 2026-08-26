@@ -2331,7 +2331,6 @@ def test_parse_v1_psu_step_applies_defaults() -> None:
     assert psu_step.state is None
     assert psu_step.nonce is None
     assert psu_step.request_object is None
-    assert psu_step.timeout_seconds == 120
     assert psu_step.mandatory is False
     assert psu_step.optional is False
     assert psu_step.group == "default"
@@ -2348,7 +2347,6 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     step["state"] = "x" * 64
     step["nonce"] = "n" * 64
     step["requestObject"] = "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
-    step["timeoutSeconds"] = 60
     step["mandatory"] = True
     step["group"] = "consent"
     step["phase"] = "setup"
@@ -2360,7 +2358,6 @@ def test_parse_v1_psu_step_accepts_all_fields() -> None:
     assert psu_step.state == "x" * 64
     assert psu_step.nonce == "n" * 64
     assert psu_step.request_object == "eyJhbGciOiJQUzI1NiJ9.synthetic.signature"
-    assert psu_step.timeout_seconds == 60
     assert psu_step.mandatory is True
     assert psu_step.group == "consent"
     assert psu_step.phase == "setup"
@@ -2767,22 +2764,11 @@ def test_parse_v1_psu_step_rejects_secret_bearing_config_placeholder_in_generate
 
 
 @pytest.mark.unit
-@pytest.mark.parametrize("bad_value", [0, -1, 601, 1000])
-def test_parse_v1_psu_step_rejects_out_of_range_timeout(bad_value: int) -> None:
-    """Timeout must be within the documented 1..600 second range."""
+def test_parse_v1_psu_step_rejects_timeout_seconds() -> None:
+    """PSU steps do not accept participant-configurable timeouts."""
     raw = valid_psu_manifest()
-    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["timeoutSeconds"] = bad_value
-    with pytest.raises(ManifestError, match=r"steps\[0\]\.timeoutSeconds must be between"):
-        parse_manifest(raw)
-
-
-@pytest.mark.unit
-@pytest.mark.parametrize("bad_value", [True, False, "30", 1.5, None])
-def test_parse_v1_psu_step_rejects_non_integer_timeout(bad_value: JsonValue) -> None:
-    """Timeout must be a JSON integer; booleans/strings/floats are rejected."""
-    raw = valid_psu_manifest()
-    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["timeoutSeconds"] = bad_value
-    with pytest.raises(ManifestError, match=r"steps\[0\]\.timeoutSeconds must be a JSON integer"):
+    cast("list[dict[str, JsonValue]]", raw["steps"])[0]["timeoutSeconds"] = 60
+    with pytest.raises(ManifestError, match=r"Unknown steps\[0\] field\(s\): timeoutSeconds"):
         parse_manifest(raw)
 
 

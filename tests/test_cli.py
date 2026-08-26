@@ -202,7 +202,7 @@ def test_cli_returns_write_error_when_result_file_cannot_be_written(
 @pytest.mark.unit
 def test_cli_returns_config_error_for_invalid_config(tmp_path: Path) -> None:
     config_path = tmp_path / "invalid.json"
-    config_path.write_text("{}", encoding="utf-8")
+    config_path.write_text('{"discoveryUrl": "http://example.com/discovery"}', encoding="utf-8")
 
     exit_code = cli.run([str(config_path)])
 
@@ -210,7 +210,8 @@ def test_cli_returns_config_error_for_invalid_config(tmp_path: Path) -> None:
 
 
 @pytest.mark.unit
-def test_cli_returns_plan_spec_error_for_invalid_plan_spec(tmp_path: Path) -> None:
+def test_cli_rejects_removed_plan_spec_flag(tmp_path: Path) -> None:
+    """The legacy --plan-spec public execution path is no longer available."""
     config_path = tmp_path / "model-bank.json"
     plan_spec_path = tmp_path / "plan-spec.json"
     config_path.write_text(

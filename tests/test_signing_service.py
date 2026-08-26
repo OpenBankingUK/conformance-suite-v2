@@ -50,13 +50,12 @@ def _write_signing_pair(certificate_root: Path, *, stem: str) -> tuple[Path, Pat
 
 
 def _build_signing_config(
-    certificate_root: Path,
+    _certificate_root: Path,
     *,
     certificate_path: Path,
     private_key_path: Path,
 ) -> FapiSigningConfig:
     return FapiSigningConfig(
-        certificate_path_root=certificate_root,
         signing_certificate_path=certificate_path,
         signing_private_key_path=private_key_path,
         key_id="signing-key-001",

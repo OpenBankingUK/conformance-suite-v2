@@ -436,19 +436,8 @@ V1StepKind = HttpStepKind | PsuAuthorizationStepKind
 """All v1 step ``kind`` discriminator values accepted by the parser."""
 
 
-_PSU_AUTH_TIMEOUT_MIN_SECONDS = 1
-"""Minimum permitted value for ``timeoutSeconds`` on a PSU authorisation step."""
-
-_PSU_AUTH_TIMEOUT_MAX_SECONDS = 600
-"""Maximum permitted value for ``timeoutSeconds`` on a PSU authorisation step.
-
-Bounded at ten minutes so a misauthored manifest cannot stall a CI run
-indefinitely. Parsed manifests outside this range fail before execution, so
-the executor deadline calculation receives only validated values.
-"""
-
-_PSU_AUTH_DEFAULT_TIMEOUT_SECONDS = 120
-"""Default ``timeoutSeconds`` applied when a PSU step omits the field."""
+PSU_AUTHORIZATION_TIMEOUT_SECONDS = 120
+"""Fixed wait duration for manual PSU authorisation callbacks."""
 
 _PSU_AUTH_DEFAULT_RESPONSE_TYPE = "code id_token"
 """Default ``responseType`` for a PSU authorisation step (FAPI 1 Advanced hybrid flow)."""
@@ -530,8 +519,6 @@ class PsuAuthorizationStep:
             opaque string JWT; newer manifests may instead declare a typed
             runtime-generated directive. String values permit placeholders so
             the JWT can be produced by an upstream signing step.
-        timeout_seconds: Per-step deadline in seconds. Defaults to 120;
-            must be between 1 and 600 inclusive.
         mandatory: Whether the step is required for certification
             eligibility. Same semantics as :class:`ManifestStep`.
         optional: Whether the step is opt-in for the default test plan.
@@ -555,7 +542,6 @@ class PsuAuthorizationStep:
     state: str | None = None
     nonce: str | None = None
     request_object: RequestObjectValue | None = None
-    timeout_seconds: int = _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
     mandatory: bool = False
     optional: bool = False
     group: str = "default"
@@ -760,7 +746,6 @@ _CONFIG_PLACEHOLDER_KEYS = (
     "oauth.authorizationEndpoint",
     "oauth.issuer",
     "oauth.tokenEndpoint",
-    "oauth.openBankingIntentId",
     "oauth.resourceBaseUrl",
     "oauth.responseType",
     "oauth.requestObjectSigningAlg",
@@ -1066,7 +1051,6 @@ _PSU_AUTH_ALLOWED_KEYS: set[str] = {
     "state",
     "nonce",
     "requestObject",
-    "timeoutSeconds",
     "mandatory",
     "optional",
     "group",
@@ -1154,7 +1138,6 @@ def _parse_v1_psu_authorization_step(
     state = _parse_psu_optional_token(raw_step, key="state", location=location, seen_ids=seen_ids)
     nonce = _parse_psu_optional_token(raw_step, key="nonce", location=location, seen_ids=seen_ids)
     request_object = _parse_psu_optional_request_object(raw_step, location=location, seen_ids=seen_ids)
-    timeout_seconds = _parse_psu_timeout_seconds(raw_step, location=location)
 
     mandatory = _parse_optional_mandatory(raw_step, location=location)
     optional = _parse_optional_optional(raw_step, location=location)
@@ -1175,7 +1158,6 @@ def _parse_v1_psu_authorization_step(
         state=state,
         nonce=nonce,
         request_object=request_object,
-        timeout_seconds=timeout_seconds,
         mandatory=mandatory,
         optional=optional,
         group=group,
@@ -1413,37 +1395,6 @@ def _validate_constant_manifest_string(value: str, *, location: str, seen_ids: s
     _validate_placeholder_syntax(value, location=location, seen_ids=seen_ids)
     if _PLACEHOLDER_FIND_PATTERN.search(value):
         raise ManifestError(f"{location} must not contain placeholders")
-
-
-def _parse_psu_timeout_seconds(raw_step: dict[str, JsonValue], *, location: str) -> int:
-    """Parse the optional ``timeoutSeconds`` field on a PSU authorisation step.
-
-    Args:
-        raw_step: Raw JSON object for the PSU step.
-        location: Dot-path location string used in error messages.
-
-    Returns:
-        The validated integer timeout. Returns the module-level default
-        when the key is absent.
-
-    Raises:
-        ManifestError: If the value is present but is not a JSON integer
-            in the inclusive range
-            ``[_PSU_AUTH_TIMEOUT_MIN_SECONDS, _PSU_AUTH_TIMEOUT_MAX_SECONDS]``.
-    """
-    if "timeoutSeconds" not in raw_step:
-        return _PSU_AUTH_DEFAULT_TIMEOUT_SECONDS
-    value = raw_step["timeoutSeconds"]
-    # Reject ``bool`` (subclass of ``int``) so ``true``/``false`` cannot
-    # silently become 1/0 second timeouts on a misauthored manifest.
-    if not isinstance(value, int) or isinstance(value, bool):
-        raise ManifestError(f"{location}.timeoutSeconds must be a JSON integer when present")
-    if value < _PSU_AUTH_TIMEOUT_MIN_SECONDS or value > _PSU_AUTH_TIMEOUT_MAX_SECONDS:
-        raise ManifestError(
-            f"{location}.timeoutSeconds must be between {_PSU_AUTH_TIMEOUT_MIN_SECONDS} "
-            f"and {_PSU_AUTH_TIMEOUT_MAX_SECONDS} inclusive (got: {value})"
-        )
-    return value
 
 
 def _parse_v1_request(raw_request: dict[str, JsonValue], *, location: str, seen_ids: set[str]) -> ManifestRequest:

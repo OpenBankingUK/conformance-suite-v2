@@ -7,6 +7,7 @@ import re
 import secrets
 import threading
 import time
+import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
@@ -52,6 +53,7 @@ from conformance.execution_schedule import ExecutionGroup, build_execution_sched
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
+    PSU_AUTHORIZATION_TIMEOUT_SECONDS,
     FormBody,
     GeneratedRequestObject,
     HeaderAssertion,
@@ -69,6 +71,7 @@ from conformance.manifest import (
     ResponseSchemaAssertion,
     ResponseSignaturePolicy,
     StepPhase,
+    TokenEndpointAuthPolicy,
     V1Step,
     validate_header_value,
 )
@@ -103,8 +106,47 @@ for additional groups.
 _OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
 """Open Banking AIS consent-creation path requiring detached JWS support."""
 
-_CATALOGUE_PATH_VARIABLE_PATTERN = re.compile(r"\{([^}]+)\}")
+_CATALOGUE_PATH_VARIABLE_PATTERN = re.compile(r"(?<!\$)\{([^}]+)\}")
 """Pattern matching OpenAPI-style path variables in catalogue request paths."""
+
+_CATALOGUE_GENERATED_VALUE_PATTERN = re.compile(r"\$\{generated\.([^}]+)\}")
+"""Pattern matching catalogue-owned generated runtime values in request templates."""
+
+_CATALOGUE_RUNTIME_VALUE_PATTERN = re.compile(r"\$\{runtime\.([^}]+)\}")
+"""Pattern matching plan-sourced runtime values in request templates."""
+
+_CBPII_CLIENT_CREDENTIALS_TOKEN_ID = "cbpii-client-credentials"  # noqa: S105 - semantic token id
+"""Semantic token id for CBPII client-credentials protected-resource calls."""
+
+_CBPII_FUNDS_CONFIRMATION_TOKEN_ID = "cbpii-funds-confirmation"  # noqa: S105 - semantic token id
+"""Semantic token id for CBPII authorisation-code funds-confirmation calls."""
+
+_CBPII_CONSENT_CREATE_STEP_ID = "cbpii-consent-create-core-request"
+"""Catalogue step id whose response supplies the CBPII consent id."""
+
+_CBPII_AUTHORIZATION_STEP_ID = "setup-cbpii-consent-authorisation"
+"""Synthetic PSU authorisation step id for CBPII authorised consent setup."""
+
+_CBPII_AUTHORIZATION_TOKEN_STEP_ID = "setup-token-cbpii-funds-confirmation"  # noqa: S105 - step id
+"""Synthetic authorisation-code token exchange step id for CBPII funds confirmations."""
+
+_CBPII_AUTHORISED_RESOURCE_STEP_IDS = frozenset(
+    {
+        "cbpii-consent-get-authorised-request",
+        "cbpii-funds-confirmation-create-request",
+    }
+)
+"""CBPII resource steps that require a PSU-authorised funds-confirmation consent."""
+
+_CBPII_CAPTURED_CONSENT_ID = f"${{steps.{_CBPII_CONSENT_CREATE_STEP_ID}.response.body.Data.ConsentId}}"
+"""Placeholder resolving to the CBPII consent id created during the run."""
+
+_CATALOGUE_TOKEN_SCOPES = {
+    _CBPII_CLIENT_CREDENTIALS_TOKEN_ID: "fundsconfirmations",
+    "pis-payment-access": "payments",
+    "vrp-payment-access": "payments",
+}
+"""OAuth client-credentials scopes for synthetic catalogue token setup."""
 
 
 def _normalize_url_path_for_match(path: str) -> str:
@@ -434,19 +476,20 @@ def _compiled_plan_to_manifest(
         request step.
     """
     steps: list[V1Step] = []
+    steps.extend(_catalogue_synthetic_token_steps(compiled_plan))
     for test_case in compiled_plan.test_cases:
         requirements = {requirement.input_id: requirement for requirement in test_case.runtime_input_requirements}
         for request_step in test_case.request_steps:
-            steps.append(
-                _catalogue_request_step_to_manifest_step(
-                    test_case,
-                    request_step,
-                    runtime_inputs=runtime_inputs,
-                    runtime_input_base_dir=runtime_input_base_dir,
-                    runtime_config=runtime_config,
-                    requirements=requirements,
-                )
+            manifest_step = _catalogue_request_step_to_manifest_step(
+                test_case,
+                request_step,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=runtime_input_base_dir,
+                runtime_config=runtime_config,
+                requirements=requirements,
             )
+            steps.append(manifest_step)
+            steps.extend(compiled_plan_synthetic_inline_steps(compiled_plan, request_step))
     catalogue_name = (
         f"{compiled_plan.catalogue_key.standard} "
         f"{compiled_plan.catalogue_key.version} "
@@ -457,6 +500,198 @@ def _compiled_plan_to_manifest(
         name=catalogue_name,
         certification_coverage="complete",
         steps=tuple(steps),
+    )
+
+
+def compiled_plan_synthetic_setup_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
+    """Build synthetic setup steps required by a compiled catalogue plan.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps
+            may consume runtime-produced artifacts.
+
+    Returns:
+        Manifest setup steps inserted before catalogue request steps.
+    """
+    return _catalogue_synthetic_token_steps(compiled_plan)
+
+
+def compiled_plan_synthetic_inline_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build synthetic runtime steps inserted after a catalogue request step.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose request sequence is being
+            snapshotted or converted.
+        request_step: Catalogue request step most recently emitted.
+
+    Returns:
+        Synthetic runtime steps inserted immediately after ``request_step``.
+    """
+    return _catalogue_inline_authorization_steps(compiled_plan, request_step)
+
+
+def _catalogue_synthetic_token_steps(compiled_plan: CompiledTestPlan) -> tuple[ManifestStep, ...]:
+    """Build runtime token-acquisition setup steps missing from catalogue cases.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps
+            may consume semantic access-token ids.
+
+    Returns:
+        Synthetic setup steps that acquire and record semantic access tokens
+        before protected-resource requests execute.
+    """
+    required_token_ids: list[str] = []
+    produced_token_ids: set[str] = set()
+    for test_case in compiled_plan.test_cases:
+        for request_step in test_case.request_steps:
+            if request_step.produced_token_id is not None:
+                produced_token_ids.add(request_step.produced_token_id)
+            if (
+                request_step.required_token_id is not None
+                and request_step.required_token_id not in required_token_ids
+            ):
+                required_token_ids.append(request_step.required_token_id)
+
+    steps: list[ManifestStep] = []
+    for token_id in required_token_ids:
+        if token_id in produced_token_ids:
+            continue
+        scope = _CATALOGUE_TOKEN_SCOPES.get(token_id)
+        if scope is None:
+            continue
+        steps.append(_catalogue_client_credentials_token_step(token_id=token_id, scope=scope))
+    return tuple(steps)
+
+
+def _catalogue_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build inline runtime authorisation steps that depend on a catalogue response.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected resource steps may
+            require a PSU-authorised consent.
+        request_step: Catalogue request step most recently converted.
+
+    Returns:
+        Synthetic runtime steps to insert immediately after ``request_step``.
+    """
+    if request_step.step_id != _CBPII_CONSENT_CREATE_STEP_ID:
+        return ()
+    if not _compiled_plan_requires_cbpii_consent_authorization(compiled_plan):
+        return ()
+    return (_cbpii_psu_authorization_step(), _cbpii_authorization_code_token_step())
+
+
+def _compiled_plan_requires_cbpii_consent_authorization(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether selected CBPII resource steps need PSU authorisation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when a selected CBPII authorised-consent or funds-confirmation
+        request is present.
+    """
+    return any(
+        request_step.step_id in _CBPII_AUTHORISED_RESOURCE_STEP_IDS
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _cbpii_psu_authorization_step() -> PsuAuthorizationStep:
+    """Build the CBPII PSU consent-authorisation setup step.
+
+    Returns:
+        PSU authorisation step that binds the captured CBPII consent id into a
+        generated FAPI request object.
+    """
+    return PsuAuthorizationStep(
+        id=_CBPII_AUTHORIZATION_STEP_ID,
+        name="Authorise CBPII funds-confirmation consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid fundsconfirmations",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=_CBPII_CAPTURED_CONSENT_ID,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _cbpii_authorization_code_token_step() -> ManifestStep:
+    """Build the CBPII authorisation-code token exchange setup step.
+
+    Returns:
+        HTTP token-exchange step that records the CBPII funds-confirmation
+        bearer token for downstream protected-resource requests.
+    """
+    return ManifestStep(
+        id=_CBPII_AUTHORIZATION_TOKEN_STEP_ID,
+        name="Exchange CBPII authorisation code for funds-confirmation token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{_CBPII_AUTHORIZATION_STEP_ID}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_CBPII_FUNDS_CONFIRMATION_TOKEN_ID,
+    )
+
+
+def _catalogue_client_credentials_token_step(*, token_id: str, scope: str) -> ManifestStep:
+    """Build a client-credentials OAuth token setup step for a semantic token.
+
+    Args:
+        token_id: Semantic token id consumed by protected-resource steps.
+        scope: OAuth scope value requested from the token endpoint.
+
+    Returns:
+        Manifest setup step that records ``access_token`` as ``token_id``.
+    """
+    return ManifestStep(
+        id=f"setup-token-{token_id}",
+        name=f"Acquire {scope} access token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "client_credentials",
+                    "scope": scope,
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="setup",
+        phase="setup",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=token_id,
     )
 
 
@@ -482,22 +717,28 @@ def _catalogue_request_step_to_manifest_step(
     Returns:
         Manifest-compatible HTTP step for the existing executor.
     """
+    generated_header_values = _catalogue_generated_header_values(request_step)
+    generated_runtime_values = _catalogue_generated_runtime_values(request_step)
     resolved_url = _catalogue_request_url(
         request_step,
         runtime_inputs=runtime_inputs,
         runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
     )
     headers = _catalogue_request_headers(
         request_step,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
         requirements=requirements,
+        generated_header_values=generated_header_values,
+        generated_runtime_values=generated_runtime_values,
     )
     body = _catalogue_request_body(
         request_step,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
         requirements=requirements,
+        generated_runtime_values=generated_runtime_values,
     )
     phase: StepPhase = "setup" if test_case.role in {"setup", "security", "token"} else "execution"
     return ManifestStep(
@@ -509,10 +750,19 @@ def _catalogue_request_step_to_manifest_step(
             headers=headers,
             body=body,
         ),
-        assertions=tuple(_catalogue_assertion_to_manifest_assertion(assertion) for assertion in test_case.assertions),
+        assertions=tuple(
+            _catalogue_assertion_to_manifest_assertion(
+                assertion,
+                runtime_inputs=runtime_inputs,
+                generated_header_values=generated_header_values,
+            )
+            for assertion in test_case.assertions
+        ),
         mandatory=test_case.mandatory,
         group="catalogue",
         phase=phase,
+        required_token_id=request_step.required_token_id,
+        produces_token_id=request_step.produced_token_id,
         response_signature_policy=(
             ResponseSignaturePolicy(source="discovery-jwks") if test_case.response_signature_required else None
         ),
@@ -524,6 +774,7 @@ def _catalogue_request_url(
     *,
     runtime_inputs: Mapping[str, JsonValue],
     runtime_config: RuntimeConfig | None,
+    generated_runtime_values: Mapping[str, str],
 ) -> str:
     """Resolve a catalogue request path to an absolute HTTPS URL.
 
@@ -531,6 +782,8 @@ def _catalogue_request_url(
         request_step: Catalogue request skeleton.
         runtime_inputs: Original plan-spec runtime input mapping.
         runtime_config: Safe participant config values, used for discovery URL.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
 
     Returns:
         Absolute URL to dispatch.
@@ -540,12 +793,17 @@ def _catalogue_request_url(
             or cannot be represented as a string.
     """
     if request_step.path == "/.well-known/openid-configuration":
-        if runtime_config is None:
+        if runtime_config is None or runtime_config.discovery_url is None:
             raise ValueError("Discovery catalogue step requires runtime config discoveryUrl")
         return runtime_config.discovery_url
 
     base_url = _required_runtime_string(runtime_inputs, "resourceBaseUrl")
     resolved_path = _resolve_catalogue_path_variables(request_step, runtime_inputs=runtime_inputs)
+    resolved_path = _resolve_catalogue_template_string(
+        resolved_path,
+        generated_runtime_values=generated_runtime_values,
+        runtime_inputs=runtime_inputs,
+    )
     return f"{base_url.rstrip('/')}/{resolved_path.lstrip('/')}"
 
 
@@ -610,6 +868,8 @@ def _catalogue_request_headers(
     runtime_inputs: Mapping[str, JsonValue],
     runtime_input_base_dir: Path,
     requirements: Mapping[str, RuntimeInputRequirement],
+    generated_header_values: Mapping[str, str],
+    generated_runtime_values: Mapping[str, str],
 ) -> dict[str, str] | None:
     """Build runtime headers for a catalogue request.
 
@@ -618,25 +878,150 @@ def _catalogue_request_headers(
         runtime_inputs: Original plan-spec runtime input mapping.
         runtime_input_base_dir: Directory used to resolve file references.
         requirements: Runtime input requirements keyed by input id.
+        generated_header_values: Generated header values keyed by lower-case
+            header name for the current request step.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
 
     Returns:
         Header mapping, or ``None`` when no headers are needed.
 
     Raises:
-        ValueError: If a referenced token/idempotency value cannot be resolved.
+        ValueError: If a referenced token or required header value cannot be resolved.
     """
     headers: dict[str, str] = {}
+    if request_step.required_token_id is not None:
+        headers["Authorization"] = f"Bearer ${{tokens.{request_step.required_token_id}.access_token}}"
     access_token = _optional_access_token(
         request_step,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
         requirements=requirements,
     )
-    if access_token is not None:
+    if access_token is not None and request_step.required_token_id is None:
         headers["Authorization"] = f"Bearer {access_token}"
-    if "idempotencyKey" in request_step.runtime_input_refs:
-        headers["x-idempotency-key"] = _required_runtime_string(runtime_inputs, "idempotencyKey")
+    invalid_access_token = generated_runtime_values.get("invalidAccessToken")
+    if invalid_access_token is not None and request_step.required_token_id is None:
+        headers["Authorization"] = f"Bearer {invalid_access_token}"
+    for request_header in request_step.headers:
+        value: str | None
+        if request_header.generated_value is not None:
+            value = generated_header_values[request_header.name.lower()]
+        else:
+            if request_header.input_id is None:
+                raise ValueError(f"Catalogue request header '{request_header.name}' has no value source")
+            value = _catalogue_request_header_value(
+                request_header.input_id,
+                runtime_inputs=runtime_inputs,
+                requirements=requirements,
+            )
+        if value is not None:
+            headers[request_header.name] = value
     return headers or None
+
+
+def _catalogue_generated_header_values(request_step: CatalogueRequestStep) -> dict[str, str]:
+    """Generate per-request catalogue header values.
+
+    Args:
+        request_step: Catalogue request skeleton whose header declarations may
+            request generated values.
+
+    Returns:
+        Generated header values keyed by lower-case HTTP header name.
+    """
+    return {
+        request_header.name.lower(): _generated_header_value(request_header.generated_value)
+        for request_header in request_step.headers
+        if request_header.generated_value is not None
+    }
+
+
+def _generated_header_value(generated_value: str) -> str:
+    """Return a generated outbound header value.
+
+    Args:
+        generated_value: Catalogue generation strategy.
+
+    Returns:
+        Header value generated for a single request.
+
+    Raises:
+        ValueError: If the catalogue declares an unsupported strategy.
+    """
+    if generated_value == "uuid4":
+        return str(uuid.uuid4())
+    raise ValueError(f"Unsupported generated request-header value strategy '{generated_value}'")
+
+
+def _catalogue_generated_runtime_values(request_step: CatalogueRequestStep) -> dict[str, str]:
+    """Generate runtime values scoped to one catalogue request step.
+
+    Args:
+        request_step: Catalogue request skeleton whose templates may reference
+            generated runtime values.
+
+    Returns:
+        Generated runtime values keyed by catalogue data id.
+    """
+    return {
+        value_id: _generated_runtime_value(strategy)
+        for value_id, strategy in request_step.generated_values.items()
+    }
+
+
+def _generated_runtime_value(generated_value: str) -> str:
+    """Return a generated catalogue runtime value.
+
+    Args:
+        generated_value: Catalogue generation strategy.
+
+    Returns:
+        Runtime value generated for one execution-prepared request.
+
+    Raises:
+        ValueError: If the catalogue declares an unsupported strategy.
+    """
+    if generated_value == "uuid4":
+        return str(uuid.uuid4())
+    if generated_value == "uuid4-hex":
+        return uuid.uuid4().hex
+    if generated_value == "invalid-resource-id":
+        return f"invalid-{uuid.uuid4()}"
+    if generated_value == "invalid-access-token":
+        return f"invalid-{secrets.token_urlsafe(24)}"
+    raise ValueError(f"Unsupported generated runtime value strategy '{generated_value}'")
+
+
+def _catalogue_request_header_value(
+    input_id: str,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> str | None:
+    """Resolve a catalogue-declared outbound header value.
+
+    Args:
+        input_id: Runtime input id backing the outbound header.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Header value to send, or ``None`` when an optional input is omitted.
+
+    Raises:
+        ValueError: If a required header input is missing or if the input value is
+            not a string.
+    """
+    value = runtime_inputs.get(input_id)
+    if value is None or (isinstance(value, str) and not value.strip()):
+        requirement = requirements.get(input_id)
+        if requirement is not None and requirement.required:
+            return _required_runtime_string(runtime_inputs, input_id)
+        return None
+    if not isinstance(value, str):
+        raise ValueError(f"Runtime input '{input_id}' must be a string")
+    return value.strip()
 
 
 def _optional_access_token(
@@ -676,6 +1061,7 @@ def _catalogue_request_body(
     runtime_inputs: Mapping[str, JsonValue],
     runtime_input_base_dir: Path,
     requirements: Mapping[str, RuntimeInputRequirement],
+    generated_runtime_values: Mapping[str, str],
 ) -> JsonBody | None:
     """Build a JSON request body from a catalogue runtime file reference.
 
@@ -684,6 +1070,8 @@ def _catalogue_request_body(
         runtime_inputs: Original plan-spec runtime input mapping.
         runtime_input_base_dir: Directory used to resolve file references.
         requirements: Runtime input requirements keyed by input id.
+        generated_runtime_values: Generated runtime values keyed by catalogue
+            data id for the current request step.
 
     Returns:
         JSON body for methods that send a body, or ``None`` when no body
@@ -694,12 +1082,129 @@ def _catalogue_request_body(
     """
     if request_step.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
+    if request_step.body_template is not None:
+        return JsonBody(
+            value=_resolve_catalogue_template_values(
+                request_step.body_template,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+        )
     for input_id in request_step.runtime_input_refs:
         requirement = requirements.get(input_id)
         if requirement is None or requirement.input_type != "file_reference" or "request" not in input_id.lower():
             continue
         return JsonBody(value=_read_runtime_json_file(runtime_inputs, input_id, root=runtime_input_base_dir))
     return None
+
+
+def _resolve_catalogue_template_values(
+    value: JsonValue,
+    *,
+    generated_runtime_values: Mapping[str, str],
+    runtime_inputs: Mapping[str, JsonValue],
+) -> JsonValue:
+    """Replace catalogue-owned placeholders inside a request template.
+
+    Args:
+        value: JSON request template value.
+        generated_runtime_values: Generated values keyed by catalogue data id.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+
+    Returns:
+        Template value with ``${generated.*}`` and ``${runtime.*}``
+        placeholders replaced.
+
+    Raises:
+        ValueError: If a template references an unavailable value.
+    """
+    if isinstance(value, str):
+        return _resolve_catalogue_template_string(
+            value,
+            generated_runtime_values=generated_runtime_values,
+            runtime_inputs=runtime_inputs,
+        )
+    if isinstance(value, list):
+        return [
+            _resolve_catalogue_template_values(
+                item,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+            for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            str(key): _resolve_catalogue_template_values(
+                item,
+                generated_runtime_values=generated_runtime_values,
+                runtime_inputs=runtime_inputs,
+            )
+            for key, item in value.items()
+        }
+    return value
+
+
+def _resolve_catalogue_template_string(
+    value: str,
+    *,
+    generated_runtime_values: Mapping[str, str],
+    runtime_inputs: Mapping[str, JsonValue],
+) -> str:
+    """Replace catalogue-owned placeholders in one string.
+
+    Args:
+        value: String that may contain catalogue-owned placeholders.
+        generated_runtime_values: Generated values keyed by catalogue data id.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+
+    Returns:
+        String with generated and runtime placeholders replaced.
+
+    Raises:
+        ValueError: If a placeholder references an unavailable value.
+    """
+
+    def replace_generated(match: re.Match[str]) -> str:
+        """Return one generated value for a regex placeholder match.
+
+        Args:
+            match: Regex match containing the generated value id.
+
+        Returns:
+            Generated value for the matched id.
+
+        Raises:
+            ValueError: If the generated value id was not declared.
+        """
+        value_id = match.group(1)
+        generated_value = generated_runtime_values.get(value_id)
+        if generated_value is None:
+            raise ValueError(f"Generated runtime value '{value_id}' is not declared for this request step")
+        return generated_value
+
+    def replace_runtime(match: re.Match[str]) -> str:
+        """Return one runtime input for a regex placeholder match.
+
+        Args:
+            match: Regex match containing the runtime input id.
+
+        Returns:
+            Runtime input value for the matched id.
+
+        Raises:
+            ValueError: If the runtime input is missing or not a string.
+        """
+        input_id = match.group(1)
+        runtime_value = runtime_inputs.get(input_id)
+        if runtime_value is None or (isinstance(runtime_value, str) and not runtime_value.strip()):
+            raise ValueError(f"Runtime input '{input_id}' is required for this request template")
+        if not isinstance(runtime_value, str):
+            raise ValueError(f"Runtime input '{input_id}' must be a string")
+        return runtime_value.strip()
+
+    generated_resolved = _CATALOGUE_GENERATED_VALUE_PATTERN.sub(replace_generated, value)
+    return _CATALOGUE_RUNTIME_VALUE_PATTERN.sub(replace_runtime, generated_resolved)
 
 
 def _read_runtime_json_file(
@@ -804,11 +1309,20 @@ def _required_runtime_string(runtime_inputs: Mapping[str, JsonValue], input_id: 
     return value.strip()
 
 
-def _catalogue_assertion_to_manifest_assertion(assertion: CatalogueAssertion) -> ManifestAssertion:
+def _catalogue_assertion_to_manifest_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> ManifestAssertion:
     """Convert a catalogue assertion into the executor's assertion model.
 
     Args:
         assertion: Catalogue assertion to convert.
+        runtime_inputs: Runtime inputs used to resolve selected-run assertion
+            values for playback checks.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name for playback checks.
 
     Returns:
         Manifest-compatible assertion dataclass.
@@ -825,7 +1339,11 @@ def _catalogue_assertion_to_manifest_assertion(assertion: CatalogueAssertion) ->
     if assertion.kind == "json_field":
         return _catalogue_json_field_assertion(assertion)
     if assertion.kind == "header":
-        return _catalogue_header_assertion(assertion)
+        return _catalogue_header_assertion(
+            assertion,
+            runtime_inputs=runtime_inputs,
+            generated_header_values=generated_header_values,
+        )
     return _catalogue_response_schema_assertion(assertion)
 
 
@@ -865,11 +1383,19 @@ def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldA
     raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a JSON-field rule")
 
 
-def _catalogue_header_assertion(assertion: CatalogueAssertion) -> HeaderAssertion:
+def _catalogue_header_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> HeaderAssertion:
     """Convert a catalogue header assertion.
 
     Args:
         assertion: Catalogue assertion with ``kind == "header"``.
+        runtime_inputs: Runtime inputs used to resolve expected playback values.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name for playback checks.
 
     Returns:
         Manifest-compatible header assertion.
@@ -882,6 +1408,17 @@ def _catalogue_header_assertion(assertion: CatalogueAssertion) -> HeaderAssertio
         raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires rule.name or rule.header")
     if assertion.rule.get("required") is True or assertion.rule.get("presence") == "required":
         return HeaderAssertion(type="header", name=name, rule="present")
+    if assertion.rule.get("rule") == "playback":
+        return HeaderAssertion(
+            type="header",
+            name=name,
+            rule="equals",
+            value=_catalogue_header_playback_value(
+                name,
+                runtime_inputs=runtime_inputs,
+                generated_header_values=generated_header_values,
+            ),
+        )
     contains = assertion.rule.get("contains")
     if isinstance(contains, str) and contains:
         return HeaderAssertion(type="header", name=name, rule="contains", value=contains)
@@ -889,6 +1426,52 @@ def _catalogue_header_assertion(assertion: CatalogueAssertion) -> HeaderAssertio
     if isinstance(expected, str) and expected:
         return HeaderAssertion(type="header", name=name, rule="equals", value=expected)
     raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a header rule")
+
+
+def _catalogue_header_playback_value(
+    name: str,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    generated_header_values: Mapping[str, str],
+) -> str:
+    """Return the runtime input value expected in a response-header playback check.
+
+    Args:
+        name: Header name whose response value should echo the request.
+        runtime_inputs: Runtime inputs supplied for the selected plan.
+        generated_header_values: Generated request-header values keyed by
+            lower-case header name.
+
+    Returns:
+        Expected header value supplied by the matching runtime input.
+
+    Raises:
+        ValueError: If the header cannot be mapped to a runtime input or the
+            required input is missing.
+    """
+    generated_value = generated_header_values.get(name.lower())
+    if generated_value is not None:
+        return generated_value
+    input_id = _catalogue_header_runtime_input_id(name)
+    if input_id is None:
+        raise ValueError(f"Catalogue header playback is unsupported for '{name}'")
+    return _required_runtime_string(runtime_inputs, input_id)
+
+
+def _catalogue_header_runtime_input_id(name: str) -> str | None:
+    """Return the runtime input id associated with a request header name.
+
+    Args:
+        name: HTTP header name from a catalogue assertion.
+
+    Returns:
+        Runtime input id when the header has a selected-run input, otherwise
+        ``None``.
+    """
+    normalized_name = name.lower()
+    if normalized_name == "x-fapi-interaction-id":
+        return "xFapiInteractionId"
+    return None
 
 
 def _catalogue_response_schema_assertion(assertion: CatalogueAssertion) -> ResponseSchemaAssertion:
@@ -1043,7 +1626,7 @@ def _fetch_response_signature_jwks(client: httpx.Client, runtime_config: Runtime
             invalid.
         JsonHttpClientError: If discovery or JWKS retrieval fails.
     """
-    if runtime_config is None:
+    if runtime_config is None or runtime_config.discovery_url is None:
         raise ValueError("Response signature validation requires runtime config discoveryUrl")
     discovery_response = send_json(client, "GET", runtime_config.discovery_url)
     jwks_uri = discovery_response.body.get("jwks_uri")
@@ -1814,7 +2397,7 @@ def _execute_v1_psu_step_inner(
             redirect_uri=resolved_redirect_uri,
         )
 
-    deadline = clock() + manifest_step.timeout_seconds
+    deadline = clock() + PSU_AUTHORIZATION_TIMEOUT_SECONDS
     while clock() < deadline:
         sleep(0.5)
         current_session = auth_session_store.get(run_id, session.state)
@@ -1837,7 +2420,7 @@ def _execute_v1_psu_step_inner(
                 status="failed",
                 message=f"{manifest_step.name} timed out waiting for PSU authorisation callback",
                 url=result_url,
-                details={"timeoutSeconds": manifest_step.timeout_seconds},
+                details={"timeoutSeconds": PSU_AUTHORIZATION_TIMEOUT_SECONDS},
             ),
             request_evidence=request_evidence,
             response_evidence=None,

@@ -72,17 +72,18 @@ Regression coverage should prove that replacing public manifests did not weaken:
 - PSU authorisation handoff and headless test helpers.
 - FAPI signing, token endpoint auth policy, detached JWS signing, and mTLS checks.
 - Masking in result JSON, NDJSON logs, browser downloads, and API log snapshots.
-- CLI `--plan-spec` validation and rejection of public `--manifest`.
-- REST `planSpec` validation and rejection of public `manifest`/`deselectStepIds`.
+- CLI `--test-plan` validation and rejection of public `--manifest` and
+  `--plan-spec`.
+- REST canonical test-plan validation and rejection of public `manifest`,
+  `planSpec`, and `deselectStepIds`.
 - Browser main menu, session-backed draft creation, scheme/specification/version
-  plus boundary-driven high-level resource-group rendering, selector-only
-  no-resource-group boundaries such as DCR v3.4, endpoint/feature drill-down for
-  selected groups, server-rendered dynamic feature filtering, locked required
-  capabilities, unchecked optional capabilities, grouped config with
-  scope-aware AIS/PIS/CBPII defaults plus resource-server sections,
+  selection, security-environment capture before resource groups,
+  endpoint/feature drill-down for selected groups, server-rendered dynamic
+  feature filtering, locked required capabilities, unchecked optional
+  capabilities, grouped business data, generated runtime artifact prompts,
   import/review, safe export, explicit export-with-secrets, launch, and
   collapsed read-only generated-test rows.
-- REST and CLI parity for the same capability-selected v2 plan-document
+- REST and CLI parity for the same capability-selected schemaVersion `1.0`
   contract.
 - Run-detail rendering of catalogue traceability evidence from completed result
   JSON.
@@ -97,7 +98,6 @@ DJANGO_DEBUG=true uv run pytest \
   tests/test_cli.py \
   tests/test_api.py \
   tests/test_builder_wizard.py \
-  tests/test_plan_builder.py \
   tests/test_ui_views.py \
   -m "unit or integration" -v
 ```

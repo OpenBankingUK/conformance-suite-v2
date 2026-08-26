@@ -24,7 +24,6 @@ from conformance.api.builder_wizard import (
     ScopeSelectionForm,
     SecurityConfigForm,
     WizardRuntimeInputPrompt,
-    boundary_requires_resource_groups,
     business_config_form_initial,
     catalogue_boundary_continue_blocker,
     config_visibility_for_plan_document,
@@ -42,16 +41,11 @@ from conformance.api.builder_wizard import (
     plan_document_with_runtime_placeholders,
     runtime_input_prompts_for_plan_document,
     security_config_form_initial,
+    security_field_metadata,
     specification_options,
     version_options,
 )
-from conformance.api.plan_builder import (
-    PlanBuilderForm,
-    PlanPreview,
-    PlanTestCaseRow,
-    compiled_plan_rows,
-    guided_flow_context,
-)
+from conformance.api.plan_review import PlanTestCaseRow, compiled_plan_rows
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
 from conformance.catalogue import (
@@ -59,6 +53,7 @@ from conformance.catalogue import (
     CompiledTestPlan,
     PlanDocumentBoundary,
     PlanDocumentV2,
+    SecurityProfile,
     compile_test_plan_document,
     parse_test_plan_document,
     plan_document_to_json_object,
@@ -84,7 +79,8 @@ class _BuilderReviewState:
     """Computed review state for a browser builder draft.
 
     Attributes:
-        document: Parsed v2 plan document built from the draft, when available.
+        document: Parsed canonical test-plan document built from the draft, when
+            available.
         compiled_plan: Preview-compiled plan, using placeholders only for
             missing runtime inputs so generated-test rows remain inspectable.
         rows: Read-only generated test rows.
@@ -171,7 +167,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
             )
             pruned_scope = ScopeSelectionForm(
                 data={
-                    "resource_groups": list(form.selected_resource_group_ids),
+                    "resource_groups": list(draft.resource_group_ids),
                     "endpoints": list(draft.endpoint_ids),
                     "endpoint_capabilities": list(
                         endpoint_capability_values_from_mapping(draft.endpoint_capability_ids)
@@ -185,6 +181,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 scheme=selected_boundary.scheme,
                 specification=selected_boundary.specification,
                 version=selected_boundary.version,
+                security_profile=cast(SecurityProfile, form.cleaned_data["security_profile"]),
             ).with_scope_selection(
                 resource_group_ids=pruned_scope.selected_resource_group_ids,
                 endpoint_ids=pruned_scope.selected_endpoint_ids,
@@ -198,7 +195,7 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                     _builder_catalogue_boundary_context(draft=updated_draft, form=form, saved=False),
                     status=400,
                 )
-            return redirect("builder-scope", draft_id=draft.draft_id)
+            return redirect("builder-discovery-config", draft_id=draft.draft_id)
         return render(
             request,
             "conformance/builder_catalogue_boundary.html",
@@ -211,35 +208,6 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
         request,
         "conformance/builder_catalogue_boundary.html",
         _builder_catalogue_boundary_context(draft=draft, form=form, saved=request.GET.get("saved") == "1"),
-    )
-
-
-@require_POST
-def builder_catalogue_resource_groups(request: HttpRequest, draft_id: str) -> HttpResponse:
-    """Render the dynamic resource-group picker for a catalogue boundary.
-
-    Args:
-        request: The incoming browser POST request.
-        draft_id: Session-scoped draft id from the route.
-
-    Returns:
-        Partial HTML response containing resource-group choices for the
-        submitted scheme/specification/version boundary, or ``404`` when the
-        draft is not known to this browser session.
-    """
-    draft = SessionBuilderDraftStore(request.session).get(draft_id)
-    if draft is None:
-        return HttpResponseNotFound("Builder draft not found")
-
-    form = CatalogueBoundaryForm(
-        data=request.POST,
-        initial=_boundary_form_initial(draft),
-        validate_resource_groups=False,
-    )
-    return render(
-        request,
-        "conformance/partials/builder_catalogue_resource_groups.html",
-        _builder_catalogue_resource_group_context(form=form),
     )
 
 
@@ -263,8 +231,6 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
     if boundary is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
     if catalogue_boundary_continue_blocker(boundary) is not None:
-        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
-    if not draft.resource_group_ids:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
 
     if request.method == "POST":
@@ -342,6 +308,10 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
     draft = draft_store.get(draft_id)
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
+    if _draft_boundary(draft) is None:
+        return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
+    if not draft.resource_group_ids:
+        return redirect("builder-scope", draft_id=draft.draft_id)
 
     try:
         config_visibility = config_visibility_for_plan_document(plan_document_from_draft(draft))
@@ -365,7 +335,7 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
         if form.is_valid() and form.config is not None:
             draft_store.save(draft.with_config(config=merge_business_config(draft.config, form.config)))
-            return redirect("builder-discovery-config", draft_id=draft.draft_id)
+            return redirect("builder-runtime-config", draft_id=draft.draft_id)
         return render(
             request,
             "conformance/builder_business_config.html",
@@ -407,7 +377,9 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
         form = DiscoveryConfigForm(data=request.POST, initial=discovery_config_form_initial(draft.config))
         if form.is_valid() and form.config is not None:
             updated_config = merge_discovery_config(draft.config, form.config)
-            metadata = _fetch_discovery_metadata(updated_config)
+            metadata = (
+                _fetch_discovery_metadata(updated_config) if _metadata_string(updated_config, "discoveryUrl") else {}
+            )
             draft_store.save(
                 draft.with_config(config=updated_config).with_discovery_metadata(discovery_metadata=metadata)
             )
@@ -445,9 +417,6 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
         return HttpResponseNotFound("Builder draft not found")
     if _draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
-    if not _has_discovery_config(draft.config):
-        return redirect("builder-discovery-config", draft_id=draft.draft_id)
-
     if request.method == "POST":
         form = SecurityConfigForm(
             data=request.POST,
@@ -458,7 +427,7 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
             validation_error = _validate_model_config(updated_config)
             if validation_error is None:
                 draft_store.save(draft.with_config(config=updated_config))
-                return redirect("builder-runtime-config", draft_id=draft.draft_id)
+                return redirect("builder-scope", draft_id=draft.draft_id)
             form.add_error(None, validation_error)
         return render(
             request,
@@ -557,12 +526,8 @@ def builder_import(request: HttpRequest) -> HttpResponse:
         if not validation_result.valid:
             raise CatalogueError(validation_result.summary_message())
         parsed_document = parse_test_plan_document(raw_document)
-        if not isinstance(parsed_document, PlanDocumentV2):
-            raise CatalogueError("Browser import accepts schemaVersion 1.0 or legacy v2 shared plan documents only")
-        if parsed_document.schema_version != "1.0" and not parsed_document.security_environment:
-            raise CatalogueError(
-                "Legacy v2 imports must include config.discoveryUrl so they can be exported as canonical JSON."
-            )
+        if not isinstance(parsed_document, PlanDocumentV2) or parsed_document.schema_version != "1.0":
+            raise CatalogueError("Browser import accepts schemaVersion 1.0 test plans only")
         runtime_input_prompts_for_plan_document(parsed_document)
     except CatalogueError as error:
         return render(
@@ -701,88 +666,6 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
             "conformance/builder_review.html",
             _builder_review_context(
                 draft=draft,
-                launch_error=f"A run is already active: {error.active_run_id}",
-                active_run_id=error.active_run_id,
-            ),
-            status=409,
-        )
-
-    run_id = status_body["id"]
-    assert isinstance(run_id, str)  # noqa: S101 - lifecycle response contract
-    return redirect("ui-run-detail", run_id=run_id)
-
-
-@require_GET
-def plan_builder(request: HttpRequest) -> HttpResponse:
-    """Render the participant plan-builder input form.
-
-    Args:
-        request: The incoming browser GET request.
-
-    Returns:
-        HTML response containing JSON input fields and preview controls.
-    """
-    return render(request, "conformance/plan_builder.html", _plan_context(PlanBuilderForm()))
-
-
-@require_POST
-def plan_preview(request: HttpRequest) -> HttpResponse:
-    """Validate submitted JSON and render the selectable plan preview.
-
-    Args:
-        request: The incoming browser POST request with form-encoded JSON
-            fields and optional step selection values.
-
-    Returns:
-        HTML response with validation errors or the current step preview.
-    """
-    form = PlanBuilderForm(data=request.POST)
-    status = 200 if form.is_valid() else 400
-    return render(request, "conformance/plan_builder.html", _plan_context(form), status=status)
-
-
-@require_POST
-def plan_launch(request: HttpRequest) -> HttpResponse:
-    """Validate the submitted plan and launch a browser-supported run.
-
-    Args:
-        request: The incoming browser POST request with config, plan spec, and
-            implemented endpoint/runtime-data values.
-
-    Returns:
-        A redirect to the run detail page when launch succeeds, or an HTML
-        response describing validation, support, or active-run conflicts.
-    """
-    form = PlanBuilderForm(data=request.POST)
-    if not form.is_valid() or form.preview is None:
-        return render(request, "conformance/plan_builder.html", _plan_context(form), status=400)
-
-    preview = form.preview
-    if not preview.launch_supported:
-        return render(
-            request,
-            "conformance/plan_builder.html",
-            _plan_context(
-                form,
-                launch_error="This manifest can be previewed but cannot be launched from the browser UI yet.",
-            ),
-            status=400,
-        )
-
-    try:
-        status_body = start_run(
-            config=preview.config,
-            compiled_plan=preview.compiled_plan,
-            runtime_inputs=preview.plan_spec.runtime_inputs,
-            runtime_input_base_dir=Path.cwd(),
-            browser_psu_prompts=True,
-        )
-    except RunConflictError as error:
-        return render(
-            request,
-            "conformance/plan_builder.html",
-            _plan_context(
-                form,
                 launch_error=f"A run is already active: {error.active_run_id}",
                 active_run_id=error.active_run_id,
             ),
@@ -948,6 +831,7 @@ def _boundary_form_initial(draft: BuilderDraft) -> dict[str, object]:
         initial["specification"] = draft.specification
     if draft.version is not None:
         initial["version"] = draft.version
+    initial["security_profile"] = draft.security_profile
     initial["resource_groups"] = list(draft.resource_group_ids)
     return initial
 
@@ -1004,28 +888,9 @@ def _builder_catalogue_boundary_context(
         "saved": saved,
         "specification_options": specification_options(),
         "version_options": version_options(),
+        "catalogue_boundary_blocker": catalogue_boundary_continue_blocker(form.selected_boundary),
     }
-    context.update(_builder_catalogue_resource_group_context(form=form))
     return context
-
-
-def _builder_catalogue_resource_group_context(form: CatalogueBoundaryForm) -> dict[str, object]:
-    """Build template context for the catalogue-page resource-group picker.
-
-    Args:
-        form: Boundary selection form containing the currently selected
-            boundary and derived resource-group hierarchy.
-
-    Returns:
-        Context for the resource-group partial template.
-    """
-    selected_boundary = form.selected_boundary
-    return {
-        "form": form,
-        "resource_group_options": form.resource_group_hierarchy.resource_groups,
-        "resource_groups_required": boundary_requires_resource_groups(selected_boundary),
-        "catalogue_boundary_blocker": catalogue_boundary_continue_blocker(selected_boundary),
-    }
 
 
 def _builder_scope_context(
@@ -1130,6 +995,7 @@ def _builder_security_config_context(
         "draft": draft,
         "form": form,
         "discovery_metadata": _discovery_metadata_context(draft.discovery_metadata),
+        "security_requirements": security_field_metadata(),
     }
 
 
@@ -1195,7 +1061,6 @@ def _discovery_metadata_context(discovery_metadata: Mapping[str, JsonValue]) -> 
         "jwks_uri": "JWKS URI",
         "token_endpoint_auth_methods_supported": "Token endpoint auth methods supported",
         "response_types_supported": "Response types supported",
-        "acr_values_supported": "ACR values supported",
         "request_object_signing_alg_values_supported": "Request object signing algorithms supported",
     }
     fields = []
@@ -1215,7 +1080,7 @@ def _fetch_discovery_metadata(config: Mapping[str, JsonValue]) -> JsonObject:
     """Fetch non-secret OpenID discovery metadata for later form defaults.
 
     Args:
-        config: Draft config containing ``discoveryUrl`` and optional timeout.
+        config: Draft config containing ``discoveryUrl``.
 
     Returns:
         Metadata values safe to keep in the browser session. Failures are
@@ -1224,13 +1089,9 @@ def _fetch_discovery_metadata(config: Mapping[str, JsonValue]) -> JsonObject:
     discovery_url = config.get("discoveryUrl")
     if not isinstance(discovery_url, str) or not discovery_url.strip():
         return {}
-    timeout_seconds = config.get("timeoutSeconds")
-    timeout = (
-        timeout_seconds if isinstance(timeout_seconds, int | float) and not isinstance(timeout_seconds, bool) else 10.0
-    )
     client: OzoneModelBankClient | None = None
     try:
-        client = OzoneModelBankClient(build_json_http_client(timeout_seconds=float(timeout)))
+        client = OzoneModelBankClient(build_json_http_client())
         discovery_document, response = client.fetch_discovery_document(discovery_url.strip())
     except (OzoneClientError, ValueError) as error:
         return {"fetchError": str(error), "sourceUrl": discovery_url.strip()}
@@ -1260,7 +1121,6 @@ def _normalised_discovery_metadata(raw_metadata: Mapping[str, JsonValue]) -> Jso
     for key in (
         "token_endpoint_auth_methods_supported",
         "response_types_supported",
-        "acr_values_supported",
         "request_object_signing_alg_values_supported",
     ):
         values = _string_list_metadata_value(raw_metadata.get(key))
@@ -1309,18 +1169,6 @@ def _display_metadata_value(value: JsonValue) -> str:
     if isinstance(value, list):
         return ", ".join(str(item) for item in value)
     return str(value)
-
-
-def _has_discovery_config(config: Mapping[str, JsonValue]) -> bool:
-    """Return whether the draft has the discovery value needed for security.
-
-    Args:
-        config: Draft v2 plan config.
-
-    Returns:
-        True when a discovery URL is present.
-    """
-    return bool(_metadata_string(config, "discoveryUrl"))
 
 
 def _validate_model_config(config: Mapping[str, JsonValue]) -> str | None:
@@ -1419,6 +1267,7 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
         preview_document = plan_document_with_runtime_placeholders(document, runtime_prompts)
         compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
         rows = compiled_plan_rows(compiled_plan)
+        blockers.extend(_selected_security_blockers(document, compiled_plan))
         safe_export = plan_document_to_export_json(
             document,
             sensitive_runtime_input_ids=_sensitive_runtime_input_ids(compiled_plan),
@@ -1453,7 +1302,7 @@ def _model_config_blockers(document: PlanDocumentV2) -> tuple[str, ...]:
     """Return launch blockers from executable model-bank config validation.
 
     Args:
-        document: Parsed v2 plan document.
+        document: Parsed canonical test-plan document.
 
     Returns:
         Empty tuple when the model-bank config is valid, otherwise one blocker.
@@ -1463,6 +1312,24 @@ def _model_config_blockers(document: PlanDocumentV2) -> tuple[str, ...]:
     except ConfigError as error:
         return (f"Config validation failed: {error}",)
     return ()
+
+
+def _selected_security_blockers(document: PlanDocumentV2, compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
+    """Return blockers for security fields required by selected test cases.
+
+    Args:
+        document: Parsed canonical test-plan document.
+        compiled_plan: Compiled selected-run preview.
+
+    Returns:
+        Blocking messages for missing security config needed by selected cases.
+    """
+    if not any(test_case.response_signature_required for test_case in compiled_plan.test_cases):
+        return ()
+    discovery_url = document.security_environment.get("discoveryUrl") or document.config.get("discoveryUrl")
+    if isinstance(discovery_url, str) and discovery_url.strip():
+        return ()
+    return ("Discovery URL is required because the selected run validates response signatures.",)
 
 
 def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
@@ -1586,34 +1453,6 @@ def _sensitive_runtime_input_ids(compiled_plan: CompiledTestPlan) -> tuple[str, 
         Runtime input ids marked sensitive by catalogue metadata.
     """
     return tuple(trace.input_id for trace in compiled_plan.traceability.runtime_input_snapshot if trace.sensitive)
-
-
-def _plan_context(
-    form: PlanBuilderForm,
-    *,
-    launch_error: str | None = None,
-    active_run_id: str | None = None,
-) -> dict[str, object]:
-    """Build template context for plan-builder views.
-
-    Args:
-        form: Bound or unbound plan-builder form.
-        launch_error: Optional launch failure message to display.
-        active_run_id: Optional active run id supplied for conflict links.
-
-    Returns:
-        Template context containing the form, preview, counts, and launch
-        failure details.
-    """
-    preview = form.preview
-    context: dict[str, object] = {"form": form, "preview": preview, **guided_flow_context(form)}
-    if preview is not None:
-        context["preview_counts"] = preview_step_counts(preview)
-    if launch_error is not None:
-        context["launch_error"] = launch_error
-    if active_run_id is not None:
-        context["active_run_id"] = active_run_id
-    return context
 
 
 def _run_context(record: RunRecord) -> dict[str, object]:
@@ -2387,25 +2226,3 @@ def _certification_eligibility(result: JsonObject | None) -> str | None:
                 return f"ineligible: {reason}"
             return "ineligible"
     return None
-
-
-def preview_step_counts(preview: PlanPreview) -> dict[str, int]:
-    """Return aggregate counts for a plan preview.
-
-    Args:
-        preview: Validated participant plan preview.
-
-    Returns:
-        Counts used by templates to summarise endpoint-selected generated
-        catalogue tests.
-    """
-    return {
-        "total": len(preview.rows),
-        "generated": len(preview.rows),
-        "endpoints": len(preview.selected_endpoint_ids),
-        "capabilities": len(preview.compiled_plan.traceability.selected_capabilities),
-        "runtime_inputs": len(preview.runtime_input_prompts),
-        "optional": sum(1 for row in preview.rows if not row.mandatory),
-        "mandatory": sum(1 for row in preview.rows if row.mandatory),
-        "mandatory_deselected": 0,
-    }

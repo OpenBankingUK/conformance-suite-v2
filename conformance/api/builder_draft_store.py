@@ -45,7 +45,7 @@ class BuilderDraft:
         endpoint_ids: Selected endpoint option ids from the scope step.
         endpoint_capability_ids: Selected optional capability ids keyed by
             endpoint option id.
-        config: Draft v2 plan-document ``config`` object retained for review,
+        config: Draft executable config object retained for review,
             import/export, and launch.
         security_environment: Canonical security environment metadata preserved
             from imported JSON-first plans when it is not represented directly
@@ -148,13 +148,22 @@ class BuilderDraft:
             updated_at=updated_at,
         )
 
-    def with_catalogue_boundary(self, *, scheme: str, specification: str, version: str) -> BuilderDraft:
-        """Return a copy with the scheme/specification/version step saved.
+    def with_catalogue_boundary(
+        self,
+        *,
+        scheme: str,
+        specification: str,
+        version: str,
+        security_profile: SecurityProfile | None = None,
+    ) -> BuilderDraft:
+        """Return a copy with the specification/profile step saved.
 
         Args:
             scheme: Selected standards scheme.
             specification: Selected standards specification family.
             version: Selected specification version.
+            security_profile: Optional selected security profile. When omitted,
+                the existing draft profile is preserved.
 
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
@@ -164,7 +173,7 @@ class BuilderDraft:
             scheme=scheme,
             specification=specification,
             version=version,
-            security_profile=self.security_profile,
+            security_profile=security_profile if security_profile is not None else self.security_profile,
             resource_group_ids=self.resource_group_ids,
             endpoint_ids=self.endpoint_ids,
             endpoint_capability_ids=self.endpoint_capability_ids,
@@ -221,7 +230,7 @@ class BuilderDraft:
         """Return a copy with grouped execution config saved.
 
         Args:
-            config: v2 plan-document config object built from the grouped
+            config: Draft executable config object built from the grouped
                 configuration step or imported plan JSON.
 
         Returns:

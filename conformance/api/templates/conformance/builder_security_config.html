@@ -24,6 +24,10 @@
         .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .field-row { margin-top: 12px; }
         label { display: block; font-weight: 650; margin-bottom: 8px; }
+        .requirement-badge { display: inline-flex; align-items: center; margin-left: 8px; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
+        .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
+        .requirement-badge.conditional { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
         input, select, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         input[type="checkbox"] { width: auto; min-height: auto; margin-right: 8px; }
         textarea { min-height: 120px; resize: vertical; font: 0.9rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
@@ -44,14 +48,14 @@
     <header>
         <div>
             <h1>OAuth and security configuration</h1>
-            <div class="muted">Step 5 of the guided builder</div>
+            <div class="muted">Step 3: security details and validation</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="security-heading">
         <h2 id="security-heading">OAuth/FAPI and communication settings</h2>
-        <p class="helper">Discovery metadata can prefill this page. Values are saved into the plan only after you submit them here.</p>
+        <p class="helper">These fields are included only when they can affect execution. Requirement badges describe run impact; discovery metadata may prefill values, but it does not make a field required.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if discovery_metadata.fetch_error %}
@@ -59,7 +63,7 @@
         {% elif discovery_metadata.fields %}
             <section class="config-card" aria-labelledby="metadata-heading">
                 <h3 id="metadata-heading">Discovery metadata</h3>
-                <p class="helper">These values came from discovery and are shown for reference. Prefilled fields below remain editable.</p>
+                <p class="helper">These values came from discovery and are shown for reference. They are not saved unless they populate a field you submit.</p>
                 <dl class="metadata-list">
                     {% for row in discovery_metadata.fields %}
                         <dt>{{ row.label }}</dt>
@@ -76,68 +80,57 @@
                 <h3 id="oauth-heading">OAuth/client</h3>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.oauth_client_id.id_for_label }}">Client ID</label>
+                        <label for="{{ form.oauth_client_id.id_for_label }}">Client ID {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_client_id.status label=security_requirements.oauth_client_id.label only %}</label>
                         {{ form.oauth_client_id.errors }}
                         <input id="{{ form.oauth_client_id.id_for_label }}" name="oauth_client_id" type="text" value="{{ form.oauth_client_id.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.oauth_client_id.description }} Type: {{ security_requirements.oauth_client_id.type_hint }}. {{ security_requirements.oauth_client_id.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_redirect_uri.id_for_label }}">Redirect URI</label>
+                        <label for="{{ form.oauth_redirect_uri.id_for_label }}">Redirect URI {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_redirect_uri.status label=security_requirements.oauth_redirect_uri.label only %}</label>
                         {{ form.oauth_redirect_uri.errors }}
                         <input id="{{ form.oauth_redirect_uri.id_for_label }}" name="oauth_redirect_uri" type="url" value="{{ form.oauth_redirect_uri.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
+                        <div class="helper">{{ security_requirements.oauth_redirect_uri.description }} Type: {{ security_requirements.oauth_redirect_uri.type_hint }}. {{ security_requirements.oauth_redirect_uri.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint</label>
+                        <label for="{{ form.oauth_authorization_endpoint.id_for_label }}">Authorization endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_authorization_endpoint.status label=security_requirements.oauth_authorization_endpoint.label only %}</label>
                         {{ form.oauth_authorization_endpoint.errors }}
                         <input id="{{ form.oauth_authorization_endpoint.id_for_label }}" name="oauth_authorization_endpoint" type="url" value="{{ form.oauth_authorization_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                        <div class="helper">{{ security_requirements.oauth_authorization_endpoint.description }} Type: {{ security_requirements.oauth_authorization_endpoint.type_hint }}. {{ security_requirements.oauth_authorization_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer</label>
+                        <label for="{{ form.oauth_issuer.id_for_label }}">Issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_issuer.status label=security_requirements.oauth_issuer.label only %}</label>
                         {{ form.oauth_issuer.errors }}
                         <input id="{{ form.oauth_issuer.id_for_label }}" name="oauth_issuer" type="url" value="{{ form.oauth_issuer.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                        <div class="helper">{{ security_requirements.oauth_issuer.description }} Type: {{ security_requirements.oauth_issuer.type_hint }}. {{ security_requirements.oauth_issuer.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint</label>
+                        <label for="{{ form.oauth_token_endpoint.id_for_label }}">Token endpoint {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_token_endpoint.status label=security_requirements.oauth_token_endpoint.label only %}</label>
                         {{ form.oauth_token_endpoint.errors }}
                         <input id="{{ form.oauth_token_endpoint.id_for_label }}" name="oauth_token_endpoint" type="url" value="{{ form.oauth_token_endpoint.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                        {% if discovery_metadata.fields %}<div class="helper">May be inferred from discovery.</div>{% endif %}
+                        <div class="helper">{{ security_requirements.oauth_token_endpoint.description }} Type: {{ security_requirements.oauth_token_endpoint.type_hint }}. {{ security_requirements.oauth_token_endpoint.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_open_banking_intent_id.id_for_label }}">Open Banking intent ID</label>
-                        {{ form.oauth_open_banking_intent_id.errors }}
-                        <input id="{{ form.oauth_open_banking_intent_id.id_for_label }}" name="oauth_open_banking_intent_id" type="text" value="{{ form.oauth_open_banking_intent_id.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type</label>
+                        <label for="{{ form.oauth_response_type.id_for_label }}">Response type {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_response_type.status label=security_requirements.oauth_response_type.label only %}</label>
                         {{ form.oauth_response_type.errors }}
                         <input id="{{ form.oauth_response_type.id_for_label }}" name="oauth_response_type" type="text" value="{{ form.oauth_response_type.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.oauth_response_type.description }} Type: {{ security_requirements.oauth_response_type.type_hint }}. {{ security_requirements.oauth_response_type.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm</label>
+                        <label for="{{ form.oauth_request_object_signing_alg.id_for_label }}">Request object signing algorithm {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.oauth_request_object_signing_alg.status label=security_requirements.oauth_request_object_signing_alg.label only %}</label>
                         {{ form.oauth_request_object_signing_alg.errors }}
                         <input id="{{ form.oauth_request_object_signing_alg.id_for_label }}" name="oauth_request_object_signing_alg" type="text" value="{{ form.oauth_request_object_signing_alg.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.oauth_request_object_signing_alg.description }} Type: {{ security_requirements.oauth_request_object_signing_alg.type_hint }}. {{ security_requirements.oauth_request_object_signing_alg.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.client_credentials_client_secret.id_for_label }}">Client secret</label>
-                        {{ form.client_credentials_client_secret.errors }}
-                        <input id="{{ form.client_credentials_client_secret.id_for_label }}" name="client_credentials_client_secret" type="password" value="{{ form.client_credentials_client_secret.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method</label>
+                        <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Token endpoint auth method {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_token_endpoint_auth_method.status label=security_requirements.signing_token_endpoint_auth_method.label only %}</label>
                         {{ form.signing_token_endpoint_auth_method.errors }}
                         <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
                             {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
                                 <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
-                        {% if discovery_metadata.fields %}<div class="helper">Discovery-supported methods are shown above, but this list stays fixed to the tool's supported methods.</div>{% endif %}
+                        <div class="helper">{{ security_requirements.signing_token_endpoint_auth_method.description }} Type: {{ security_requirements.signing_token_endpoint_auth_method.type_hint }}. {{ security_requirements.signing_token_endpoint_auth_method.requirement }}</div>
                     </div>
-                </div>
-                <div class="field-row">
-                    <label for="{{ form.oauth_acr_values_supported.id_for_label }}">ACR values supported JSON</label>
-                    {{ form.oauth_acr_values_supported.errors }}
-                    <textarea id="{{ form.oauth_acr_values_supported.id_for_label }}" name="oauth_acr_values_supported" spellcheck="false">{{ form.oauth_acr_values_supported.value|default_if_none:'' }}</textarea>
                 </div>
             </section>
 
@@ -145,105 +138,79 @@
                 <h3 id="resource-server-heading">Resource server targets and headers</h3>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.resource_server_base_url.id_for_label }}">Resource server base URL</label>
+                        <label for="{{ form.resource_server_base_url.id_for_label }}">Resource server base URL {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.resource_server_base_url.status label=security_requirements.resource_server_base_url.label only %}</label>
                         {{ form.resource_server_base_url.errors }}
                         <input id="{{ form.resource_server_base_url.id_for_label }}" name="resource_server_base_url" type="url" value="{{ form.resource_server_base_url.value|default_if_none:'' }}" autocomplete="off" inputmode="url">
-                    </div>
-                    <div>
-                        <label for="{{ form.resource_server_x_fapi_financial_id.id_for_label }}">x-fapi-financial-id</label>
-                        {{ form.resource_server_x_fapi_financial_id.errors }}
-                        <input id="{{ form.resource_server_x_fapi_financial_id.id_for_label }}" name="resource_server_x_fapi_financial_id" type="text" value="{{ form.resource_server_x_fapi_financial_id.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.resource_server_x_fapi_customer_ip_address.id_for_label }}">x-fapi-customer-ip-address</label>
-                        {{ form.resource_server_x_fapi_customer_ip_address.errors }}
-                        <input id="{{ form.resource_server_x_fapi_customer_ip_address.id_for_label }}" name="resource_server_x_fapi_customer_ip_address" type="text" value="{{ form.resource_server_x_fapi_customer_ip_address.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.resource_server_send_x_fapi_customer_ip_address.id_for_label }}">
-                            <input id="{{ form.resource_server_send_x_fapi_customer_ip_address.id_for_label }}" name="resource_server_send_x_fapi_customer_ip_address" type="checkbox" {% if form.resource_server_send_x_fapi_customer_ip_address.value %}checked{% endif %}>
-                            Send customer IP header
-                        </label>
-                        {{ form.resource_server_send_x_fapi_customer_ip_address.errors }}
+                        <div class="helper">{{ security_requirements.resource_server_base_url.description }} Type: {{ security_requirements.resource_server_base_url.type_hint }}. {{ security_requirements.resource_server_base_url.requirement }}</div>
                     </div>
                 </div>
             </section>
 
             <section class="config-card" aria-labelledby="signing-heading">
                 <h3 id="signing-heading">FAPI signing and Open Banking signatures</h3>
+                <p class="helper">FAPI signing fields are conditional: if you configure signing, complete every signing field in this section.</p>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.signing_certificate_path_root.id_for_label }}">Certificate path root</label>
-                        {{ form.signing_certificate_path_root.errors }}
-                        <input id="{{ form.signing_certificate_path_root.id_for_label }}" name="signing_certificate_path_root" type="text" value="{{ form.signing_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.signing_kid.id_for_label }}">Signing key ID</label>
+                        <label for="{{ form.signing_kid.id_for_label }}">Signing key ID {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_kid.status label=security_requirements.signing_kid.label only %}</label>
                         {{ form.signing_kid.errors }}
                         <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_kid.description }} Type: {{ security_requirements.signing_kid.type_hint }}. {{ security_requirements.signing_kid.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.signing_certificate_path.id_for_label }}">Signing certificate path</label>
+                        <label for="{{ form.signing_certificate_path.id_for_label }}">Signing certificate absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_certificate_path.status label=security_requirements.signing_certificate_path.label only %}</label>
                         {{ form.signing_certificate_path.errors }}
                         <input id="{{ form.signing_certificate_path.id_for_label }}" name="signing_certificate_path" type="text" value="{{ form.signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_certificate_path.description }} Type: {{ security_requirements.signing_certificate_path.type_hint }}. {{ security_requirements.signing_certificate_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key path</label>
+                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_private_key_path.status label=security_requirements.signing_private_key_path.label only %}</label>
                         {{ form.signing_private_key_path.errors }}
                         <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_private_key_path.description }} Type: {{ security_requirements.signing_private_key_path.type_hint }}. {{ security_requirements.signing_private_key_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer</label>
+                        <label for="{{ form.signing_client_assertion_issuer.id_for_label }}">Client assertion issuer {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_issuer.status label=security_requirements.signing_client_assertion_issuer.label only %}</label>
                         {{ form.signing_client_assertion_issuer.errors }}
                         <input id="{{ form.signing_client_assertion_issuer.id_for_label }}" name="signing_client_assertion_issuer" type="text" value="{{ form.signing_client_assertion_issuer.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_client_assertion_issuer.description }} Type: {{ security_requirements.signing_client_assertion_issuer.type_hint }}. {{ security_requirements.signing_client_assertion_issuer.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.signing_client_assertion_subject.id_for_label }}">Client assertion subject</label>
+                        <label for="{{ form.signing_client_assertion_subject.id_for_label }}">Client assertion subject {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.signing_client_assertion_subject.status label=security_requirements.signing_client_assertion_subject.label only %}</label>
                         {{ form.signing_client_assertion_subject.errors }}
                         <input id="{{ form.signing_client_assertion_subject.id_for_label }}" name="signing_client_assertion_subject" type="text" value="{{ form.signing_client_assertion_subject.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.open_banking_tpp_signature_issuer.id_for_label }}">TPP signature issuer</label>
-                        {{ form.open_banking_tpp_signature_issuer.errors }}
-                        <input id="{{ form.open_banking_tpp_signature_issuer.id_for_label }}" name="open_banking_tpp_signature_issuer" type="text" value="{{ form.open_banking_tpp_signature_issuer.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.open_banking_tpp_signature_tan.id_for_label }}">TPP signature TAN</label>
-                        {{ form.open_banking_tpp_signature_tan.errors }}
-                        <input id="{{ form.open_banking_tpp_signature_tan.id_for_label }}" name="open_banking_tpp_signature_tan" type="text" value="{{ form.open_banking_tpp_signature_tan.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.signing_client_assertion_subject.description }} Type: {{ security_requirements.signing_client_assertion_subject.type_hint }}. {{ security_requirements.signing_client_assertion_subject.requirement }}</div>
                     </div>
                 </div>
             </section>
 
             <section class="config-card" aria-labelledby="tls-heading">
                 <h3 id="tls-heading">TLS/certificates</h3>
+                <p class="helper">mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.</p>
                 <div class="grid field-row">
                     <div>
-                        <label for="{{ form.tls_certificate_path_root.id_for_label }}">TLS certificate path root</label>
-                        {{ form.tls_certificate_path_root.errors }}
-                        <input id="{{ form.tls_certificate_path_root.id_for_label }}" name="tls_certificate_path_root" type="text" value="{{ form.tls_certificate_path_root.value|default_if_none:'' }}" autocomplete="off">
-                    </div>
-                    <div>
-                        <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle path</label>
+                        <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_ca_bundle_path.status label=security_requirements.tls_ca_bundle_path.label only %}</label>
                         {{ form.tls_ca_bundle_path.errors }}
                         <input id="{{ form.tls_ca_bundle_path.id_for_label }}" name="tls_ca_bundle_path" type="text" value="{{ form.tls_ca_bundle_path.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.tls_ca_bundle_path.description }} Type: {{ security_requirements.tls_ca_bundle_path.type_hint }}. {{ security_requirements.tls_ca_bundle_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate path</label>
+                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_certificate_path.status label=security_requirements.tls_client_certificate_path.label only %}</label>
                         {{ form.tls_client_certificate_path.errors }}
                         <input id="{{ form.tls_client_certificate_path.id_for_label }}" name="tls_client_certificate_path" type="text" value="{{ form.tls_client_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.tls_client_certificate_path.description }} Type: {{ security_requirements.tls_client_certificate_path.type_hint }}. {{ security_requirements.tls_client_certificate_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key path</label>
+                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_private_key_path.status label=security_requirements.tls_client_private_key_path.label only %}</label>
                         {{ form.tls_client_private_key_path.errors }}
                         <input id="{{ form.tls_client_private_key_path.id_for_label }}" name="tls_client_private_key_path" type="text" value="{{ form.tls_client_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">{{ security_requirements.tls_client_private_key_path.description }} Type: {{ security_requirements.tls_client_private_key_path.type_hint }}. {{ security_requirements.tls_client_private_key_path.requirement }}</div>
                     </div>
                 </div>
             </section>
 
             <div class="actions">
                 <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Back to discovery</a>
-                <button type="submit">Continue to runtime inputs</button>
+                <button type="submit">Continue to resource groups</button>
             </div>
         </form>
     </section>

@@ -23,6 +23,9 @@
         .grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
         .field-row { margin-top: 12px; }
         label { display: block; font-weight: 650; margin-bottom: 8px; }
+        .requirement-badge { display: inline-flex; align-items: center; margin-left: 8px; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
+        .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
+        .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
         input { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
         .message, .errorlist { border-radius: 6px; padding: 10px 12px; margin: 0 0 12px; }
         .message.warning { border: 1px solid #fedf89; background: #fffcf5; color: var(--warning); }
@@ -38,14 +41,14 @@
     <header>
         <div>
             <h1>Runtime inputs</h1>
-            <div class="muted">Step 6 of the guided builder</div>
+            <div class="muted">Step 7: runtime artifacts</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="runtime-heading">
-        <h2 id="runtime-heading">PSU authorisation/runtime inputs</h2>
-        <p class="helper">These prompts are generated from selected endpoints and optional capabilities after business and communication settings have been applied.</p>
+        <h2 id="runtime-heading">PSU authorisation and runtime inputs</h2>
+        <p class="helper">These prompts are generated from selected endpoints and optional capabilities after security and business data have been applied. Protocol headers such as interaction ids and idempotency keys are generated when the run is executed.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if review_error %}<div class="message warning">{{ review_error }}</div>{% endif %}
@@ -60,7 +63,7 @@
                     <div class="grid field-row">
                         {% for row in group.prompts %}
                             <div>
-                                <label for="{{ row.field.id_for_label }}">{{ row.prompt.label }}</label>
+                                <label for="{{ row.field.id_for_label }}">{{ row.prompt.label }} {% include "conformance/partials/builder_requirement_badge.html" with required=row.prompt.required only %}</label>
                                 {{ row.field.errors }}
                                 <input id="{{ row.field.id_for_label }}"
                                        name="{{ row.field.html_name }}"
@@ -70,9 +73,11 @@
                                 <div class="helper">
                                     <span class="step-id">{{ row.prompt.input_id }}</span>
                                     &middot; {{ row.prompt.input_type }}
-                                    {% if row.prompt.required %}&middot; required{% endif %}
                                     {% if row.prompt.sensitive %}&middot; sensitive{% endif %}
                                 </div>
+                                {% if row.prompt.description %}
+                                    <div class="helper">{{ row.prompt.description }}</div>
+                                {% endif %}
                             </div>
                         {% endfor %}
                     </div>
@@ -85,7 +90,7 @@
             {% endfor %}
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Back to security</a>
+                <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Back to business data</a>
                 <button type="submit">Review generated plan</button>
             </div>
         </form>

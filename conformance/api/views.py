@@ -34,17 +34,8 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.catalogue import (
-    CatalogueError,
-    CompiledTestPlan,
-    TestPlanSpec,
-    compile_test_plan,
-    compile_test_plan_document,
-    parse_test_plan_document,
-)
-from conformance.catalogue_registry import resolve_catalogue, supported_catalogues
+from conformance.catalogue import CompiledTestPlan
 from conformance.json_types import JsonObject, JsonValue
-from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 logger = logging.getLogger(__name__)
@@ -228,11 +219,11 @@ def _require_loopback[**P](
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
-    The request body must be a JSON object with required ``config`` and
-    ``planSpec`` keys. The v1 or v2 plan spec is compiled against the bundled
-    catalogues before the asynchronous run starts, so participants receive
-    immediate feedback for unsupported catalogues, unknown endpoints, missing
-    runtime inputs, or invalid assertion overrides.
+    The request body must be a canonical ``schemaVersion: "1.0"`` test plan, or
+    a JSON object with a canonical test plan under the ``testPlan`` key. The plan
+    is compiled against the bundled catalogues before the asynchronous run
+    starts, so participants receive immediate feedback for unsupported
+    combinations, unknown endpoints, missing runtime inputs, or invalid setup.
     The run executes asynchronously in a background thread; the response
     returns immediately with the run ID and status.
 
@@ -266,67 +257,22 @@ def create_run(request: HttpRequest) -> JsonResponse:
     if canonical_response is not None:
         return canonical_response
 
-    unknown_keys = sorted(set(body) - {"config", "planSpec"})
-    if unknown_keys:
-        return JsonResponse({"error": f"Unknown request field(s): {', '.join(unknown_keys)}"}, status=400)
-
-    raw_config = body.get("config")
-    if raw_config is None or not isinstance(raw_config, dict):
-        return JsonResponse({"error": '"config" key is required and must be a JSON object'}, status=400)
-
-    raw_plan_spec = body.get("planSpec")
-    if raw_plan_spec is None or not isinstance(raw_plan_spec, dict):
-        return JsonResponse({"error": '"planSpec" key is required and must be a JSON object'}, status=400)
-
-    if raw_plan_spec.get("schemaVersion") == "1.0":
+    legacy_fields = sorted(set(body) & {"config", "planSpec", "manifest", "deselectStepIds"})
+    if legacy_fields:
         return JsonResponse(
             {
                 "error": (
-                    'Canonical schemaVersion 1.0 test plans must be submitted as the request body or under "testPlan"; '
-                    'do not combine them with a separate "config" payload.'
+                    "Legacy run request field(s) are no longer supported: "
+                    f"{', '.join(legacy_fields)}. Submit a canonical schemaVersion 1.0 test plan as the "
+                    'request body or under "testPlan".'
                 )
             },
             status=400,
         )
-
-    # Validate config eagerly so the caller gets immediate feedback.
-    # base_dir anchors relative TLS certificate paths in the request body to
-    # the Django process CWD (set by the Docker entrypoint). Path traversal
-    # is rejected by parse_model_bank_config itself.
-    try:
-        config = parse_model_bank_config(raw_config, base_dir=Path.cwd())
-    except ConfigError as error:
-        return JsonResponse({"error": f"Config validation failed: {error}"}, status=400)
-
-    try:
-        plan_document = parse_test_plan_document(raw_plan_spec)
-        if isinstance(plan_document, TestPlanSpec):
-            plan_spec = plan_document
-            compiled_plan = compile_test_plan(resolve_catalogue(plan_spec.catalogue_key), plan_spec)
-            runtime_inputs = plan_spec.runtime_inputs
-        else:
-            compiled_plan = compile_test_plan_document(plan_document, supported_catalogues())
-            runtime_inputs = plan_document.runtime_inputs
-        api_file_reference_error = _api_file_reference_error(compiled_plan, runtime_inputs)
-        if api_file_reference_error is not None:
-            return api_file_reference_error
-    except CatalogueError as error:
-        return JsonResponse({"error": f"Plan-spec validation failed: {error}"}, status=400)
-
-    try:
-        response_body = start_run(
-            config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs=runtime_inputs,
-            runtime_input_base_dir=Path.cwd(),
-        )
-    except RunConflictError as error:
-        return JsonResponse(
-            {"error": "A run is already active", "activeRunId": error.active_run_id},
-            status=409,
-        )
-
-    return JsonResponse(response_body, status=201)
+    return JsonResponse(
+        {"error": 'Request body must be a schemaVersion 1.0 test plan or contain a "testPlan" object'},
+        status=400,
+    )
 
 
 def _create_run_from_canonical_test_plan(body: dict[str, JsonValue]) -> JsonResponse | None:
@@ -337,7 +283,7 @@ def _create_run_from_canonical_test_plan(body: dict[str, JsonValue]) -> JsonResp
 
     Returns:
         JSON response when the body is a canonical test plan request, otherwise
-        ``None`` so the legacy request path can handle it.
+        ``None`` when the body is not a canonical test-plan request.
     """
     raw_test_plan = body.get("testPlan")
     if raw_test_plan is not None:
@@ -421,7 +367,7 @@ def _api_file_reference_error(
     return JsonResponse(
         {
             "error": (
-                "Plan-spec validation failed: file_reference runtime inputs are not accepted by the REST API: "
+                "Test plan validation failed: file_reference runtime inputs are not accepted by the REST API: "
                 f"{joined_input_ids}"
             )
         },

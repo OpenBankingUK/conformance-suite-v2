@@ -85,12 +85,7 @@ def test_compile_selects_domestic_payment_case_and_includes_dependencies() -> No
                 path="/open-banking/v4.0/pisp/domestic-payments",
                 resource_group="DomesticPayments",
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessTokenRef": "token://payments/access",
-                "idempotencyKey": "idem-123",
-                "domesticPaymentConsentId": "consent-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
@@ -120,19 +115,24 @@ def test_compile_surfaces_runtime_inputs_from_selected_pis_cases() -> None:
                 path="/open-banking/v4.0/pisp/domestic-payment-consents/{domesticPaymentConsentId}/funds-confirmation",
                 resource_group="DomesticPayments",
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessTokenRef": "token://payments/access",
-                "idempotencyKey": "idem-123",
-                "domesticPaymentConsentId": "consent-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
     input_ids = [entry.input_id for entry in plan.traceability.runtime_input_snapshot]
-    assert input_ids == ["resourceBaseUrl", "accessTokenRef", "idempotencyKey", "domesticPaymentConsentId"]
-    assert plan.traceability.runtime_input_snapshot[1].sensitive is True
-    assert plan.traceability.runtime_input_snapshot[1].value is None
+    assert input_ids == [
+        "resourceBaseUrl",
+        "accessTokenRef",
+        "domesticPaymentConsentId",
+    ]
+    snapshot = {entry.input_id: entry for entry in plan.traceability.runtime_input_snapshot}
+    assert snapshot["resourceBaseUrl"].provided is True
+    assert snapshot["accessTokenRef"].provided is False
+    assert snapshot["accessTokenRef"].sensitive is True
+    assert snapshot["accessTokenRef"].value is None
+    assert snapshot["domesticPaymentConsentId"].provided is False
+    assert "idempotencyKey" not in snapshot
+    assert "xFapiCustomerIpAddress" not in snapshot
 
 
 @pytest.mark.unit
@@ -145,11 +145,7 @@ def test_compile_excludes_optional_pis_case_when_capability_is_omitted() -> None
                 path="/open-banking/v4.0/pisp/domestic-payment-consents",
                 resource_group="DomesticPayments",
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessTokenRef": "token://payments/access",
-                "idempotencyKey": "idem-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 
@@ -169,11 +165,7 @@ def test_compile_includes_optional_pis_case_when_capability_is_declared() -> Non
                 resource_group="DomesticPayments",
                 capability_ids=("pis.domestic-payment-consent.reject-invalid-detached-jws",),
             ),
-            runtime_inputs={
-                "resourceBaseUrl": "https://rs.example.com",
-                "accessTokenRef": "token://payments/access",
-                "idempotencyKey": "idem-123",
-            },
+            runtime_inputs={"resourceBaseUrl": "https://rs.example.com"},
         ),
     )
 

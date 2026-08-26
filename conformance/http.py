@@ -23,6 +23,9 @@ from conformance.json_types import JsonObject, JsonValue
 # with "field is missing".
 _NO_CONTENT_STATUS_CODES: frozenset[int] = frozenset({204, 205, 304})
 
+_DEFAULT_JSON_HTTP_TIMEOUT_SECONDS = 10.0
+"""Fixed per-request timeout for conformance HTTP calls."""
+
 
 class JsonHttpClientError(RuntimeError):
     """Raised when a JSON HTTP request or response is invalid.
@@ -260,7 +263,7 @@ def send_json(
 
 def build_json_http_client(
     *,
-    timeout_seconds: float,
+    timeout_seconds: float = _DEFAULT_JSON_HTTP_TIMEOUT_SECONDS,
     ca_bundle_path: Path | None = None,
     client_certificate_path: Path | None = None,
     client_private_key_path: Path | None = None,
@@ -268,7 +271,7 @@ def build_json_http_client(
     """Build an `httpx` client for JSON conformance requests.
 
     Args:
-        timeout_seconds: Per-request timeout in seconds.
+        timeout_seconds: Internal per-request timeout in seconds.
         ca_bundle_path: Optional CA bundle used for TLS verification.
         client_certificate_path: Optional client certificate for mTLS.
         client_private_key_path: Optional client private key for mTLS.

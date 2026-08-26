@@ -142,7 +142,8 @@
         }
 
         .result-step-summary {
-            display: flex;
+            display: grid;
+            grid-template-columns: minmax(18rem, 1fr) auto minmax(10rem, max-content);
             align-items: center;
             gap: 10px;
             cursor: pointer;
@@ -156,8 +157,17 @@
         }
 
         .result-step-title {
-            flex: 1;
             min-width: 0;
+            overflow-wrap: normal;
+            word-break: normal;
+        }
+
+        .result-step-meta {
+            white-space: nowrap;
+        }
+
+        .result-step-message {
+            grid-column: 1 / -1;
             overflow-wrap: anywhere;
         }
 
@@ -393,7 +403,12 @@
             }
 
             .result-step-summary {
-                flex-wrap: wrap;
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
+
+            .result-step-meta,
+            .result-step-message {
+                grid-column: 1 / -1;
             }
 
             .detail-grid {
@@ -415,7 +430,10 @@
             <h1>Run {{ run.run_id }}</h1>
             <div class="muted">Created <time datetime="{{ run_times.created_at.datetime }}" data-local-datetime data-utc-datetime="{{ run_times.created_at.utc_datetime }}" title="{{ run_times.created_at.title }}">{{ run_times.created_at.display }}</time></div>
         </div>
-        <a class="button" href="{% url 'plan-builder' %}">New plan</a>
+        <form method="post" action="{% url 'builder-new' %}">
+            {% csrf_token %}
+            <button class="button" type="submit">New plan</button>
+        </form>
     </header>
 
     {% include "conformance/partials/run_status.html" %}
