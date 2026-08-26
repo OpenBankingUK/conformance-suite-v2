@@ -96,7 +96,7 @@ def test_non_canonical_validation_preserves_raw_development_mode(
         scheme="open-banking-uk",
         specification="read-write",
         version="4.0.1",
-        security_profile="FAPI1_ADVANCED",
+        security_profile="fapi1-advanced",
         resource_groups=(),
         config={},
         runtime_inputs={},

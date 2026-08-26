@@ -3211,6 +3211,7 @@ def test_compiled_cbpii_manifest_uses_configured_debtor_account(tmp_path: Path) 
     )
 
     cbpii_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
+    assert isinstance(cbpii_step, ManifestStep)
     body = cbpii_step.request.body
     assert isinstance(body, JsonBody)
     assert body.value == {
@@ -3266,6 +3267,7 @@ def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) ->
     )
 
     token_step = manifest.steps[0]
+    assert isinstance(token_step, ManifestStep)
     assert token_step.id == "setup-token-cbpii-client-credentials"
     assert token_step.phase == "setup"
     assert token_step.produces_token_id == "cbpii-client-credentials"  # noqa: S105 - semantic token id fixture
@@ -3278,6 +3280,7 @@ def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) ->
         "client_id": "${config.oauth.clientId}",
     }
     cbpii_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
+    assert isinstance(cbpii_step, ManifestStep)
     assert cbpii_step.request.headers is not None
     assert cbpii_step.required_token_id == "cbpii-client-credentials"  # noqa: S105 - semantic token id fixture
     assert cbpii_step.request.headers["Authorization"] == "Bearer ${tokens.cbpii-client-credentials.access_token}"
@@ -3330,6 +3333,8 @@ def test_compiled_cbpii_manifest_uses_v4_status_codes(tmp_path: Path) -> None:
 
     create_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
     get_step = next(step for step in manifest.steps if step.id == "cbpii-consent-get-authorised-request")
+    assert isinstance(create_step, ManifestStep)
+    assert isinstance(get_step, ManifestStep)
     create_status = next(
         assertion
         for assertion in create_step.assertions
@@ -3418,6 +3423,7 @@ def test_compiled_cbpii_manifest_adds_authorisation_code_setup(tmp_path: Path) -
     funds_confirmation_step = next(
         step for step in manifest.steps if step.id == "cbpii-funds-confirmation-create-request"
     )
+    assert isinstance(funds_confirmation_step, ManifestStep)
     assert funds_confirmation_step.required_token_id == "cbpii-funds-confirmation"  # noqa: S105 - semantic token id fixture
     assert isinstance(funds_confirmation_step.request.body, JsonBody)
     funds_confirmation_body = funds_confirmation_step.request.body.value
@@ -3473,7 +3479,9 @@ def test_compiled_cbpii_manifest_preserves_captured_consent_id_url(tmp_path: Pat
         runtime_config=None,
     )
 
-    urls_by_step_id = {step.id: step.request.url for step in manifest.steps}
+    urls_by_step_id = {
+        step.id: step.request.url for step in manifest.steps if isinstance(step, ManifestStep)
+    }
     assert urls_by_step_id["cbpii-consent-delete-request"] == (
         "https://resource.example.com/open-banking/v4.0/cbpii/funds-confirmation-consents/"
         "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
