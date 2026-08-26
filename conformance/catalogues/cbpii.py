@@ -150,9 +150,7 @@ _CBPII_CLIENT_CREDENTIALS_AUTH_ID = "cbpii-client-credentials"
 _CBPII_FUNDS_CONFIRMATION_AUTH_ID = "cbpii-funds-confirmation"
 """Semantic authorization id for CBPII authorised funds-confirmation requests."""
 
-_CAPTURED_FUNDS_CONFIRMATION_CONSENT_ID = (
-    "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
-)
+_CAPTURED_FUNDS_CONFIRMATION_CONSENT_ID = "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
 """Execution-context placeholder for the consent id returned by consent creation."""
 
 _CBPII_CONSENT_REQUEST_TEMPLATE: JsonObject = {

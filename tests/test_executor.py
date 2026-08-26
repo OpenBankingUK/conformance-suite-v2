@@ -3413,9 +3413,7 @@ def test_compiled_cbpii_manifest_adds_authorisation_code_setup(tmp_path: Path) -
     assert token_step.produces_token_id == "cbpii-funds-confirmation"  # noqa: S105 - semantic token id fixture
     assert isinstance(token_step.request.body, FormBody)
     assert token_step.request.body.fields["grant_type"] == "authorization_code"
-    assert token_step.request.body.fields["code"] == (
-        "${steps.setup-cbpii-consent-authorisation.response.body.code}"
-    )
+    assert token_step.request.body.fields["code"] == ("${steps.setup-cbpii-consent-authorisation.response.body.code}")
 
     funds_confirmation_step = next(
         step for step in manifest.steps if step.id == "cbpii-funds-confirmation-create-request"

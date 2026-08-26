@@ -550,10 +550,7 @@ def _catalogue_synthetic_token_steps(compiled_plan: CompiledTestPlan) -> tuple[M
         for request_step in test_case.request_steps:
             if request_step.produced_token_id is not None:
                 produced_token_ids.add(request_step.produced_token_id)
-            if (
-                request_step.required_token_id is not None
-                and request_step.required_token_id not in required_token_ids
-            ):
+            if request_step.required_token_id is not None and request_step.required_token_id not in required_token_ids:
                 required_token_ids.append(request_step.required_token_id)
 
     steps: list[ManifestStep] = []
@@ -965,8 +962,7 @@ def _catalogue_generated_runtime_values(request_step: CatalogueRequestStep) -> d
         Generated runtime values keyed by catalogue data id.
     """
     return {
-        value_id: _generated_runtime_value(strategy)
-        for value_id, strategy in request_step.generated_values.items()
+        value_id: _generated_runtime_value(strategy) for value_id, strategy in request_step.generated_values.items()
     }
 
 

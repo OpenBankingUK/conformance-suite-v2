@@ -3341,7 +3341,6 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
     _set_derived_runtime_value(values, "debtorAccountName", debtor_account.get("name"))
 
 
-
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:
     """Set a derived runtime value when no explicit value already exists.
 

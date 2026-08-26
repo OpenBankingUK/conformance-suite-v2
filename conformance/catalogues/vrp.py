@@ -84,12 +84,8 @@ _VRP_RESOURCE_AUTH_ID = "vrp-payment-access"
 
 _VRP_CAPTURED_PATH_VALUES = {
     "{consentId}": "${steps.vrp-consent-create-awaiting-authorisation-request.response.body.Data.ConsentId}",
-    "{initialPaymentId}": (
-        "${steps.vrp-initial-payment-create-request.response.body.Data.DomesticVRPId}"
-    ),
-    "{repeatedPaymentId}": (
-        "${steps.vrp-repeated-payment-create-request.response.body.Data.DomesticVRPId}"
-    ),
+    "{initialPaymentId}": ("${steps.vrp-initial-payment-create-request.response.body.Data.DomesticVRPId}"),
+    "{repeatedPaymentId}": ("${steps.vrp-repeated-payment-create-request.response.body.Data.DomesticVRPId}"),
 }
 """Captured response-field placeholders for VRP path parameters."""
 """Runtime identifier for repeated domestic VRP payment resources."""
