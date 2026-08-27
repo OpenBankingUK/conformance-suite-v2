@@ -132,7 +132,9 @@ def _assert_requirement_badge(content: str, label: str, badge: str) -> None:
         badge: Requirement badge text expected after the label.
     """
     expected = f'{label} <span class="requirement-badge {badge.lower()}">{badge}</span>'
-    assert expected in content
+    field_header_label = f">{label}</label>"
+    badge_markup = f'class="requirement-badge {badge.lower()}">{badge}</span>'
+    assert expected in content or (field_header_label in content and badge_markup in content)
 
 
 @pytest.mark.integration
@@ -235,7 +237,9 @@ class TestBuilderWizardUi:
         business_response = client.get(saved_scope_response["Location"])
         assert business_response.status_code == 200
         business_content = business_response.content.decode("utf-8")
-        assert "No business data inputs" in business_content
+        _assert_requirement_badge(business_content, "Consented account identifier", "Optional")
+        assert '<div class="field-heading">' in business_content
+        assert "Advanced AIS resource IDs JSON" in business_content
 
         saved_business_response = client.post(saved_scope_response["Location"], data={})
         runtime_response = client.get(saved_business_response["Location"])
@@ -243,6 +247,49 @@ class TestBuilderWizardUi:
         runtime_content = runtime_response.content.decode("utf-8")
         _assert_requirement_badge(runtime_content, "Resource server base URL", "Required")
         assert "accessToken" not in runtime_content
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_builder_business_page_marks_ais_account_id_required_for_account_scope(
+        self,
+        mock_fetch_discovery: Mock,
+    ) -> None:
+        """AIS account-scoped endpoint selections show the account id as required."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        create_response = client.post("/builder/new/")
+        saved_catalogue_response = client.post(
+            create_response["Location"],
+            data={
+                "scheme": "open-banking-uk",
+                "specification": "read-write",
+                "version": "4.0.1",
+            },
+        )
+        saved_discovery_response = client.post(
+            saved_catalogue_response["Location"],
+            data={"discovery_url": ""},
+        )
+        saved_security_response = client.post(
+            saved_discovery_response["Location"],
+            data={},
+        )
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
+        )
+        saved_scope_response = client.post(
+            saved_security_response["Location"],
+            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
+        )
+
+        business_response = client.get(saved_scope_response["Location"])
+        business_content = business_response.content.decode("utf-8")
+
+        assert business_response.status_code == 200
+        assert '<div class="field-heading">' in business_content
+        _assert_requirement_badge(business_content, "Consented account identifier", "Required")
+        _assert_requirement_badge(business_content, "Transaction from date", "Optional")
+        _assert_requirement_badge(business_content, "Transaction to date", "Optional")
 
     def test_catalogue_boundary_post_continues_to_discovery(self) -> None:
         """The first wizard step saves the specification and moves to discovery."""
@@ -414,9 +461,8 @@ class TestBuilderWizardUi:
         assert "Business test data" in content
         assert "Resource server targets" not in content
         assert "accessToken" not in content
-        assert "Consented account identifier" not in content
-        assert "Advanced AIS resource IDs JSON" not in content
-        assert "No business data inputs required" in content
+        assert "Consented account identifier" in content
+        assert "Advanced AIS resource IDs JSON" in content
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_business_config_step_shows_cbpii_debtor_account_inputs(self, mock_fetch_discovery: Mock) -> None:
@@ -470,6 +516,40 @@ class TestBuilderWizardUi:
         }
         assert "inputs" not in exported["businessTestData"]
         assert "accessToken" not in json.dumps(exported)
+
+    @patch("conformance.api.ui_views._fetch_discovery_metadata")
+    def test_business_config_step_shows_pis_payment_inputs(self, mock_fetch_discovery: Mock) -> None:
+        """PIS selections collect participant payment business data."""
+        mock_fetch_discovery.return_value = {}
+        client = Client()
+        scope_location = _scope_location_after_security(client)
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="payment-initiation",
+            path="/open-banking/v4.0/pisp/domestic-payments",
+        )
+
+        response = client.post(
+            scope_location,
+            data={
+                "resource_groups": ["payment-initiation"],
+                "endpoints": [endpoint.id],
+            },
+        )
+
+        assert response.status_code == 302
+        content_response = client.get(response["Location"])
+        assert content_response.status_code == 200
+        content = content_response.content.decode("utf-8")
+        assert "Payment Initiation" in content
+        assert "Domestic creditor account scheme" in content
+        assert "Instructed amount" in content
+        assert "No business data inputs required" not in content
+
+        invalid_response = client.post(response["Location"], data={})
+        assert invalid_response.status_code == 400
+        invalid_content = invalid_response.content.decode("utf-8")
+        assert "Domestic creditor account is required for selected PIS endpoints." in invalid_content
+        assert "Instructed amount is required for selected PIS endpoints." in invalid_content
 
     @patch("conformance.api.ui_views._fetch_discovery_metadata")
     def test_full_guided_flow_exports_canonical_json_and_masks_secrets(self, mock_fetch_discovery: Mock) -> None:
@@ -769,6 +849,73 @@ class TestBuilderWizardUi:
         metadata = plan_snapshot["metadata"]
         assert isinstance(metadata, dict)
         assert metadata["aspspName"] == "Example Bank"
+
+    @patch("conformance.api.ui_views.start_run")
+    def test_imported_cbpii_plan_can_be_rescoped_to_ais_business_data(self, mock_start_run: Mock) -> None:
+        """Imported CBPII business data is pruned after switching scope to AIS."""
+        mock_start_run.return_value = {"id": "run-123", "status": "pending", "createdAt": "2026-06-03T12:00:00+00:00"}
+        client = Client()
+        plan_document = {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI1_ADVANCED",
+            },
+            "executionMode": "development",
+            "securityEnvironment": {
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+                "resourceBaseUrl": "https://resource.example.com",
+            },
+            "resourceGroups": ["CBPII"],
+            "businessTestData": {
+                "cbpii": {
+                    "debtorAccount": {
+                        "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "identification": "12345678901234",
+                        "name": "Model Bank Account",
+                    }
+                }
+            },
+            "metadata": {"aspspName": "Example Bank"},
+        }
+        endpoint = _scope_endpoint(
+            selected_resource_group_id="account-and-transaction",
+            path="/open-banking/v4.0/aisp/accounts/{AccountId}",
+        )
+        import_response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+        draft_id = _draft_id_from_builder_redirect(import_response["Location"])
+        scope_response = client.post(
+            f"/builder/{draft_id}/scope/",
+            data={"resource_groups": ["account-and-transaction"], "endpoints": [endpoint.id]},
+        )
+
+        business_page = client.get(scope_response["Location"])
+        business_response = client.post(
+            scope_response["Location"],
+            data={
+                "ais_consented_account_id": "account-123",
+                "ais_transaction_from_date": "2026-01-01T00:00:00Z",
+                "ais_transaction_to_date": "2026-01-31T23:59:59Z",
+            },
+        )
+        runtime_response = client.post(business_response["Location"], data={})
+        exported = client.get(f"/builder/{draft_id}/export.json").json()
+        launch_response = client.post(f"/builder/{draft_id}/launch/")
+
+        assert business_page.status_code == 200
+        assert "Consented account identifier" in business_page.content.decode("utf-8")
+        assert runtime_response.status_code == 302
+        assert exported["resourceGroups"][0]["id"] == "AIS"
+        assert "cbpii" not in exported["businessTestData"]
+        assert exported["businessTestData"]["ais"] == {
+            "accountIds": ["account-123"],
+            "transactionFromDate": "2026-01-01T00:00:00Z",
+            "transactionToDate": "2026-01-31T23:59:59Z",
+        }
+        assert launch_response.status_code == 302
+        runtime_inputs = mock_start_run.call_args.kwargs["runtime_inputs"]
+        assert runtime_inputs["consentedAccountId"] == "account-123"
 
     def test_import_rejects_legacy_v2_documents(self) -> None:
         """Browser import accepts only canonical schemaVersion 1.0 plans."""

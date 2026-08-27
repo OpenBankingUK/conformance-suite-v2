@@ -1,6 +1,6 @@
 """Validate response payloads against allowlisted bundled schema documents.
 
-This helper targets bundled Open Banking Read/Write AIS OpenAPI snapshots.
+This helper targets bundled Open Banking Read/Write OpenAPI snapshots.
 It resolves local ``#/...`` references, translates ``nullable`` into plain JSON
 Schema union types, and returns deterministic validation diagnostics for use in
 manifest assertion failures.
@@ -31,8 +31,26 @@ _BUNDLED_OPENAPI_DOCUMENT_PATHS: dict[str, Path] = {
     "ob-read-write-v4.0-account-info-openapi": (
         Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "account-info-openapi.json"
     ),
+    "ob-read-write-v4.0-payment-initiation-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "payment-initiation-openapi.json"
+    ),
+    "ob-read-write-v4.0-confirmation-funds-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "confirmation-funds-openapi.json"
+    ),
+    "ob-read-write-v4.0-vrp-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "vrp-openapi.json"
+    ),
     "ob-read-write-v4.0.1-account-info-openapi": (
         Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "account-info-openapi.json"
+    ),
+    "ob-read-write-v4.0.1-payment-initiation-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "payment-initiation-openapi.json"
+    ),
+    "ob-read-write-v4.0.1-confirmation-funds-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "confirmation-funds-openapi.json"
+    ),
+    "ob-read-write-v4.0.1-vrp-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0_1" / "vrp-openapi.json"
     ),
 }
 """Allowlisted bundled OpenAPI documents addressable by response schema assertions."""

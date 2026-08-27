@@ -11,6 +11,30 @@
       "repository": "OpenBankingUK/read-write-api-specs",
       "ref": "v4.0.1",
       "sha256Chunks": ["85e87112", "8c87af44", "baf61117", "7ccf0721", "26aeacd5", "13ba9558", "da18342b", "e1b4e42b"]
+    },
+    {
+      "file": "payment-initiation-openapi.json",
+      "description": "Open Banking Read/Write v4.0.1 Payment Initiation API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/payment-initiation-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0.1",
+      "sha256Chunks": ["c02efa09", "f0ea1baa", "ffd5ae0d", "4e68d7f3", "f996b94a", "c3ec6675", "2e7bf5ec", "5cee3285"]
+    },
+    {
+      "file": "confirmation-funds-openapi.json",
+      "description": "Open Banking Read/Write v4.0.1 Confirmation of Funds API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/confirmation-funds-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0.1",
+      "sha256Chunks": ["8e61928b", "2023436f", "d5bc34c8", "01f43d2e", "97e54127", "1dac034c", "89854cf1", "40926555"]
+    },
+    {
+      "file": "vrp-openapi.json",
+      "description": "Open Banking Read/Write v4.0.1 Variable Recurring Payments API OpenAPI snapshot.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/vrp-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0.1",
+      "sha256Chunks": ["aad3a137", "f671e2d0", "cef7c4a8", "925992da", "80347f51", "092129d0", "8a95dd8e", "3fb0a4e6"]
     }
   ],
   "certificationNote": "This bundled source is pinned to the upstream read-write-api-specs tag selected for the corresponding suite specVersion. Swagger update tags are treated as distinct source refs and must be recorded explicitly when used."

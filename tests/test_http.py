@@ -160,6 +160,25 @@ class TestSendJsonDeleteBody:
         assert captured[0].headers["content-type"] == "application/json"
         assert captured[0].content == payload
 
+    def test_allows_non_json_response_when_requested(self) -> None:
+        """Status-only callers can opt into non-JSON response bodies."""
+
+        def handler(_request: httpx.Request) -> httpx.Response:
+            """Return a non-JSON negative response body."""
+            return httpx.Response(404, content=b"not found", headers={"Content-Type": "text/plain"})
+
+        with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+            result = send_json(
+                client,
+                "GET",
+                "https://example.com/missing",
+                allow_non_json_response=True,
+            )
+
+        assert result.status_code == 404
+        assert result.body == {}
+        assert result.body_bytes == b"not found"
+
     def test_rejects_simultaneous_json_object_and_json_bytes(self) -> None:
         """Supplying both JSON object and JSON bytes raises ValueError."""
         with (

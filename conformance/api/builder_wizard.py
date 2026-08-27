@@ -84,19 +84,30 @@ _MODEL_CONFIG_KEYS = {
     "ais",
     "pis",
     "cbpii",
+    "vrp",
     "conditionalProperties",
 }
 """Top-level v2 config keys that also belong to the executable model-bank config."""
 
 _STRUCTURED_CONFIG_RUNTIME_INPUT_IDS = {
     "resourceBaseUrl",
+    "consentedAccountId",
+    "fromBookingDateTime",
+    "toBookingDateTime",
     "debtorAccountSchemeName",
     "debtorAccountIdentification",
     "debtorAccountName",
+    "vrpCreditorAccountSchemeName",
+    "vrpCreditorAccountIdentification",
+    "vrpCreditorAccountName",
+    "vrpInstructedAmountAmount",
+    "vrpInstructedAmountCurrency",
+    "vrpValidFromDateTime",
+    "vrpValidToDateTime",
 }
 """Plan-authored runtime inputs that have first-class grouped-config equivalents."""
 
-_BUSINESS_CONFIG_KEYS = frozenset({"ais", "pis", "cbpii", "conditionalProperties"})
+_BUSINESS_CONFIG_KEYS = frozenset({"ais", "pis", "cbpii", "vrp", "conditionalProperties"})
 """Config keys owned by the business/request defaults step."""
 
 _DISCOVERY_CONFIG_KEYS = frozenset({"discoveryUrl", "timeoutSeconds", "followUp"})
@@ -359,6 +370,22 @@ class ConfigVisibility:
         show_vrp: Whether variable-recurring-payment runtime prompts apply.
         show_business_defaults: Whether any domain-specific business/request
             defaults section should be rendered.
+        ais_account_id_required: Whether the selected AIS scope needs a
+            participant-provided consented account identifier.
+        pis_domestic_creditor_account_required: Whether selected PIS endpoints
+            need domestic creditor account defaults.
+        pis_international_creditor_account_required: Whether selected PIS
+            endpoints need international creditor account defaults.
+        pis_instructed_amount_required: Whether selected PIS endpoints need an
+            instructed amount default.
+        pis_currency_of_transfer_required: Whether selected PIS endpoints need
+            a currency-of-transfer default.
+        pis_requested_execution_date_time_required: Whether selected PIS
+            endpoints need a requested execution date/time.
+        pis_first_payment_date_time_required: Whether selected PIS endpoints
+            need a first payment date/time.
+        pis_standing_order_frequency_required: Whether selected PIS endpoints
+            need a standing-order frequency object.
     """
 
     selected_api_ids: frozenset[str]
@@ -367,6 +394,14 @@ class ConfigVisibility:
     show_cbpii: bool
     show_vrp: bool
     show_business_defaults: bool
+    ais_account_id_required: bool = False
+    pis_domestic_creditor_account_required: bool = False
+    pis_international_creditor_account_required: bool = False
+    pis_instructed_amount_required: bool = False
+    pis_currency_of_transfer_required: bool = False
+    pis_requested_execution_date_time_required: bool = False
+    pis_first_payment_date_time_required: bool = False
+    pis_standing_order_frequency_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -397,6 +432,14 @@ _FULL_CONFIG_VISIBILITY = ConfigVisibility(
     show_cbpii=True,
     show_vrp=True,
     show_business_defaults=True,
+    ais_account_id_required=True,
+    pis_domestic_creditor_account_required=True,
+    pis_international_creditor_account_required=True,
+    pis_instructed_amount_required=True,
+    pis_currency_of_transfer_required=True,
+    pis_requested_execution_date_time_required=True,
+    pis_first_payment_date_time_required=True,
+    pis_standing_order_frequency_required=True,
 )
 """Default grouped-config visibility used outside a scoped wizard draft."""
 
@@ -873,7 +916,6 @@ class ExecutionConfigForm(forms.Form):
         pis_currency_of_transfer: Optional currency of transfer.
         pis_requested_execution_date_time: Optional requested execution time.
         pis_first_payment_date_time: Optional first payment time.
-        pis_payment_frequency: Optional recurring payment frequency.
         pis_standing_order_frequency_json: Optional standing-order frequency
             object.
         cbpii_debtor_account_json: Optional CBPII debtor account object.
@@ -956,7 +998,6 @@ class ExecutionConfigForm(forms.Form):
         required=False,
     )
     pis_first_payment_date_time: forms.CharField = forms.CharField(label="First payment date/time", required=False)
-    pis_payment_frequency: forms.CharField = forms.CharField(label="Payment frequency", required=False)
     pis_standing_order_frequency_json: forms.CharField = forms.CharField(
         label="Standing-order frequency JSON",
         required=False,
@@ -1085,7 +1126,6 @@ class BusinessConfigForm(forms.Form):
         pis_currency_of_transfer: International payment transfer currency.
         pis_requested_execution_date_time: Requested execution date/time.
         pis_first_payment_date_time: First recurring-payment date/time.
-        pis_payment_frequency: Recurring payment frequency.
         pis_standing_order_frequency_type: Standing-order frequency type.
         pis_standing_order_frequency_point_in_time: Standing-order frequency
             point in time.
@@ -1095,6 +1135,13 @@ class BusinessConfigForm(forms.Form):
         cbpii_debtor_account_identification: CBPII debtor account identifier.
         cbpii_debtor_account_name: CBPII debtor account name.
         cbpii_debtor_account_json: Advanced CBPII debtor account fallback.
+        vrp_creditor_account_scheme_name: VRP creditor account scheme.
+        vrp_creditor_account_identification: VRP creditor account identifier.
+        vrp_creditor_account_name: VRP creditor account name.
+        vrp_instructed_amount_amount: VRP instructed amount.
+        vrp_instructed_amount_currency: VRP instructed amount currency.
+        vrp_valid_from_date_time: VRP consent valid-from date/time.
+        vrp_valid_to_date_time: VRP consent valid-to date/time.
         conditional_properties_json: Optional conditional properties array.
         config: Parsed partial v2 config owned by this step.
     """
@@ -1154,7 +1201,6 @@ class BusinessConfigForm(forms.Form):
         required=False,
     )
     pis_first_payment_date_time: forms.CharField = forms.CharField(label="First payment date/time", required=False)
-    pis_payment_frequency: forms.CharField = forms.CharField(label="Payment frequency", required=False)
     pis_standing_order_frequency_type: forms.CharField = forms.CharField(
         label="Standing-order frequency type",
         required=False,
@@ -1179,6 +1225,22 @@ class BusinessConfigForm(forms.Form):
         required=False,
         widget=forms.Textarea,
     )
+    vrp_creditor_account_scheme_name: forms.CharField = forms.CharField(
+        label="VRP creditor account scheme",
+        required=False,
+    )
+    vrp_creditor_account_identification: forms.CharField = forms.CharField(
+        label="VRP creditor account identification",
+        required=False,
+    )
+    vrp_creditor_account_name: forms.CharField = forms.CharField(label="VRP creditor account name", required=False)
+    vrp_instructed_amount_amount: forms.CharField = forms.CharField(label="VRP instructed amount", required=False)
+    vrp_instructed_amount_currency: forms.CharField = forms.CharField(
+        label="VRP instructed amount currency",
+        required=False,
+    )
+    vrp_valid_from_date_time: forms.CharField = forms.CharField(label="VRP valid-from date/time", required=False)
+    vrp_valid_to_date_time: forms.CharField = forms.CharField(label="VRP valid-to date/time", required=False)
     conditional_properties_json: forms.CharField = forms.CharField(
         label="Conditional properties JSON",
         required=False,
@@ -1210,6 +1272,14 @@ class BusinessConfigForm(forms.Form):
             self.fields["cbpii_debtor_account_scheme_name"].required = True
             self.fields["cbpii_debtor_account_identification"].required = True
             self.fields["cbpii_debtor_account_name"].required = True
+        if self.config_visibility.show_vrp:
+            self.fields["vrp_creditor_account_scheme_name"].required = True
+            self.fields["vrp_creditor_account_identification"].required = True
+            self.fields["vrp_creditor_account_name"].required = True
+            self.fields["vrp_instructed_amount_amount"].required = True
+            self.fields["vrp_instructed_amount_currency"].required = True
+            self.fields["vrp_valid_from_date_time"].required = True
+            self.fields["vrp_valid_to_date_time"].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the business-default partial config.
@@ -1222,6 +1292,15 @@ class BusinessConfigForm(forms.Form):
         if self.errors:
             return cleaned_data
         self.config = _business_config_from_fields(cleaned_data, self.config_visibility)
+        if self.config_visibility.show_ais and self.config_visibility.ais_account_id_required:
+            ais_config = self.config.get("ais")
+            if not _ais_config_has_account_id(ais_config):
+                self.add_error(
+                    "ais_consented_account_id",
+                    "Consented account identifier is required for selected account-scoped AIS endpoints.",
+                )
+        if self.config_visibility.show_pis:
+            _add_required_pis_errors(self, cleaned_data)
         return cleaned_data
 
 
@@ -1796,7 +1875,6 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
             "pis_currency_of_transfer": _string_config_value(pis, "currencyOfTransfer"),
             "pis_requested_execution_date_time": _string_config_value(pis, "requestedExecutionDateTime"),
             "pis_first_payment_date_time": _string_config_value(pis, "firstPaymentDateTime"),
-            "pis_payment_frequency": _string_config_value(pis, "paymentFrequency"),
             "pis_standing_order_frequency_json": _json_config_value(pis, "standingOrderFrequency"),
         }
     )
@@ -1856,7 +1934,6 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
             "pis_currency_of_transfer": _string_config_value(pis, "currencyOfTransfer"),
             "pis_requested_execution_date_time": _string_config_value(pis, "requestedExecutionDateTime"),
             "pis_first_payment_date_time": _string_config_value(pis, "firstPaymentDateTime"),
-            "pis_payment_frequency": _string_config_value(pis, "paymentFrequency"),
             "pis_standing_order_frequency_type": _string_config_value(standing_order_frequency, "type"),
             "pis_standing_order_frequency_point_in_time": _string_config_value(standing_order_frequency, "pointInTime"),
             "pis_standing_order_frequency_json": _json_config_value(pis, "standingOrderFrequency"),
@@ -1872,6 +1949,20 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
             "cbpii_debtor_account_identification": _string_config_value(debtor_account, "identification"),
             "cbpii_debtor_account_name": _string_config_value(debtor_account, "name"),
             "cbpii_debtor_account_json": _json_config_value(cbpii, "debtorAccount"),
+        }
+    )
+    vrp = _object_config_value(config, "vrp")
+    vrp_creditor_account = _object_config_value(vrp, "creditorAccount")
+    vrp_instructed_amount = _object_config_value(vrp, "instructedAmount")
+    initial.update(
+        {
+            "vrp_creditor_account_scheme_name": _string_config_value(vrp_creditor_account, "schemeName"),
+            "vrp_creditor_account_identification": _string_config_value(vrp_creditor_account, "identification"),
+            "vrp_creditor_account_name": _string_config_value(vrp_creditor_account, "name"),
+            "vrp_instructed_amount_amount": _string_config_value(vrp_instructed_amount, "amount"),
+            "vrp_instructed_amount_currency": _string_config_value(vrp_instructed_amount, "currency"),
+            "vrp_valid_from_date_time": _string_config_value(vrp, "validFromDateTime"),
+            "vrp_valid_to_date_time": _string_config_value(vrp, "validToDateTime"),
         }
     )
     return initial
@@ -2063,6 +2154,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         raise CatalogueError(f"Unknown resource group id(s): {', '.join(sorted(unknown_group_ids))}")
 
     included_endpoint_ids: set[str] = set()
+    selected_api_ids: set[str] = set()
     raw_groups: list[JsonValue] = []
     for group in hierarchy.resource_groups:
         if group.id not in selected_group_ids:
@@ -2083,6 +2175,7 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
             )
             raw_endpoints.append(_raw_canonical_endpoint(endpoint, capability_ids))
         if raw_endpoints:
+            selected_api_ids.add(group.api)
             raw_groups.append(_raw_canonical_resource_group(group=group, endpoints=raw_endpoints))
 
     unknown_endpoint_ids = selected_endpoint_ids - included_endpoint_ids
@@ -2094,9 +2187,10 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         draft.security_environment,
         security_environment_from_plan_config(config_object),
     )
-    business_test_data = _merged_plan_context(
+    business_test_data = _scoped_business_plan_context(
         draft.business_test_data,
         business_test_data_from_plan_config(config_object),
+        selected_api_ids=frozenset(selected_api_ids),
     )
     raw_plan: JsonObject = {
         "schemaVersion": "1.0",
@@ -2326,15 +2420,152 @@ def config_visibility_for_plan_document(document: PlanDocumentV2) -> ConfigVisib
         Visibility flags for domain-specific grouped config fields.
     """
     selected_api_ids = _selected_endpoint_api_ids(document)
+    show_ais = "ais" in selected_api_ids
+    show_pis = "pis" in selected_api_ids
     show_cbpii = "cbpii" in selected_api_ids
+    ais_account_id_required = show_ais and _selected_scope_requires_runtime_input(document, "consentedAccountId")
+    pis_requiredness = _pis_requiredness_for_selected_scope(document) if show_pis else {}
     return ConfigVisibility(
         selected_api_ids=selected_api_ids,
-        show_ais=False,
-        show_pis=False,
+        show_ais=show_ais,
+        show_pis=show_pis,
         show_cbpii=show_cbpii,
         show_vrp="vrp" in selected_api_ids,
-        show_business_defaults=show_cbpii,
+        show_business_defaults=show_ais or show_pis or show_cbpii or "vrp" in selected_api_ids,
+        ais_account_id_required=ais_account_id_required,
+        pis_domestic_creditor_account_required=pis_requiredness.get("domestic_creditor_account", False),
+        pis_international_creditor_account_required=pis_requiredness.get("international_creditor_account", False),
+        pis_instructed_amount_required=pis_requiredness.get("instructed_amount", False),
+        pis_currency_of_transfer_required=pis_requiredness.get("currency_of_transfer", False),
+        pis_requested_execution_date_time_required=pis_requiredness.get("requested_execution_date_time", False),
+        pis_first_payment_date_time_required=pis_requiredness.get("first_payment_date_time", False),
+        pis_standing_order_frequency_required=pis_requiredness.get("standing_order_frequency", False),
     )
+
+
+def _pis_requiredness_for_selected_scope(document: PlanDocumentV2) -> dict[str, bool]:
+    """Return PIS business-default requirements for selected endpoint families.
+
+    Args:
+        document: Parsed canonical test-plan document with selected endpoints.
+
+    Returns:
+        Requirement flags keyed by PIS business-default concept.
+    """
+    requiredness = {
+        "domestic_creditor_account": False,
+        "international_creditor_account": False,
+        "instructed_amount": False,
+        "currency_of_transfer": False,
+        "requested_execution_date_time": False,
+        "first_payment_date_time": False,
+        "standing_order_frequency": False,
+    }
+    for path in _selected_pis_endpoint_paths(document):
+        _update_pis_requiredness_for_path(requiredness, path)
+    return requiredness
+
+
+def _selected_pis_endpoint_paths(document: PlanDocumentV2) -> tuple[str, ...]:
+    """Return selected PIS endpoint paths, expanding group-level selections.
+
+    Args:
+        document: Parsed canonical test-plan document with selected endpoints.
+
+    Returns:
+        Standards paths for selected PIS endpoints.
+    """
+    paths: list[str] = []
+    for resource_group in document.resource_groups:
+        group_api = _api_from_resource_group_id(resource_group.resource_group_id)
+        if resource_group.select_all and group_api == "pis":
+            paths.extend(_all_pis_endpoint_paths())
+            continue
+        for endpoint in resource_group.endpoints:
+            endpoint_api = _api_from_endpoint_path(endpoint.path) or group_api
+            if endpoint_api == "pis":
+                paths.append(endpoint.path)
+    return tuple(paths)
+
+
+def _all_pis_endpoint_paths() -> tuple[str, ...]:
+    """Return every bundled PIS endpoint path for a group-level selection.
+
+    Returns:
+        De-duplicated PIS endpoint paths from the supported catalogues.
+    """
+    paths: list[str] = []
+    seen: set[str] = set()
+    for catalogue in supported_catalogues():
+        if catalogue.key.api != "pis":
+            continue
+        for test_case in catalogue.test_cases:
+            for endpoint_ref in test_case.applicability.endpoint_refs:
+                if endpoint_ref.path not in seen:
+                    seen.add(endpoint_ref.path)
+                    paths.append(endpoint_ref.path)
+        for capability in catalogue.capabilities:
+            for endpoint_ref in capability.endpoint_refs:
+                if endpoint_ref.path not in seen:
+                    seen.add(endpoint_ref.path)
+                    paths.append(endpoint_ref.path)
+    return tuple(paths)
+
+
+def _update_pis_requiredness_for_path(requiredness: dict[str, bool], path: str) -> None:
+    """Mark PIS business defaults required for one selected endpoint path.
+
+    Args:
+        requiredness: Mutable requiredness mapping to update.
+        path: Standards endpoint path selected in the builder.
+    """
+    if "/pisp/domestic-standing-order" in path:
+        requiredness["domestic_creditor_account"] = True
+        requiredness["instructed_amount"] = True
+        requiredness["first_payment_date_time"] = True
+        requiredness["standing_order_frequency"] = True
+        return
+    if "/pisp/domestic-scheduled-payment" in path:
+        requiredness["domestic_creditor_account"] = True
+        requiredness["instructed_amount"] = True
+        requiredness["requested_execution_date_time"] = True
+        return
+    if "/pisp/domestic-payment" in path:
+        requiredness["domestic_creditor_account"] = True
+        requiredness["instructed_amount"] = True
+        return
+    if "/pisp/international-scheduled-payment" in path:
+        requiredness["international_creditor_account"] = True
+        requiredness["instructed_amount"] = True
+        requiredness["currency_of_transfer"] = True
+        requiredness["requested_execution_date_time"] = True
+        return
+    if "/pisp/international-payment" in path:
+        requiredness["international_creditor_account"] = True
+        requiredness["instructed_amount"] = True
+        requiredness["currency_of_transfer"] = True
+
+
+def _selected_scope_requires_runtime_input(document: PlanDocumentV2, input_id: str) -> bool:
+    """Return whether the selected scope requires a plan-sourced runtime input.
+
+    Args:
+        document: Parsed canonical test-plan document with selected endpoints.
+        input_id: Runtime input identifier to check.
+
+    Returns:
+        ``True`` when selected catalogue cases require the input from plan
+        business data.
+    """
+    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
+        return False
+    boundary_requirements = _runtime_requirements_for_boundary(
+        PlanDocumentBoundary(document.scheme, document.specification, document.version)
+    )
+    preview_document = plan_document_with_runtime_placeholders(document, boundary_requirements.values())
+    compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
+    requirement = _runtime_requirements_for_test_cases(compiled_plan.test_cases).get(input_id)
+    return requirement is not None and requirement.required and requirement.source == "plan"
 
 
 def security_field_metadata() -> dict[str, SecurityFieldMetadata]:
@@ -2665,7 +2896,6 @@ def _business_config_from_fields(
                 "currencyOfTransfer": "pis_currency_of_transfer",
                 "requestedExecutionDateTime": "pis_requested_execution_date_time",
                 "firstPaymentDateTime": "pis_first_payment_date_time",
-                "paymentFrequency": "pis_payment_frequency",
             },
         )
         _set_object_from_fields_or_json(
@@ -2734,7 +2964,204 @@ def _business_config_from_fields(
         )
         if cbpii:
             config["cbpii"] = cbpii
+    if config_visibility.show_vrp:
+        vrp = _nested_object_from_fields(
+            cleaned_data,
+            {
+                "validFromDateTime": "vrp_valid_from_date_time",
+                "validToDateTime": "vrp_valid_to_date_time",
+            },
+        )
+        vrp["creditorAccount"] = _nested_object_from_fields(
+            cleaned_data,
+            {
+                "schemeName": "vrp_creditor_account_scheme_name",
+                "identification": "vrp_creditor_account_identification",
+                "name": "vrp_creditor_account_name",
+            },
+        )
+        vrp["instructedAmount"] = _nested_object_from_fields(
+            cleaned_data,
+            {
+                "amount": "vrp_instructed_amount_amount",
+                "currency": "vrp_instructed_amount_currency",
+            },
+        )
+        config["vrp"] = vrp
     return config
+
+
+def _ais_config_has_account_id(value: JsonValue | None) -> bool:
+    """Return whether AIS business config contains a consented account id.
+
+    Args:
+        value: Candidate ``planSpec.config.ais`` object.
+
+    Returns:
+        ``True`` when the first configured account id is a non-blank string.
+    """
+    if not isinstance(value, dict):
+        return False
+    resource_ids = value.get("resourceIds")
+    if not isinstance(resource_ids, dict):
+        return False
+    account_id = _first_form_config_object_string(resource_ids.get("accountIds"), "accountId")
+    return account_id is not None and bool(account_id.strip())
+
+
+def _add_required_pis_errors(form: BusinessConfigForm, cleaned_data: Mapping[str, object]) -> None:
+    """Add scoped PIS business-default validation errors to a bound form.
+
+    Args:
+        form: Bound business config form whose config has already been built.
+        cleaned_data: Cleaned form values used to identify JSON fallback usage.
+    """
+    visibility = form.config_visibility
+    config = form.config if form.config is not None else {}
+    pis_config = config.get("pis")
+    pis = pis_config if isinstance(pis_config, dict) else {}
+    if visibility.pis_domestic_creditor_account_required:
+        _add_required_json_object_errors(
+            form,
+            pis,
+            object_key="creditorAccount",
+            required_keys=("schemeName", "identification", "name"),
+            field_names={
+                "schemeName": "pis_creditor_account_scheme_name",
+                "identification": "pis_creditor_account_identification",
+                "name": "pis_creditor_account_name",
+            },
+            json_field_name="pis_creditor_account_json",
+            json_field_supplied=_cleaned_optional_string(cleaned_data.get("pis_creditor_account_json")) is not None,
+            message="Domestic creditor account is required for selected PIS endpoints.",
+        )
+    if visibility.pis_international_creditor_account_required:
+        _add_required_json_object_errors(
+            form,
+            pis,
+            object_key="internationalCreditorAccount",
+            required_keys=("schemeName", "identification", "name"),
+            field_names={
+                "schemeName": "pis_international_creditor_account_scheme_name",
+                "identification": "pis_international_creditor_account_identification",
+                "name": "pis_international_creditor_account_name",
+            },
+            json_field_name="pis_international_creditor_account_json",
+            json_field_supplied=(
+                _cleaned_optional_string(cleaned_data.get("pis_international_creditor_account_json")) is not None
+            ),
+            message="International creditor account is required for selected PIS endpoints.",
+        )
+    if visibility.pis_instructed_amount_required:
+        _add_required_json_object_errors(
+            form,
+            pis,
+            object_key="instructedAmount",
+            required_keys=("amount", "currency"),
+            field_names={
+                "amount": "pis_instructed_amount_amount",
+                "currency": "pis_instructed_amount_currency",
+            },
+            json_field_name="pis_instructed_amount_json",
+            json_field_supplied=_cleaned_optional_string(cleaned_data.get("pis_instructed_amount_json")) is not None,
+            message="Instructed amount is required for selected PIS endpoints.",
+        )
+    if visibility.pis_currency_of_transfer_required:
+        _add_required_string_error(
+            form,
+            pis,
+            config_key="currencyOfTransfer",
+            field_name="pis_currency_of_transfer",
+            message="Currency of transfer is required for selected international PIS endpoints.",
+        )
+    if visibility.pis_requested_execution_date_time_required:
+        _add_required_string_error(
+            form,
+            pis,
+            config_key="requestedExecutionDateTime",
+            field_name="pis_requested_execution_date_time",
+            message="Requested execution date/time is required for selected scheduled PIS endpoints.",
+        )
+    if visibility.pis_first_payment_date_time_required:
+        _add_required_string_error(
+            form,
+            pis,
+            config_key="firstPaymentDateTime",
+            field_name="pis_first_payment_date_time",
+            message="First payment date/time is required for selected standing-order PIS endpoints.",
+        )
+    if visibility.pis_standing_order_frequency_required:
+        _add_required_json_object_errors(
+            form,
+            pis,
+            object_key="standingOrderFrequency",
+            required_keys=("type", "pointInTime"),
+            field_names={
+                "type": "pis_standing_order_frequency_type",
+                "pointInTime": "pis_standing_order_frequency_point_in_time",
+            },
+            json_field_name="pis_standing_order_frequency_json",
+            json_field_supplied=(
+                _cleaned_optional_string(cleaned_data.get("pis_standing_order_frequency_json")) is not None
+            ),
+            message="Standing-order frequency is required for selected standing-order PIS endpoints.",
+        )
+
+
+def _add_required_json_object_errors(
+    form: forms.Form,
+    parent: Mapping[str, JsonValue],
+    *,
+    object_key: str,
+    required_keys: tuple[str, ...],
+    field_names: Mapping[str, str],
+    json_field_name: str,
+    json_field_supplied: bool,
+    message: str,
+) -> None:
+    """Add errors when a required nested JSON object is missing string fields.
+
+    Args:
+        form: Form that receives validation errors.
+        parent: Parent JSON object containing the nested object.
+        object_key: Nested object key to inspect.
+        required_keys: Required non-blank string keys inside the nested object.
+        field_names: Friendly form field names keyed by nested object key.
+        json_field_name: Advanced JSON fallback form field name.
+        json_field_supplied: Whether the participant submitted the JSON fallback.
+        message: Participant-facing validation message.
+    """
+    value = parent.get(object_key)
+    nested = value if isinstance(value, dict) else {}
+    missing_keys = tuple(key for key in required_keys if _cleaned_optional_string(nested.get(key)) is None)
+    if not missing_keys:
+        return
+    if json_field_supplied:
+        form.add_error(json_field_name, f"{message} Missing fields: {', '.join(missing_keys)}.")
+        return
+    for key in missing_keys:
+        form.add_error(field_names[key], message)
+
+
+def _add_required_string_error(
+    form: forms.Form,
+    config: Mapping[str, JsonValue],
+    *,
+    config_key: str,
+    field_name: str,
+    message: str,
+) -> None:
+    """Add an error when a required string config value is absent.
+
+    Args:
+        form: Form that receives validation errors.
+        config: Config object to inspect.
+        config_key: Required config key.
+        field_name: Form field receiving the error.
+        message: Participant-facing validation message.
+    """
+    if _cleaned_optional_string(config.get(config_key)) is None:
+        form.add_error(field_name, message)
 
 
 def _discovery_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
@@ -2936,7 +3363,6 @@ def _config_from_grouped_fields(
                 "currencyOfTransfer": "pis_currency_of_transfer",
                 "requestedExecutionDateTime": "pis_requested_execution_date_time",
                 "firstPaymentDateTime": "pis_first_payment_date_time",
-                "paymentFrequency": "pis_payment_frequency",
             },
         )
         _set_optional_json_object(pis, "creditorAccount", cleaned_data.get("pis_creditor_account_json"))
@@ -3209,6 +3635,34 @@ def _merged_plan_context(
     return merged
 
 
+def _scoped_business_plan_context(
+    imported_context: Mapping[str, JsonValue],
+    derived_context: Mapping[str, JsonValue],
+    *,
+    selected_api_ids: frozenset[str],
+) -> JsonObject:
+    """Return business data with stale resource-family sections removed.
+
+    Args:
+        imported_context: Canonical business data preserved from imported plan
+            JSON.
+        derived_context: Business data derived from the current editable config.
+        selected_api_ids: API families represented by the current scope.
+
+    Returns:
+        Merged business context without resource-family keys outside the current
+        selected scope.
+    """
+    api_keys = {"ais", "pis", "cbpii", "vrp"}
+    scoped_imported = {
+        key: value for key, value in imported_context.items() if key not in api_keys or key in selected_api_ids
+    }
+    scoped_derived = {
+        key: value for key, value in derived_context.items() if key not in api_keys or key in selected_api_ids
+    }
+    return _merged_plan_context(scoped_imported, scoped_derived)
+
+
 def _config_with_runtime_placeholders(
     config: Mapping[str, JsonValue],
     requirements: Iterable[RuntimeInputRequirement | WizardRuntimeInputPrompt],
@@ -3339,6 +3793,25 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
     _set_derived_runtime_value(values, "debtorAccountSchemeName", debtor_account.get("schemeName"))
     _set_derived_runtime_value(values, "debtorAccountIdentification", debtor_account.get("identification"))
     _set_derived_runtime_value(values, "debtorAccountName", debtor_account.get("name"))
+    vrp = _object_config_value(config, "vrp")
+    vrp_creditor_account = _object_config_value(vrp, "creditorAccount")
+    vrp_instructed_amount = _object_config_value(vrp, "instructedAmount")
+    _set_derived_runtime_value(values, "vrpCreditorAccountSchemeName", vrp_creditor_account.get("schemeName"))
+    _set_derived_runtime_value(values, "vrpCreditorAccountIdentification", vrp_creditor_account.get("identification"))
+    _set_derived_runtime_value(values, "vrpCreditorAccountName", vrp_creditor_account.get("name"))
+    _set_derived_runtime_value(values, "vrpInstructedAmountAmount", vrp_instructed_amount.get("amount"))
+    _set_derived_runtime_value(values, "vrpInstructedAmountCurrency", vrp_instructed_amount.get("currency"))
+    _set_derived_runtime_value(values, "vrpValidFromDateTime", vrp.get("validFromDateTime"))
+    _set_derived_runtime_value(values, "vrpValidToDateTime", vrp.get("validToDateTime"))
+    ais = _object_config_value(config, "ais")
+    resource_ids = _object_config_value(ais, "resourceIds")
+    _set_derived_runtime_value(
+        values,
+        "consentedAccountId",
+        _first_form_config_object_string(resource_ids.get("accountIds"), "accountId"),
+    )
+    _set_derived_runtime_value(values, "fromBookingDateTime", ais.get("transactionFromDate"))
+    _set_derived_runtime_value(values, "toBookingDateTime", ais.get("transactionToDate"))
 
 
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:

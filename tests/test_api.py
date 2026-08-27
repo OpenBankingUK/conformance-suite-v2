@@ -20,6 +20,7 @@ from conformance.catalogue import (
     CatalogueRequestStep,
     CatalogueTestCase,
     EndpointRef,
+    ImplementedEndpoint,
     RuntimeInputRequirement,
     SecurityProfileApplicability,
     TestCaseApplicability,
@@ -27,6 +28,7 @@ from conformance.catalogue import (
     TestPlanSpec,
     compile_test_plan,
 )
+from conformance.catalogues.ais import AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY
 from conformance.execution_log import BufferedExecutionLogger
 from conformance.json_types import JsonObject
 from conformance.results import mark_development_result_evidence
@@ -887,6 +889,87 @@ class TestCreateRunEndpoint:
             ("mandatory-step", True, False),
             ("optional-step", False, True),
         ]
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+
+    @patch("conformance.api.run_lifecycle._execute_run")
+    def test_start_run_snapshots_expanded_ais_permission_setup_steps(
+        self,
+        mock_execute: Mock,
+        tmp_path: Path,
+    ) -> None:
+        """AIS run snapshots use executable basic/detail setup steps."""
+        from conformance.api.run_lifecycle import start_run
+        from conformance.model_bank_config import ModelBankConfig
+
+        compiled_plan = compile_test_plan(
+            AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
+            TestPlanSpec(
+                schema_version="v1",
+                catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+                security_profile="fapi1-advanced",
+                implemented_endpoints=(
+                    ImplementedEndpoint(
+                        method="GET",
+                        path="/open-banking/v4.0/aisp/accounts/{AccountId}",
+                        resource_group="Accounts",
+                    ),
+                    ImplementedEndpoint(
+                        method="GET",
+                        path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
+                        resource_group="Balances",
+                    ),
+                ),
+                runtime_inputs={
+                    "resourceBaseUrl": "https://resource.example.com",
+                    "consentedAccountId": "account-123",
+                },
+            ),
+        )
+        config = ModelBankConfig(
+            discovery_url="https://example.com/.well-known/openid-configuration",
+            result_output_path=tmp_path / "results.json",
+        )
+
+        response = start_run(
+            config=config,
+            compiled_plan=compiled_plan,
+            runtime_inputs={},
+            runtime_input_base_dir=tmp_path,
+        )
+        run_id = response["id"]
+        assert isinstance(run_id, str)
+        record = run_store.get_run(run_id)
+
+        assert record is not None
+        planned_step_ids = [step.step_id for step in record.planned_steps]
+        assert "ais-at-setup-consent-request" not in planned_step_ids
+        assert "ais-at-setup-token-request" not in planned_step_ids
+        assert planned_step_ids[:8] == [
+            "setup-token-ais-client-credentials",
+            "ais-at-setup-discovery-request",
+            "ais-at-setup-basic-consent-request",
+            "setup-ais-basic-consent-authorisation",
+            "ais-at-setup-detail-consent-request",
+            "setup-ais-detail-consent-authorisation",
+            "ais-at-setup-basic-token-request",
+            "ais-at-setup-detail-token-request",
+        ]
+        assert [
+            step.kind
+            for step in record.planned_steps
+            if step.step_id
+            in {
+                "ais-at-setup-basic-consent-request",
+                "setup-ais-basic-consent-authorisation",
+                "ais-at-setup-detail-consent-request",
+                "setup-ais-detail-consent-authorisation",
+                "ais-at-setup-basic-token-request",
+                "ais-at-setup-detail-token-request",
+            }
+        ] == ["http", "psu-authorization", "http", "psu-authorization", "http", "http"]
         _wait_for_value(
             lambda: True if mock_execute.call_args is not None else None,
             timeout_seconds=1.0,

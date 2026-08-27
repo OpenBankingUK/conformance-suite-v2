@@ -39,11 +39,12 @@ def _registry() -> JWSRegistry:
     return JWSRegistry(header_registry=headers, algorithms=["PS256"])
 
 
-def _signed_response(payload: bytes) -> tuple[str, JsonObject]:
+def _signed_response(payload: bytes, *, b64: bool = True) -> tuple[str, JsonObject]:
     """Return a detached response signature and matching JWKS.
 
     Args:
         payload: Response bytes to sign.
+        b64: Whether to use the OB v3.1.4+/v4 encoded payload profile.
 
     Returns:
         Tuple of detached compact JWS and public JWKS.
@@ -51,15 +52,18 @@ def _signed_response(payload: bytes) -> tuple[str, JsonObject]:
     signing_key = jwk.generate_key("RSA", 2048, private=True, auto_kid=False)
     public_key = signing_key.as_dict(is_private=False)
     public_key["kid"] = "response-key"
-    protected = {
+    protected: dict[str, object] = {
         "alg": "PS256",
         "kid": "response-key",
-        "b64": False,
-        "crit": ["b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN],
         _OPEN_BANKING_IAT: 1_774_120_000,
         _OPEN_BANKING_ISS: "0015800001041RHAAY",
         _OPEN_BANKING_TAN: "openbanking.org.uk",
     }
+    if b64:
+        protected["crit"] = [_OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN]
+    else:
+        protected["b64"] = False
+        protected["crit"] = ["b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN]
     compact_jws = jws.serialize_compact(protected, payload, signing_key, algorithms=["PS256"], registry=_registry())
     return jws.detach_content(compact_jws), cast(JsonObject, {"keys": [public_key]})
 
@@ -81,7 +85,7 @@ def _detached_signature_with_header(protected_header: JsonObject) -> str:
 
 @pytest.mark.unit
 def test_validate_ob_response_signature_accepts_matching_jwks_key() -> None:
-    """A detached response JWS validates against the matching JWKS key."""
+    """A v4 detached response JWS validates against the matching JWKS key."""
     payload = b'{"Data":{"Status":"AcceptedSettlementInProcess"}}'
     signature, jwks_document = _signed_response(payload)
 
@@ -92,6 +96,17 @@ def test_validate_ob_response_signature_accepts_matching_jwks_key() -> None:
         "issuer": "0015800001041RHAAY",
         "trustAnchor": "openbanking.org.uk",
     }
+
+
+@pytest.mark.unit
+def test_validate_ob_response_signature_accepts_legacy_unencoded_payload_profile() -> None:
+    """A legacy ``b64=false`` detached response JWS still validates."""
+    payload = b'{"Data":{"Status":"AcceptedSettlementInProcess"}}'
+    signature, jwks_document = _signed_response(payload, b64=False)
+
+    result = validate_ob_response_signature(signature=signature, payload=payload, jwks=jwks_document)
+
+    assert result.key_id == "response-key"
 
 
 @pytest.mark.unit
@@ -118,8 +133,8 @@ def test_validate_ob_response_signature_requires_matching_kid() -> None:
 
 
 @pytest.mark.unit
-def test_validate_ob_response_signature_requires_unencoded_payload_header() -> None:
-    """Open Banking response signatures must declare RFC 7797 unencoded payloads."""
+def test_validate_ob_response_signature_rejects_b64_crit_without_b64_header() -> None:
+    """Response signatures cannot mix old critical headers with the v4 profile."""
     signature = _detached_signature_with_header(
         {
             "alg": "PS256",
@@ -131,7 +146,7 @@ def test_validate_ob_response_signature_requires_unencoded_payload_header() -> N
         }
     )
 
-    with pytest.raises(ResponseSignatureValidationError, match="b64 must be false"):
+    with pytest.raises(ResponseSignatureValidationError, match="crit must not include b64"):
         validate_ob_response_signature(signature=signature, payload=b"{}", jwks={"keys": []})
 
 

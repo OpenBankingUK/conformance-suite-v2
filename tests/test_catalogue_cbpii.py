@@ -83,7 +83,9 @@ def test_compile_selects_cbpii_cases_for_post_consents_endpoint() -> None:
 
     assert [case.test_case_id for case in compiled.test_cases] == [
         "cbpii-consent-create-core",
-        "cbpii-consent-create-invalid-account-data",
+        "cbpii-consent-create-invalid-account-name",
+        "cbpii-consent-create-invalid-account-identification",
+        "cbpii-consent-create-invalid-scheme-name",
     ]
     assert [capability.capability_id for capability in compiled.traceability.selected_capabilities] == [
         "cbpii.funds-confirmation-consents.create",
@@ -198,27 +200,41 @@ def test_compile_requires_and_selects_cbpii_optional_expiration_capability() -> 
 
     assert [case.test_case_id for case in compiled_without_optional.test_cases] == [
         "cbpii-consent-create-core",
-        "cbpii-consent-create-invalid-account-data",
+        "cbpii-consent-create-invalid-account-name",
+        "cbpii-consent-create-invalid-account-identification",
+        "cbpii-consent-create-invalid-scheme-name",
     ]
     assert compiled_without_optional.traceability.generated_test_case_ids == (
         "cbpii-consent-create-core",
-        "cbpii-consent-create-invalid-account-data",
+        "cbpii-consent-create-invalid-account-name",
+        "cbpii-consent-create-invalid-account-identification",
+        "cbpii-consent-create-invalid-scheme-name",
     )
-    assert compiled_without_optional.traceability.applicability_decisions[2].reason == (
+    optional_decisions = [
+        decision
+        for decision in compiled_without_optional.traceability.applicability_decisions
+        if decision.test_case_id.startswith("cbpii-consent-create-expiration-")
+    ]
+    assert {decision.reason for decision in optional_decisions} == {
         "required capability not selected: cbpii.funds-confirmation-consents.expiration-date-time-formats"
-    )
+    }
 
     assert [case.test_case_id for case in compiled_with_optional.test_cases] == [
         "cbpii-consent-create-core",
-        "cbpii-consent-create-invalid-account-data",
-        "cbpii-consent-create-expiration-formats",
+        "cbpii-consent-create-invalid-account-name",
+        "cbpii-consent-create-invalid-account-identification",
+        "cbpii-consent-create-invalid-scheme-name",
+        "cbpii-consent-create-expiration-milliseconds-z",
+        "cbpii-consent-create-expiration-milliseconds-offset",
+        "cbpii-consent-create-expiration-seconds-z",
+        "cbpii-consent-create-expiration-seconds-offset",
     ]
     assert [capability.capability_id for capability in compiled_with_optional.traceability.selected_capabilities] == [
         "cbpii.funds-confirmation-consents.create",
         "cbpii.funds-confirmation-consents.expiration-date-time-formats",
     ]
-    assert compiled_with_optional.test_cases[2].compliance_scope == CBPII_FCS_CATALOGUE.test_cases[2].compliance_scope
-    optional_scope = compiled_with_optional.test_cases[2].compliance_scope
+    compiled_by_id = {case.test_case_id: case for case in compiled_with_optional.test_cases}
+    optional_scope = compiled_by_id["cbpii-consent-create-expiration-milliseconds-z"].compliance_scope
     assert any("legacy_manifest:manifests/ob_4.0_cbpii_fca.json" in scope for scope in optional_scope)
 
 
@@ -234,3 +250,108 @@ def test_cbpii_compliance_scope_traces_legacy_31_and_40_manifests() -> None:
     for test_case in CBPII_FCS_CATALOGUE.test_cases:
         assert any("ob_3.1_cbpii_fca.json" in scope for scope in test_case.compliance_scope)
         assert any("ob_4.0_cbpii_fca.json" in scope for scope in test_case.compliance_scope)
+
+
+@pytest.mark.unit
+def test_cbpii_catalogue_covers_every_legacy_manifest_script() -> None:
+    """Ensure CBPII keeps parity with the legacy 3.1.11, 4.0.0, and 4.0.1 scripts."""
+    manifest_scopes = {
+        scope
+        for test_case in CBPII_FCS_CATALOGUE.test_cases
+        for scope in test_case.compliance_scope
+        if scope.startswith("legacy_manifest:")
+    }
+
+    expected_scopes = {
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000001",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000002",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000003",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000004",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000005",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000006",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000007",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000008",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000009(delete)",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000009(expiration)",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000010",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000011",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-301-CBPII-000012",
+        "legacy_manifest:manifests/ob_3.1_cbpii_fca.json#OB-312-CBPII-000100",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000001",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000002",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000003",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000004",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000005",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000006",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000007",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000008",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000009(delete)",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000009(expiration)",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000010",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000011",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-400-CBPII-000012",
+        "legacy_manifest:manifests/ob_4.0_cbpii_fca.json#OB-312-CBPII-000100",
+    }
+
+    assert manifest_scopes == expected_scopes
+
+
+@pytest.mark.unit
+def test_compile_selects_every_cbpii_legacy_consent_creation_variant() -> None:
+    """Compile each distinct legacy consent creation request for full CBPII parity."""
+    spec = _spec(
+        endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
+                resource_group="Funds Confirmation",
+                capability_ids=("cbpii.funds-confirmation-consents.expiration-date-time-formats",),
+            ),
+        ),
+    )
+
+    compiled = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+
+    assert [request_step.step_id for case in compiled.test_cases for request_step in case.request_steps] == [
+        "cbpii-consent-create-core-request",
+        "cbpii-consent-create-invalid-account-name-request",
+        "cbpii-consent-create-invalid-account-identification-request",
+        "cbpii-consent-create-invalid-scheme-name-request",
+        "cbpii-consent-create-expiration-milliseconds-z-request",
+        "cbpii-consent-create-expiration-milliseconds-offset-request",
+        "cbpii-consent-create-expiration-seconds-z-request",
+        "cbpii-consent-create-expiration-seconds-offset-request",
+    ]
+
+
+@pytest.mark.unit
+def test_cbpii_v4_read_and_funds_flows_keep_legacy_schema_and_header_assertions() -> None:
+    """CBPII v4 resource flows enforce legacy FAPI, content-type, and schema checks."""
+    spec = _spec(
+        endpoints=(
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/cbpii/funds-confirmation-consents/{consentId}",
+                resource_group="Funds Confirmation",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/cbpii/funds-confirmations",
+                resource_group="Funds Confirmation",
+            ),
+        ),
+    )
+
+    compiled = compile_test_plan(CBPII_FCS_CATALOGUE, spec)
+    cases = {case.test_case_id: case for case in compiled.test_cases}
+
+    for case_id in ("cbpii-consent-get-authorised", "cbpii-funds-confirmation-create"):
+        assertions = cases[case_id].assertions
+        assert any(assertion.kind == "response_schema" for assertion in assertions)
+        assert any(
+            assertion.kind == "header" and assertion.rule.get("name") == "x-fapi-interaction-id"
+            for assertion in assertions
+        )
+        assert any(
+            assertion.kind == "header" and assertion.rule.get("name") == "content-type" for assertion in assertions
+        )

@@ -1943,6 +1943,218 @@ def test_run_manifest_v1_account_access_consent_adds_masked_detached_jws_header(
 
 
 @pytest.mark.unit
+def test_run_manifest_v1_pis_write_request_uses_ob_v4_detached_jws_profile(tmp_path: Path) -> None:
+    """PIS v4 write requests use the OB v3.1.4+/v4 detached-JWS profile.
+
+    Args:
+        tmp_path: Pytest temporary directory used for signing material.
+    """
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "pis consent signing",
+        "steps": [
+            {
+                "id": "pis-v4-domestic-payment-consent-create-request",
+                "name": "Domestic payment consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "headers": {"Authorization": "******"},
+                    "body": {
+                        "Data": {
+                            "Initiation": {
+                                "InstructionIdentification": "FCSV2DomesticPaymentInstruction",
+                                "EndToEndIdentification": "FCSV2DomesticPaymentEndToEnd",
+                                "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                                "CreditorAccount": {
+                                    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                                    "Identification": "70000170000002",
+                                    "Name": "Domestic creditor",
+                                },
+                            }
+                        },
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound PIS request and force a failing assertion."""
+        observed_requests.append(request)
+        return httpx.Response(400, json={"error": "invalid_request"})
+
+    signing_config = _executor_signing_config(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(parse_manifest(raw_manifest), client=client, fapi_signing_config=signing_config)
+
+    observed_request = observed_requests[0]
+    detached_signature = observed_request.headers["x-jws-signature"]
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+        registry=_response_signature_registry(),
+    )
+
+    assert result.status == "failed"
+    assert detached_signature.split(".")[1] == ""
+    headers = verified.headers()
+    assert headers["alg"] == "PS256"
+    assert headers["kid"] == "executor-signing-key"
+    assert headers["typ"] == "JOSE"
+    assert headers["cty"] == "application/json"
+    assert headers["http://openbanking.org.uk/iss"] == "client-issuer"
+    assert headers["http://openbanking.org.uk/tan"] == "openbanking.org.uk"
+    assert isinstance(headers["http://openbanking.org.uk/iat"], int)
+    assert headers["crit"] == [
+        "http://openbanking.org.uk/iat",
+        "http://openbanking.org.uk/iss",
+        "http://openbanking.org.uk/tan",
+    ]
+    assert "b64" not in headers
+    assert verified.payload == observed_request.content
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_pis_write_request_can_omit_ob_v4_detached_jws_iss_claim(tmp_path: Path) -> None:
+    """PIS negative tests can emit a valid OB v4 detached JWS without iss.
+
+    Args:
+        tmp_path: Pytest temporary directory used for signing material.
+    """
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "pis consent missing signature claim",
+        "steps": [
+            {
+                "id": "pis-v4-domestic-payment-consent-reject-missing-signature-claim-request",
+                "name": "Domestic payment consent missing signature claim",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing", "omitProtectedHeaders": ["iss"]},
+                    "headers": {"Authorization": "******"},
+                    "body": {"Data": {"Initiation": {"InstructionIdentification": "FCSV2"}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound PIS request and return the expected rejection."""
+        observed_requests.append(request)
+        return httpx.Response(400, json={"Code": "UK.OBIE.Signature.MissingClaim"})
+
+    signing_config = _executor_signing_config(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(parse_manifest(raw_manifest), client=client, fapi_signing_config=signing_config)
+
+    observed_request = observed_requests[0]
+    detached_signature = observed_request.headers["x-jws-signature"]
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+        registry=_response_signature_registry(),
+    )
+
+    assert result.status == "passed"
+    headers = verified.headers()
+    assert "http://openbanking.org.uk/iss" not in headers
+    assert headers["crit"] == [
+        "http://openbanking.org.uk/iat",
+        "http://openbanking.org.uk/tan",
+    ]
+    assert verified.payload == observed_request.content
+
+
+@pytest.mark.unit
+def test_run_manifest_v1_vrp_consent_request_uses_ob_v4_detached_jws_profile(tmp_path: Path) -> None:
+    """VRP consent creation accepts detached JWS signing on generated resource paths.
+
+    Args:
+        tmp_path: Pytest temporary directory used for signing material.
+    """
+    observed_requests: list[httpx.Request] = []
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "vrp consent signing",
+        "steps": [
+            {
+                "id": "vrp-consent-create-awaiting-authorisation-v4-request",
+                "name": "VRP consent creation",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-vrp-consents",
+                    "detachedJws": {"source": "fapi-signing"},
+                    "headers": {"Authorization": "******"},
+                    "body": {
+                        "Data": {
+                            "VRPType": "UK.OBIE.VRPType.Sweeping",
+                            "ControlParameters": {
+                                "ValidFromDateTime": "2026-08-27T00:00:00+00:00",
+                                "ValidToDateTime": "2026-09-27T00:00:00+00:00",
+                            },
+                            "Initiation": {
+                                "CreditorAccount": {
+                                    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                                    "Identification": "70000170000002",
+                                    "Name": "VRP creditor",
+                                }
+                            },
+                        },
+                        "Risk": {},
+                    },
+                },
+                "assertions": [{"type": "http_status", "expected": 201}],
+            }
+        ],
+    }
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        """Capture the outbound VRP request and return an authorised consent.
+
+        Args:
+            request: Outbound HTTP request emitted by the executor.
+
+        Returns:
+            Successful VRP consent response.
+        """
+        observed_requests.append(request)
+        return httpx.Response(201, json={"Data": {"ConsentId": "vrp-consent-123"}, "Risk": {}})
+
+    signing_config = _executor_signing_config(tmp_path)
+    with httpx.Client(transport=httpx.MockTransport(handler)) as client:
+        result = run_manifest(parse_manifest(raw_manifest), client=client, fapi_signing_config=signing_config)
+
+    observed_request = observed_requests[0]
+    detached_signature = observed_request.headers["x-jws-signature"]
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(signing_config.signing_certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=observed_request.content,
+        registry=_response_signature_registry(),
+    )
+
+    assert result.status == "passed"
+    headers = verified.headers()
+    assert headers["typ"] == "JOSE"
+    assert headers["cty"] == "application/json"
+    assert headers["http://openbanking.org.uk/iss"] == "client-issuer"
+    assert verified.payload == observed_request.content
+
+
+@pytest.mark.unit
 def test_run_manifest_v1_account_access_consent_adds_detached_jws_with_doubled_path_separator(
     tmp_path: Path,
 ) -> None:
@@ -2140,7 +2352,7 @@ def test_run_manifest_v1_detached_jws_policy_rejects_unsupported_url(tmp_path: P
     assert request_seen is False
     assert result.steps[0].message == (
         "Unable to apply request signing: "
-        "Detached request signing is only supported for account-access-consents requests"
+        "Detached request signing is only supported for AIS consent, PIS, and VRP write requests"
     )
 
 
@@ -3058,6 +3270,35 @@ def test_run_manifest_request_sent_masks_authorization_header() -> None:
     assert headers["Authorization"] == "***"
 
 
+@pytest.mark.unit
+def test_run_manifest_status_only_step_allows_non_json_error_body() -> None:
+    """Status-only negative checks should not require an OBErrorResponse body."""
+    v1_manifest = parse_manifest(
+        {
+            "schemaVersion": "v1",
+            "name": "status-only-negative",
+            "steps": [
+                {
+                    "id": "missing-resource",
+                    "name": "Missing resource",
+                    "request": {"method": "GET", "url": "https://resource.example.com/missing"},
+                    "assertions": [{"type": "http_status", "expected": 404}],
+                }
+            ],
+        }
+    )
+
+    with httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(404, content=b"not found", headers={"Content-Type": "text/plain"})
+        )
+    ) as client:
+        result = run_manifest(v1_manifest, client=client)
+
+    assert result.status == "passed"
+    assert result.steps[0].status == "passed"
+
+
 @pytest.mark.integration
 def test_run_compiled_test_plan_sends_catalogue_request_headers(tmp_path: Path) -> None:
     """Compiled catalogue execution sends selected-run request metadata headers.
@@ -3207,7 +3448,7 @@ def test_compiled_cbpii_manifest_uses_configured_debtor_account(tmp_path: Path) 
         compiled_plan,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=tmp_path,
-        runtime_config=None,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
     )
 
     cbpii_step = next(step for step in manifest.steps if step.id == "cbpii-consent-create-core-request")
@@ -3263,7 +3504,7 @@ def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) ->
         compiled_plan,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=tmp_path,
-        runtime_config=None,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
     )
 
     token_step = manifest.steps[0]
@@ -3284,6 +3525,1003 @@ def test_compiled_cbpii_manifest_adds_access_token_setup_step(tmp_path: Path) ->
     assert cbpii_step.request.headers is not None
     assert cbpii_step.required_token_id == "cbpii-client-credentials"  # noqa: S105 - semantic token id fixture
     assert cbpii_step.request.headers["Authorization"] == "Bearer ${tokens.cbpii-client-credentials.access_token}"
+
+
+@pytest.mark.unit
+def test_compiled_pis_manifest_builds_signed_payment_bodies_and_authorisation_steps(tmp_path: Path) -> None:
+    """PIS catalogue conversion emits request bodies, detached JWS, and PSU authorisation.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.pis import PIS_PAYMENT_CATALOGUE, PIS_PAYMENT_CATALOGUE_KEY
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import DetachedJwsPolicy, FormBody, JsonBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "pisCreditorAccountIdentification": "70000170000002",
+        "pisCreditorAccountName": "Domestic creditor",
+        "pisInstructedAmountAmount": "1.00",
+        "pisInstructedAmountCurrency": "GBP",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=PIS_PAYMENT_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-payments",
+                resource_group="DomesticPayments",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    consent_step = next(step for step in manifest.steps if step.id == "pis-v4-domestic-payment-consent-create-request")
+    assert isinstance(consent_step, ManifestStep)
+    assert consent_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+    assert isinstance(consent_step.request.body, JsonBody)
+    consent_body = consent_step.request.body.value
+    assert isinstance(consent_body, dict)
+    consent_data = consent_body["Data"]
+    assert isinstance(consent_data, dict)
+    consent_initiation = consent_data["Initiation"]
+    assert isinstance(consent_initiation, dict)
+    instruction_identification = consent_initiation["InstructionIdentification"]
+    end_to_end_identification = consent_initiation["EndToEndIdentification"]
+    assert isinstance(instruction_identification, str)
+    assert isinstance(end_to_end_identification, str)
+    assert len(instruction_identification) == 32
+    assert len(end_to_end_identification) == 32
+    assert instruction_identification != "FCSV2DomesticPaymentInstruction"
+    assert end_to_end_identification != "FCSV2DomesticPaymentEndToEnd"
+    assert consent_step.request.body.value == {
+        "Data": {
+            "Initiation": {
+                "InstructionIdentification": instruction_identification,
+                "EndToEndIdentification": end_to_end_identification,
+                "InstructedAmount": {"Amount": "1.00", "Currency": "GBP"},
+                "CreditorAccount": {
+                    "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                    "Identification": "70000170000002",
+                    "Name": "Domestic creditor",
+                },
+            },
+        },
+        "Risk": {},
+    }
+
+    step_ids = [step.id for step in manifest.steps]
+    consent_index = step_ids.index("pis-v4-domestic-payment-consent-create-request")
+    psu_index = step_ids.index("setup-pis-domestic-payment-consent-authorisation")
+    token_index = step_ids.index("setup-token-pis-domestic-payment-access")
+    payment_index = step_ids.index("pis-v4-domestic-payment-create-request")
+    assert consent_index < psu_index < token_index < payment_index
+
+    authorisation_step = manifest.steps[psu_index]
+    assert isinstance(authorisation_step, PsuAuthorizationStep)
+    assert authorisation_step.scope == "openid payments"
+    assert isinstance(authorisation_step.request_object, GeneratedRequestObject)
+    assert (
+        authorisation_step.request_object.openbanking_intent_id
+        == "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}"
+    )
+
+    token_step = manifest.steps[token_index]
+    assert isinstance(token_step, ManifestStep)
+    assert token_step.phase == "execution"
+    assert token_step.produces_token_id == "pis-domestic-payment-access"  # noqa: S105 - semantic token id
+    assert token_step.token_endpoint_auth_policy is not None
+    assert isinstance(token_step.request.body, FormBody)
+    assert token_step.request.body.fields == {
+        "grant_type": "authorization_code",
+        "code": "${steps.setup-pis-domestic-payment-consent-authorisation.response.body.code}",
+        "redirect_uri": "${config.oauth.redirectUri}",
+        "client_id": "${config.oauth.clientId}",
+    }
+
+    consent_read_step = next(
+        step for step in manifest.steps if step.id == "pis-v4-domestic-payment-consent-read-authorised-request"
+    )
+    assert isinstance(consent_read_step, ManifestStep)
+    assert consent_read_step.required_token_id == "pis-payment-access"  # noqa: S105 - semantic token id
+
+    payment_step = manifest.steps[payment_index]
+    assert isinstance(payment_step, ManifestStep)
+    assert payment_step.required_token_id == "pis-domestic-payment-access"  # noqa: S105 - semantic token id
+    assert payment_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+    assert isinstance(payment_step.request.body, JsonBody)
+    payment_body = payment_step.request.body.value
+    assert isinstance(payment_body, dict)
+    payment_data = payment_body["Data"]
+    assert isinstance(payment_data, dict)
+    payment_initiation = payment_data["Initiation"]
+    assert isinstance(payment_initiation, dict)
+    assert payment_data["ConsentId"] == (
+        "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.ConsentId}"
+    )
+    assert payment_initiation["InstructionIdentification"] == (
+        "${steps.pis-v4-domestic-payment-consent-create-request.response.body.Data.Initiation.InstructionIdentification}"
+    )
+
+
+@pytest.mark.unit
+def test_compiled_pis_manifest_builds_distinct_domestic_consent_parity_cases(tmp_path: Path) -> None:
+    """PIS domestic consent parity cases compile to distinct request-signing policies.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.pis import PIS_PAYMENT_CATALOGUE, PIS_PAYMENT_CATALOGUE_KEY
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import DetachedJwsPolicy, JsonBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "pisCreditorAccountIdentification": "70000170000002",
+        "pisCreditorAccountName": "Domestic creditor",
+        "pisInstructedAmountAmount": "1.00",
+        "pisInstructedAmountCurrency": "GBP",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=PIS_PAYMENT_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-payment-consents",
+                resource_group="DomesticPayments",
+                capability_ids=("pis.domestic-payment-consent.reject-invalid-detached-jws",),
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    no_financial_id_step = next(
+        step
+        for step in manifest.steps
+        if step.id == "pis-v4-domestic-payment-consent-create-without-financial-id-request"
+    )
+    assert isinstance(no_financial_id_step, ManifestStep)
+    assert no_financial_id_step.request.headers is not None
+    assert "x-fapi-financial-id" not in {header.lower() for header in no_financial_id_step.request.headers}
+    assert no_financial_id_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+    assert no_financial_id_step.response_signature_policy is not None
+
+    missing_claim_step = next(
+        step
+        for step in manifest.steps
+        if step.id == "pis-v4-domestic-payment-consent-reject-missing-signature-claim-request"
+    )
+    assert isinstance(missing_claim_step, ManifestStep)
+    assert missing_claim_step.request.detached_jws == DetachedJwsPolicy(
+        source="fapi-signing",
+        omit_protected_headers=("iss",),
+    )
+    assert isinstance(missing_claim_step.request.body, JsonBody)
+    missing_signature_step = next(
+        step for step in manifest.steps if step.id == "pis-v4-domestic-payment-consent-reject-invalid-signature-request"
+    )
+    assert isinstance(missing_signature_step, ManifestStep)
+    assert missing_signature_step.request.detached_jws is None
+
+
+@pytest.mark.unit
+def test_compiled_vrp_manifest_builds_split_signed_bodies_and_authorisation_steps(tmp_path: Path) -> None:
+    """VRP parity cases compile to signed legacy body variants and PSU setup."""
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.vrp import VRP_LEGACY_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import DetachedJwsPolicy, FormBody, JsonBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "vrpCreditorAccountIdentification": "70000170000002",
+        "vrpCreditorAccountName": "VRP creditor",
+        "vrpInstructedAmountAmount": "1.00",
+        "vrpInstructedAmountCurrency": "GBP",
+        "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
+        "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=VRP_LEGACY_FCS_CATALOGUE.key,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/domestic-vrps",
+                resource_group="DomesticVRP",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(VRP_LEGACY_FCS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    step_ids = [step.id for step in manifest.steps]
+    assert "setup-token-vrp-payment-access" in step_ids
+    consent_flow_ids = (
+        "vrp-consent-create-awaiting-authorisation-v31-pre-3111",
+        "vrp-consent-create-awaiting-authorisation-v31-3111",
+        "vrp-consent-create-awaiting-authorisation-v4",
+    )
+    for consent_flow_id in consent_flow_ids:
+        consent_step_id = f"{consent_flow_id}-request"
+        authorisation_step_id = f"{consent_flow_id}-authorisation"
+        token_step_id = f"{consent_flow_id}-psu-payment-token"
+        assert step_ids.index(consent_step_id) < step_ids.index(authorisation_step_id)
+        assert step_ids.index(authorisation_step_id) < step_ids.index(token_step_id)
+
+    assert step_ids.index("vrp-consent-create-awaiting-authorisation-v31-pre-3111-psu-payment-token") < step_ids.index(
+        "vrp-payment-create-initial-v31-pre-3111-request"
+    )
+    assert step_ids.index("vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-token") < step_ids.index(
+        "vrp-payment-create-initial-v31-3111-request"
+    )
+    assert step_ids.index("vrp-consent-create-awaiting-authorisation-v4-psu-payment-token") < step_ids.index(
+        "vrp-payment-create-initial-v4-request"
+    )
+
+    authorisation_step = next(
+        step for step in manifest.steps if step.id == "vrp-consent-create-awaiting-authorisation-v4-authorisation"
+    )
+    assert isinstance(authorisation_step, PsuAuthorizationStep)
+    assert authorisation_step.scope == "openid payments"
+    assert isinstance(authorisation_step.request_object, GeneratedRequestObject)
+    assert authorisation_step.request_object.openbanking_intent_id == (
+        "${steps.vrp-consent-create-awaiting-authorisation-v4-request.response.body.Data.ConsentId}"
+    )
+
+    token_step = next(
+        step for step in manifest.steps if step.id == "vrp-consent-create-awaiting-authorisation-v4-psu-payment-token"
+    )
+    assert isinstance(token_step, ManifestStep)
+    assert token_step.produces_token_id == (
+        "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access"  # noqa: S105 - semantic token id fixture
+    )  # noqa: S105 - semantic token id fixture
+    assert token_step.token_endpoint_auth_policy is not None
+    assert isinstance(token_step.request.body, FormBody)
+
+    pre_3111_payment_step = next(
+        step for step in manifest.steps if step.id == "vrp-payment-create-initial-v31-pre-3111-request"
+    )
+    post_3111_payment_step = next(
+        step for step in manifest.steps if step.id == "vrp-payment-create-initial-v31-3111-request"
+    )
+    v4_payment_step = next(step for step in manifest.steps if step.id == "vrp-payment-create-initial-v4-request")
+    assert isinstance(pre_3111_payment_step, ManifestStep)
+    assert isinstance(post_3111_payment_step, ManifestStep)
+    assert isinstance(v4_payment_step, ManifestStep)
+    assert pre_3111_payment_step.request.url == "https://resource.example.com/open-banking/v3.1/pisp/domestic-vrps"
+    assert post_3111_payment_step.request.url == "https://resource.example.com/open-banking/v3.1/pisp/domestic-vrps"
+    assert v4_payment_step.request.url == "https://resource.example.com/open-banking/v4.0/pisp/domestic-vrps"
+    assert pre_3111_payment_step.required_token_id == (
+        "vrp-consent-create-awaiting-authorisation-v31-pre-3111-psu-payment-access"  # noqa: S105
+    )
+    assert post_3111_payment_step.required_token_id == (
+        "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access"  # noqa: S105
+    )
+    assert v4_payment_step.required_token_id == (
+        "vrp-consent-create-awaiting-authorisation-v4-psu-payment-access"  # noqa: S105
+    )
+    for payment_step in (pre_3111_payment_step, post_3111_payment_step, v4_payment_step):
+        assert payment_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+        assert isinstance(payment_step.request.body, JsonBody)
+
+    assert isinstance(pre_3111_payment_step.request.body, JsonBody)
+    assert isinstance(post_3111_payment_step.request.body, JsonBody)
+    assert isinstance(v4_payment_step.request.body, JsonBody)
+    pre_3111_body = pre_3111_payment_step.request.body.value
+    post_3111_body = post_3111_payment_step.request.body.value
+    v4_body = v4_payment_step.request.body.value
+    assert isinstance(pre_3111_body, dict)
+    assert isinstance(post_3111_body, dict)
+    assert isinstance(v4_body, dict)
+    pre_3111_data = pre_3111_body["Data"]
+    post_3111_data = post_3111_body["Data"]
+    v4_data = v4_body["Data"]
+    assert isinstance(pre_3111_data, dict)
+    assert isinstance(post_3111_data, dict)
+    assert isinstance(v4_data, dict)
+    assert "VRPType" not in pre_3111_data
+    assert post_3111_data["VRPType"] == "UK.OBIE.VRPType.Sweeping"
+    assert v4_data["VRPType"] == "UK.OBIE.VRPType.Sweeping"
+    v4_initiation = v4_data["Initiation"]
+    assert isinstance(v4_initiation, dict)
+    v4_remittance = v4_initiation["RemittanceInformation"]
+    assert isinstance(v4_remittance, dict)
+    assert v4_remittance["Unstructured"] == ["Test Unstructured Data"]
+
+
+@pytest.mark.unit
+def test_compiled_vrp_v4_manifest_excludes_v31_variants(tmp_path: Path) -> None:
+    """VRP v4 plan compilation does not execute legacy v3.1 body variants.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.vrp import VRP_LEGACY_FCS_CATALOGUE
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import JsonBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "vrpCreditorAccountIdentification": "70000170000002",
+        "vrpCreditorAccountName": "VRP creditor",
+        "vrpInstructedAmountAmount": "1.00",
+        "vrpInstructedAmountCurrency": "GBP",
+        "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
+        "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=VRP_LEGACY_FCS_CATALOGUE.key,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/domestic-vrps",
+                resource_group="DomesticVRP",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+        specification_version="4.0.1",
+    )
+    compiled_plan = compile_test_plan(VRP_LEGACY_FCS_CATALOGUE, spec)
+
+    assert [test_case.test_case_id for test_case in compiled_plan.test_cases] == [
+        "vrp-consent-create-awaiting-authorisation-v4",
+        "vrp-payment-create-initial-v4",
+        "vrp-payment-create-repeated-v4",
+    ]
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    step_ids = [step.id for step in manifest.steps]
+    assert all("-v31" not in step_id for step_id in step_ids)
+    v4_payment_step = next(step for step in manifest.steps if step.id == "vrp-payment-create-initial-v4-request")
+    assert isinstance(v4_payment_step, ManifestStep)
+    assert v4_payment_step.request.url == "https://resource.example.com/open-banking/v4.0/pisp/domestic-vrps"
+    assert isinstance(v4_payment_step.request.body, JsonBody)
+    v4_body = v4_payment_step.request.body.value
+    assert isinstance(v4_body, dict)
+    v4_data = v4_body["Data"]
+    assert isinstance(v4_data, dict)
+    assert v4_data["VRPType"] == "UK.OBIE.VRPType.Sweeping"
+
+
+@pytest.mark.unit
+def test_compiled_vrp_v4_manifest_keeps_single_psu_authorisation_and_one_of_assertions(tmp_path: Path) -> None:
+    """Full v4 VRP plans keep old-FCS PSU and one-of assertion parity.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import compile_test_plan_document, parse_test_plan_document
+    from conformance.catalogue_registry import supported_catalogues
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import HttpStatusAssertion
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "vrpCreditorAccountIdentification": "70000170000002",
+        "vrpCreditorAccountName": "VRP creditor",
+        "vrpInstructedAmountAmount": "1.00",
+        "vrpInstructedAmountCurrency": "GBP",
+        "vrpValidFromDateTime": "2026-08-27T00:00:00+00:00",
+        "vrpValidToDateTime": "2026-09-27T00:00:00+00:00",
+    }
+    document = parse_test_plan_document(
+        {
+            "schemaVersion": "1.0",
+            "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1", "profile": "FAPI1_ADVANCED"},
+            "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+            "resourceGroups": [
+                {
+                    "id": "VRP",
+                    "endpoints": [
+                        {"method": "POST", "path": "/domestic-vrp-consents"},
+                        {"method": "GET", "path": "/domestic-vrp-consents/{consentId}"},
+                        {
+                            "method": "POST",
+                            "path": "/domestic-vrp-consents/{consentId}/funds-confirmation",
+                            "capabilities": ["vrp.funds-confirmation"],
+                        },
+                        {"method": "DELETE", "path": "/domestic-vrp-consents/{consentId}"},
+                        {"method": "POST", "path": "/domestic-vrps"},
+                        {"method": "GET", "path": "/domestic-vrps/{vrpId}"},
+                        {"method": "GET", "path": "/domestic-vrps/{vrpId}/payment-details"},
+                    ],
+                }
+            ],
+            "businessTestData": {"runtimeInputs": runtime_inputs},
+            "metadata": {},
+        }
+    )
+    compiled_plan = compile_test_plan_document(document, supported_catalogues())
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    assert sum(isinstance(step, PsuAuthorizationStep) for step in manifest.steps) == 1
+    assert [case.test_case_id for case in compiled_plan.test_cases] == [
+        "vrp-consent-create-awaiting-authorisation-v4",
+        "vrp-payment-create-initial-v4",
+        "vrp-consent-get-authorised",
+        "vrp-consent-funds-confirmation",
+        "vrp-payment-get-initial",
+        "vrp-payment-create-repeated-v4",
+        "vrp-payment-get-repeated",
+        "vrp-payment-get-details",
+        "vrp-consent-delete",
+        "vrp-consent-get-after-delete",
+        "vrp-consent-delete-after-delete",
+    ]
+    assertions_by_step_id = {step.id: step.assertions for step in manifest.steps if isinstance(step, ManifestStep)}
+    funds_confirmation_assertion = assertions_by_step_id["vrp-consent-funds-confirmation-request"][0]
+    delete_after_delete_assertion = assertions_by_step_id["vrp-consent-delete-after-delete-request"][0]
+    assert isinstance(funds_confirmation_assertion, HttpStatusAssertion)
+    assert isinstance(delete_after_delete_assertion, HttpStatusAssertion)
+    assert funds_confirmation_assertion.expected_one_of == (201,)
+    assert delete_after_delete_assertion.expected_one_of == (400, 204)
+
+
+@pytest.mark.unit
+def test_compiled_pis_manifest_builds_legacy_scheduled_datetime_variant_bodies(tmp_path: Path) -> None:
+    """PIS scheduled consent datetime variants compile with generated future values.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.pis import PIS_PAYMENT_CATALOGUE, PIS_PAYMENT_CATALOGUE_KEY
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import JsonBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "pisCreditorAccountIdentification": "70000170000002",
+        "pisCreditorAccountName": "Domestic creditor",
+        "pisInstructedAmountAmount": "1.00",
+        "pisInstructedAmountCurrency": "GBP",
+        "pisRequestedExecutionDateTime": "2026-12-01T00:00:00+00:00",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=PIS_PAYMENT_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-scheduled-payment-consents",
+                resource_group="DomesticScheduledPayments",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    offset_step = next(
+        step
+        for step in manifest.steps
+        if step.id == "pis-v4-domestic-scheduled-payment-consent-create-with-offset-datetime-request"
+    )
+    utc_step = next(
+        step
+        for step in manifest.steps
+        if step.id == "pis-v4-domestic-scheduled-payment-consent-create-with-utc-datetime-request"
+    )
+    assert isinstance(offset_step, ManifestStep)
+    assert isinstance(utc_step, ManifestStep)
+    assert isinstance(offset_step.request.body, JsonBody)
+    assert isinstance(utc_step.request.body, JsonBody)
+    offset_body = offset_step.request.body.value
+    utc_body = utc_step.request.body.value
+    assert isinstance(offset_body, dict)
+    assert isinstance(utc_body, dict)
+    offset_data = offset_body["Data"]
+    utc_data = utc_body["Data"]
+    assert isinstance(offset_data, dict)
+    assert isinstance(utc_data, dict)
+    offset_initiation = offset_data["Initiation"]
+    utc_initiation = utc_data["Initiation"]
+    assert isinstance(offset_initiation, dict)
+    assert isinstance(utc_initiation, dict)
+    offset_value = offset_initiation["RequestedExecutionDateTime"]
+    utc_value = utc_initiation["RequestedExecutionDateTime"]
+    assert isinstance(offset_value, str)
+    assert isinstance(utc_value, str)
+    assert offset_value.endswith("-07:00")
+    assert datetime.fromisoformat(offset_value).tzinfo is not None
+    assert utc_value.endswith("Z")
+    assert datetime.fromisoformat(utc_value.replace("Z", "+00:00")).tzinfo is not None
+
+
+@pytest.mark.unit
+def test_compiled_pis_manifest_uses_per_flow_authorisation_code_tokens(tmp_path: Path) -> None:
+    """PIS payment families exchange and consume separate PSU-authorised tokens.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.pis import PIS_PAYMENT_CATALOGUE, PIS_PAYMENT_CATALOGUE_KEY
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import FormBody
+
+    runtime_inputs: dict[str, JsonValue] = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "pisCreditorAccountIdentification": "70000170000002",
+        "pisCreditorAccountName": "Domestic creditor",
+        "pisInternationalCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "pisInternationalCreditorAccountIdentification": "70000170000003",
+        "pisInternationalCreditorAccountName": "International creditor",
+        "pisInstructedAmountAmount": "1.00",
+        "pisInstructedAmountCurrency": "GBP",
+        "pisCurrencyOfTransfer": "USD",
+        "pisRequestedExecutionDateTime": "2026-12-01T00:00:00+00:00",
+        "pisFirstPaymentDateTime": "2026-12-01T00:00:00+00:00",
+        "pisStandingOrderFrequencyType": "WEEK",
+        "pisStandingOrderFrequencyPointInTime": "03",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=PIS_PAYMENT_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-payments",
+                resource_group="DomesticPayments",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/domestic-payments/{domesticPaymentId}",
+                resource_group="DomesticPayments",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/domestic-payment-consents/{domesticPaymentConsentId}/funds-confirmation",
+                resource_group="DomesticPayments",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-scheduled-payments",
+                resource_group="DomesticScheduledPayments",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/domestic-scheduled-payments/{domesticScheduledPaymentId}",
+                resource_group="DomesticScheduledPayments",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/domestic-standing-orders",
+                resource_group="DomesticStandingOrders",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/domestic-standing-orders/{domesticStandingOrderId}",
+                resource_group="DomesticStandingOrders",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/international-payments",
+                resource_group="InternationalPayments",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/international-payments/{internationalPaymentId}",
+                resource_group="InternationalPayments",
+            ),
+            ImplementedEndpoint(
+                method="POST",
+                path="/open-banking/v4.0/pisp/international-scheduled-payments",
+                resource_group="InternationalScheduledPayments",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/pisp/international-scheduled-payments/{internationalScheduledPaymentId}",
+                resource_group="InternationalScheduledPayments",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(PIS_PAYMENT_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    manifest_steps = [step for step in manifest.steps if isinstance(step, ManifestStep)]
+    token_steps = {
+        step.id: step
+        for step in manifest_steps
+        if step.id.startswith("setup-token-pis-") and step.id != "setup-token-pis-payment-access"
+    }
+    assert set(token_steps) == {
+        "setup-token-pis-domestic-payment-access",
+        "setup-token-pis-domestic-scheduled-payment-access",
+        "setup-token-pis-domestic-standing-order-access",
+        "setup-token-pis-international-payment-access",
+        "setup-token-pis-international-scheduled-payment-access",
+    }
+    for token_step in token_steps.values():
+        assert token_step.token_endpoint_auth_policy is not None
+        assert isinstance(token_step.request.body, FormBody)
+        assert token_step.request.body.fields["grant_type"] == "authorization_code"
+
+    required_tokens_by_step_id = {
+        step.id: step.required_token_id for step in manifest_steps if step.id.startswith("pis-v4-")
+    }
+    assert required_tokens_by_step_id["pis-v4-domestic-payment-consent-create-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-domestic-payment-consent-read-authorised-request"] == (
+        "pis-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-domestic-payment-funds-confirmation-request"] == (
+        "pis-domestic-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-domestic-payment-create-request"] == "pis-domestic-payment-access"
+    assert required_tokens_by_step_id["pis-v4-domestic-payment-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-consent-read-request"] == (
+        "pis-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-create-request"] == (
+        "pis-domestic-scheduled-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-domestic-standing-order-consent-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-domestic-standing-order-create-request"] == (
+        "pis-domestic-standing-order-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-domestic-standing-order-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-international-payment-consent-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-international-payment-create-request"] == (
+        "pis-international-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-international-payment-read-request"] == "pis-payment-access"
+    assert required_tokens_by_step_id["pis-v4-international-scheduled-payment-consent-read-request"] == (
+        "pis-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-international-scheduled-payment-create-request"] == (
+        "pis-international-scheduled-payment-access"
+    )
+    assert required_tokens_by_step_id["pis-v4-international-scheduled-payment-read-request"] == "pis-payment-access"
+
+
+@pytest.mark.unit
+def test_compiled_ais_manifest_maps_present_fapi_header_assertions(tmp_path: Path) -> None:
+    """AIS catalogue conversion accepts present-rule FAPI header assertions.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.ais import (
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+    )
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import HeaderAssertion
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "consentedAccountId": "account-123",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts/{AccountId}",
+                resource_group="Accounts",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    account_step = next(step for step in manifest.steps if step.id == "ais-at-account-by-id-200-request")
+    assert isinstance(account_step, ManifestStep)
+    header_assertion = next(
+        assertion
+        for assertion in account_step.assertions
+        if isinstance(assertion, HeaderAssertion) and assertion.name == "x-fapi-interaction-id"
+    )
+    assert account_step.request.url == "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123"
+    assert header_assertion.rule == "present"
+
+
+@pytest.mark.unit
+def test_compiled_ais_manifest_maps_legacy_one_of_status_assertions(tmp_path: Path) -> None:
+    """AIS legacy one-of failures accept either permitted status.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.ais import (
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+    )
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import HttpStatusAssertion
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "consentedAccountId": "account-123",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
+                resource_group="Balances",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    balance_step = next(step for step in manifest.steps if step.id == "ais-at-legacy-balance-bal-101600-request")
+    assert isinstance(balance_step, ManifestStep)
+    status_assertion = next(
+        assertion for assertion in balance_step.assertions if isinstance(assertion, HttpStatusAssertion)
+    )
+    assert status_assertion.expected is None
+    assert status_assertion.expected_one_of == (400, 403)
+
+
+@pytest.mark.unit
+def test_compiled_ais_manifest_builds_authorised_account_access_setup(tmp_path: Path) -> None:
+    """AIS setup uses consent, PSU authorisation, and token endpoint exchange.
+
+    Args:
+        tmp_path: Pytest temporary directory used as the runtime-input base.
+    """
+    from conformance.catalogue import ImplementedEndpoint, TestPlanSpec, compile_test_plan
+    from conformance.catalogues.ais import (
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
+        AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+    )
+    from conformance.executor import _compiled_plan_to_manifest
+    from conformance.manifest import (
+        DetachedJwsPolicy,
+        FormBody,
+        GeneratedRequestObject,
+        JsonBody,
+        ManifestStep,
+        PsuAuthorizationStep,
+    )
+
+    runtime_inputs = {
+        "resourceBaseUrl": "https://resource.example.com",
+        "consentedAccountId": "account-123",
+    }
+    spec = TestPlanSpec(
+        schema_version="v1",
+        catalogue_key=AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY,
+        security_profile="fapi1-advanced",
+        implemented_endpoints=(
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts/{AccountId}",
+                resource_group="Accounts",
+            ),
+            ImplementedEndpoint(
+                method="GET",
+                path="/open-banking/v4.0/aisp/accounts/{AccountId}/balances",
+                resource_group="Balances",
+            ),
+        ),
+        runtime_inputs=runtime_inputs,
+    )
+    compiled_plan = compile_test_plan(AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE, spec)
+
+    manifest = _compiled_plan_to_manifest(
+        compiled_plan,
+        runtime_inputs=runtime_inputs,
+        runtime_input_base_dir=tmp_path,
+        runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
+    )
+
+    step_ids = [step.id for step in manifest.steps]
+    client_token_index = step_ids.index("setup-token-ais-client-credentials")
+    basic_consent_index = step_ids.index("ais-at-setup-basic-consent-request")
+    basic_psu_index = step_ids.index("setup-ais-basic-consent-authorisation")
+    detail_consent_index = step_ids.index("ais-at-setup-detail-consent-request")
+    detail_psu_index = step_ids.index("setup-ais-detail-consent-authorisation")
+    basic_token_index = step_ids.index("ais-at-setup-basic-token-request")
+    detail_token_index = step_ids.index("ais-at-setup-detail-token-request")
+    account_resource_index = step_ids.index("ais-at-account-by-id-200-request")
+    detail_resource_index = step_ids.index("ais-at-account-by-id-detail-200-request")
+    assert (
+        client_token_index
+        < basic_consent_index
+        < basic_psu_index
+        < detail_consent_index
+        < detail_psu_index
+        < basic_token_index
+        < detail_token_index
+        < account_resource_index
+        < detail_resource_index
+    )
+
+    client_token_step = manifest.steps[client_token_index]
+    assert isinstance(client_token_step, ManifestStep)
+    assert client_token_step.phase == "setup"
+    assert client_token_step.request.url == "${config.oauth.tokenEndpoint}"
+    assert client_token_step.produces_token_id == "ais-client-credentials"  # noqa: S105 - semantic token id
+    assert isinstance(client_token_step.request.body, FormBody)
+    assert client_token_step.request.body.fields["grant_type"] == "client_credentials"
+    assert client_token_step.request.body.fields["scope"] == "accounts"
+
+    basic_consent_step = manifest.steps[basic_consent_index]
+    assert isinstance(basic_consent_step, ManifestStep)
+    assert basic_consent_step.phase == "setup"
+    assert basic_consent_step.required_token_id == "ais-client-credentials"  # noqa: S105 - semantic token id
+    assert basic_consent_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+    assert isinstance(basic_consent_step.request.body, JsonBody)
+    assert basic_consent_step.request.body.value == {
+        "Data": {
+            "Permissions": [
+                "ReadAccountsBasic",
+                "ReadBalances",
+                "ReadBeneficiariesBasic",
+                "ReadDirectDebits",
+                "ReadOffers",
+                "ReadParty",
+                "ReadPartyPSU",
+                "ReadProducts",
+                "ReadScheduledPaymentsBasic",
+                "ReadStandingOrdersBasic",
+                "ReadStatementsBasic",
+                "ReadTransactionsBasic",
+                "ReadTransactionsCredits",
+                "ReadTransactionsDebits",
+            ],
+        },
+        "Risk": {},
+    }
+
+    detail_consent_step = manifest.steps[detail_consent_index]
+    assert isinstance(detail_consent_step, ManifestStep)
+    assert isinstance(detail_consent_step.request.body, JsonBody)
+    assert detail_consent_step.request.body.value == {
+        "Data": {
+            "Permissions": [
+                "ReadAccountsDetail",
+                "ReadBalances",
+                "ReadBeneficiariesDetail",
+                "ReadDirectDebits",
+                "ReadOffers",
+                "ReadPAN",
+                "ReadParty",
+                "ReadPartyPSU",
+                "ReadProducts",
+                "ReadScheduledPaymentsDetail",
+                "ReadStandingOrdersDetail",
+                "ReadStatementsDetail",
+                "ReadTransactionsCredits",
+                "ReadTransactionsDebits",
+                "ReadTransactionsDetail",
+            ],
+        },
+        "Risk": {},
+    }
+
+    basic_psu_step = manifest.steps[basic_psu_index]
+    assert isinstance(basic_psu_step, PsuAuthorizationStep)
+    assert basic_psu_step.phase == "setup"
+    assert basic_psu_step.scope == "openid accounts"
+    assert isinstance(basic_psu_step.request_object, GeneratedRequestObject)
+    assert basic_psu_step.request_object.openbanking_intent_id == (
+        "${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}"
+    )
+
+    detail_psu_step = manifest.steps[detail_psu_index]
+    assert isinstance(detail_psu_step, PsuAuthorizationStep)
+    assert isinstance(detail_psu_step.request_object, GeneratedRequestObject)
+    assert detail_psu_step.request_object.openbanking_intent_id == (
+        "${steps.ais-at-setup-detail-consent-request.response.body.Data.ConsentId}"
+    )
+
+    basic_token_step = manifest.steps[basic_token_index]
+    assert isinstance(basic_token_step, ManifestStep)
+    assert basic_token_step.phase == "setup"
+    assert basic_token_step.request.url == "${config.oauth.tokenEndpoint}"
+    assert basic_token_step.produces_token_id == "ais-account-access-basic"  # noqa: S105 - semantic token id
+    assert basic_token_step.token_endpoint_auth_policy is not None
+    assert isinstance(basic_token_step.request.body, FormBody)
+    assert basic_token_step.request.body.fields["grant_type"] == "authorization_code"
+    assert basic_token_step.request.body.fields["code"] == (
+        "${steps.setup-ais-basic-consent-authorisation.response.body.code}"
+    )
+
+    detail_token_step = manifest.steps[detail_token_index]
+    assert isinstance(detail_token_step, ManifestStep)
+    assert detail_token_step.produces_token_id == "ais-account-access-detail"  # noqa: S105 - semantic token id
+
+    account_resource_step = manifest.steps[account_resource_index]
+    assert isinstance(account_resource_step, ManifestStep)
+    assert account_resource_step.required_token_id == "ais-account-access-basic"  # noqa: S105 - semantic token id
+    detail_resource_step = manifest.steps[detail_resource_index]
+    assert isinstance(detail_resource_step, ManifestStep)
+    assert detail_resource_step.required_token_id == "ais-account-access-detail"  # noqa: S105 - semantic token id
 
 
 @pytest.mark.unit

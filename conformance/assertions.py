@@ -110,6 +110,14 @@ def _evaluate_http_status(assertion: HttpStatusAssertion, *, status_code: int) -
     Returns:
         Assertion result indicating whether the status code matched.
     """
+    if assertion.expected_one_of:
+        if status_code in assertion.expected_one_of:
+            return AssertionResult(passed=True, message=f"HTTP status was {status_code}")
+        expected = " or ".join(str(code) for code in assertion.expected_one_of)
+        return AssertionResult(
+            passed=False,
+            message=f"Expected HTTP status {expected}, got {status_code}",
+        )
     if status_code == assertion.expected:
         return AssertionResult(passed=True, message=f"HTTP status was {status_code}")
     return AssertionResult(
@@ -161,6 +169,8 @@ def _evaluate_json_field(assertion: JsonFieldAssertion, *, body: JsonObject) -> 
         return _evaluate_json_equals(assertion.path, value, assertion.value)
     if assertion.rule == "one_of":
         return _evaluate_json_one_of(assertion.path, value, assertion.values)
+    if assertion.rule == "all_items_absent_fields":
+        return _evaluate_all_items_absent_fields(assertion.path, value, assertion.fields)
     return _evaluate_all_items_have_field(assertion.path, value, assertion.field)
 
 
@@ -381,6 +391,57 @@ def _evaluate_all_items_have_field(path: str, value: JsonValue, field_name: str 
     )
 
 
+def _evaluate_all_items_absent_fields(path: str, value: JsonValue, field_names: tuple[str, ...]) -> AssertionResult:
+    """Evaluate whether forbidden fields are absent from an object or array.
+
+    Args:
+        path: Dot-separated JSON path used for diagnostic messages.
+        value: Resolved JSON value to validate.
+        field_names: Field names that must be absent from every object at the
+            resolved path.
+
+    Returns:
+        Assertion result indicating whether all forbidden fields were omitted.
+    """
+    if not field_names:
+        return AssertionResult(passed=False, message=f"JSON field {path} has no forbidden item fields")
+    if isinstance(value, Mapping):
+        return _evaluate_object_absent_fields(path, value, field_names)
+    if not isinstance(value, list):
+        return AssertionResult(passed=False, message=f"JSON field {path} must be an object or array")
+    for index, item in enumerate(value):
+        if not isinstance(item, Mapping):
+            return AssertionResult(passed=False, message=f"JSON field {path}[{index}] must be an object")
+        result = _evaluate_object_absent_fields(f"{path}[{index}]", item, field_names)
+        if not result.passed:
+            return result
+    return AssertionResult(
+        passed=True,
+        message=f"Every item in JSON field {path} omits fields: {_format_field_names(field_names)}",
+    )
+
+
+def _evaluate_object_absent_fields(
+    path: str,
+    value: Mapping[str, JsonValue],
+    field_names: tuple[str, ...],
+) -> AssertionResult:
+    """Evaluate whether forbidden fields are absent from one object.
+
+    Args:
+        path: Dot-separated JSON path used for diagnostic messages.
+        value: Resolved JSON object to validate.
+        field_names: Field names that must be absent from the object.
+
+    Returns:
+        Assertion result indicating whether the object omitted all fields.
+    """
+    for field_name in field_names:
+        if field_name in value:
+            return AssertionResult(passed=False, message=f"JSON field {path}.{field_name} must be absent")
+    return AssertionResult(passed=True, message=f"JSON field {path} omits fields: {_format_field_names(field_names)}")
+
+
 def _evaluate_header(assertion: HeaderAssertion, *, headers: Mapping[str, str] | None) -> AssertionResult:
     """Evaluate a response-header assertion.
 
@@ -456,6 +517,18 @@ def _format_json_value_list(values: tuple[JsonValue, ...]) -> str:
     return ", ".join(_format_json_value(value) for value in values)
 
 
+def _format_field_names(field_names: tuple[str, ...]) -> str:
+    """Render JSON object field names for diagnostics.
+
+    Args:
+        field_names: Field names to display.
+
+    Returns:
+        Comma-separated field names.
+    """
+    return ", ".join(field_names)
+
+
 def _json_values_equal(left: JsonValue, right: JsonValue | None) -> bool:
     """Compare JSON values without conflating booleans and numbers.
 
@@ -494,18 +567,28 @@ _MISSING = _MissingValue()
 
 
 def _resolve_json_path(body: JsonObject, path: str) -> JsonValue | _MissingValue:
-    """Resolve a dot-separated JSON object path.
+    """Resolve a dot-separated JSON path through objects and arrays.
 
     Args:
         body: Parsed JSON response body to traverse.
-        path: Dot-separated field path (e.g. ``openid_configuration.issuer``).
+        path: Dot-separated field path. Numeric segments traverse arrays, for
+            example ``Data.Account.0.AccountId``.
 
     Returns:
         The resolved value, or the ``_MISSING`` sentinel if any segment is absent.
     """
     current_value: JsonValue = body
     for path_part in path.split("."):
-        if not isinstance(current_value, Mapping) or path_part not in current_value:
-            return _MISSING
-        current_value = current_value[path_part]
+        if isinstance(current_value, Mapping):
+            if path_part not in current_value:
+                return _MISSING
+            current_value = current_value[path_part]
+            continue
+        if isinstance(current_value, list) and path_part.isdecimal():
+            index = int(path_part)
+            if index >= len(current_value):
+                return _MISSING
+            current_value = current_value[index]
+            continue
+        return _MISSING
     return current_value

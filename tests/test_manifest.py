@@ -336,6 +336,37 @@ def test_parse_v1_manifest_accepts_v4_0_1_response_schema_document() -> None:
 
 @pytest.mark.unit
 @pytest.mark.parametrize(
+    "document",
+    [
+        "ob-read-write-v4.0-payment-initiation-openapi",
+        "ob-read-write-v4.0.1-payment-initiation-openapi",
+    ],
+)
+def test_parse_v1_manifest_accepts_payment_initiation_response_schema_documents(document: str) -> None:
+    """Parse response schema assertions targeting bundled PIS OpenAPI documents.
+
+    Args:
+        document: Bundled Payment Initiation OpenAPI document identifier under test.
+    """
+    raw_manifest = valid_v1_manifest()
+    step = cast("dict[str, JsonValue]", cast("list[JsonValue]", raw_manifest["steps"])[0])
+    step["assertions"] = [
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": document,
+            "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
+        }
+    ]
+
+    manifest = parse_manifest(raw_manifest)
+
+    assertion = cast("ResponseSchemaAssertion", cast("ManifestStep", manifest.steps[0]).assertions[0])
+    assert assertion.document == document
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
     ("raw_assertion", "message"),
     [
         (
@@ -356,7 +387,10 @@ def test_parse_v1_manifest_accepts_v4_0_1_response_schema_document() -> None:
             },
             (
                 r"steps\[0\]\.assertions\[0\]\.document must be one of: "
-                r"ob-read-write-v4\.0-account-info-openapi, ob-read-write-v4\.0\.1-account-info-openapi"
+                r"ob-read-write-v4\.0-account-info-openapi, "
+                r"ob-read-write-v4\.0-payment-initiation-openapi, "
+                r"ob-read-write-v4\.0\.1-account-info-openapi, "
+                r"ob-read-write-v4\.0\.1-payment-initiation-openapi"
             ),
         ),
         (
@@ -3005,6 +3039,33 @@ def test_parse_v1_http_step_accepts_detached_jws_policy() -> None:
 
     step = cast("ManifestStep", manifest.steps[0])
     assert step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+
+
+@pytest.mark.unit
+def test_parse_v1_http_step_accepts_detached_jws_omitted_headers() -> None:
+    """Detached-JWS policies may omit OB protected headers for negative tests."""
+    raw_manifest: dict[str, JsonValue] = {
+        "schemaVersion": "v1",
+        "name": "detached-jws-policy",
+        "steps": [
+            {
+                "id": "consent",
+                "name": "Consent",
+                "request": {
+                    "method": "POST",
+                    "url": "https://resource.example.com/open-banking/v4.0/pisp/domestic-payment-consents",
+                    "detachedJws": {"source": "fapi-signing", "omitProtectedHeaders": ["iss"]},
+                    "body": {"Data": {"Initiation": {}}, "Risk": {}},
+                },
+                "assertions": [{"type": "http_status", "expected": 400}],
+            }
+        ],
+    }
+
+    manifest = parse_manifest(raw_manifest)
+
+    step = cast("ManifestStep", manifest.steps[0])
+    assert step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing", omit_protected_headers=("iss",))
 
 
 @pytest.mark.unit

@@ -45,6 +45,7 @@ def _case(
     dependencies: tuple[str, ...] = (),
     mandatory: bool = True,
     runtime_requirements: tuple[RuntimeInputRequirement, ...] = (),
+    specification_versions: tuple[str, ...] = (),
 ) -> CatalogueTestCase:
     return CatalogueTestCase(
         test_case_id=test_case_id,
@@ -55,6 +56,7 @@ def _case(
             security_profiles=_profile("all"),
             endpoint_refs=endpoint_refs,
             required_capability_ids=capability_ids,
+            specification_versions=specification_versions,
         ),
         mandatory=mandatory,
         dependencies=dependencies,
@@ -106,6 +108,7 @@ def _spec(
         ),
     ),
     runtime_inputs: dict[str, JsonValue] | None = None,
+    specification_version: str | None = None,
     deselected: tuple[str, ...] = (),
     overrides: tuple[AssertionOverride, ...] = (),
 ) -> TestPlanSpec:
@@ -115,6 +118,7 @@ def _spec(
         security_profile="fapi1-advanced",
         implemented_endpoints=endpoints,
         runtime_inputs={} if runtime_inputs is None else runtime_inputs,
+        specification_version=specification_version,
         deselected_test_case_ids=deselected,
         assertion_overrides=overrides,
     )
@@ -166,9 +170,9 @@ def test_parse_v2_plan_derives_runtime_inputs_from_structured_config() -> None:
 
     assert isinstance(document, PlanDocumentV2)
     assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
-    assert "consentedAccountId" not in document.runtime_inputs
-    assert "fromBookingDateTime" not in document.runtime_inputs
-    assert "toBookingDateTime" not in document.runtime_inputs
+    assert document.runtime_inputs["consentedAccountId"] == "account-123"
+    assert document.runtime_inputs["fromBookingDateTime"] == "2026-01-01T00:00:00Z"
+    assert document.runtime_inputs["toBookingDateTime"] == "2026-01-31T23:59:59Z"
     assert document.runtime_inputs["debtorAccountSchemeName"] == "UK.OBIE.SortCodeAccountNumber"
     assert document.runtime_inputs["debtorAccountIdentification"] == "12345678901234"
     assert document.runtime_inputs["debtorAccountName"] == "Model Bank Account"
@@ -246,6 +250,20 @@ def test_compile_selects_applicable_endpoint_cases_and_dependencies() -> None:
     assert setup_decision.selected is True
     assert setup_decision.dependency_of == ("accounts-read",)
     assert compiled.certifying is True
+
+
+@pytest.mark.unit
+def test_compile_filters_applicable_cases_by_specification_version() -> None:
+    account_ref = EndpointRef(method="GET", path="/open-banking/v4.0/aisp/accounts")
+    v31_case = _case("accounts-read-v31", endpoint_refs=(account_ref,), specification_versions=("3.1.11",))
+    v40_case = _case("accounts-read-v40", endpoint_refs=(account_ref,), specification_versions=("4.0.1",))
+
+    compiled = compile_test_plan(_catalogue(v31_case, v40_case), _spec(specification_version="4.0.1"))
+
+    assert [case.test_case_id for case in compiled.test_cases] == ["accounts-read-v40"]
+    decisions = {decision.test_case_id: decision for decision in compiled.traceability.applicability_decisions}
+    assert decisions["accounts-read-v31"].selected is False
+    assert decisions["accounts-read-v31"].reason == "not applicable to specification version 4.0.1"
 
 
 @pytest.mark.unit
@@ -685,7 +703,7 @@ def test_parse_canonical_plan_document_maps_prd_business_and_security_fields() -
     assert isinstance(resource_ids, dict)
     assert resource_ids["accountIds"] == [{"accountId": "account-123"}]
     assert document.runtime_inputs["resourceBaseUrl"] == "https://rs.example.com"
-    assert "consentedAccountId" not in document.runtime_inputs
+    assert document.runtime_inputs["consentedAccountId"] == "account-123"
     assert document.runtime_inputs["accessToken"] == "secret-access-token"
 
 

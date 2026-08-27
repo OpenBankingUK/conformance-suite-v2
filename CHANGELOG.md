@@ -27,6 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - Participant-facing execution now compiles endpoint selections into catalogue plans and reuses the hardened HTTP, masking, signing, PSU authorisation, logging, and result-evidence execution path.
+- CBPII catalogue coverage now executes the distinct legacy invalid-account and expirationDateTime variants from the 3.1.11, 4.0.0, and 4.0.1 FCS manifests instead of grouping them into aggregated cases.
+- PIS, AIS, and VRP catalogue coverage now has explicit parity guards for all legacy v3.1 and v4.0 FCS manifest scripts, with AIS expanded across the remaining accounts-and-transactions resource families.
 - Public documentation now describes canonical JSON-first test plans, grouped config plus endpoint/capability execution, and the guided builder workflow instead of checked-in examples, config-selected suites, public manifest authoring, `planSpec`, or generated-test selection.
 - Browser import/export now accepts and emits schemaVersion `1.0` JSON-first test plans only.
 - Browser wizard sessions now default to server-side file storage so local builder drafts work without running SQLite migrations first.
@@ -34,11 +36,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browser discovery now treats JWKS as automatic security metadata rather than a participant-facing follow-up choice, removes participant-configurable HTTP and PSU authorisation timeouts, and drives response-signature validation from catalogue coverage.
 - Environment labels are removed from new builder plans, runtime config, execution logs, and result JSON because they are metadata-only and not part of FCS conformance behaviour.
 - The E2E workflow placeholder config path moved from `config/` to `tests/fixtures/` so the Django config package no longer ships participant-facing examples.
+- AIS accounts-and-transactions catalogue execution now creates separate legacy basic and detail permission consents/tokens, so full AIS scope exercises both PSU-authorised permission profiles instead of one broad all-permissions consent.
+- PIS catalogue coverage now exposes the legacy missing-signature-claim, scheduled-payment datetime format, and v3.1 no-`x-fapi-financial-id` consent behaviours as distinct generated tests.
+- VRP catalogue coverage now exposes the legacy v3.1 pre/post-3.1.11 consent and payment body variants as distinct generated tests, with v4 VRP and cVRP retaining separate executable provenance.
 
 ### Fixed
 
 - cVRP is no longer exposed through the bundled Open Banking catalogue registry, Open Banking UK Read/Write v2 builder, or aggregate compiler boundary.
 - VRP nested funds-confirmation operations now stay grouped under their parent domestic VRP consent resource group instead of appearing as a separate funds-confirmation resource group.
+- AIS resource runs no longer fail status-only negative cases on non-JSON error bodies, correctly resolve JSON assertion paths through arrays, and generate invalid account identifiers for legacy account-scoped negative cases.
+- AIS legacy negative cases now preserve one-of status expectations such as HTTP 400 or 403, and the legacy FCS Product playback typo `/product` is canonicalised to `/products`.
+- AIS basic-permission checks now assert detail-only account, beneficiary, and transaction fields are absent, matching the previous FCS permission-filtering assertions.
+- PIS endpoint selections in the browser plan builder now show Payment Initiation business inputs and validate only the selected product-family defaults they need, with JSON fallbacks accepted for grouped account, amount, and standing-order frequency values.
+- PIS catalogue execution now sends spec-shaped payment-initiation JSON bodies, applies detached JWS signing to payment write requests, and inserts PSU authorisation steps before authorised consent/payment follow-ups.
+- PIS v4 payment write requests now use the Open Banking v3.1.4+ detached-JWS profile, and v4 response-signature validation no longer rejects valid encoded-payload signatures for missing `b64=false`.
+- PIS v4 domestic consent status assertions now use `Data.Status` with v4 status codes, and downstream PIS payment calls now use per-consent PSU-authorised payment tokens instead of the initial client-credentials token.
+- PIS payment consent creation now generates fresh instruction identifiers for each run, and PIS consent/payment status reads use the client-credentials payments token while authorised submissions use the matching PSU token.
+- PIS standing-order legacy schema-check cases now compile with bundled Payment Initiation OpenAPI metadata instead of failing at run launch.
+- VRP catalogue execution now sends legacy-shaped domestic VRP/cVRP JSON bodies to versioned Open Banking PISP resource paths, applies detached JWS signing to write requests, generates fresh payment identifiers, and inserts consent-specific PSU authorisation before authorised payment/funds-confirmation calls.
+- VRP Read/Write v4.0, v4.0.0, and v4.0.1 plans now honour the selected specification version and no longer execute legacy v3.1 pre/post-3.1.11 consent or payment variants.
+- VRP v4 funds-confirmation and repeat consent-deletion cases now restore legacy FCS `asserts_one_of` status-code checks while preserving the single PSU authorisation flow from the old v4 manifest.
+- AIS and PIS Read/Write v4.0, v4.0.0, and v4.0.1 plans now filter out legacy v3-only executable variants while retaining their provenance for v3 compatibility.
+- AIS, PIS, CBPII, and VRP v4 catalogue cases now emit bundled OpenAPI response-schema assertions for legacy JSON-response scripts that had `schemaCheck: true`.
+- CBPII v4 executable assertions now restore missing legacy FAPI interaction and JSON content-type header checks on read, funds-confirmation, and delete flows.
+- Business-data requirement badges now render on a consistent line beneath field labels, keeping inputs aligned across AIS, PIS, and CBPII sections even when labels wrap.
 
 ### Removed
 

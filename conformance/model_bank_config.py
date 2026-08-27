@@ -135,6 +135,8 @@ class BusinessDefaultsConfig:
         pis: Payment account, amount, execution date, and standing-order
             defaults.
         cbpii: CBPII debtor-account defaults.
+        vrp: VRP creditor account, amount, and consent control-parameter
+            defaults.
         conditional_properties: Optional or conditional request-property
             selections carried by the plan config.
     """
@@ -142,6 +144,7 @@ class BusinessDefaultsConfig:
     ais: JsonObject = field(default_factory=dict)
     pis: JsonObject = field(default_factory=dict)
     cbpii: JsonObject = field(default_factory=dict)
+    vrp: JsonObject = field(default_factory=dict)
     conditional_properties: tuple[JsonValue, ...] = ()
 
 
@@ -256,6 +259,7 @@ def parse_model_bank_config(
             "ais",
             "pis",
             "cbpii",
+            "vrp",
             "conditionalProperties",
         },
         location="config",
@@ -455,6 +459,7 @@ def _parse_business_defaults_config(raw_config: dict[str, JsonValue]) -> Busines
         ais=_optional_json_object(raw_config, "ais", location="config"),
         pis=_optional_json_object(raw_config, "pis", location="config"),
         cbpii=_optional_json_object(raw_config, "cbpii", location="config"),
+        vrp=_optional_json_object(raw_config, "vrp", location="config"),
         conditional_properties=_optional_json_array(raw_config, "conditionalProperties", location="config"),
     )
 
