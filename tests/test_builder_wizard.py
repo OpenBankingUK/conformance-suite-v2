@@ -530,7 +530,6 @@ def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
             "pis_currency_of_transfer": "GBP",
             "pis_requested_execution_date_time": "2026-02-01T00:00:00Z",
             "pis_first_payment_date_time": "2026-02-02T00:00:00Z",
-            "pis_payment_frequency": "Monthly",
             "pis_standing_order_frequency_json": '{"type": "Evry", "pointInTime": "01"}',
             "cbpii_debtor_account_json": (
                 '{"schemeName": "UK.OBIE.SortCodeAccountNumber", '
@@ -556,7 +555,6 @@ def test_grouped_config_form_preserves_legacy_fcs_functional_defaults() -> None:
     assert "openBanking" not in form.config
     pis = form.config["pis"]
     assert isinstance(pis, dict)
-    assert pis["paymentFrequency"] == "Monthly"
     assert pis["standingOrderFrequency"] == {"type": "Evry", "pointInTime": "01"}
     cbpii = form.config["cbpii"]
     assert isinstance(cbpii, dict)
@@ -615,7 +613,7 @@ def test_structured_config_values_remove_duplicate_runtime_prompts() -> None:
     prompts = runtime_input_prompts_for_draft(draft)
 
     assert document.runtime_inputs["resourceBaseUrl"] == "https://resource.example.com"
-    assert "consentedAccountId" not in document.runtime_inputs
+    assert document.runtime_inputs["consentedAccountId"] == "account-123"
     assert "resourceBaseUrl" not in {prompt.input_id for prompt in prompts}
     assert "consentedAccountId" not in {prompt.input_id for prompt in prompts}
     assert "accessToken" not in {prompt.input_id for prompt in prompts}
@@ -655,10 +653,56 @@ def test_config_visibility_uses_selected_endpoint_apis() -> None:
     visibility = config_visibility_for_draft(draft)
 
     assert visibility.selected_api_ids == frozenset({"ais"})
-    assert visibility.show_ais is False
+    assert visibility.show_ais is True
     assert visibility.show_pis is False
     assert visibility.show_cbpii is False
-    assert visibility.show_business_defaults is False
+    assert visibility.show_business_defaults is True
+    assert visibility.ais_account_id_required is False
+
+
+@pytest.mark.unit
+def test_config_visibility_requires_ais_account_id_for_account_scoped_endpoints() -> None:
+    """AIS account-scoped endpoint selections mark the account id as required."""
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+    )
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=("account-and-transaction",),
+    )
+    balances_endpoint = next(
+        endpoint
+        for group in hierarchy.resource_groups
+        for endpoint in group.endpoints
+        if endpoint.path == "/open-banking/v4.0/aisp/accounts/{AccountId}/balances"
+    )
+    draft = draft.with_scope_selection(
+        resource_group_ids=("account-and-transaction",),
+        endpoint_ids=(balances_endpoint.id,),
+        endpoint_capability_ids={},
+    ).with_config(
+        config=DISCOVERY_CONFIG,
+    )
+
+    visibility = config_visibility_for_draft(draft)
+    missing_form = BusinessConfigForm(data={}, config_visibility=visibility)
+    advanced_form = BusinessConfigForm(
+        data={"ais_resource_ids_json": '{"accountIds": [{"accountId": "account-123"}]}'},
+        config_visibility=visibility,
+    )
+
+    assert visibility.ais_account_id_required is True
+    assert missing_form.is_valid() is False
+    assert "required for selected account-scoped AIS endpoints" in missing_form.errors["ais_consented_account_id"][0]
+    assert advanced_form.is_valid(), advanced_form.errors.as_json()
+    assert advanced_form.config == {"ais": {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}}
 
 
 @pytest.mark.unit
@@ -700,6 +744,84 @@ def test_config_visibility_restores_cbpii_business_defaults() -> None:
 
 
 @pytest.mark.unit
+def test_config_visibility_restores_pis_business_defaults() -> None:
+    """PIS endpoint selections show payment business defaults."""
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+    )
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=("payment-initiation",),
+    )
+    pis_endpoint = next(
+        endpoint
+        for group in hierarchy.resource_groups
+        for endpoint in group.endpoints
+        if endpoint.path == "/open-banking/v4.0/pisp/domestic-payments"
+    )
+    draft = draft.with_scope_selection(
+        resource_group_ids=("payment-initiation",),
+        endpoint_ids=(pis_endpoint.id,),
+        endpoint_capability_ids={},
+    ).with_config(config=DISCOVERY_CONFIG)
+
+    visibility = config_visibility_for_draft(draft)
+
+    assert visibility.selected_api_ids == frozenset({"pis"})
+    assert visibility.show_ais is False
+    assert visibility.show_pis is True
+    assert visibility.show_cbpii is False
+    assert visibility.show_business_defaults is True
+    assert visibility.pis_domestic_creditor_account_required is True
+    assert visibility.pis_instructed_amount_required is True
+    assert visibility.pis_international_creditor_account_required is False
+    assert visibility.pis_requested_execution_date_time_required is False
+
+
+@pytest.mark.unit
+def test_config_visibility_marks_all_pis_business_inputs_for_all_pis_endpoints() -> None:
+    """Selecting all PIS endpoints marks every PIS product-family input required."""
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+    )
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1")
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=("payment-initiation",),
+    )
+    endpoint_ids = tuple(endpoint.id for group in hierarchy.resource_groups for endpoint in group.endpoints)
+    draft = draft.with_scope_selection(
+        resource_group_ids=("payment-initiation",),
+        endpoint_ids=endpoint_ids,
+        endpoint_capability_ids={},
+    ).with_config(config=DISCOVERY_CONFIG)
+
+    visibility = config_visibility_for_draft(draft)
+
+    assert visibility.show_pis is True
+    assert visibility.pis_domestic_creditor_account_required is True
+    assert visibility.pis_international_creditor_account_required is True
+    assert visibility.pis_instructed_amount_required is True
+    assert visibility.pis_currency_of_transfer_required is True
+    assert visibility.pis_requested_execution_date_time_required is True
+    assert visibility.pis_first_payment_date_time_required is True
+    assert visibility.pis_standing_order_frequency_required is True
+
+
+@pytest.mark.unit
 def test_business_config_form_requires_cbpii_debtor_account_values() -> None:
     """CBPII business config serializes debtor account values into structured config."""
     form = BusinessConfigForm(
@@ -726,6 +848,129 @@ def test_business_config_form_requires_cbpii_debtor_account_values() -> None:
                 "identification": "12345678901234",
                 "name": "Model Bank Account",
             }
+        }
+    }
+
+
+@pytest.mark.unit
+def test_business_config_form_requires_vrp_business_values() -> None:
+    """VRP business config serializes creditor, amount, and validity defaults."""
+    visibility = ConfigVisibility(
+        selected_api_ids=frozenset({"vrp"}),
+        show_ais=False,
+        show_pis=False,
+        show_cbpii=False,
+        show_vrp=True,
+        show_business_defaults=True,
+    )
+    missing_form = BusinessConfigForm(data={}, config_visibility=visibility)
+    form = BusinessConfigForm(
+        data={
+            "vrp_creditor_account_scheme_name": "UK.OBIE.SortCodeAccountNumber",
+            "vrp_creditor_account_identification": "70000170000002",
+            "vrp_creditor_account_name": "VRP creditor",
+            "vrp_instructed_amount_amount": "1.00",
+            "vrp_instructed_amount_currency": "GBP",
+            "vrp_valid_from_date_time": "2026-08-27T00:00:00+00:00",
+            "vrp_valid_to_date_time": "2026-09-27T00:00:00+00:00",
+        },
+        config_visibility=visibility,
+    )
+
+    assert missing_form.is_valid() is False
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "vrp": {
+            "validFromDateTime": "2026-08-27T00:00:00+00:00",
+            "validToDateTime": "2026-09-27T00:00:00+00:00",
+            "creditorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "70000170000002",
+                "name": "VRP creditor",
+            },
+            "instructedAmount": {"amount": "1.00", "currency": "GBP"},
+        }
+    }
+
+
+@pytest.mark.unit
+def test_business_config_form_requires_selected_pis_values() -> None:
+    """PIS validation requires selected product-family payment defaults."""
+    visibility = ConfigVisibility(
+        selected_api_ids=frozenset({"pis"}),
+        show_ais=False,
+        show_pis=True,
+        show_cbpii=False,
+        show_vrp=False,
+        show_business_defaults=True,
+        pis_domestic_creditor_account_required=True,
+        pis_instructed_amount_required=True,
+    )
+
+    missing_form = BusinessConfigForm(data={}, config_visibility=visibility)
+    json_fallback_form = BusinessConfigForm(
+        data={
+            "pis_creditor_account_json": (
+                '{"schemeName": "UK.OBIE.SortCodeAccountNumber", '
+                '"identification": "12345678901234", "name": "Model Bank Account"}'
+            ),
+            "pis_instructed_amount_json": '{"amount": "10.00", "currency": "GBP"}',
+        },
+        config_visibility=visibility,
+    )
+
+    assert missing_form.is_valid() is False
+    assert "required for selected PIS endpoints" in missing_form.errors["pis_creditor_account_scheme_name"][0]
+    assert "required for selected PIS endpoints" in missing_form.errors["pis_instructed_amount_amount"][0]
+    assert json_fallback_form.is_valid(), json_fallback_form.errors.as_json()
+    assert json_fallback_form.config == {
+        "pis": {
+            "creditorAccount": {
+                "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                "identification": "12345678901234",
+                "name": "Model Bank Account",
+            },
+            "instructedAmount": {"amount": "10.00", "currency": "GBP"},
+        }
+    }
+
+
+@pytest.mark.unit
+def test_business_config_form_requires_only_selected_pis_family() -> None:
+    """International PIS requiredness does not require domestic-only fields."""
+    visibility = ConfigVisibility(
+        selected_api_ids=frozenset({"pis"}),
+        show_ais=False,
+        show_pis=True,
+        show_cbpii=False,
+        show_vrp=False,
+        show_business_defaults=True,
+        pis_international_creditor_account_required=True,
+        pis_instructed_amount_required=True,
+        pis_currency_of_transfer_required=True,
+    )
+    form = BusinessConfigForm(
+        data={
+            "pis_international_creditor_account_scheme_name": "UK.OBIE.IBAN",
+            "pis_international_creditor_account_identification": "GB29NWBK60161331926819",
+            "pis_international_creditor_account_name": "International Creditor",
+            "pis_instructed_amount_amount": "10.00",
+            "pis_instructed_amount_currency": "GBP",
+            "pis_currency_of_transfer": "GBP",
+        },
+        config_visibility=visibility,
+    )
+
+    assert form.is_valid(), form.errors.as_json()
+    assert form.config == {
+        "pis": {
+            "currencyOfTransfer": "GBP",
+            "internationalCreditorAccount": {
+                "schemeName": "UK.OBIE.IBAN",
+                "identification": "GB29NWBK60161331926819",
+                "name": "International Creditor",
+            },
+            "instructedAmount": {"amount": "10.00", "currency": "GBP"},
         }
     }
 
@@ -778,7 +1023,7 @@ def test_scoped_config_form_prunes_out_of_scope_business_defaults() -> None:
 
     assert form.is_valid(), form.errors.as_json()
     assert form.config is not None
-    assert "ais" not in form.config
+    assert form.config["ais"] == {"resourceIds": {"accountIds": [{"accountId": "account-123"}]}}
     assert "pis" not in form.config
     assert "cbpii" not in form.config
     assert "conditionalProperties" not in form.config

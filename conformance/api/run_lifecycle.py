@@ -42,6 +42,18 @@ from conformance.test_plan import TestPlan
 
 logger = logging.getLogger(__name__)
 
+_AIS_CONSENT_TEMPLATE_STEP_ID = "ais-at-setup-consent-request"
+"""Catalogue template step id expanded into AIS permission-profile consent steps."""
+
+_AIS_TOKEN_TEMPLATE_STEP_ID = "ais-at-setup-token-request"  # noqa: S105 - step id, not a secret
+"""Catalogue template step id expanded into AIS permission-profile token steps."""
+
+_AIS_PERMISSION_PROFILE_TOKEN_IDS = {
+    "basic": "ais-account-access-basic",
+    "detail": "ais-account-access-detail",
+}
+"""Semantic AIS access-token ids keyed by legacy permission profile."""
+
 
 class BrowserParticipantActionLogger(ExecutionLogger):
     """Decorator that mirrors browser-required PSU actions into run state.
@@ -280,6 +292,14 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
         )
     for test_case in compiled_plan.test_cases:
         for request_step in test_case.request_steps:
+            replacement_steps = _compiled_plan_replacement_steps_snapshot(
+                compiled_plan,
+                request_step,
+                start_order=len(planned_steps),
+            )
+            if replacement_steps:
+                planned_steps.extend(replacement_steps)
+                continue
             planned_steps.append(
                 RunPlanStep(
                     step_id=request_step.step_id,
@@ -300,6 +320,89 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
                 )
             )
     return tuple(planned_steps)
+
+
+def _compiled_plan_replacement_steps_snapshot(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+    *,
+    start_order: int,
+) -> list[RunPlanStep]:
+    """Build planned rows for catalogue request steps replaced at runtime.
+
+    Args:
+        compiled_plan: Compiled catalogue plan selected for launch.
+        request_step: Catalogue request step being considered for snapshotting.
+        start_order: Snapshot order assigned to the first replacement step.
+
+    Returns:
+        Ordered replacement run-plan entries, or an empty list when the
+        catalogue request step executes as-is.
+    """
+    profiles = _compiled_plan_ais_permission_profiles(compiled_plan)
+    if request_step.step_id == _AIS_CONSENT_TEMPLATE_STEP_ID:
+        replacement_steps: list[RunPlanStep] = []
+        for profile in profiles:
+            replacement_steps.extend(
+                (
+                    RunPlanStep(
+                        step_id=f"ais-at-setup-{profile}-consent-request",
+                        name=f"Create AIS {profile} account-access consent",
+                        kind="http",
+                        group=f"ais-at-setup-{profile}-consent",
+                        phase="setup",
+                        mandatory=True,
+                        optional=False,
+                        order=start_order + len(replacement_steps),
+                    ),
+                    RunPlanStep(
+                        step_id=f"setup-ais-{profile}-consent-authorisation",
+                        name=f"Authorise AIS {profile} account-access consent",
+                        kind="psu-authorization",
+                        group=f"ais-at-setup-{profile}-consent",
+                        phase="setup",
+                        mandatory=True,
+                        optional=False,
+                        order=start_order + len(replacement_steps) + 1,
+                    ),
+                )
+            )
+        return replacement_steps
+    if request_step.step_id == _AIS_TOKEN_TEMPLATE_STEP_ID:
+        return [
+            RunPlanStep(
+                step_id=f"ais-at-setup-{profile}-token-request",
+                name=f"Exchange AIS {profile} authorisation code for account-access token",
+                kind="http",
+                group=f"ais-at-setup-{profile}-token",
+                phase="setup",
+                mandatory=True,
+                optional=False,
+                order=start_order + offset,
+            )
+            for offset, profile in enumerate(profiles)
+        ]
+    return []
+
+
+def _compiled_plan_ais_permission_profiles(compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
+    """Return selected AIS permission profiles in deterministic execution order.
+
+    Args:
+        compiled_plan: Compiled catalogue plan selected for launch.
+
+    Returns:
+        Permission profile labels required by selected AIS resource requests.
+    """
+    required_token_ids = {
+        request_step.required_token_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+        if request_step.required_token_id is not None
+    }
+    return tuple(
+        profile for profile, token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.items() if token_id in required_token_ids
+    )
 
 
 def _compiled_plan_inline_steps_snapshot(

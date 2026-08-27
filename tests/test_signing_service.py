@@ -11,6 +11,8 @@ from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 from joserfc import jwk, jws, jwt
+from joserfc.jws import JWSRegistry
+from joserfc.registry import HeaderParameter
 
 from conformance.model_bank_config import FapiSigningConfig
 from conformance.signing_credentials import SigningCredentials, load_signing_credentials
@@ -20,6 +22,32 @@ from conformance.signing_service import (
     JwtSigningError,
     RequestObjectSigningInput,
 )
+
+_OPEN_BANKING_IAT = "http://openbanking.org.uk/iat"
+"""Open Banking detached JWS issued-at protected header name."""
+
+_OPEN_BANKING_ISS = "http://openbanking.org.uk/iss"
+"""Open Banking detached JWS issuer protected header name."""
+
+_OPEN_BANKING_TAN = "http://openbanking.org.uk/tan"
+"""Open Banking detached JWS trust-anchor protected header name."""
+
+
+def _open_banking_jws_registry() -> JWSRegistry:
+    """Return a JWS registry that accepts Open Banking protected headers.
+
+    Returns:
+        Registry configured for PS256 Open Banking signature tests.
+    """
+    return JWSRegistry(
+        header_registry={
+            **JWSRegistry.default_header_registry,
+            _OPEN_BANKING_IAT: HeaderParameter("Open Banking issued-at header", "int"),
+            _OPEN_BANKING_ISS: HeaderParameter("Open Banking issuer header", "str"),
+            _OPEN_BANKING_TAN: HeaderParameter("Open Banking trust-anchor header", "str"),
+        },
+        algorithms=["PS256"],
+    )
 
 
 def _write_signing_pair(certificate_root: Path, *, stem: str) -> tuple[Path, Path]:
@@ -338,4 +366,89 @@ def test_sign_detached_json_payload_builds_detached_ps256_signature(tmp_path: Pa
 
     assert detached_signature.split(".")[1] == ""
     assert verified.headers() == {"alg": "PS256", "kid": "signing-key-001", "b64": False, "crit": ["b64"]}
+    assert verified.payload == payload
+
+
+@pytest.mark.unit
+def test_sign_detached_json_payload_builds_ob_v4_signature(tmp_path: Path) -> None:
+    """PIS v4 request signing uses the OB v3.1.4+ detached-JWS profile.
+
+    Args:
+        tmp_path: Pytest temporary directory for signing material.
+    """
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = _build_signing_config(
+        certificate_root,
+        certificate_path=certificate_path,
+        private_key_path=private_key_path,
+    )
+    service = _build_signing_service(config)
+    payload = b'{"Data":{"Initiation":{"InstructionIdentification":"FCSV2"}},"Risk":{}}'
+
+    detached_signature = service.sign_detached_json_payload(payload, profile="ob-v3.1.4+")
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=payload,
+        registry=_open_banking_jws_registry(),
+    )
+
+    assert detached_signature.split(".")[1] == ""
+    assert verified.headers() == {
+        "alg": "PS256",
+        "kid": "signing-key-001",
+        "typ": "JOSE",
+        "cty": "application/json",
+        _OPEN_BANKING_IAT: 1_780_920_000,
+        _OPEN_BANKING_ISS: "client-issuer",
+        _OPEN_BANKING_TAN: "openbanking.org.uk",
+        "crit": [_OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN],
+    }
+    assert verified.payload == payload
+
+
+@pytest.mark.unit
+def test_sign_detached_json_payload_can_omit_ob_v4_iss_claim(tmp_path: Path) -> None:
+    """Negative PIS parity signatures can omit only the OB iss protected header.
+
+    Args:
+        tmp_path: Pytest temporary directory for signing material.
+    """
+    certificate_root = tmp_path / "certs"
+    certificate_root.mkdir()
+    certificate_path, private_key_path = _write_signing_pair(certificate_root, stem="signing")
+    config = _build_signing_config(
+        certificate_root,
+        certificate_path=certificate_path,
+        private_key_path=private_key_path,
+    )
+    service = _build_signing_service(config)
+    payload = b'{"Data":{"Initiation":{"InstructionIdentification":"FCSV2"}},"Risk":{}}'
+
+    detached_signature = service.sign_detached_json_payload(
+        payload,
+        profile="ob-v3.1.4+",
+        omit_protected_headers=("iss",),
+    )
+    verified = jws.deserialize_compact(
+        detached_signature,
+        jwk.import_key(certificate_path.read_bytes(), key_type="RSA"),
+        algorithms=["PS256"],
+        payload=payload,
+        registry=_open_banking_jws_registry(),
+    )
+
+    assert detached_signature.split(".")[1] == ""
+    assert verified.headers() == {
+        "alg": "PS256",
+        "kid": "signing-key-001",
+        "typ": "JOSE",
+        "cty": "application/json",
+        _OPEN_BANKING_IAT: 1_780_920_000,
+        _OPEN_BANKING_TAN: "openbanking.org.uk",
+        "crit": [_OPEN_BANKING_IAT, _OPEN_BANKING_TAN],
+    }
     assert verified.payload == payload

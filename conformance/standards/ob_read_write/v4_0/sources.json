@@ -13,6 +13,30 @@
       "sha256Chunks": ["d57ebf8b", "0132e950", "68999aab", "66066040", "38aee247", "780cf21d", "63c8ea4f", "366ef738"]
     },
     {
+      "file": "payment-initiation-openapi.json",
+      "description": "Open Banking Read/Write v4.0 Payment Initiation API OpenAPI snapshot from the latest v4.0 swagger update tag.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/payment-initiation-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0-Update-5",
+      "sha256Chunks": ["0c24d422", "7e6ff6df", "d6400b81", "aeb66238", "239fb336", "05a75290", "b7c334bc", "06ee7d13"]
+    },
+    {
+      "file": "confirmation-funds-openapi.json",
+      "description": "Open Banking Read/Write v4.0 Confirmation of Funds API OpenAPI snapshot from the latest v4.0 swagger update tag.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/confirmation-funds-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0-Update-5",
+      "sha256Chunks": ["0a51f223", "be2775b8", "1ec1eeb6", "bf3f321c", "7cc0774e", "066e1408", "789dcc6c", "66f23105"]
+    },
+    {
+      "file": "vrp-openapi.json",
+      "description": "Open Banking Read/Write v4.0 Variable Recurring Payments API OpenAPI snapshot from the latest v4.0 swagger update tag.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/vrp-openapi.json",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "ref": "v4.0-Update-5",
+      "sha256Chunks": ["1723cde2", "5440c390", "b188f709", "beab5316", "59b1ce28", "bf99d3f8", "7814f012", "87eb0653"]
+    },
+    {
       "file": "legacy-ob_4.0_accounts_transactions_fca.json",
       "description": "Previous public conformance-suite v4.0 accounts/transactions FCA manifest used as candidate rule-selection input.",
       "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/develop/manifests/ob_4.0_accounts_transactions_fca.json",

@@ -24,7 +24,10 @@
         .grid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
         .field-row { margin-top: 12px; }
         label { display: block; font-weight: 650; margin-bottom: 8px; }
-        .requirement-badge { display: inline-flex; align-items: center; margin-left: 8px; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
+        .field { display: flex; flex-direction: column; }
+        .field-heading { min-height: 54px; margin-bottom: 8px; }
+        .field-heading label { margin-bottom: 4px; }
+        .requirement-badge { display: inline-flex; align-items: center; width: fit-content; border-radius: 999px; padding: 2px 8px; font-size: 0.75rem; font-weight: 700; vertical-align: middle; }
         .requirement-badge.required { border: 1px solid #fecdca; background: #fffbfa; color: var(--danger); }
         .requirement-badge.optional { border: 1px solid var(--border); background: #f2f4f7; color: var(--muted); }
         input, textarea { width: 100%; min-height: 42px; border: 1px solid var(--border); border-radius: 6px; padding: 10px 12px; font: inherit; color: var(--text); background: #ffffff; }
@@ -37,7 +40,7 @@
         .actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; margin-top: 18px; }
         button, .button { min-height: 38px; border: 1px solid var(--accent); border-radius: 6px; padding: 8px 14px; background: var(--accent); color: #ffffff; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
         .button.secondary, button.secondary { background: #ffffff; color: var(--accent); }
-        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } }
+        @media (max-width: 840px) { header, .grid, .grid.three { display: block; } .grid > div + div { margin-top: 12px; } .field-heading { min-height: 0; } }
     </style>
 </head>
 <body>
@@ -65,25 +68,37 @@
                 <section class="config-card" aria-labelledby="ais-business-heading">
                     <h3 id="ais-business-heading">Account and Transaction</h3>
                     <div class="grid field-row">
-                        <div>
-                            <label for="{{ form.ais_consented_account_id.id_for_label }}">Consented account identifier {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_consented_account_id.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.ais_consented_account_id.id_for_label }}">Consented account identifier</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.ais_account_id_required only %}
+                            </div>
                             {{ form.ais_consented_account_id.errors }}
                             <input id="{{ form.ais_consented_account_id.id_for_label }}" name="ais_consented_account_id" type="text" value="{{ form.ais_consented_account_id.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.ais_transaction_from_date.id_for_label }}">Transaction from date {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_from_date.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.ais_transaction_from_date.id_for_label }}">Transaction from date</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_from_date.field.required only %}
+                            </div>
                             {{ form.ais_transaction_from_date.errors }}
                             <input id="{{ form.ais_transaction_from_date.id_for_label }}" name="ais_transaction_from_date" type="text" value="{{ form.ais_transaction_from_date.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.ais_transaction_to_date.id_for_label }}">Transaction to date {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_to_date.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.ais_transaction_to_date.id_for_label }}">Transaction to date</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_transaction_to_date.field.required only %}
+                            </div>
                             {{ form.ais_transaction_to_date.errors }}
                             <input id="{{ form.ais_transaction_to_date.id_for_label }}" name="ais_transaction_to_date" type="text" value="{{ form.ais_transaction_to_date.value|default_if_none:'' }}" autocomplete="off">
                         </div>
                     </div>
                     <details>
-                        <summary>Advanced AIS resource IDs JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_resource_ids_json.field.required only %}</summary>
+                        <summary>Advanced AIS resource IDs JSON</summary>
                         <p class="helper">When supplied, this JSON object overrides the friendly account identifier field.</p>
+                        <div class="field-heading">
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.ais_resource_ids_json.field.required only %}
+                        </div>
                         {{ form.ais_resource_ids_json.errors }}
                         <textarea id="{{ form.ais_resource_ids_json.id_for_label }}" name="ais_resource_ids_json" spellcheck="false">{{ form.ais_resource_ids_json.value|default_if_none:'' }}</textarea>
                     </details>
@@ -94,58 +109,107 @@
                 <section class="config-card" aria-labelledby="pis-business-heading">
                     <h3 id="pis-business-heading">Payment Initiation</h3>
                     <div class="grid three field-row">
-                        <div>
-                            <label for="{{ form.pis_creditor_account_scheme_name.id_for_label }}">Domestic creditor account scheme {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_creditor_account_scheme_name.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_creditor_account_scheme_name.id_for_label }}">Domestic creditor account scheme</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_domestic_creditor_account_required only %}
+                            </div>
                             {{ form.pis_creditor_account_scheme_name.errors }}
                             <input id="{{ form.pis_creditor_account_scheme_name.id_for_label }}" name="pis_creditor_account_scheme_name" type="text" value="{{ form.pis_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_creditor_account_identification.id_for_label }}">Domestic creditor account identification {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_creditor_account_identification.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_creditor_account_identification.id_for_label }}">Domestic creditor account identification</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_domestic_creditor_account_required only %}
+                            </div>
                             {{ form.pis_creditor_account_identification.errors }}
                             <input id="{{ form.pis_creditor_account_identification.id_for_label }}" name="pis_creditor_account_identification" type="text" value="{{ form.pis_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_creditor_account_name.id_for_label }}">Domestic creditor account name {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_creditor_account_name.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_creditor_account_name.id_for_label }}">Domestic creditor account name</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_domestic_creditor_account_required only %}
+                            </div>
                             {{ form.pis_creditor_account_name.errors }}
                             <input id="{{ form.pis_creditor_account_name.id_for_label }}" name="pis_creditor_account_name" type="text" value="{{ form.pis_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_instructed_amount_amount.id_for_label }}">Instructed amount {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_instructed_amount_amount.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_international_creditor_account_scheme_name.id_for_label }}">International creditor account scheme</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_international_creditor_account_required only %}
+                            </div>
+                            {{ form.pis_international_creditor_account_scheme_name.errors }}
+                            <input id="{{ form.pis_international_creditor_account_scheme_name.id_for_label }}" name="pis_international_creditor_account_scheme_name" type="text" value="{{ form.pis_international_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_international_creditor_account_identification.id_for_label }}">International creditor account identification</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_international_creditor_account_required only %}
+                            </div>
+                            {{ form.pis_international_creditor_account_identification.errors }}
+                            <input id="{{ form.pis_international_creditor_account_identification.id_for_label }}" name="pis_international_creditor_account_identification" type="text" value="{{ form.pis_international_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_international_creditor_account_name.id_for_label }}">International creditor account name</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_international_creditor_account_required only %}
+                            </div>
+                            {{ form.pis_international_creditor_account_name.errors }}
+                            <input id="{{ form.pis_international_creditor_account_name.id_for_label }}" name="pis_international_creditor_account_name" type="text" value="{{ form.pis_international_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_instructed_amount_amount.id_for_label }}">Instructed amount</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_instructed_amount_required only %}
+                            </div>
                             {{ form.pis_instructed_amount_amount.errors }}
                             <input id="{{ form.pis_instructed_amount_amount.id_for_label }}" name="pis_instructed_amount_amount" type="text" value="{{ form.pis_instructed_amount_amount.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_instructed_amount_currency.id_for_label }}">Instructed amount currency {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_instructed_amount_currency.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_instructed_amount_currency.id_for_label }}">Instructed amount currency</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_instructed_amount_required only %}
+                            </div>
                             {{ form.pis_instructed_amount_currency.errors }}
                             <input id="{{ form.pis_instructed_amount_currency.id_for_label }}" name="pis_instructed_amount_currency" type="text" value="{{ form.pis_instructed_amount_currency.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_currency_of_transfer.id_for_label }}">Currency of transfer {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_currency_of_transfer.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_currency_of_transfer.id_for_label }}">Currency of transfer</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_currency_of_transfer_required only %}
+                            </div>
                             {{ form.pis_currency_of_transfer.errors }}
                             <input id="{{ form.pis_currency_of_transfer.id_for_label }}" name="pis_currency_of_transfer" type="text" value="{{ form.pis_currency_of_transfer.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_requested_execution_date_time.id_for_label }}">Requested execution date/time {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_requested_execution_date_time.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_requested_execution_date_time.id_for_label }}">Requested execution date/time</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_requested_execution_date_time_required only %}
+                            </div>
                             {{ form.pis_requested_execution_date_time.errors }}
                             <input id="{{ form.pis_requested_execution_date_time.id_for_label }}" name="pis_requested_execution_date_time" type="text" value="{{ form.pis_requested_execution_date_time.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_first_payment_date_time.id_for_label }}">First payment date/time {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_first_payment_date_time.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_first_payment_date_time.id_for_label }}">First payment date/time</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_first_payment_date_time_required only %}
+                            </div>
                             {{ form.pis_first_payment_date_time.errors }}
                             <input id="{{ form.pis_first_payment_date_time.id_for_label }}" name="pis_first_payment_date_time" type="text" value="{{ form.pis_first_payment_date_time.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_payment_frequency.id_for_label }}">Payment frequency {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_payment_frequency.field.required only %}</label>
-                            {{ form.pis_payment_frequency.errors }}
-                            <input id="{{ form.pis_payment_frequency.id_for_label }}" name="pis_payment_frequency" type="text" value="{{ form.pis_payment_frequency.value|default_if_none:'' }}" autocomplete="off">
-                        </div>
-                        <div>
-                            <label for="{{ form.pis_standing_order_frequency_type.id_for_label }}">Standing-order frequency type {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_standing_order_frequency_type.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_standing_order_frequency_type.id_for_label }}">Standing-order frequency type</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_standing_order_frequency_required only %}
+                            </div>
                             {{ form.pis_standing_order_frequency_type.errors }}
                             <input id="{{ form.pis_standing_order_frequency_type.id_for_label }}" name="pis_standing_order_frequency_type" type="text" value="{{ form.pis_standing_order_frequency_type.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}">Standing-order frequency point in time {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_standing_order_frequency_point_in_time.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}">Standing-order frequency point in time</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_standing_order_frequency_required only %}
+                            </div>
                             {{ form.pis_standing_order_frequency_point_in_time.errors }}
                             <input id="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}" name="pis_standing_order_frequency_point_in_time" type="text" value="{{ form.pis_standing_order_frequency_point_in_time.value|default_if_none:'' }}" autocomplete="off">
                         </div>
@@ -154,28 +218,43 @@
                         <summary>Advanced PIS JSON fallbacks</summary>
                         <p class="helper">When supplied, these JSON objects override their friendly field groups.</p>
                         <div class="grid field-row">
-                            <div>
-                                <label for="{{ form.pis_creditor_account_json.id_for_label }}">Domestic creditor account JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_creditor_account_json.field.required only %}</label>
+                            <div class="field">
+                                <div class="field-heading">
+                                    <label for="{{ form.pis_creditor_account_json.id_for_label }}">Domestic creditor account JSON</label>
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_domestic_creditor_account_required only %}
+                                </div>
                                 {{ form.pis_creditor_account_json.errors }}
                                 <textarea id="{{ form.pis_creditor_account_json.id_for_label }}" name="pis_creditor_account_json" spellcheck="false">{{ form.pis_creditor_account_json.value|default_if_none:'' }}</textarea>
                             </div>
-                            <div>
-                                <label for="{{ form.pis_international_creditor_account_json.id_for_label }}">International creditor account JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_international_creditor_account_json.field.required only %}</label>
+                            <div class="field">
+                                <div class="field-heading">
+                                    <label for="{{ form.pis_international_creditor_account_json.id_for_label }}">International creditor account JSON</label>
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_international_creditor_account_required only %}
+                                </div>
                                 {{ form.pis_international_creditor_account_json.errors }}
                                 <textarea id="{{ form.pis_international_creditor_account_json.id_for_label }}" name="pis_international_creditor_account_json" spellcheck="false">{{ form.pis_international_creditor_account_json.value|default_if_none:'' }}</textarea>
                             </div>
-                            <div>
-                                <label for="{{ form.pis_instructed_amount_json.id_for_label }}">Instructed amount JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_instructed_amount_json.field.required only %}</label>
+                            <div class="field">
+                                <div class="field-heading">
+                                    <label for="{{ form.pis_instructed_amount_json.id_for_label }}">Instructed amount JSON</label>
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_instructed_amount_required only %}
+                                </div>
                                 {{ form.pis_instructed_amount_json.errors }}
                                 <textarea id="{{ form.pis_instructed_amount_json.id_for_label }}" name="pis_instructed_amount_json" spellcheck="false">{{ form.pis_instructed_amount_json.value|default_if_none:'' }}</textarea>
                             </div>
-                            <div>
-                                <label for="{{ form.pis_standing_order_frequency_json.id_for_label }}">Standing-order frequency JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.pis_standing_order_frequency_json.field.required only %}</label>
+                            <div class="field">
+                                <div class="field-heading">
+                                    <label for="{{ form.pis_standing_order_frequency_json.id_for_label }}">Standing-order frequency JSON</label>
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=config_visibility.pis_standing_order_frequency_required only %}
+                                </div>
                                 {{ form.pis_standing_order_frequency_json.errors }}
                                 <textarea id="{{ form.pis_standing_order_frequency_json.id_for_label }}" name="pis_standing_order_frequency_json" spellcheck="false">{{ form.pis_standing_order_frequency_json.value|default_if_none:'' }}</textarea>
                             </div>
-                            <div>
-                                <label for="{{ form.conditional_properties_json.id_for_label }}">Conditional properties JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.conditional_properties_json.field.required only %}</label>
+                            <div class="field">
+                                <div class="field-heading">
+                                    <label for="{{ form.conditional_properties_json.id_for_label }}">Conditional properties JSON</label>
+                                    {% include "conformance/partials/builder_requirement_badge.html" with required=form.conditional_properties_json.field.required only %}
+                                </div>
                                 {{ form.conditional_properties_json.errors }}
                                 <textarea id="{{ form.conditional_properties_json.id_for_label }}" name="conditional_properties_json" spellcheck="false">{{ form.conditional_properties_json.value|default_if_none:'' }}</textarea>
                             </div>
@@ -188,27 +267,107 @@
                 <section class="config-card" aria-labelledby="cbpii-business-heading">
                     <h3 id="cbpii-business-heading">Confirmation of Funds</h3>
                     <div class="grid three field-row">
-                        <div>
-                            <label for="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}">Debtor account scheme {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_scheme_name.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}">Debtor account scheme</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_scheme_name.field.required only %}
+                            </div>
                             {{ form.cbpii_debtor_account_scheme_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_scheme_name.id_for_label }}" name="cbpii_debtor_account_scheme_name" type="text" value="{{ form.cbpii_debtor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.cbpii_debtor_account_identification.id_for_label }}">Debtor account identification {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_identification.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.cbpii_debtor_account_identification.id_for_label }}">Debtor account identification</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_identification.field.required only %}
+                            </div>
                             {{ form.cbpii_debtor_account_identification.errors }}
                             <input id="{{ form.cbpii_debtor_account_identification.id_for_label }}" name="cbpii_debtor_account_identification" type="text" value="{{ form.cbpii_debtor_account_identification.value|default_if_none:'' }}" autocomplete="off">
                         </div>
-                        <div>
-                            <label for="{{ form.cbpii_debtor_account_name.id_for_label }}">Debtor account name {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_name.field.required only %}</label>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.cbpii_debtor_account_name.id_for_label }}">Debtor account name</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_name.field.required only %}
+                            </div>
                             {{ form.cbpii_debtor_account_name.errors }}
                             <input id="{{ form.cbpii_debtor_account_name.id_for_label }}" name="cbpii_debtor_account_name" type="text" value="{{ form.cbpii_debtor_account_name.value|default_if_none:'' }}" autocomplete="off">
                         </div>
                     </div>
                     <details>
-                        <summary>Advanced CBPII debtor account JSON {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_json.field.required only %}</summary>
+                        <summary>Advanced CBPII debtor account JSON</summary>
+                        <div class="field-heading">
+                            {% include "conformance/partials/builder_requirement_badge.html" with required=form.cbpii_debtor_account_json.field.required only %}
+                        </div>
                         {{ form.cbpii_debtor_account_json.errors }}
                         <textarea id="{{ form.cbpii_debtor_account_json.id_for_label }}" name="cbpii_debtor_account_json" spellcheck="false">{{ form.cbpii_debtor_account_json.value|default_if_none:'' }}</textarea>
                     </details>
+                </section>
+            {% endif %}
+
+            {% if config_visibility.show_vrp %}
+                <section class="config-card" aria-labelledby="vrp-business-heading">
+                    <h3 id="vrp-business-heading">Variable Recurring Payments</h3>
+                    <div class="grid three field-row">
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_creditor_account_scheme_name.id_for_label }}">Creditor account scheme</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_scheme_name.field.required only %}
+                            </div>
+                            {{ form.vrp_creditor_account_scheme_name.errors }}
+                            <input id="{{ form.vrp_creditor_account_scheme_name.id_for_label }}" name="vrp_creditor_account_scheme_name" type="text" value="{{ form.vrp_creditor_account_scheme_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_creditor_account_identification.id_for_label }}">Creditor account identification</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_identification.field.required only %}
+                            </div>
+                            {{ form.vrp_creditor_account_identification.errors }}
+                            <input id="{{ form.vrp_creditor_account_identification.id_for_label }}" name="vrp_creditor_account_identification" type="text" value="{{ form.vrp_creditor_account_identification.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_creditor_account_name.id_for_label }}">Creditor account name</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_creditor_account_name.field.required only %}
+                            </div>
+                            {{ form.vrp_creditor_account_name.errors }}
+                            <input id="{{ form.vrp_creditor_account_name.id_for_label }}" name="vrp_creditor_account_name" type="text" value="{{ form.vrp_creditor_account_name.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="grid two field-row">
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_instructed_amount_amount.id_for_label }}">Instructed amount</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_amount.field.required only %}
+                            </div>
+                            {{ form.vrp_instructed_amount_amount.errors }}
+                            <input id="{{ form.vrp_instructed_amount_amount.id_for_label }}" name="vrp_instructed_amount_amount" type="text" value="{{ form.vrp_instructed_amount_amount.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_instructed_amount_currency.id_for_label }}">Instructed amount currency</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_instructed_amount_currency.field.required only %}
+                            </div>
+                            {{ form.vrp_instructed_amount_currency.errors }}
+                            <input id="{{ form.vrp_instructed_amount_currency.id_for_label }}" name="vrp_instructed_amount_currency" type="text" value="{{ form.vrp_instructed_amount_currency.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="grid two field-row">
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_valid_from_date_time.id_for_label }}">Valid-from date/time</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_from_date_time.field.required only %}
+                            </div>
+                            {{ form.vrp_valid_from_date_time.errors }}
+                            <input id="{{ form.vrp_valid_from_date_time.id_for_label }}" name="vrp_valid_from_date_time" type="text" value="{{ form.vrp_valid_from_date_time.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.vrp_valid_to_date_time.id_for_label }}">Valid-to date/time</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=form.vrp_valid_to_date_time.field.required only %}
+                            </div>
+                            {{ form.vrp_valid_to_date_time.errors }}
+                            <input id="{{ form.vrp_valid_to_date_time.id_for_label }}" name="vrp_valid_to_date_time" type="text" value="{{ form.vrp_valid_to_date_time.value|default_if_none:'' }}" autocomplete="off">
+                        </div>
+                    </div>
                 </section>
             {% endif %}
 

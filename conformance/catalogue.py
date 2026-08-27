@@ -39,6 +39,8 @@ type GeneratedRuntimeValue = Literal[
     "uuid4-hex",
     "invalid-resource-id",
     "invalid-access-token",
+    "next-day-date-time-offset",
+    "next-day-date-time-utc",
 ]
 """Generated runtime value strategies supported by catalogue request steps."""
 
@@ -115,6 +117,7 @@ _MODEL_BANK_CONFIG_KEYS = {
     "ais",
     "pis",
     "cbpii",
+    "vrp",
     "conditionalProperties",
 }
 """Executable model-bank config keys derivable from a canonical test plan."""
@@ -219,6 +222,9 @@ class TestCaseApplicability:
             before this case becomes directly applicable. Required catalogue
             capabilities are selected automatically for implemented endpoints;
             optional capabilities only apply when the participant declares them.
+        specification_versions: User-facing specification versions this case is
+            executable for. An empty tuple means the case applies to every
+            version compiled through the backing catalogue.
     """
 
     # Class starts with "Test" but is production code, not a pytest collection target.
@@ -227,6 +233,7 @@ class TestCaseApplicability:
     security_profiles: SecurityProfileApplicability
     endpoint_refs: tuple[EndpointRef, ...] = ()
     required_capability_ids: tuple[str, ...] = ()
+    specification_versions: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -313,6 +320,10 @@ class CatalogueRequestStep:
             ``Authorization`` header from runtime token state.
         produced_token_id: Optional semantic token id populated from an
             ``access_token`` response body field.
+        authorization_profile: Optional catalogue-owned profile label used to
+            explain which permission set the request token represents.
+        detached_jws_omit_claims: Open Banking detached-JWS protected-header
+            aliases to omit for negative request-signature tests.
     """
 
     step_id: str
@@ -325,6 +336,8 @@ class CatalogueRequestStep:
     generated_values: Mapping[str, GeneratedRuntimeValue] = field(default_factory=lambda: MappingProxyType({}))
     required_token_id: str | None = None
     produced_token_id: str | None = None
+    authorization_profile: str | None = None
+    detached_jws_omit_claims: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -428,6 +441,9 @@ class TestPlanSpec:
             participant.
         runtime_inputs: Runtime values or references keyed by
             :class:`RuntimeInputRequirement.input_id`.
+        specification_version: Optional user-facing specification version from
+            a shared v2 plan document. Legacy v1 specs omit this and use the
+            catalogue key alone.
         deselected_test_case_ids: Optional non-mandatory applicable cases the
             participant chose not to run. Mandatory applicable cases cannot be
             deselected.
@@ -443,6 +459,7 @@ class TestPlanSpec:
     security_profile: SecurityProfile
     implemented_endpoints: tuple[ImplementedEndpoint, ...]
     runtime_inputs: Mapping[str, JsonValue]
+    specification_version: str | None = None
     deselected_test_case_ids: tuple[str, ...] = ()
     assertion_overrides: tuple[AssertionOverride, ...] = ()
 
@@ -902,11 +919,12 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
     if catalogue.key != spec.catalogue_key:
         raise CatalogueError("planSpec.catalogue does not match the supplied catalogue")
 
+    implemented_endpoints = tuple(_canonical_implemented_endpoint(endpoint) for endpoint in spec.implemented_endpoints)
     cases_by_id = _catalogue_cases_by_id(catalogue)
     capabilities_by_id, capabilities_by_ref = _catalogue_capability_indexes(catalogue)
-    implemented_refs = _implemented_endpoint_refs(spec.implemented_endpoints)
+    implemented_refs = _implemented_endpoint_refs(implemented_endpoints)
     selected_capabilities_by_ref, selected_capabilities = _selected_capabilities_by_endpoint(
-        spec.implemented_endpoints,
+        implemented_endpoints,
         capabilities_by_id=capabilities_by_id,
         capabilities_by_ref=capabilities_by_ref,
         catalogue_capabilities=catalogue.capabilities,
@@ -938,7 +956,7 @@ def compile_test_plan(catalogue: TestCatalogue, spec: TestPlanSpec) -> CompiledT
         catalogue_key=catalogue.key,
         catalogue_version=catalogue.catalogue_version,
         security_profile=spec.security_profile,
-        selected_endpoints=spec.implemented_endpoints,
+        selected_endpoints=implemented_endpoints,
         selected_capabilities=selected_capabilities,
         applicability_decisions=decisions,
         generated_test_case_ids=ordered_ids,
@@ -1008,6 +1026,7 @@ def _compile_plan_document_v2(document: PlanDocumentV2, catalogues: Iterable[Tes
             security_profile=document.security_profile,
             implemented_endpoints=endpoints,
             runtime_inputs=document.runtime_inputs,
+            specification_version=document.version,
         )
         compiled_plans.append(compile_test_plan(catalogue, area_spec))
 
@@ -1187,7 +1206,9 @@ def _partition_implemented_endpoints_by_catalogue(
     catalogue_indexes_by_api = {catalogue.key.api: index for index, catalogue in enumerate(catalogues)}
     endpoints_by_catalogue_index: dict[int, list[ImplementedEndpoint]] = {}
     seen_refs_by_catalogue_index: dict[int, set[EndpointRef]] = {}
-    for endpoint in endpoints:
+    alias_refs_by_catalogue_index: dict[int, set[EndpointRef]] = {}
+    for raw_endpoint in endpoints:
+        endpoint = _canonical_implemented_endpoint(raw_endpoint)
         endpoint_ref = EndpointRef(method=endpoint.method, path=endpoint.path)
         resource_group_index = _catalogue_index_for_resource_group(
             endpoint.resource_group,
@@ -1199,6 +1220,11 @@ def _partition_implemented_endpoints_by_catalogue(
                     f"Resource group '{endpoint.resource_group}' does not contain endpoint "
                     f"{endpoint.method} {endpoint.path}"
                 )
+            if endpoint_ref in seen_refs_by_catalogue_index.get(resource_group_index, set()) and (
+                raw_endpoint.path != endpoint.path
+                or endpoint_ref in alias_refs_by_catalogue_index.get(resource_group_index, set())
+            ):
+                continue
             _append_partitioned_endpoint(
                 endpoints_by_catalogue_index,
                 seen_refs_by_catalogue_index,
@@ -1207,6 +1233,8 @@ def _partition_implemented_endpoints_by_catalogue(
                 endpoint_ref=endpoint_ref,
                 catalogue=catalogues[resource_group_index],
             )
+            if raw_endpoint.path != endpoint.path:
+                alias_refs_by_catalogue_index.setdefault(resource_group_index, set()).add(endpoint_ref)
             continue
 
         owner_indexes = tuple(
@@ -1219,20 +1247,45 @@ def _partition_implemented_endpoints_by_catalogue(
             raise CatalogueError(
                 f"Endpoint {endpoint.method} {endpoint.path} is ambiguous across catalogues: {owner_keys}"
             )
+        owner_index = owner_indexes[0]
+        endpoint_seen = endpoint_ref in seen_refs_by_catalogue_index.get(owner_index, set())
+        endpoint_seen_from_alias = endpoint_ref in alias_refs_by_catalogue_index.get(owner_index, set())
+        if endpoint_seen and (raw_endpoint.path != endpoint.path or endpoint_seen_from_alias):
+            continue
         _append_partitioned_endpoint(
             endpoints_by_catalogue_index,
             seen_refs_by_catalogue_index,
-            catalogue_index=owner_indexes[0],
+            catalogue_index=owner_index,
             endpoint=endpoint,
             endpoint_ref=endpoint_ref,
-            catalogue=catalogues[owner_indexes[0]],
+            catalogue=catalogues[owner_index],
         )
+        if raw_endpoint.path != endpoint.path:
+            alias_refs_by_catalogue_index.setdefault(owner_index, set()).add(endpoint_ref)
 
     return tuple(
         (catalogue, tuple(endpoints_by_catalogue_index[index]))
         for index, catalogue in enumerate(catalogues)
         if index in endpoints_by_catalogue_index
     )
+
+
+def _canonical_implemented_endpoint(endpoint: ImplementedEndpoint) -> ImplementedEndpoint:
+    """Return a backwards-compatible canonical endpoint declaration.
+
+    Args:
+        endpoint: Participant-declared endpoint from a plan document.
+
+    Returns:
+        Canonical endpoint declaration used for catalogue ownership checks.
+    """
+    if endpoint.method == "GET" and endpoint.path == "/open-banking/v4.0/aisp/product":
+        return ImplementedEndpoint(
+            method=endpoint.method,
+            path="/open-banking/v4.0/aisp/products",
+            resource_group=endpoint.resource_group,
+        )
+    return endpoint
 
 
 def _catalogue_index_for_resource_group(
@@ -2271,7 +2324,7 @@ def _config_from_business_test_data(business_test_data: Mapping[str, JsonValue])
     ais = _business_section_object(business_test_data, "ais")
     if ais:
         config["ais"] = _ais_config_from_business_data(ais)
-    for key in ("pis", "cbpii", "inputs", "runtimeInputs", "conditionalProperties"):
+    for key in ("pis", "cbpii", "vrp", "inputs", "runtimeInputs", "conditionalProperties"):
         value = business_test_data.get(key)
         if value is not None:
             config[key] = _copy_json_value(value)
@@ -3080,6 +3133,171 @@ def _merge_structured_runtime_inputs(runtime_inputs: JsonObject, config: Mapping
                 location="planSpec.config.cbpii.debtorAccount.name",
             )
 
+    ais = _optional_runtime_config_object(config, "ais")
+    if ais is not None:
+        resource_ids = _optional_nested_runtime_config_object(ais, "resourceIds")
+        if resource_ids is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "consentedAccountId",
+                _first_object_string(resource_ids.get("accountIds"), "accountId"),
+                location="planSpec.config.ais.resourceIds.accountIds[0].accountId",
+            )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "fromBookingDateTime",
+            ais.get("transactionFromDate"),
+            location="planSpec.config.ais.transactionFromDate",
+        )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "toBookingDateTime",
+            ais.get("transactionToDate"),
+            location="planSpec.config.ais.transactionToDate",
+        )
+
+    pis = _optional_runtime_config_object(config, "pis")
+    if pis is not None:
+        creditor_account = _optional_nested_runtime_config_object(pis, "creditorAccount")
+        if creditor_account is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisCreditorAccountSchemeName",
+                creditor_account.get("schemeName"),
+                location="planSpec.config.pis.creditorAccount.schemeName",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisCreditorAccountIdentification",
+                creditor_account.get("identification"),
+                location="planSpec.config.pis.creditorAccount.identification",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisCreditorAccountName",
+                creditor_account.get("name"),
+                location="planSpec.config.pis.creditorAccount.name",
+            )
+
+        international_creditor_account = _optional_nested_runtime_config_object(pis, "internationalCreditorAccount")
+        if international_creditor_account is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisInternationalCreditorAccountSchemeName",
+                international_creditor_account.get("schemeName"),
+                location="planSpec.config.pis.internationalCreditorAccount.schemeName",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisInternationalCreditorAccountIdentification",
+                international_creditor_account.get("identification"),
+                location="planSpec.config.pis.internationalCreditorAccount.identification",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisInternationalCreditorAccountName",
+                international_creditor_account.get("name"),
+                location="planSpec.config.pis.internationalCreditorAccount.name",
+            )
+
+        instructed_amount = _optional_nested_runtime_config_object(pis, "instructedAmount")
+        if instructed_amount is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisInstructedAmountAmount",
+                instructed_amount.get("amount"),
+                location="planSpec.config.pis.instructedAmount.amount",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisInstructedAmountCurrency",
+                instructed_amount.get("currency"),
+                location="planSpec.config.pis.instructedAmount.currency",
+            )
+
+        standing_order_frequency = _optional_nested_runtime_config_object(pis, "standingOrderFrequency")
+        if standing_order_frequency is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisStandingOrderFrequencyType",
+                standing_order_frequency.get("type"),
+                location="planSpec.config.pis.standingOrderFrequency.type",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "pisStandingOrderFrequencyPointInTime",
+                standing_order_frequency.get("pointInTime"),
+                location="planSpec.config.pis.standingOrderFrequency.pointInTime",
+            )
+
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "pisCurrencyOfTransfer",
+            pis.get("currencyOfTransfer"),
+            location="planSpec.config.pis.currencyOfTransfer",
+        )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "pisRequestedExecutionDateTime",
+            pis.get("requestedExecutionDateTime"),
+            location="planSpec.config.pis.requestedExecutionDateTime",
+        )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "pisFirstPaymentDateTime",
+            pis.get("firstPaymentDateTime"),
+            location="planSpec.config.pis.firstPaymentDateTime",
+        )
+
+    vrp = _optional_runtime_config_object(config, "vrp")
+    if vrp is not None:
+        vrp_creditor_account = _optional_nested_runtime_config_object(vrp, "creditorAccount")
+        if vrp_creditor_account is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "vrpCreditorAccountSchemeName",
+                vrp_creditor_account.get("schemeName"),
+                location="planSpec.config.vrp.creditorAccount.schemeName",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "vrpCreditorAccountIdentification",
+                vrp_creditor_account.get("identification"),
+                location="planSpec.config.vrp.creditorAccount.identification",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "vrpCreditorAccountName",
+                vrp_creditor_account.get("name"),
+                location="planSpec.config.vrp.creditorAccount.name",
+            )
+        vrp_instructed_amount = _optional_nested_runtime_config_object(vrp, "instructedAmount")
+        if vrp_instructed_amount is not None:
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "vrpInstructedAmountAmount",
+                vrp_instructed_amount.get("amount"),
+                location="planSpec.config.vrp.instructedAmount.amount",
+            )
+            _merge_optional_structured_runtime_input(
+                runtime_inputs,
+                "vrpInstructedAmountCurrency",
+                vrp_instructed_amount.get("currency"),
+                location="planSpec.config.vrp.instructedAmount.currency",
+            )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "vrpValidFromDateTime",
+            vrp.get("validFromDateTime"),
+            location="planSpec.config.vrp.validFromDateTime",
+        )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "vrpValidToDateTime",
+            vrp.get("validToDateTime"),
+            location="planSpec.config.vrp.validToDateTime",
+        )
+
 
 def _optional_runtime_config_object(config: Mapping[str, JsonValue], key: str) -> Mapping[str, JsonValue] | None:
     """Return an optional structured runtime config object.
@@ -3472,6 +3690,13 @@ def _directly_applicable_case_ids(
                 reason=f"not applicable to security profile {spec.security_profile}",
             )
             continue
+        if not _test_case_applies_to_specification_version(test_case, spec.specification_version):
+            decisions[test_case.test_case_id] = ApplicabilityDecision(
+                test_case_id=test_case.test_case_id,
+                selected=False,
+                reason=f"not applicable to specification version {spec.specification_version}",
+            )
+            continue
         endpoint_refs = set(test_case.applicability.endpoint_refs)
         if not endpoint_refs:
             selected_ids.add(test_case.test_case_id)
@@ -3511,6 +3736,27 @@ def _directly_applicable_case_ids(
             reason=reason,
         )
     return selected_ids, decisions
+
+
+def _test_case_applies_to_specification_version(
+    test_case: CatalogueTestCase,
+    specification_version: str | None,
+) -> bool:
+    """Return whether a case may execute for a plan specification version.
+
+    Args:
+        test_case: Catalogue case whose applicability should be checked.
+        specification_version: User-facing plan specification version, or
+            ``None`` when compiling a legacy v1 plan spec.
+
+    Returns:
+        True when no version-specific plan boundary is being compiled, the case
+        has no version filter, or the selected version is explicitly included.
+    """
+    if specification_version is None:
+        return True
+    applicable_versions = test_case.applicability.specification_versions
+    return not applicable_versions or specification_version in applicable_versions
 
 
 def _selected_capability_ids_for_refs(

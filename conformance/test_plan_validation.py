@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
@@ -431,7 +432,28 @@ def safe_test_plan_snapshot(
         if trace.sensitive
     }
     sensitive_input_ids.update(sensitive_runtime_input_ids)
-    return _safe_json_object(plan_document_to_json_object(document), sensitive_input_ids)
+    snapshot = _safe_json_object(plan_document_to_json_object(document), sensitive_input_ids)
+    _restore_ais_business_account_ids(snapshot, document)
+    return snapshot
+
+
+def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocumentV2) -> None:
+    """Restore AIS business account identifiers needed to rerun exported plans.
+
+    Args:
+        snapshot: Mutable safe-export snapshot.
+        document: Source plan document containing canonical business data.
+    """
+    ais_business_data = document.business_test_data.get("ais")
+    if not isinstance(ais_business_data, dict) or "accountIds" not in ais_business_data:
+        return
+    business_test_data = snapshot.get("businessTestData")
+    if not isinstance(business_test_data, dict):
+        return
+    snapshot_ais = business_test_data.get("ais")
+    if not isinstance(snapshot_ais, dict):
+        return
+    snapshot_ais["accountIds"] = deepcopy(ais_business_data["accountIds"])
 
 
 def _validation_result(

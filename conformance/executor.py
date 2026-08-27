@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta, timezone
 from pathlib import Path
 from typing import cast
 from urllib.parse import urlsplit
@@ -54,6 +54,7 @@ from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import (
     PSU_AUTHORIZATION_TIMEOUT_SECONDS,
+    DetachedJwsPolicy,
     FormBody,
     GeneratedRequestObject,
     HeaderAssertion,
@@ -90,6 +91,7 @@ from conformance.signing_service import (
     ClientAssertionSigningInput,
     FapiSigningService,
     JwtSigningError,
+    OpenBankingDetachedJwsProfile,
     RequestObjectSigningInput,
 )
 from conformance.test_plan import TestPlan
@@ -105,6 +107,12 @@ for additional groups.
 
 _OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
 """Open Banking AIS consent-creation path requiring detached JWS support."""
+
+_OB_PIS_PATH_PREFIX = "/open-banking/v4.0/pisp/"
+"""Open Banking PIS path prefix for payment-initiation detached JWS support."""
+
+_OB_VRP_RESOURCE_PATH_PREFIXES = ("/domestic-vrp-consents", "/domestic-vrps")
+"""Open Banking VRP resource paths requiring detached JWS support."""
 
 _CATALOGUE_PATH_VARIABLE_PATTERN = re.compile(r"(?<!\$)\{([^}]+)\}")
 """Pattern matching OpenAPI-style path variables in catalogue request paths."""
@@ -141,7 +149,192 @@ _CBPII_AUTHORISED_RESOURCE_STEP_IDS = frozenset(
 _CBPII_CAPTURED_CONSENT_ID = f"${{steps.{_CBPII_CONSENT_CREATE_STEP_ID}.response.body.Data.ConsentId}}"
 """Placeholder resolving to the CBPII consent id created during the run."""
 
+_AIS_CLIENT_CREDENTIALS_TOKEN_ID = "ais-client-credentials"  # noqa: S105 - semantic token id
+"""Semantic token id for AIS client-credentials consent-creation calls."""
+
+_AIS_BASIC_ACCOUNT_ACCESS_TOKEN_ID = "ais-account-access-basic"  # noqa: S105 - semantic token id
+"""Semantic token id for PSU-authorised AIS calls using basic read permissions."""
+
+_AIS_DETAIL_ACCOUNT_ACCESS_TOKEN_ID = "ais-account-access-detail"  # noqa: S105 - semantic token id
+"""Semantic token id for PSU-authorised AIS calls using detail read permissions."""
+
+_AIS_CONSENT_CREATE_STEP_ID = "ais-at-setup-consent-request"
+"""Catalogue template step id used to create AIS account-access consent steps."""
+
+_AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID = "ais-at-setup-token-request"  # noqa: S105 - step id
+"""Catalogue template step id used to create AIS authorisation-code token steps."""
+
+_AIS_AUTHORIZATION_STEP_ID = "setup-ais-consent-authorisation"
+"""Legacy synthetic PSU authorisation step id retained for compatibility."""
+
+_AIS_CAPTURED_CONSENT_ID = f"${{steps.{_AIS_CONSENT_CREATE_STEP_ID}.response.body.Data.ConsentId}}"
+"""Legacy AIS consent-id placeholder retained for compatibility."""
+
+_AIS_PERMISSION_PROFILE_TOKEN_IDS = {
+    "basic": _AIS_BASIC_ACCOUNT_ACCESS_TOKEN_ID,
+    "detail": _AIS_DETAIL_ACCOUNT_ACCESS_TOKEN_ID,
+}
+"""Semantic token ids keyed by AIS legacy permission profile."""
+
+_AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY: JsonObject = {
+    "Data": {
+        "Permissions": [
+            "ReadAccountsBasic",
+            "ReadBalances",
+            "ReadBeneficiariesBasic",
+            "ReadDirectDebits",
+            "ReadOffers",
+            "ReadParty",
+            "ReadPartyPSU",
+            "ReadProducts",
+            "ReadScheduledPaymentsBasic",
+            "ReadStandingOrdersBasic",
+            "ReadStatementsBasic",
+            "ReadTransactionsBasic",
+            "ReadTransactionsCredits",
+            "ReadTransactionsDebits",
+        ],
+    },
+    "Risk": {},
+}
+"""AIS account-access-consent payload matching the legacy basic permission profile."""
+
+_AIS_DETAIL_ACCOUNT_ACCESS_CONSENT_BODY: JsonObject = {
+    "Data": {
+        "Permissions": [
+            "ReadAccountsDetail",
+            "ReadBalances",
+            "ReadBeneficiariesDetail",
+            "ReadDirectDebits",
+            "ReadOffers",
+            "ReadPAN",
+            "ReadParty",
+            "ReadPartyPSU",
+            "ReadProducts",
+            "ReadScheduledPaymentsDetail",
+            "ReadStandingOrdersDetail",
+            "ReadStatementsDetail",
+            "ReadTransactionsCredits",
+            "ReadTransactionsDebits",
+            "ReadTransactionsDetail",
+        ],
+    },
+    "Risk": {},
+}
+"""AIS account-access-consent payload matching the legacy detail permission profile."""
+
+_AIS_ACCOUNT_ACCESS_CONSENT_BODIES: Mapping[str, JsonObject] = {
+    "basic": _AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY,
+    "detail": _AIS_DETAIL_ACCOUNT_ACCESS_CONSENT_BODY,
+}
+"""AIS account-access-consent payloads keyed by legacy permission profile."""
+
+_PIS_MISSING_SIGNATURE_STEP_ID = "pis-v4-domestic-payment-consent-reject-invalid-signature-request"
+"""PIS negative test step that must deliberately omit a detached JWS header."""
+
+_PIS_CONSENT_AUTHORIZATION_STEPS = {
+    "pis-v4-domestic-payment-consent-create-request": (
+        "setup-pis-domestic-payment-consent-authorisation",
+        "Authorise domestic payment consent",
+        "setup-token-pis-domestic-payment-access",
+        "pis-domestic-payment-access",
+        "domestic payment",
+    ),
+    "pis-v4-domestic-scheduled-payment-consent-create-request": (
+        "setup-pis-domestic-scheduled-payment-consent-authorisation",
+        "Authorise domestic scheduled payment consent",
+        "setup-token-pis-domestic-scheduled-payment-access",
+        "pis-domestic-scheduled-payment-access",
+        "domestic scheduled payment",
+    ),
+    "pis-v4-domestic-standing-order-consent-create-request": (
+        "setup-pis-domestic-standing-order-consent-authorisation",
+        "Authorise domestic standing-order consent",
+        "setup-token-pis-domestic-standing-order-access",
+        "pis-domestic-standing-order-access",
+        "domestic standing-order",
+    ),
+    "pis-v4-international-payment-consent-create-request": (
+        "setup-pis-international-payment-consent-authorisation",
+        "Authorise international payment consent",
+        "setup-token-pis-international-payment-access",
+        "pis-international-payment-access",
+        "international payment",
+    ),
+    "pis-v4-international-scheduled-payment-consent-create-request": (
+        "setup-pis-international-scheduled-payment-consent-authorisation",
+        "Authorise international scheduled payment consent",
+        "setup-token-pis-international-scheduled-payment-access",
+        "pis-international-scheduled-payment-access",
+        "international scheduled payment",
+    ),
+}
+"""Synthetic PSU and token-exchange metadata keyed by PIS consent-creation step."""
+
+_PIS_CONSENT_AUTHORIZATION_DEPENDENT_STEPS = {
+    "pis-v4-domestic-payment-consent-create-request": frozenset(
+        {
+            "pis-v4-domestic-payment-consent-read-authorised-request",
+            "pis-v4-domestic-payment-funds-confirmation-request",
+            "pis-v4-domestic-payment-create-request",
+            "pis-v4-domestic-payment-read-request",
+        }
+    ),
+    "pis-v4-domestic-scheduled-payment-consent-create-request": frozenset(
+        {
+            "pis-v4-domestic-scheduled-payment-consent-read-request",
+            "pis-v4-domestic-scheduled-payment-create-request",
+            "pis-v4-domestic-scheduled-payment-read-request",
+        }
+    ),
+    "pis-v4-domestic-standing-order-consent-create-request": frozenset(
+        {
+            "pis-v4-domestic-standing-order-consent-read-request",
+            "pis-v4-domestic-standing-order-create-request",
+            "pis-v4-domestic-standing-order-read-request",
+            "pis-v4-domestic-standing-order-read-with-number-and-final-date-request",
+            "pis-v4-domestic-standing-order-read-with-final-amount-only-request",
+            "pis-v4-domestic-standing-order-reject-invalid-frequency-request",
+        }
+    ),
+    "pis-v4-international-payment-consent-create-request": frozenset(
+        {
+            "pis-v4-international-payment-consent-read-request",
+            "pis-v4-international-payment-create-request",
+            "pis-v4-international-payment-read-request",
+        }
+    ),
+    "pis-v4-international-scheduled-payment-consent-create-request": frozenset(
+        {
+            "pis-v4-international-scheduled-payment-consent-read-request",
+            "pis-v4-international-scheduled-payment-create-request",
+            "pis-v4-international-scheduled-payment-read-request",
+        }
+    ),
+}
+"""PIS request steps that need each consent to be PSU-authorised first."""
+
+_VRP_CONSENT_AUTHORIZATION_STEP_IDS = frozenset(
+    {
+        "vrp-consent-create-awaiting-authorisation-v31-pre-3111-request",
+        "vrp-consent-create-awaiting-authorisation-v31-3111-request",
+        "vrp-consent-create-awaiting-authorisation-v4-request",
+        "cvrp-consent-create-awaiting-authorisation-v4-request",
+    }
+)
+"""VRP/cVRP consent-creation request steps that can be PSU-authorised."""
+
+_VRP_PSU_PAYMENT_ACCESS_TOKEN_SUFFIX = "-psu-payment-access"  # noqa: S105 - semantic token id suffix
+"""Suffix for semantic token ids produced by VRP/cVRP PSU authorisation."""
+
+_VRP_PSU_AUTHORIZATION_STEP_SUFFIX = "-authorisation"
+"""Suffix for synthetic VRP/cVRP PSU authorisation step ids."""
+
+_VRP_PSU_AUTHORIZATION_TOKEN_STEP_SUFFIX = "-psu-payment-token"  # noqa: S105 - step id suffix
+"""Suffix for synthetic VRP/cVRP authorisation-code token exchange step ids."""
+
 _CATALOGUE_TOKEN_SCOPES = {
+    _AIS_CLIENT_CREDENTIALS_TOKEN_ID: "accounts",
     _CBPII_CLIENT_CREDENTIALS_TOKEN_ID: "fundsconfirmations",
     "pis-payment-access": "payments",
     "vrp-payment-access": "payments",
@@ -480,6 +673,25 @@ def _compiled_plan_to_manifest(
     for test_case in compiled_plan.test_cases:
         requirements = {requirement.input_id: requirement for requirement in test_case.runtime_input_requirements}
         for request_step in test_case.request_steps:
+            if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+                for profile in _compiled_plan_ais_permission_profiles(compiled_plan):
+                    manifest_step = _ais_profile_consent_step(
+                        request_step,
+                        profile=profile,
+                        runtime_inputs=runtime_inputs,
+                        runtime_input_base_dir=runtime_input_base_dir,
+                        runtime_config=runtime_config,
+                        requirements=requirements,
+                    )
+                    steps.append(manifest_step)
+                    steps.append(_ais_psu_authorization_step(profile=profile))
+                continue
+            if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+                steps.extend(
+                    _ais_authorization_code_token_step(profile=profile)
+                    for profile in _compiled_plan_ais_permission_profiles(compiled_plan)
+                )
+                continue
             manifest_step = _catalogue_request_step_to_manifest_step(
                 test_case,
                 request_step,
@@ -579,10 +791,213 @@ def _catalogue_inline_authorization_steps(
         Synthetic runtime steps to insert immediately after ``request_step``.
     """
     if request_step.step_id != _CBPII_CONSENT_CREATE_STEP_ID:
-        return ()
+        pis_steps = _pis_inline_authorization_steps(compiled_plan, request_step)
+        if pis_steps:
+            return pis_steps
+        return _vrp_inline_authorization_steps(compiled_plan, request_step)
     if not _compiled_plan_requires_cbpii_consent_authorization(compiled_plan):
         return ()
     return (_cbpii_psu_authorization_step(), _cbpii_authorization_code_token_step())
+
+
+def _pis_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build a PIS PSU authorisation step after a selected consent creation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected PIS resource steps
+            determine whether an authorisation step is needed.
+        request_step: Request step most recently emitted into the manifest.
+
+    Returns:
+            A PSU authorisation step and matching authorisation-code token
+            exchange when downstream PIS steps need the created consent authorised,
+            otherwise an empty tuple.
+    """
+    if request_step.step_id not in _PIS_CONSENT_AUTHORIZATION_STEPS:
+        return ()
+    if not _compiled_plan_requires_pis_consent_authorization(compiled_plan, request_step.step_id):
+        return ()
+    return (_pis_psu_authorization_step(request_step.step_id), _pis_authorization_code_token_step(request_step.step_id))
+
+
+def _vrp_inline_authorization_steps(
+    compiled_plan: CompiledTestPlan,
+    request_step: CatalogueRequestStep,
+) -> tuple[V1Step, ...]:
+    """Build VRP PSU authorisation after each selected consent creation.
+
+    Args:
+        compiled_plan: Compiled catalogue plan whose selected VRP/cVRP steps may
+            require a PSU-authorised payments token.
+        request_step: Request step most recently emitted into the manifest.
+
+    Returns:
+        A PSU authorisation step and matching authorisation-code token exchange
+        when downstream VRP/cVRP steps need this consent's payment access,
+        otherwise an empty tuple.
+    """
+    if request_step.step_id not in _VRP_CONSENT_AUTHORIZATION_STEP_IDS:
+        return ()
+    if not _compiled_plan_requires_vrp_consent_authorization(compiled_plan, request_step.step_id):
+        return ()
+    return (
+        _vrp_psu_authorization_step(request_step.step_id),
+        _vrp_authorization_code_token_step(request_step.step_id),
+    )
+
+
+def _compiled_plan_requires_pis_consent_authorization(compiled_plan: CompiledTestPlan, consent_step_id: str) -> bool:
+    """Return whether selected PIS steps need a PSU-authorised consent.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+        consent_step_id: PIS consent-creation request step id.
+
+    Returns:
+        ``True`` when any selected downstream step consumes the consent created
+        by ``consent_step_id``.
+    """
+    dependent_step_ids = _PIS_CONSENT_AUTHORIZATION_DEPENDENT_STEPS.get(consent_step_id, frozenset())
+    return any(
+        request_step.step_id in dependent_step_ids
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _compiled_plan_requires_vrp_consent_authorization(compiled_plan: CompiledTestPlan, consent_step_id: str) -> bool:
+    """Return whether selected VRP/cVRP steps need this consent authorised.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        ``True`` when a selected request consumes the PSU token produced by
+        authorising ``consent_step_id``.
+    """
+    token_id = _vrp_psu_payment_access_token_id(consent_step_id)
+    return any(
+        request_step.required_token_id == token_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _vrp_authorization_step_id(consent_step_id: str) -> str:
+    """Return the PSU authorisation step id for one VRP consent step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Stable manifest step id for the synthetic PSU authorisation step.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_AUTHORIZATION_STEP_SUFFIX}"
+
+
+def _vrp_authorization_token_step_id(consent_step_id: str) -> str:
+    """Return the authorisation-code token step id for one VRP consent step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Stable manifest step id for the synthetic token-exchange step.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_AUTHORIZATION_TOKEN_STEP_SUFFIX}"
+
+
+def _vrp_psu_payment_access_token_id(consent_step_id: str) -> str:
+    """Return the PSU payment token id produced for one VRP consent.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id.
+
+    Returns:
+        Semantic token id consumed by payments and funds-confirmation requests
+        bound to ``consent_step_id``.
+    """
+    return f"{consent_step_id.removesuffix('-request')}{_VRP_PSU_PAYMENT_ACCESS_TOKEN_SUFFIX}"
+
+
+def _compiled_plan_ais_permission_profiles(compiled_plan: CompiledTestPlan) -> tuple[str, ...]:
+    """Return selected legacy AIS permission profiles in deterministic order.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        Permission profile labels required by selected protected AIS resource
+        requests.
+    """
+    required_token_ids = {
+        request_step.required_token_id
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+        if request_step.required_token_id is not None
+    }
+    return tuple(
+        profile for profile, token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.items() if token_id in required_token_ids
+    )
+
+
+def _ais_profile_consent_step(
+    request_step: CatalogueRequestStep,
+    *,
+    profile: str,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+    runtime_config: RuntimeConfig | None,
+    requirements: Mapping[str, RuntimeInputRequirement],
+) -> ManifestStep:
+    """Build one AIS consent-creation step for a legacy permission profile.
+
+    Args:
+        request_step: Catalogue consent template request.
+        profile: Legacy AIS permission profile to materialise.
+        runtime_inputs: Original plan-spec runtime input mapping.
+        runtime_input_base_dir: Directory used to resolve file references.
+        runtime_config: Safe participant config values, used for discovery URL.
+        requirements: Runtime input requirements keyed by input id.
+
+    Returns:
+        Manifest HTTP step that creates a profile-specific AIS account-access
+        consent.
+    """
+    generated_runtime_values = _catalogue_generated_runtime_values(request_step)
+    resolved_url = _catalogue_request_url(
+        request_step,
+        runtime_inputs=runtime_inputs,
+        runtime_config=runtime_config,
+        generated_runtime_values=generated_runtime_values,
+    )
+    return ManifestStep(
+        id=_ais_profile_consent_step_id(profile),
+        name=f"Create AIS {profile} account-access consent",
+        request=ManifestRequest(
+            method=request_step.method,
+            url=resolved_url,
+            headers=_catalogue_request_headers(
+                request_step,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=runtime_input_base_dir,
+                requirements=requirements,
+                generated_header_values=_catalogue_generated_header_values(request_step),
+                generated_runtime_values=generated_runtime_values,
+            ),
+            body=JsonBody(value=_AIS_ACCOUNT_ACCESS_CONSENT_BODIES[profile]),
+            detached_jws=DetachedJwsPolicy(source="fapi-signing"),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=201),),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
+        required_token_id=request_step.required_token_id,
+    )
 
 
 def _compiled_plan_requires_cbpii_consent_authorization(compiled_plan: CompiledTestPlan) -> bool:
@@ -600,6 +1015,71 @@ def _compiled_plan_requires_cbpii_consent_authorization(compiled_plan: CompiledT
         for test_case in compiled_plan.test_cases
         for request_step in test_case.request_steps
     )
+
+
+def _compiled_plan_requires_ais_account_access(compiled_plan: CompiledTestPlan) -> bool:
+    """Return whether selected AIS steps need PSU-authorised account access.
+
+    Args:
+        compiled_plan: Compiled catalogue plan to inspect.
+
+    Returns:
+        ``True`` when a selected AIS request consumes the semantic
+        an ``ais-account-access-*`` bearer token.
+    """
+    return any(
+        request_step.required_token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.values()
+        for test_case in compiled_plan.test_cases
+        for request_step in test_case.request_steps
+    )
+
+
+def _ais_profile_consent_step_id(profile: str) -> str:
+    """Return the AIS consent-creation step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's account-access-consent request.
+    """
+    return f"ais-at-setup-{profile}-consent-request"
+
+
+def _ais_profile_authorization_step_id(profile: str) -> str:
+    """Return the AIS PSU authorisation step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's PSU authorisation.
+    """
+    return f"setup-ais-{profile}-consent-authorisation"
+
+
+def _ais_profile_token_step_id(profile: str) -> str:
+    """Return the AIS token-exchange step id for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Stable setup step id for the profile's authorisation-code exchange.
+    """
+    return f"ais-at-setup-{profile}-token-request"
+
+
+def _ais_profile_captured_consent_id(profile: str) -> str:
+    """Return the consent-id placeholder for a permission profile.
+
+    Args:
+        profile: Legacy AIS permission profile.
+
+    Returns:
+        Placeholder resolving to the created AIS account-access consent id.
+    """
+    return f"${{steps.{_ais_profile_consent_step_id(profile)}.response.body.Data.ConsentId}}"
 
 
 def _cbpii_psu_authorization_step() -> PsuAuthorizationStep:
@@ -625,6 +1105,182 @@ def _cbpii_psu_authorization_step() -> PsuAuthorizationStep:
         mandatory=True,
         group="catalogue",
         phase="execution",
+    )
+
+
+def _pis_psu_authorization_step(consent_step_id: str) -> PsuAuthorizationStep:
+    """Build a PIS PSU consent-authorisation step.
+
+    Args:
+        consent_step_id: PIS consent-creation request step whose response body
+            contains the intent id to authorise.
+
+    Returns:
+        PSU authorisation step that binds the captured PIS consent id into a
+        generated FAPI request object.
+
+    Raises:
+        ValueError: If ``consent_step_id`` is not a known PIS consent step.
+    """
+    step_metadata = _PIS_CONSENT_AUTHORIZATION_STEPS.get(consent_step_id)
+    if step_metadata is None:
+        raise ValueError(f"Unknown PIS consent step id: {consent_step_id}")
+    step_id, step_name, _token_step_id, _token_id, _flow_label = step_metadata
+    captured_consent_id = f"${{steps.{consent_step_id}.response.body.Data.ConsentId}}"
+    return PsuAuthorizationStep(
+        id=step_id,
+        name=step_name,
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid payments",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=captured_consent_id,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _pis_authorization_code_token_step(consent_step_id: str) -> ManifestStep:
+    """Build a PIS authorisation-code token exchange step for one consent flow.
+
+    Args:
+        consent_step_id: PIS consent-creation request step whose PSU
+            authorisation code should be exchanged.
+
+    Returns:
+        HTTP token-exchange step that records a flow-specific PIS bearer token
+        for downstream consent, funds-confirmation, and payment requests.
+
+    Raises:
+        ValueError: If ``consent_step_id`` is not a known PIS consent step.
+    """
+    step_metadata = _PIS_CONSENT_AUTHORIZATION_STEPS.get(consent_step_id)
+    if step_metadata is None:
+        raise ValueError(f"Unknown PIS consent step id: {consent_step_id}")
+    psu_step_id, _psu_step_name, token_step_id, token_id, flow_label = step_metadata
+    return ManifestStep(
+        id=token_step_id,
+        name=f"Exchange PIS {flow_label} authorisation code for payments token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{psu_step_id}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=token_id,
+    )
+
+
+def _vrp_psu_authorization_step(consent_step_id: str) -> PsuAuthorizationStep:
+    """Build a VRP PSU consent-authorisation step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step whose response
+            body contains the intent id to authorise.
+
+    Returns:
+        PSU authorisation step that binds the captured VRP consent id into a
+        generated FAPI request object.
+    """
+    captured_consent_id = f"${{steps.{consent_step_id}.response.body.Data.ConsentId}}"
+    return PsuAuthorizationStep(
+        id=_vrp_authorization_step_id(consent_step_id),
+        name="Authorise VRP consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid payments",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=captured_consent_id,
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+    )
+
+
+def _vrp_authorization_code_token_step(consent_step_id: str) -> ManifestStep:
+    """Build a VRP authorisation-code token exchange step.
+
+    Args:
+        consent_step_id: VRP/cVRP consent-creation request step id whose PSU
+            authorisation produced the code.
+
+    Returns:
+        HTTP token-exchange step that records the VRP bearer token for
+        downstream payment and funds-confirmation requests.
+    """
+    authorisation_step_id = _vrp_authorization_step_id(consent_step_id)
+    return ManifestStep(
+        id=_vrp_authorization_token_step_id(consent_step_id),
+        name="Exchange VRP authorisation code for payments token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{authorisation_step_id}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="execution",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_vrp_psu_payment_access_token_id(consent_step_id),
+    )
+
+
+def _ais_psu_authorization_step(*, profile: str) -> PsuAuthorizationStep:
+    """Build the AIS PSU consent-authorisation setup step.
+
+    Args:
+        profile: Legacy AIS permission profile to authorise.
+
+    Returns:
+        PSU authorisation step that binds the captured AIS consent id into a
+        generated FAPI request object.
+    """
+    return PsuAuthorizationStep(
+        id=_ais_profile_authorization_step_id(profile),
+        name=f"Authorise AIS {profile} account-access consent",
+        mode="manual",
+        authorization_endpoint="${config.oauth.authorizationEndpoint}",
+        client_id="${config.oauth.clientId}",
+        redirect_uri="${config.oauth.redirectUri}",
+        scope="openid accounts",
+        request_object=GeneratedRequestObject(
+            source="fapi-signing",
+            audience="${config.oauth.issuer}",
+            openbanking_intent_id=_ais_profile_captured_consent_id(profile),
+        ),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
     )
 
 
@@ -656,6 +1312,41 @@ def _cbpii_authorization_code_token_step() -> ManifestStep:
         phase="execution",
         token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
         produces_token_id=_CBPII_FUNDS_CONFIRMATION_TOKEN_ID,
+    )
+
+
+def _ais_authorization_code_token_step(*, profile: str) -> ManifestStep:
+    """Build an AIS authorisation-code token exchange for one profile.
+
+    Args:
+        profile: Legacy AIS permission profile whose PSU authorisation code
+            should be exchanged.
+
+    Returns:
+        HTTP token-exchange step that records the profile-specific AIS bearer
+        token for downstream protected-resource requests.
+    """
+    return ManifestStep(
+        id=_ais_profile_token_step_id(profile),
+        name=f"Exchange AIS {profile} authorisation code for account-access token",
+        request=ManifestRequest(
+            method="POST",
+            url="${config.oauth.tokenEndpoint}",
+            body=FormBody(
+                fields={
+                    "grant_type": "authorization_code",
+                    "code": f"${{steps.{_ais_profile_authorization_step_id(profile)}.response.body.code}}",
+                    "redirect_uri": "${config.oauth.redirectUri}",
+                    "client_id": "${config.oauth.clientId}",
+                }
+            ),
+        ),
+        assertions=(HttpStatusAssertion(type="http_status", expected=200),),
+        mandatory=True,
+        group="catalogue",
+        phase="setup",
+        token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
+        produces_token_id=_AIS_PERMISSION_PROFILE_TOKEN_IDS[profile],
     )
 
 
@@ -737,7 +1428,6 @@ def _catalogue_request_step_to_manifest_step(
         requirements=requirements,
         generated_runtime_values=generated_runtime_values,
     )
-    phase: StepPhase = "setup" if test_case.role in {"setup", "security", "token"} else "execution"
     return ManifestStep(
         id=request_step.step_id,
         name=request_step.name,
@@ -746,6 +1436,7 @@ def _catalogue_request_step_to_manifest_step(
             url=resolved_url,
             headers=headers,
             body=body,
+            detached_jws=_catalogue_detached_jws_policy(request_step),
         ),
         assertions=tuple(
             _catalogue_assertion_to_manifest_assertion(
@@ -757,13 +1448,78 @@ def _catalogue_request_step_to_manifest_step(
         ),
         mandatory=test_case.mandatory,
         group="catalogue",
-        phase=phase,
+        phase=_catalogue_step_phase(test_case, request_step),
         required_token_id=request_step.required_token_id,
         produces_token_id=request_step.produced_token_id,
         response_signature_policy=(
             ResponseSignaturePolicy(source="discovery-jwks") if test_case.response_signature_required else None
         ),
+        token_endpoint_auth_policy=_catalogue_token_endpoint_auth_policy(request_step),
     )
+
+
+def _catalogue_step_phase(test_case: CatalogueTestCase, request_step: CatalogueRequestStep) -> StepPhase:
+    """Return the manifest execution phase for a catalogue request.
+
+    Args:
+        test_case: Catalogue case that owns the request.
+        request_step: Request step being converted.
+
+    Returns:
+        Manifest phase for scheduling. AIS consent setup is deliberately
+        scheduled in setup so it runs before protected AIS resource checks.
+    """
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return "setup"
+    if test_case.role in {"setup", "security", "token"}:
+        return "setup"
+    return "execution"
+
+
+def _catalogue_detached_jws_policy(request_step: CatalogueRequestStep) -> DetachedJwsPolicy | None:
+    """Return detached-JWS policy for generated Open Banking write requests.
+
+    Args:
+        request_step: Request step being converted.
+
+    Returns:
+        Detached-JWS policy for AIS account-access consent creation and PIS
+        payment-initiation write requests, otherwise ``None``.
+    """
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return DetachedJwsPolicy(source="fapi-signing")
+    if (
+        request_step.method in {"POST", "PUT", "PATCH"}
+        and request_step.path.startswith(_OB_PIS_PATH_PREFIX)
+        and request_step.step_id.startswith("pis-v4-")
+        and request_step.step_id != _PIS_MISSING_SIGNATURE_STEP_ID
+    ):
+        return DetachedJwsPolicy(
+            source="fapi-signing",
+            omit_protected_headers=request_step.detached_jws_omit_claims,
+        )
+    if (
+        request_step.method in {"POST", "PUT", "PATCH"}
+        and request_step.step_id.startswith(("vrp-", "cvrp-"))
+        and request_step.body_template is not None
+    ):
+        return DetachedJwsPolicy(source="fapi-signing")
+    return None
+
+
+def _catalogue_token_endpoint_auth_policy(request_step: CatalogueRequestStep) -> TokenEndpointAuthPolicy | None:
+    """Return token-endpoint authentication policy for catalogue setup steps.
+
+    Args:
+        request_step: Request step being converted.
+
+    Returns:
+        FAPI token endpoint authentication policy for generated AIS token
+        exchange steps, otherwise ``None``.
+    """
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+        return TokenEndpointAuthPolicy(source="fapi-signing")
+    return None
 
 
 def _catalogue_request_url(
@@ -793,6 +1549,10 @@ def _catalogue_request_url(
         if runtime_config is None or runtime_config.discovery_url is None:
             raise ValueError("Discovery catalogue step requires runtime config discoveryUrl")
         return runtime_config.discovery_url
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID or request_step.step_id in {
+        _ais_profile_token_step_id(profile) for profile in _AIS_PERMISSION_PROFILE_TOKEN_IDS
+    }:
+        return "${config.oauth.tokenEndpoint}"
 
     base_url = _required_runtime_string(runtime_inputs, "resourceBaseUrl")
     resolved_path = _resolve_catalogue_path_variables(request_step, runtime_inputs=runtime_inputs)
@@ -856,7 +1616,8 @@ def _path_variable_input_candidates(variable: str, runtime_input_refs: tuple[str
     """
     lower_camel = variable[:1].lower() + variable[1:]
     suffix_matches = tuple(ref for ref in runtime_input_refs if ref.lower().endswith(lower_camel.lower()))
-    return (variable, lower_camel, *suffix_matches)
+    semantic_matches = ("consentedAccountId",) if lower_camel == "accountId" else ()
+    return (variable, lower_camel, *semantic_matches, *suffix_matches)
 
 
 def _catalogue_request_headers(
@@ -986,6 +1747,15 @@ def _generated_runtime_value(generated_value: str) -> str:
         return f"invalid-{uuid.uuid4()}"
     if generated_value == "invalid-access-token":
         return f"invalid-{secrets.token_urlsafe(24)}"
+    if generated_value == "next-day-date-time-offset":
+        return (
+            (datetime.now(UTC) + timedelta(days=1))
+            .astimezone(timezone(timedelta(hours=-7)))
+            .replace(microsecond=0)
+            .isoformat()
+        )
+    if generated_value == "next-day-date-time-utc":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
     raise ValueError(f"Unsupported generated runtime value strategy '{generated_value}'")
 
 
@@ -1058,7 +1828,7 @@ def _catalogue_request_body(
     runtime_input_base_dir: Path,
     requirements: Mapping[str, RuntimeInputRequirement],
     generated_runtime_values: Mapping[str, str],
-) -> JsonBody | None:
+) -> JsonBody | FormBody | None:
     """Build a JSON request body from a catalogue runtime file reference.
 
     Args:
@@ -1078,6 +1848,17 @@ def _catalogue_request_body(
     """
     if request_step.method not in {"POST", "PUT", "PATCH", "DELETE"}:
         return None
+    if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
+        return JsonBody(value=_AIS_BASIC_ACCOUNT_ACCESS_CONSENT_BODY)
+    if request_step.step_id == _AIS_ACCOUNT_ACCESS_TOKEN_STEP_ID:
+        return FormBody(
+            fields={
+                "grant_type": "authorization_code",
+                "code": f"${{steps.{_ais_profile_authorization_step_id('basic')}.response.body.code}}",
+                "redirect_uri": "${config.oauth.redirectUri}",
+                "client_id": "${config.oauth.clientId}",
+            }
+        )
     if request_step.body_template is not None:
         return JsonBody(
             value=_resolve_catalogue_template_values(
@@ -1328,6 +2109,16 @@ def _catalogue_assertion_to_manifest_assertion(
             assertion shape.
     """
     if assertion.kind == "http_status":
+        expected_one_of = assertion.rule.get("expectedOneOf")
+        if isinstance(expected_one_of, list) and expected_one_of:
+            parsed_statuses: list[int] = []
+            for status_code in expected_one_of:
+                if not isinstance(status_code, int) or isinstance(status_code, bool):
+                    raise ValueError(
+                        f"Catalogue assertion '{assertion.assertion_id}' requires integer rule.expectedOneOf values"
+                    )
+                parsed_statuses.append(status_code)
+            return HttpStatusAssertion(type="http_status", expected_one_of=tuple(parsed_statuses))
         expected = assertion.rule.get("expected")
         if not isinstance(expected, int) or isinstance(expected, bool):
             raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires integer rule.expected")
@@ -1365,6 +2156,9 @@ def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldA
     rule = assertion.rule.get("rule")
     supported_simple_rules = {
         "required",
+        "permission_filtered",
+        "all_items_have_field",
+        "all_items_absent_fields",
         "https_url",
         "array",
         "absent",
@@ -1375,6 +2169,31 @@ def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldA
         "non_empty_array",
     }
     if isinstance(rule, str) and rule in supported_simple_rules:
+        if rule == "permission_filtered":
+            return JsonFieldAssertion(type="json_field", path=path, rule="required")
+        if rule == "all_items_absent_fields":
+            fields = assertion.rule.get("fields")
+            if not isinstance(fields, list) or not fields or not all(isinstance(field, str) for field in fields):
+                raise ValueError(
+                    f"Catalogue assertion '{assertion.assertion_id}' requires non-empty string array rule.fields"
+                )
+            field_names = tuple(str(field) for field in fields)
+            return JsonFieldAssertion(
+                type="json_field",
+                path=path,
+                rule=cast(JsonFieldRule, rule),
+                fields=field_names,
+            )
+        if rule == "all_items_have_field":
+            field = assertion.rule.get("field")
+            if not isinstance(field, str) or not field:
+                raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.field")
+            return JsonFieldAssertion(
+                type="json_field",
+                path=path,
+                rule=cast(JsonFieldRule, rule),
+                field=field,
+            )
         return JsonFieldAssertion(type="json_field", path=path, rule=cast(JsonFieldRule, rule))
     raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' cannot be mapped to a JSON-field rule")
 
@@ -1402,7 +2221,11 @@ def _catalogue_header_assertion(
     name = assertion.rule.get("name", assertion.rule.get("header"))
     if not isinstance(name, str) or not name:
         raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires rule.name or rule.header")
-    if assertion.rule.get("required") is True or assertion.rule.get("presence") == "required":
+    if (
+        assertion.rule.get("required") is True
+        or assertion.rule.get("presence") == "required"
+        or assertion.rule.get("rule") == "present"
+    ):
         return HeaderAssertion(type="header", name=name, rule="present")
     if assertion.rule.get("rule") == "playback":
         return HeaderAssertion(
@@ -3218,6 +4041,7 @@ def _execute_v1_step_inner(
             json_body=None if serialized_json_body is not None else resolved_json_body,
             json_body_bytes=serialized_json_body,
             form_body=resolved_form_body,
+            allow_non_json_response=not _assertions_require_json_body(manifest_step.assertions),
         )
     except JsonHttpClientError as error:
         # Preserve the response status code on the StepResult when the
@@ -3376,6 +4200,19 @@ def _record_runtime_token_if_present(
     return record_token(context, token_id=token_id, access_token=access_token)
 
 
+def _assertions_require_json_body(assertions: tuple[ManifestAssertion, ...]) -> bool:
+    """Return whether any assertion needs a parsed JSON response body.
+
+    Args:
+        assertions: Manifest assertions attached to the current request step.
+
+    Returns:
+        ``True`` when JSON-field or schema assertions are present; ``False``
+        when the step can be evaluated using only status and headers.
+    """
+    return any(isinstance(assertion, JsonFieldAssertion | ResponseSchemaAssertion) for assertion in assertions)
+
+
 def _validate_response_signature_if_required(
     *,
     manifest_step: ManifestStep,
@@ -3514,7 +4351,7 @@ def _maybe_apply_ob_detached_jws(
     if fapi_signing_service is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
     if not _requires_ob_detached_jws(manifest_step=manifest_step, resolved_url=resolved_url):
-        raise ValueError("Detached request signing is only supported for account-access-consents requests")
+        raise ValueError("Detached request signing is only supported for AIS consent, PIS, and VRP write requests")
     if resolved_json_body is None:
         raise ValueError("Detached request signing requires a JSON request body")
 
@@ -3522,7 +4359,11 @@ def _maybe_apply_ob_detached_jws(
     signing_service = fapi_signing_service.get()
     if signing_service is None:
         raise ValueError("Detached request signing requires fapiSigning configuration")
-    detached_signature = signing_service.sign_detached_json_payload(serialized_json_body)
+    detached_signature = signing_service.sign_detached_json_payload(
+        serialized_json_body,
+        profile=_detached_jws_profile_for_request(resolved_url),
+        omit_protected_headers=manifest_step.request.detached_jws.omit_protected_headers,
+    )
     validate_header_value(
         detached_signature,
         location=f"step '{manifest_step.id}' generated header x-jws-signature",
@@ -3533,6 +4374,42 @@ def _maybe_apply_ob_detached_jws(
     return signed_headers, serialized_json_body
 
 
+def _detached_jws_profile_for_request(resolved_url: str) -> OpenBankingDetachedJwsProfile:
+    """Return the Open Banking detached-JWS profile for one request URL.
+
+    Args:
+        resolved_url: Fully resolved request URL.
+
+    Returns:
+        PIS v4 write requests use the v3.1.4+/v4 profile; existing AIS consent
+        signing keeps the legacy unencoded-payload profile.
+    """
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    if normalized_path.startswith(_OB_PIS_PATH_PREFIX) or _is_ob_vrp_path(normalized_path):
+        return "ob-v3.1.4+"
+    return "legacy-b64-false"
+
+
+def _is_ob_vrp_path(normalized_path: str) -> bool:
+    """Return whether a normalized path targets an Open Banking VRP resource.
+
+    Args:
+        normalized_path: Canonical absolute URL path.
+
+    Returns:
+        ``True`` when the path targets domestic VRP consent/payment resources,
+        either directly from the generated catalogue path or under a versioned
+        ``/pisp`` base path.
+    """
+    for resource_prefix in _OB_VRP_RESOURCE_PATH_PREFIXES:
+        if normalized_path == resource_prefix or normalized_path.startswith(f"{resource_prefix}/"):
+            return True
+        versioned_pisp_prefix = f"/pisp{resource_prefix}"
+        if normalized_path.endswith(versioned_pisp_prefix) or f"{versioned_pisp_prefix}/" in normalized_path:
+            return True
+    return False
+
+
 def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str) -> bool:
     """Return whether a step should carry an Open Banking detached JWS.
 
@@ -3541,12 +4418,18 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
         resolved_url: Fully resolved request URL.
 
     Returns:
-        ``True`` when the step targets the AIS account-access-consents
-        endpoint and is an eligible write method, otherwise ``False``.
+        ``True`` when the step targets the AIS account-access-consents endpoint,
+        a PIS endpoint, or a VRP endpoint and is an eligible write method,
+        otherwise ``False``.
     """
     if manifest_step.request.method not in {"POST", "PUT", "PATCH"}:
         return False
-    return _normalize_url_path_for_match(urlsplit(resolved_url).path) == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+    normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
+    return (
+        normalized_path == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
+        or normalized_path.startswith(_OB_PIS_PATH_PREFIX)
+        or _is_ob_vrp_path(normalized_path)
+    )
 
 
 def _serialize_json_request_body(body: JsonValue) -> bytes:

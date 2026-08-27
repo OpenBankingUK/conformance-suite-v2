@@ -42,7 +42,6 @@ def test_evaluate_http_status_passes_when_status_matches() -> None:
         status_code=200,
         body={},
     )
-
     assert result.passed is True
 
     assert result.message == "HTTP status was 200"
@@ -58,6 +57,38 @@ def test_evaluate_http_status_fails_when_status_differs() -> None:
 
     assert result.passed is False
     assert result.message == "Expected HTTP status 200, got 201"
+
+
+@pytest.mark.unit
+def test_evaluate_http_status_passes_when_status_is_one_of_expected_values() -> None:
+    result = evaluate_assertion(
+        HttpStatusAssertion(type="http_status", expected_one_of=(400, 403)),
+        status_code=403,
+        body={},
+    )
+    assert result.passed is True
+    assert result.message == "HTTP status was 403"
+
+
+@pytest.mark.unit
+def test_evaluate_http_status_fails_when_status_is_not_one_of_expected_values() -> None:
+    result = evaluate_assertion(
+        HttpStatusAssertion(type="http_status", expected_one_of=(400, 403)),
+        status_code=404,
+        body={},
+    )
+
+    assert result.passed is False
+    assert result.message == "Expected HTTP status 400 or 403, got 404"
+
+
+@pytest.mark.unit
+def test_parse_manifest_accepts_http_status_expected_one_of() -> None:
+    assertion = parsed_assertion({"type": "http_status", "expectedOneOf": [400, 403]})
+
+    assert isinstance(assertion, HttpStatusAssertion)
+    assert assertion.expected is None
+    assert assertion.expected_one_of == (400, 403)
 
 
 @pytest.mark.unit
@@ -148,8 +179,32 @@ def test_evaluate_json_field_resolves_dot_paths() -> None:
         status_code=200,
         body={"metadata": {"issuer": "https://modelbank.example.com"}},
     )
+    assert result.passed is True
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_json_field_resolves_array_indexes() -> None:
+    result = evaluate_assertion(
+        JsonFieldAssertion(type="json_field", path="Data.Account.0.AccountId", rule="required"),
+        status_code=200,
+        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+    )
 
     assert result.passed is True
+    assert result.message == "JSON field Data.Account.0.AccountId is present"
+
+
+@pytest.mark.unit
+def test_evaluate_json_field_reports_missing_array_index() -> None:
+    result = evaluate_assertion(
+        JsonFieldAssertion(type="json_field", path="Data.Account.1.AccountId", rule="required"),
+        status_code=200,
+        body={"Data": {"Account": [{"AccountId": "account-123"}]}},
+    )
+
+    assert result.passed is False
+    assert result.message == "JSON field Data.Account.1.AccountId is missing"
 
 
 @pytest.mark.unit
@@ -164,6 +219,46 @@ def test_evaluate_absent_json_field_passes_when_field_is_missing() -> None:
 
     assert result.passed is True
     assert result.message == "JSON field issuer is absent"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_fields_passes_when_forbidden_fields_are_omitted() -> None:
+    assertion = parsed_assertion(
+        {
+            "type": "json_field",
+            "path": "Data.Account",
+            "rule": "all_items_absent_fields",
+            "fields": ["Account", "Servicer"],
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Account": [{"AccountId": "account-123"}, {"Currency": "GBP"}]}},
+    )
+
+    assert result.passed is True
+    assert result.message == "Every item in JSON field Data.Account omits fields: Account, Servicer"
+
+
+@pytest.mark.unit
+def test_evaluate_all_items_absent_fields_fails_when_forbidden_field_is_present() -> None:
+    assertion = JsonFieldAssertion(
+        type="json_field",
+        path="Data.Transaction",
+        rule="all_items_absent_fields",
+        fields=("Balance", "MerchantDetails"),
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Transaction": [{"TransactionId": "tx-1", "Balance": {"Amount": "1.00"}}]}},
+    )
+
+    assert result.passed is False
+    assert result.message == "JSON field Data.Transaction[0].Balance must be absent"
 
 
 @pytest.mark.unit
@@ -472,6 +567,55 @@ def test_evaluate_response_schema_accepts_namespaced_account_identification_code
             },
             "Links": {"Self": "https://api.example.com/accounts"},
             "Meta": {},
+        },
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    "document",
+    [
+        "ob-read-write-v4.0-payment-initiation-openapi",
+        "ob-read-write-v4.0.1-payment-initiation-openapi",
+    ],
+)
+def test_evaluate_response_schema_passes_for_valid_pis_standing_order_response(document: str) -> None:
+    """Bundled PIS schemas accept valid domestic standing-order responses.
+
+    Args:
+        document: Bundled Payment Initiation OpenAPI document identifier under test.
+    """
+    assertion = parsed_assertion(
+        {
+            "type": "response_schema",
+            "source": "bundled_openapi",
+            "document": document,
+            "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={
+            "Data": {
+                "DomesticStandingOrderId": "standing-order-123",
+                "ConsentId": "consent-123",
+                "CreationDateTime": "2026-08-26T15:00:00+00:00",
+                "Status": "RCVD",
+                "StatusUpdateDateTime": "2026-08-26T15:00:00+00:00",
+                "Initiation": {
+                    "MandateRelatedInformation": {"Frequency": {"Type": "WEEK", "PointInTime": "01"}},
+                    "FirstPaymentAmount": {"Amount": "1.00", "Currency": "GBP"},
+                    "CreditorAccount": {
+                        "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "Identification": "70000170000002",
+                        "Name": "Creditor Account",
+                    },
+                },
+            }
         },
     )
 

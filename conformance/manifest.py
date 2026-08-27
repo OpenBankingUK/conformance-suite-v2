@@ -76,6 +76,7 @@ JsonFieldRule = Literal[
     "equals",
     "one_of",
     "all_items_have_field",
+    "all_items_absent_fields",
 ]
 """JSON field validation rules supported by manifest assertions."""
 
@@ -198,9 +199,12 @@ class DetachedJwsPolicy:
     Attributes:
         source: Runtime signing configuration source used to build the
             detached JWS.
+        omit_protected_headers: Open Banking protected-header aliases to omit
+            from the generated detached JWS for negative conformance tests.
     """
 
     source: DetachedJwsSource
+    omit_protected_headers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -231,15 +235,18 @@ class FollowUpRequest:
 
 @dataclass(frozen=True)
 class HttpStatusAssertion:
-    """Assertion requiring a specific HTTP response status.
+    """Assertion requiring one or more allowed HTTP response statuses.
 
     Attributes:
         type: Assertion discriminator for HTTP status checks.
-        expected: Expected HTTP status code.
+        expected: Expected HTTP status code for single-status assertions.
+        expected_one_of: Accepted HTTP status codes for one-of status
+            assertions.
     """
 
     type: Literal["http_status"]
-    expected: int
+    expected: int | None = None
+    expected_one_of: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -255,6 +262,8 @@ class JsonFieldAssertion:
         min_items: Minimum array length required by ``min_items`` rules.
         field: Field that every array item must contain for
             ``all_items_have_field`` rules.
+        fields: Fields that every array item or object must omit for
+            ``all_items_absent_fields`` rules.
     """
 
     type: Literal["json_field"]
@@ -264,6 +273,7 @@ class JsonFieldAssertion:
     values: tuple[JsonValue, ...] | None = None
     min_items: int | None = None
     field: str | None = None
+    fields: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -1477,13 +1487,51 @@ def _parse_optional_detached_jws(
     policy_location = f"{location}.detachedJws"
     if not isinstance(raw_policy, dict):
         raise ManifestError(f"{policy_location} must be a JSON object when present")
-    _reject_unknown_keys(raw_policy, allowed_keys={"source"}, location=policy_location)
+    _reject_unknown_keys(raw_policy, allowed_keys={"source", "omitProtectedHeaders"}, location=policy_location)
 
     source = _required_string(raw_policy, "source", location=policy_location)
     _validate_placeholder_syntax(source, location=f"{policy_location}.source", seen_ids=seen_ids)
     if source != "fapi-signing":
         raise ManifestError(f"{policy_location}.source must be 'fapi-signing'")
-    return DetachedJwsPolicy(source="fapi-signing")
+    return DetachedJwsPolicy(
+        source="fapi-signing",
+        omit_protected_headers=_parse_detached_jws_omitted_headers(raw_policy, location=policy_location),
+    )
+
+
+def _parse_detached_jws_omitted_headers(raw_policy: dict[str, JsonValue], *, location: str) -> tuple[str, ...]:
+    """Parse Open Banking detached-JWS protected headers to omit.
+
+    Args:
+        raw_policy: Raw detached-JWS policy JSON object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Protected-header aliases that should be omitted from the generated
+        detached JWS.
+
+    Raises:
+        ManifestError: If ``omitProtectedHeaders`` is present but not a string
+            array, contains duplicates, or names an unsupported header.
+    """
+    if "omitProtectedHeaders" not in raw_policy:
+        return ()
+    raw_headers = raw_policy["omitProtectedHeaders"]
+    headers_location = f"{location}.omitProtectedHeaders"
+    if not isinstance(raw_headers, list):
+        raise ManifestError(f"{headers_location} must be an array of strings when present")
+
+    parsed_headers: list[str] = []
+    for index, raw_header in enumerate(raw_headers):
+        if not isinstance(raw_header, str):
+            raise ManifestError(f"{headers_location}[{index}] must be a string")
+        header = raw_header.strip()
+        if header not in {"iat", "iss", "tan"}:
+            raise ManifestError(f"{headers_location}[{index}] must be one of 'iat', 'iss', or 'tan'")
+        if header in parsed_headers:
+            raise ManifestError(f"{headers_location} must not contain duplicate header '{header}'")
+        parsed_headers.append(header)
+    return tuple(parsed_headers)
 
 
 def _validate_placeholder_syntax(value: str, *, location: str, seen_ids: set[str]) -> None:
@@ -1872,7 +1920,16 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
     """
     assertion_type = _required_assertion_type(raw_assertion, location=location)
     if assertion_type == "http_status":
-        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected"}, location=location)
+        _reject_unknown_keys(raw_assertion, allowed_keys={"type", "expected", "expectedOneOf"}, location=location)
+        has_expected = "expected" in raw_assertion
+        has_expected_one_of = "expectedOneOf" in raw_assertion
+        if has_expected == has_expected_one_of:
+            raise ManifestError(f"{location} must provide exactly one of expected or expectedOneOf")
+        if has_expected_one_of:
+            return HttpStatusAssertion(
+                type="http_status",
+                expected_one_of=_required_status_codes(raw_assertion, location=location),
+            )
         return HttpStatusAssertion(type="http_status", expected=_required_status_code(raw_assertion, location=location))
     if assertion_type == "json_field":
         return _parse_json_field_assertion(raw_assertion, location=location)
@@ -1910,6 +1967,8 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
         allowed_keys.add("minItems")
     elif rule == "all_items_have_field":
         allowed_keys.add("field")
+    elif rule == "all_items_absent_fields":
+        allowed_keys.add("fields")
     _reject_unknown_keys(raw_assertion, allowed_keys=allowed_keys, location=location)
 
     assertion = JsonFieldAssertion(
@@ -1949,6 +2008,13 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
             path=assertion.path,
             rule=assertion.rule,
             field=_required_string(raw_assertion, "field", location=location),
+        )
+    if rule == "all_items_absent_fields":
+        return JsonFieldAssertion(
+            type=assertion.type,
+            path=assertion.path,
+            rule=assertion.rule,
+            fields=_required_string_array(raw_assertion, "fields", location=location),
         )
     return assertion
 
@@ -1990,7 +2056,9 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
     "ob-read-write-v4.0-account-info-openapi",
+    "ob-read-write-v4.0-payment-initiation-openapi",
     "ob-read-write-v4.0.1-account-info-openapi",
+    "ob-read-write-v4.0.1-payment-initiation-openapi",
 }
 """Allowlisted bundled standards documents addressable by ``response_schema`` assertions."""
 
@@ -2201,9 +2269,11 @@ def _required_json_field_rule(raw_assertion: dict[str, JsonValue], *, location: 
         return "one_of"
     if rule == "all_items_have_field":
         return "all_items_have_field"
+    if rule == "all_items_absent_fields":
+        return "all_items_absent_fields"
     raise ManifestError(
         f"{location}.rule must be one of: required, https_url, array, absent, string, number, boolean, object, "
-        "non_empty_array, min_items, equals, one_of, all_items_have_field"
+        "non_empty_array, min_items, equals, one_of, all_items_have_field, all_items_absent_fields"
     )
 
 
@@ -2367,6 +2437,33 @@ def _required_status_code(raw_assertion: dict[str, JsonValue], *, location: str)
     if not isinstance(value, int) or isinstance(value, bool) or value < 100 or value > 599:
         raise ManifestError(f"{location}.expected must be an HTTP status code")
     return value
+
+
+def _required_status_codes(raw_assertion: dict[str, JsonValue], *, location: str) -> tuple[int, ...]:
+    """Extract and validate a non-empty list of accepted HTTP status codes.
+
+    Args:
+        raw_assertion: Raw assertion dict expected to contain an
+            ``expectedOneOf`` field.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Tuple of accepted HTTP status codes in manifest order.
+
+    Raises:
+        ManifestError: If the value is missing, empty, or contains a value
+            outside the HTTP status-code range.
+    """
+    values = raw_assertion.get("expectedOneOf")
+    if not isinstance(values, list) or not values:
+        raise ManifestError(f"{location}.expectedOneOf must be a non-empty array of HTTP status codes")
+    parsed: list[int] = []
+    for index, value in enumerate(values):
+        if not isinstance(value, int) or isinstance(value, bool) or value < 100 or value > 599:
+            raise ManifestError(f"{location}.expectedOneOf[{index}] must be an HTTP status code")
+        if value not in parsed:
+            parsed.append(value)
+    return tuple(parsed)
 
 
 def _required_string(raw_config: dict[str, JsonValue], key: str, *, location: str) -> str:
@@ -2591,6 +2688,32 @@ def _required_object_array(raw_config: dict[str, JsonValue], key: str, *, locati
             raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
         objects.append(item)
     return objects
+
+
+def _required_string_array(raw_config: dict[str, JsonValue], key: str, *, location: str) -> tuple[str, ...]:
+    """Extract a required non-empty array of non-empty strings.
+
+    Args:
+        raw_config: The parent JSON object to extract from.
+        key: The key to look up in the object.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        A tuple of stripped strings in source order.
+
+    Raises:
+        ManifestError: If the value is missing, empty, or contains non-string
+            or blank entries.
+    """
+    value = raw_config.get(key)
+    if not isinstance(value, list) or not value:
+        raise ManifestError(f"{location}.{key} must be a non-empty array of strings")
+    strings: list[str] = []
+    for index, item in enumerate(value):
+        if not isinstance(item, str) or not item.strip():
+            raise ManifestError(f"{location}.{key}[{index}] must be a non-empty string")
+        strings.append(item.strip())
+    return tuple(strings)
 
 
 _STEP_ID_PATTERN = re.compile(r"^" + _STEP_ID_CHAR_CLASS + r"$")

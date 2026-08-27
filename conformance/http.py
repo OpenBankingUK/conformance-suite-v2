@@ -122,6 +122,7 @@ def send_json(
     json_body: JsonValue | None = None,
     json_body_bytes: bytes | None = None,
     form_body: Mapping[str, str] | None = None,
+    allow_non_json_response: bool = False,
 ) -> JsonHttpResponse:
     """Send an HTTP request and parse a JSON object response.
 
@@ -150,7 +151,9 @@ def send_json(
     (status-agnostic contract per DL-0011), except for the HTTP no-content
     statuses (204, 205, 304) which are defined by RFC 9110 to carry no
     message body and are normalised to an empty JSON object so status-only
-    assertions can still be evaluated.
+    assertions can still be evaluated. Callers may also opt into
+    ``allow_non_json_response`` for status/header-only negative checks where
+    the body is intentionally irrelevant.
 
     Args:
         client: Preconfigured synchronous HTTP client.
@@ -166,6 +169,8 @@ def send_json(
         form_body: Optional form-field mapping (sent as
             ``application/x-www-form-urlencoded`` for POST/PUT/PATCH/DELETE).
             Mutually exclusive with ``json_body`` and ``json_body_bytes``.
+        allow_non_json_response: Whether non-JSON response bodies should be
+            normalised to an empty object instead of raising.
 
     Returns:
         Parsed JSON object response with URL and status code.
@@ -240,6 +245,14 @@ def send_json(
     try:
         response_body: object = response.json()
     except ValueError as error:
+        if allow_non_json_response:
+            return JsonHttpResponse(
+                url=str(response.url),
+                status_code=response.status_code,
+                headers=response.headers,
+                body={},
+                body_bytes=response.content,
+            )
         raise JsonHttpClientError(
             f"Response from {url} was not valid JSON",
             status_code=response.status_code,

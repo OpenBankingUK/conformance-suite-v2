@@ -36,8 +36,8 @@ _RESPONSE_SIGNATURE_REGISTRY = JWSRegistry(
 )
 """JWS registry accepting Open Banking critical protected headers."""
 
-_REQUIRED_CRITICAL_HEADERS = frozenset({"b64", _OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN})
-"""Protected headers that must be listed as critical for Open Banking response JWS."""
+_REQUIRED_OPEN_BANKING_CRITICAL_HEADERS = frozenset({_OPEN_BANKING_IAT, _OPEN_BANKING_ISS, _OPEN_BANKING_TAN})
+"""Open Banking protected headers that must be listed as critical."""
 
 
 class ResponseSignatureValidationError(ValueError):
@@ -162,12 +162,12 @@ def _validate_protected_header(protected_header: Mapping[str, JsonValue]) -> Res
     content_type = protected_header.get("cty")
     if content_type is not None and content_type not in {"json", "application/json"}:
         raise ResponseSignatureValidationError("x-jws-signature cty must be json or application/json when supplied")
-    if protected_header.get("b64") is not False:
-        raise ResponseSignatureValidationError("x-jws-signature b64 must be false")
     crit_header = protected_header.get("crit")
     if not isinstance(crit_header, list) or not all(isinstance(item, str) for item in crit_header):
         raise ResponseSignatureValidationError("x-jws-signature crit must be a string array")
-    missing_critical_headers = sorted(_REQUIRED_CRITICAL_HEADERS - set(crit_header))
+    critical_headers = cast("list[str]", crit_header)
+    _validate_b64_profile(protected_header, critical_headers)
+    missing_critical_headers = sorted(_REQUIRED_OPEN_BANKING_CRITICAL_HEADERS - set(critical_headers))
     if missing_critical_headers:
         raise ResponseSignatureValidationError(
             "x-jws-signature crit must include: " + ", ".join(missing_critical_headers)
@@ -178,6 +178,29 @@ def _validate_protected_header(protected_header: Mapping[str, JsonValue]) -> Res
     issuer = _required_header_string(protected_header, _OPEN_BANKING_ISS)
     trust_anchor = _required_header_string(protected_header, _OPEN_BANKING_TAN)
     return ResponseSignatureValidation(key_id=key_id, issuer=issuer, trust_anchor=trust_anchor)
+
+
+def _validate_b64_profile(protected_header: Mapping[str, JsonValue], crit_header: list[str]) -> None:
+    """Validate old and v3.1.4+/v4 Open Banking detached-JWS payload profiles.
+
+    Args:
+        protected_header: Decoded protected header object from the detached JWS.
+        crit_header: Parsed critical-header list from ``protected_header``.
+
+    Raises:
+        ResponseSignatureValidationError: If the ``b64`` header and critical
+            header list mix incompatible old and v3.1.4+/v4 profiles.
+    """
+    b64_header = protected_header.get("b64")
+    if b64_header is False:
+        if "b64" not in crit_header:
+            raise ResponseSignatureValidationError("x-jws-signature crit must include: b64")
+        return
+    if b64_header is None:
+        if "b64" in crit_header:
+            raise ResponseSignatureValidationError("x-jws-signature crit must not include b64 unless b64 is false")
+        return
+    raise ResponseSignatureValidationError("x-jws-signature b64 must be false when supplied")
 
 
 def _required_header_string(protected_header: Mapping[str, JsonValue], key: str) -> str:
