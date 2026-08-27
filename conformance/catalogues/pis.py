@@ -735,9 +735,7 @@ _PIS_V40_RESPONSE_SCHEMA_REFS = {
     ("POST", "/open-banking/v4.0/pisp/domestic-payment-consents", 201): (
         "#/components/schemas/OBWriteDomesticConsentResponse5"
     ),
-    ("POST", "/open-banking/v4.0/pisp/domestic-payment-consents", 400): (
-        "#/components/schemas/OBErrorResponse1"
-    ),
+    ("POST", "/open-banking/v4.0/pisp/domestic-payment-consents", 400): ("#/components/schemas/OBErrorResponse1"),
     ("GET", "/open-banking/v4.0/pisp/domestic-payment-consents/{domesticPaymentConsentId}", 200): (
         "#/components/schemas/OBWriteDomesticConsentResponse5"
     ),
@@ -746,9 +744,7 @@ _PIS_V40_RESPONSE_SCHEMA_REFS = {
         "/open-banking/v4.0/pisp/domestic-payment-consents/{domesticPaymentConsentId}/funds-confirmation",
         200,
     ): "#/components/schemas/OBWriteFundsConfirmationResponse1",
-    ("POST", "/open-banking/v4.0/pisp/domestic-payments", 201): (
-        "#/components/schemas/OBWriteDomesticResponse5"
-    ),
+    ("POST", "/open-banking/v4.0/pisp/domestic-payments", 201): ("#/components/schemas/OBWriteDomesticResponse5"),
     ("GET", "/open-banking/v4.0/pisp/domestic-payments/{domesticPaymentId}", 200): (
         "#/components/schemas/OBWriteDomesticResponse5"
     ),

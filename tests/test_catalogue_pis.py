@@ -488,16 +488,12 @@ def test_pis_v4_legacy_consent_scripts_map_to_consent_endpoints() -> None:
         if case.test_case_id == "pis-v4-domestic-standing-order-consent-reject-invalid-frequency"
     )
 
-    assert (
-        "legacy-fcs-script:ob_4.0_payment_fca.json#OB-400-DOP-101000"
-        in scheduled_consent_case.compliance_scope
-    )
+    assert "legacy-fcs-script:ob_4.0_payment_fca.json#OB-400-DOP-101000" in scheduled_consent_case.compliance_scope
     assert scheduled_consent_case.request_steps[0].path == (
         "/open-banking/v4.0/pisp/domestic-scheduled-payment-consents"
     )
     assert (
-        "legacy-fcs-script:ob_4.0_payment_fca.json#OB-400-DOP-101503"
-        in standing_order_rejection_case.compliance_scope
+        "legacy-fcs-script:ob_4.0_payment_fca.json#OB-400-DOP-101503" in standing_order_rejection_case.compliance_scope
     )
     assert standing_order_rejection_case.request_steps[0].path == (
         "/open-banking/v4.0/pisp/domestic-standing-order-consents"

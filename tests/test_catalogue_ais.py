@@ -459,13 +459,11 @@ def test_ais_resource_cases_bind_to_legacy_permission_profile_tokens() -> None:
     assert step_by_case["ais-at-account-by-id-200"].required_token_id == "ais-account-access-basic"  # noqa: S105 - semantic token id
     assert step_by_case["ais-at-account-by-id-200"].authorization_profile == "basic"
     assert (
-        step_by_case["ais-at-account-by-id-detail-200"].required_token_id
-        == "ais-account-access-detail"  # noqa: S105 - semantic token id
+        step_by_case["ais-at-account-by-id-detail-200"].required_token_id == "ais-account-access-detail"  # noqa: S105 - semantic token id
     )
     assert step_by_case["ais-at-account-by-id-detail-200"].authorization_profile == "detail"
     assert (
-        step_by_case["ais-at-legacy-scheduled-payment-scp-103500"].required_token_id
-        == "ais-account-access-detail"  # noqa: S105 - semantic token id
+        step_by_case["ais-at-legacy-scheduled-payment-scp-103500"].required_token_id == "ais-account-access-detail"  # noqa: S105 - semantic token id
     )
     assert step_by_case["ais-at-legacy-scheduled-payment-scp-103500"].authorization_profile == "detail"
 

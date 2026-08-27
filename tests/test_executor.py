@@ -4000,9 +4000,7 @@ def test_compiled_vrp_v4_manifest_keeps_single_psu_authorisation_and_one_of_asse
         "vrp-consent-get-after-delete",
         "vrp-consent-delete-after-delete",
     ]
-    assertions_by_step_id = {
-        step.id: step.assertions for step in manifest.steps if isinstance(step, ManifestStep)
-    }
+    assertions_by_step_id = {step.id: step.assertions for step in manifest.steps if isinstance(step, ManifestStep)}
     funds_confirmation_assertion = assertions_by_step_id["vrp-consent-funds-confirmation-request"][0]
     delete_after_delete_assertion = assertions_by_step_id["vrp-consent-delete-after-delete-request"][0]
     assert isinstance(funds_confirmation_assertion, HttpStatusAssertion)

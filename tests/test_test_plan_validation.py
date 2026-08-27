@@ -149,7 +149,15 @@ def test_validate_test_plan_for_run_requires_discovery_for_response_signatures(t
                 ],
             }
         ],
-        "businessTestData": {},
+        "businessTestData": {
+            "inputs": {
+                "pisCreditorAccountSchemeName": {"value": "UK.OBIE.SortCodeAccountNumber"},
+                "pisCreditorAccountIdentification": {"value": "70000170000002"},
+                "pisCreditorAccountName": {"value": "Test creditor"},
+                "pisInstructedAmountAmount": {"value": "1.00"},
+                "pisInstructedAmountCurrency": {"value": "GBP"},
+            }
+        },
         "metadata": {},
     }
 

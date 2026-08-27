@@ -349,12 +349,9 @@ def test_cbpii_v4_read_and_funds_flows_keep_legacy_schema_and_header_assertions(
         assertions = cases[case_id].assertions
         assert any(assertion.kind == "response_schema" for assertion in assertions)
         assert any(
-            assertion.kind == "header"
-            and assertion.rule.get("name") == "x-fapi-interaction-id"
+            assertion.kind == "header" and assertion.rule.get("name") == "x-fapi-interaction-id"
             for assertion in assertions
         )
         assert any(
-            assertion.kind == "header"
-            and assertion.rule.get("name") == "content-type"
-            for assertion in assertions
+            assertion.kind == "header" and assertion.rule.get("name") == "content-type" for assertion in assertions
         )
