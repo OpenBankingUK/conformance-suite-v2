@@ -1028,6 +1028,22 @@ class TestRunDetailUi:
         assert "Catalogue traceability" in content
         assert "2026.07.legacy-fcs-ais-at.1" in content
         assert "Selected capabilities" in content
+        assert 'href="/">Home page</a>' in content
+        assert "New plan" not in content
+
+    def test_failed_run_detail_shows_home_page_action(self) -> None:
+        """Failed terminal run detail pages return participants to the home page."""
+        record = run_store.create_run()
+        run_store.mark_running(record.run_id)
+        run_store.mark_failed(record.run_id, error="Participant callback timed out")
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "Participant callback timed out" in content
+        assert 'href="/">Home page</a>' in content
+        assert "New plan" not in content
 
     def test_run_detail_returns_404_for_unknown_run(self) -> None:
         """Unknown run detail pages return 404."""
