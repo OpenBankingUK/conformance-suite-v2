@@ -1028,8 +1028,7 @@ class TestRunDetailUi:
         assert "Catalogue traceability" in content
         assert "2026.07.legacy-fcs-ais-at.1" in content
         assert "Selected capabilities" in content
-        assert 'href="/"' in content
-        assert "Home page</a>" in content
+        assert 'href="/">Home page</a>' in content
         assert "New plan" not in content
 
     def test_failed_run_detail_shows_home_page_action(self) -> None:
