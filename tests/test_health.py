@@ -15,6 +15,8 @@ def test_home_renders_browser_menu() -> None:
     assert "Open Banking conformance suite" in content
     assert "Create new test plan with builder" in content
     assert "Import test plan" in content
+    assert "View health" not in content
+    assert 'href="/health/"' not in content
 
 
 @pytest.mark.integration
