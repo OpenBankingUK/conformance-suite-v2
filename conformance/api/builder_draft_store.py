@@ -13,6 +13,7 @@ from django.contrib.sessions.backends.base import SessionBase
 
 from conformance.catalogue import PlanExecutionMode, SecurityProfile
 from conformance.json_types import JsonObject, JsonValue
+from conformance.specification_registry import derived_security_profile_for_boundary
 
 _LOGGER = logging.getLogger(__name__)
 """Logger for malformed browser wizard draft state."""
@@ -24,7 +25,7 @@ _MAX_SESSION_DRAFTS = 5
 """Maximum active browser wizard drafts retained per Django session."""
 
 _DEFAULT_SECURITY_PROFILE: SecurityProfile = "fapi1-advanced"
-"""Default security profile retained until the wizard exposes the profile step."""
+"""Placeholder profile used only before a specification boundary is selected."""
 
 
 @dataclass(frozen=True)
@@ -159,26 +160,28 @@ class BuilderDraft:
         scheme: str,
         specification: str,
         version: str,
-        security_profile: SecurityProfile | None = None,
     ) -> BuilderDraft:
-        """Return a copy with the specification/profile step saved.
+        """Return a copy with the specification boundary and derived profile saved.
 
         Args:
             scheme: Selected standards scheme.
             specification: Selected standards specification family.
             version: Selected specification version.
-            security_profile: Optional selected security profile. When omitted,
-                the existing draft profile is preserved.
 
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
+
+        Raises:
+            ValueError: If the boundary is unsupported or does not declare
+                exactly one security profile.
         """
+        security_profile = derived_security_profile_for_boundary(scheme, specification, version)
         return BuilderDraft(
             draft_id=self.draft_id,
             scheme=scheme,
             specification=specification,
             version=version,
-            security_profile=security_profile if security_profile is not None else self.security_profile,
+            security_profile=security_profile,
             resource_group_ids=self.resource_group_ids,
             endpoint_ids=self.endpoint_ids,
             endpoint_capability_ids=self.endpoint_capability_ids,

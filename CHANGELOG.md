@@ -30,6 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Browser test-plan security profiles are now derived from the selected specification version; Read/Write 4.0.x resolves to FAPI 1 Advanced and DCR 3.4 remains profile-neutral.
 - Browser navigation now removes the redundant home-page health action and returns participants to the home page from finished run pages.
 - Participant-facing execution now compiles endpoint selections into catalogue plans and reuses the hardened HTTP, masking, signing, PSU authorisation, logging, and result-evidence execution path.
 - CBPII catalogue coverage now executes the distinct legacy invalid-account and expirationDateTime variants from the 3.1.11, 4.0.0, and 4.0.1 FCS manifests instead of grouping them into aggregated cases.

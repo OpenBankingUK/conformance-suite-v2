@@ -11,6 +11,9 @@ type ScopePresentation = Literal["resource-groups", "direct-endpoints"]
 type ExecutionSchedulingPolicy = Literal["dependency-ordered", "sequential"]
 """Execution scheduling policy declared by a specification family."""
 
+type SpecificationSecurityProfile = Literal["all", "fapi1-advanced", "fapi2"]
+"""Security profiles that a specification version can declare."""
+
 
 @dataclass(frozen=True)
 class SpecificationVersionDefinition:
@@ -21,12 +24,14 @@ class SpecificationVersionDefinition:
         catalogue_standard: Internal catalogue standard key.
         catalogue_version: Internal catalogue version key.
         catalogue_apis: Internal catalogue API families backing the version.
+        security_profiles: Security profiles valid for this exact version.
     """
 
     version: str
     catalogue_standard: str
     catalogue_version: str
     catalogue_apis: tuple[str, ...]
+    security_profiles: tuple[SpecificationSecurityProfile, ...]
 
 
 @dataclass(frozen=True)
@@ -69,6 +74,7 @@ _OPEN_BANKING_READ_WRITE = SpecificationDefinition(
             catalogue_standard="open-banking",
             catalogue_version="v4.0",
             catalogue_apis=("ais", "pis", "cbpii", "vrp"),
+            security_profiles=("fapi1-advanced",),
         )
         for version in ("4.0.1", "4.0.0", "4.0")
     ),
@@ -90,6 +96,7 @@ _OPEN_BANKING_DCR = SpecificationDefinition(
             catalogue_standard="open-banking",
             catalogue_version="v3.4",
             catalogue_apis=("dcr",),
+            security_profiles=("all",),
         ),
     ),
     uses_resource_groups=False,
@@ -158,3 +165,53 @@ def specification_for_boundary(
         raise ValueError(f"specification.version must be one of: {supported_versions}")
     supported = ", ".join(f"{item.scheme}/{item.specification}" for item in _SPECIFICATIONS)
     raise ValueError(f"specification boundary must be one of: {supported}")
+
+
+def security_profiles_for_boundary(
+    scheme: str,
+    specification: str,
+    version: str,
+) -> tuple[SpecificationSecurityProfile, ...]:
+    """Return security profiles declared for an exact specification boundary.
+
+    Args:
+        scheme: Canonical participant-facing scheme identifier.
+        specification: Canonical participant-facing specification identifier.
+        version: Participant-facing specification version.
+
+    Returns:
+        Security profiles valid for the selected specification version.
+
+    Raises:
+        ValueError: If the boundary or version is unsupported.
+    """
+    _definition, version_definition = specification_for_boundary(scheme, specification, version)
+    return version_definition.security_profiles
+
+
+def derived_security_profile_for_boundary(
+    scheme: str,
+    specification: str,
+    version: str,
+) -> SpecificationSecurityProfile:
+    """Derive the sole security profile for a specification boundary.
+
+    Args:
+        scheme: Canonical participant-facing scheme identifier.
+        specification: Canonical participant-facing specification identifier.
+        version: Participant-facing specification version.
+
+    Returns:
+        The only security profile declared for the selected version.
+
+    Raises:
+        ValueError: If the boundary is unsupported or does not declare exactly
+            one security profile.
+    """
+    profiles = security_profiles_for_boundary(scheme, specification, version)
+    if len(profiles) != 1:
+        raise ValueError(
+            "specification boundary must declare exactly one security profile "
+            f"for automatic derivation; found {len(profiles)}"
+        )
+    return profiles[0]

@@ -154,11 +154,19 @@ under this Open Banking UK boundary for now. Dynamic Client Registration 3.4 is
 bound to the executable `open-banking/v3.4/dcr` catalogue and uses direct
 endpoint scope with no synthetic resource group.
 
+Each exact specification version declares its valid security profiles in
+`conformance.specification_registry`. Read/Write 4.0.x derives
+`FAPI1_ADVANCED`; DCR 3.4 is profile-neutral and uses the internal `all` value.
+The profile remains in the compiler model for catalogue applicability, but it is
+not a participant choice when the selected version declares only one value.
+Token endpoint client authentication (`private_key_jwt` or `tls_client_auth`)
+is configured separately as part of the security environment.
+
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
 `consentedAccountId`, and debtor account fields so the browser does not duplicate
 them as endpoint runtime prompts. The browser collects values in PRD order:
-specification/profile, discovery URL, OAuth/FAPI/security details, resource
+specification, discovery URL, OAuth/FAPI/security details, resource
 groups, endpoints/capabilities, business test data, and generated runtime
 artifacts. Discovery metadata can prefill security fields, but only values
 accepted on the security page become part of the exported plan JSON. Sensitive
@@ -210,9 +218,9 @@ import flow. The legacy single-page `/plan/` builder is no longer mounted.
 The wizard follows the PRD order:
 
 1. POST `/builder/new/` to create a session-backed draft.
-2. Select scheme, specification, version, and profile at
-   `/builder/<draft>/catalogue/`. Registered future boundaries without an
-   executable catalogue render a generic blocked state.
+2. Select scheme, specification, and version at `/builder/<draft>/catalogue/`.
+   The registry derives the matching security profile. Registered future
+   boundaries without an executable catalogue render a generic blocked state.
 3. Enter the `.well-known/openid-configuration` URL at
    `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
    lookup, records non-secret helper metadata in the draft, and allows manual

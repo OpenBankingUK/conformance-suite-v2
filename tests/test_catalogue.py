@@ -857,6 +857,26 @@ def test_parse_canonical_plan_document_accepts_matching_profile_aliases() -> Non
 
 
 @pytest.mark.unit
+def test_parse_canonical_plan_document_rejects_profile_not_declared_by_version() -> None:
+    """Canonical Read/Write plans reject profiles not declared by the registry version."""
+    raw_spec: dict[str, JsonValue] = {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": "4.0.1",
+            "profile": "FAPI2",
+        },
+        "securityEnvironment": {"discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"},
+        "resourceGroups": ["AIS"],
+        "businessTestData": {},
+        "metadata": {},
+    }
+
+    with pytest.raises(CatalogueError, match=r"profile must be one of: FAPI1_ADVANCED for OBL_READ_WRITE 4\.0\.1"):
+        parse_test_plan_document(raw_spec)
+
+
+@pytest.mark.unit
 def test_parse_plan_document_uses_neutral_root_for_schema_version_errors() -> None:
     """Plan-document schema-version errors do not refer to the legacy planSpec root."""
     with pytest.raises(CatalogueError, match="planDocument.schemaVersion"):

@@ -89,7 +89,7 @@ def test_security_config_form_requires_complete_conditional_groups() -> None:
 
 @pytest.mark.unit
 def test_session_builder_draft_store_persists_catalogue_boundary() -> None:
-    """Session-backed drafts retain the saved scheme/specification/version step."""
+    """Session-backed Read/Write drafts derive and retain FAPI 1 Advanced."""
     session = SessionStore()
     store = SessionBuilderDraftStore(session)
     draft = store.create()
@@ -107,6 +107,29 @@ def test_session_builder_draft_store_persists_catalogue_boundary() -> None:
     assert loaded.specification == "read-write"
     assert loaded.version == "4.0.1"
     assert loaded.security_profile == "fapi1-advanced"
+
+
+@pytest.mark.unit
+def test_session_builder_draft_store_derives_dcr_neutral_profile() -> None:
+    """Session-backed DCR drafts derive the internal profile-neutral value."""
+    session = SessionStore()
+    store = SessionBuilderDraftStore(session)
+    draft = store.create().with_catalogue_boundary(
+        scheme="open-banking-uk",
+        specification="read-write",
+        version="4.0.1",
+    )
+
+    updated = draft.with_catalogue_boundary(
+        scheme="open-banking-uk",
+        specification="dynamic-client-registration",
+        version="3.4",
+    )
+    store.save(updated)
+
+    loaded = store.get(draft.draft_id)
+    assert loaded is not None
+    assert loaded.security_profile == "all"
 
 
 @pytest.mark.unit
@@ -164,6 +187,7 @@ def test_catalogue_boundary_form_accepts_compile_ready_v2_boundary() -> None:
     )
 
     assert form.is_valid(), form.errors.as_json()
+    assert "security_profile" not in form.fields
     assert form.selected_resource_group_ids == ()
     assert PlanDocumentBoundary("open-banking-uk", "read-write", "4.0.1") in catalogue_boundary_options()
     assert PlanDocumentBoundary("open-banking-uk", "dynamic-client-registration", "3.4") in catalogue_boundary_options()
