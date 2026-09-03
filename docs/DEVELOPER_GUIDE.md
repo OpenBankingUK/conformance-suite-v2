@@ -92,7 +92,8 @@ Core modules:
 | --- | --- |
 | `conformance.catalogue` | Domain model, canonical test-plan parser, compiler, applicability decisions, traceability model. |
 | `conformance.catalogue_registry` | Registry of bundled catalogues available to CLI, API, and UI. |
-| `conformance.catalogues.*` | Legacy FCS-derived catalogues for AIS, PIS, CBPII, and VRP. cVRP code is retained for future non-Open-Banking handling but is not bundled. |
+| `conformance.catalogues.*` | Legacy FCS-derived catalogues for AIS, PIS, CBPII, VRP, and DCR 3.4. cVRP code is retained for future non-Open-Banking handling but is not bundled. |
+| `conformance.dcr_execution` | Sequential DCR discovery, JOSE, token, management, state, cleanup, and masked evidence adapter. |
 | `conformance.executor.run_compiled_test_plan` | Executes compiled catalogue plans through the existing hardened HTTP/PSU/signing engine. |
 | `conformance.results` | Serializes catalogue traceability and certification reasons in result JSON. |
 
@@ -149,10 +150,9 @@ The canonical `specification.family` and `version` select one or more underlying
 bundled catalogues. The current Open Banking UK Read/Write boundary maps to the
 bundled Open Banking v4.0 AIS, PIS, CBPII, and VRP catalogue areas so one plan
 document can span multiple resource families. cVRP is intentionally not exposed
-under this Open Banking UK boundary for now. Dynamic Client Registration v3.4 is
-currently exposed in the browser selector only to demonstrate boundary-specific
-wizard behaviour; it cannot continue to launch until DCR catalogue coverage is
-added.
+under this Open Banking UK boundary for now. Dynamic Client Registration 3.4 is
+bound to the executable `open-banking/v3.4/dcr` catalogue and uses direct
+endpoint scope with no synthetic resource group.
 
 Canonical sections such as `securityEnvironment`, `businessTestData`, and
 runtime `inputs` derive exact runtime inputs like `resourceBaseUrl`,
@@ -211,8 +211,8 @@ The wizard follows the PRD order:
 
 1. POST `/builder/new/` to create a session-backed draft.
 2. Select scheme, specification, version, and profile at
-   `/builder/<draft>/catalogue/`. Selector-only boundaries such as DCR v3.4
-   render an explanatory blocked state.
+   `/builder/<draft>/catalogue/`. Registered future boundaries without an
+   executable catalogue render a generic blocked state.
 3. Enter the `.well-known/openid-configuration` URL at
    `/builder/<draft>/config/discovery/`. The server attempts discovery metadata
    lookup, records non-secret helper metadata in the draft, and allows manual
@@ -221,17 +221,21 @@ The wizard follows the PRD order:
    `/builder/<draft>/config/security/`. Discovery-derived values are editable
    prefilled fields; the token-endpoint-auth-method selector remains the tool's
    supported list while discovery-supported methods are shown as metadata.
-5. Select resource groups, endpoints, and scoped optional capabilities at
-   `/builder/<draft>/scope/`. The server-rendered fragment at
+5. Select scope at `/builder/<draft>/scope/`. Read/Write uses resource groups,
+   endpoints, and optional capabilities. DCR shows direct POST/GET/PUT/DELETE
+   operations with POST locked and management methods optional. The
+   server-rendered fragment at
    `/builder/<draft>/scope/options/` shows endpoints from the selected AIS, PIS,
    CBPII, or VRP groups and reveals capabilities only for selected endpoints.
-6. Enter business/request defaults at `/builder/<draft>/config/`. AIS, PIS,
+6. Enter business/request defaults at `/builder/<draft>/config/`. DCR skips this
+   page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
    advanced JSON fallbacks.
 7. Enter generated runtime artifacts such as tokens, token file references,
    consent ids, payment ids, and idempotency keys at
-   `/builder/<draft>/config/runtime/`.
+   `/builder/<draft>/config/runtime/`. DCR skips this page because token and
+   client state are generated during each scenario.
 8. Review the generated plan at `/builder/<draft>/review/`, including summary
    counts, masked config, launch blockers, safe export preview, and collapsed
    generated-test rows.

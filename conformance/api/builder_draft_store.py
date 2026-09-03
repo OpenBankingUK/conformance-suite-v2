@@ -53,6 +53,8 @@ class BuilderDraft:
         business_test_data: Canonical business test data preserved from imported
             JSON-first plans when it is not represented directly by executable
             config fields.
+        dynamic_client_registration: Canonical DCR-only configuration preserved
+            across guided editing and import/export.
         metadata: Optional participant/export metadata retained with the plan.
         execution_mode: Canonical execution mode retained with the plan.
         discovery_metadata: Session-only non-secret discovery helper state used
@@ -72,6 +74,7 @@ class BuilderDraft:
     config: Mapping[str, JsonValue]
     security_environment: Mapping[str, JsonValue]
     business_test_data: Mapping[str, JsonValue]
+    dynamic_client_registration: Mapping[str, JsonValue]
     metadata: Mapping[str, JsonValue]
     execution_mode: PlanExecutionMode
     discovery_metadata: Mapping[str, JsonValue]
@@ -98,6 +101,7 @@ class BuilderDraft:
             config={},
             security_environment={},
             business_test_data={},
+            dynamic_client_registration={},
             metadata={},
             execution_mode="certification",
             discovery_metadata={},
@@ -124,7 +128,7 @@ class BuilderDraft:
         if not (
             isinstance(draft_id, str)
             and isinstance(security_profile, str)
-            and security_profile in {"fapi1-advanced", "fapi2"}
+            and security_profile in {"fapi1-advanced", "fapi2", "all"}
             and isinstance(created_at, str)
             and isinstance(updated_at, str)
         ):
@@ -141,6 +145,7 @@ class BuilderDraft:
             config=_config_object(raw_value.get("config")),
             security_environment=_json_object(raw_value.get("securityEnvironment")),
             business_test_data=_json_object(raw_value.get("businessTestData")),
+            dynamic_client_registration=_json_object(raw_value.get("dynamicClientRegistration")),
             metadata=_json_object(raw_value.get("metadata")),
             execution_mode=_execution_mode(raw_value.get("executionMode")),
             discovery_metadata=_json_object(raw_value.get("discoveryMetadata")),
@@ -180,6 +185,7 @@ class BuilderDraft:
             config=self.config,
             security_environment=self.security_environment,
             business_test_data=self.business_test_data,
+            dynamic_client_registration=self.dynamic_client_registration,
             metadata=self.metadata,
             execution_mode=self.execution_mode,
             discovery_metadata=self.discovery_metadata,
@@ -219,6 +225,7 @@ class BuilderDraft:
             config=self.config,
             security_environment=self.security_environment,
             business_test_data=self.business_test_data,
+            dynamic_client_registration=self.dynamic_client_registration,
             metadata=self.metadata,
             execution_mode=self.execution_mode,
             discovery_metadata=self.discovery_metadata,
@@ -248,6 +255,7 @@ class BuilderDraft:
             config=_config_object(config),
             security_environment=self.security_environment,
             business_test_data=self.business_test_data,
+            dynamic_client_registration=self.dynamic_client_registration,
             metadata=self.metadata,
             execution_mode=self.execution_mode,
             discovery_metadata=self.discovery_metadata,
@@ -262,6 +270,7 @@ class BuilderDraft:
         business_test_data: Mapping[str, JsonValue],
         metadata: Mapping[str, JsonValue],
         execution_mode: PlanExecutionMode,
+        dynamic_client_registration: Mapping[str, JsonValue] | None = None,
     ) -> BuilderDraft:
         """Return a copy with canonical plan-only context saved.
 
@@ -272,6 +281,8 @@ class BuilderDraft:
                 plan.
             metadata: Optional participant/export metadata from an imported plan.
             execution_mode: Canonical execution mode from an imported plan.
+            dynamic_client_registration: Optional canonical DCR-only
+                configuration. When omitted, the existing value is preserved.
 
         Returns:
             Updated draft with a refreshed ``updated_at`` timestamp.
@@ -288,6 +299,11 @@ class BuilderDraft:
             config=self.config,
             security_environment=_json_object(security_environment),
             business_test_data=_json_object(business_test_data),
+            dynamic_client_registration=(
+                self.dynamic_client_registration
+                if dynamic_client_registration is None
+                else _json_object(dynamic_client_registration)
+            ),
             metadata=_json_object(metadata),
             execution_mode=execution_mode,
             discovery_metadata=self.discovery_metadata,
@@ -317,6 +333,7 @@ class BuilderDraft:
             config=self.config,
             security_environment=self.security_environment,
             business_test_data=self.business_test_data,
+            dynamic_client_registration=self.dynamic_client_registration,
             metadata=self.metadata,
             execution_mode=self.execution_mode,
             discovery_metadata=_json_object(discovery_metadata),
@@ -345,6 +362,7 @@ class BuilderDraft:
             "config": _config_object(self.config),
             "securityEnvironment": _json_object(self.security_environment),
             "businessTestData": _json_object(self.business_test_data),
+            "dynamicClientRegistration": _json_object(self.dynamic_client_registration),
             "metadata": _json_object(self.metadata),
             "executionMode": self.execution_mode,
             "discoveryMetadata": _json_object(self.discovery_metadata),

@@ -144,8 +144,10 @@
             <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Edit discovery</a>
             <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Edit security</a>
             <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Edit scope</a>
-            <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
-            <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
+            {% if draft.specification != "dynamic-client-registration" %}
+                <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
+                <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
+            {% endif %}
             <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
             <form method="post" action="{% url 'builder-export' draft.draft_id %}">
                 {% csrf_token %}

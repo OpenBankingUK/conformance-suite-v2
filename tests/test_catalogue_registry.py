@@ -21,6 +21,7 @@ def test_supported_catalogues_cover_legacy_fcs_api_families() -> None:
         ("open-banking", "v4.0", "pis"),
         ("open-banking", "v4.0", "cbpii"),
         ("open-banking", "v4.0", "vrp"),
+        ("open-banking", "v3.4", "dcr"),
     }
 
 

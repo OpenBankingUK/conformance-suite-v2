@@ -141,6 +141,24 @@ The VRP catalogue retains full script-ID provenance for
 the public Open Banking UK Read/Write v4 boundary because it is not currently
 treated as an OBL Read/Write resource group.
 
+## Dynamic Client Registration 3.4
+
+The DCR parity baseline is the separate legacy
+[`OpenBankingUK/conformance-dcr` v1.4.0 release at commit
+`cc00a0065494e8e180c915621b9996bc2259ec8d`](https://github.com/OpenBankingUK/conformance-dcr/tree/cc00a0065494e8e180c915621b9996bc2259ec8d).
+It contains ten scenarios (`DCR-001` through `DCR-011`, excluding
+`DCR-006`), 34 cases, and 79 traceable steps.
+
+DCR uses family `OBL_DCR`, top-level POST/GET/PUT/DELETE endpoint scope, and no
+resource groups. POST is mandatory and locked; management methods are optional;
+token setup is a generated dependency. The exact inventory, request/status and
+state contract, canonical document example, legacy configuration mapping, and
+approved corrections are recorded in
+[`DCR_3_4_PARITY_CONTRACT.md`](DCR_3_4_PARITY_CONTRACT.md) and its
+[machine-checkable ledger](../conformance/standards/ob_dcr/v3_4/parity-contract.json).
+The registered executable catalogue and typed adapter consume this contract
+across browser, CLI, REST, run-result, and certification surfaces.
+
 ## Regression expectations
 
 The mapping is guarded by tests that assert:
@@ -159,6 +177,9 @@ The mapping is guarded by tests that assert:
   removed legacy `suite` block.
 - Browser, REST, CLI, and run-detail tests share the same endpoint/capability
   plan-spec contract and secret-safe export/evidence expectations.
+- The DCR parity and product-integration guards pin the v1.4.0 commit,
+  scenario/case/step IDs and counts, direct endpoint scope, configuration
+  mapping, approved legacy corrections, lifecycle statuses, and masking.
 
 Any expansion of the catalogue must update this document and the matching
 family-specific catalogue tests in the same change.

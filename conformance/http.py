@@ -122,13 +122,14 @@ def send_json(
     json_body: JsonValue | None = None,
     json_body_bytes: bytes | None = None,
     form_body: Mapping[str, str] | None = None,
+    raw_body: bytes | None = None,
     allow_non_json_response: bool = False,
 ) -> JsonHttpResponse:
     """Send an HTTP request and parse a JSON object response.
 
     Dispatches the request using the given method. For methods that support a
     body (POST, PUT, PATCH, DELETE), exactly one of ``json_body``,
-    ``json_body_bytes``, or ``form_body`` may be supplied:
+    ``json_body_bytes``, ``form_body``, or ``raw_body`` may be supplied:
 
     - ``json_body`` is serialised as ``application/json`` via ``httpx``.
     - ``json_body_bytes`` sends already-serialised JSON bytes unchanged.
@@ -139,6 +140,8 @@ def send_json(
       form-url-encoding semantics (e.g. spaces may be encoded as ``+``,
       reserved characters percent-encoded). The exact byte representation
       is delegated to ``httpx``.
+    - ``raw_body`` sends exact caller-owned bytes without selecting a media
+      type. The caller must supply ``Content-Type`` explicitly.
 
     For ``form_body`` requests, ``Content-Type:
     application/x-www-form-urlencoded`` is set automatically **only** when
@@ -169,6 +172,8 @@ def send_json(
         form_body: Optional form-field mapping (sent as
             ``application/x-www-form-urlencoded`` for POST/PUT/PATCH/DELETE).
             Mutually exclusive with ``json_body`` and ``json_body_bytes``.
+        raw_body: Optional exact request bytes. Mutually exclusive with every
+            other body encoding and requires an explicit ``Content-Type``.
         allow_non_json_response: Whether non-JSON response bodies should be
             normalised to an empty object instead of raising.
 
@@ -183,9 +188,11 @@ def send_json(
     # Reject ambiguous calls eagerly: a single request can carry only one
     # body encoding. Allowing both would force the helper to silently pick
     # one, hiding manifest authoring mistakes.
-    supplied_body_encodings = sum(candidate is not None for candidate in (json_body, json_body_bytes, form_body))
+    supplied_body_encodings = sum(
+        candidate is not None for candidate in (json_body, json_body_bytes, form_body, raw_body)
+    )
     if supplied_body_encodings > 1:
-        raise ValueError("send_json: json_body, json_body_bytes, and form_body are mutually exclusive")
+        raise ValueError("send_json: json_body, json_body_bytes, form_body, and raw_body are mutually exclusive")
 
     # Normalise the method to uppercase once so the body-selection guard and
     # the dispatch call agree regardless of the caller's casing. httpx accepts
@@ -207,6 +214,7 @@ def send_json(
     send_json_body = json_body if method_allows_body else None
     send_json_body_bytes: bytes | None = json_body_bytes if method_allows_body else None
     send_form_body: Mapping[str, str] | None = form_body if method_allows_body else None
+    send_raw_body: bytes | None = raw_body if method_allows_body else None
 
     if send_json_body_bytes is not None and "content-type" not in request_headers:
         request_headers["Content-Type"] = "application/json"
@@ -216,6 +224,8 @@ def send_json(
     # ``content-type`` from a manifest correctly suppresses the default.
     if send_form_body is not None and "content-type" not in request_headers:
         request_headers["Content-Type"] = "application/x-www-form-urlencoded"
+    if send_raw_body is not None and "content-type" not in request_headers:
+        raise ValueError("send_json: raw_body requires an explicit Content-Type header")
 
     try:
         response = client.request(
@@ -223,7 +233,7 @@ def send_json(
             url,
             headers=request_headers,
             json=send_json_body,
-            content=send_json_body_bytes,
+            content=send_json_body_bytes if send_json_body_bytes is not None else send_raw_body,
             data=send_form_body,
         )
     except httpx.RequestError as error:

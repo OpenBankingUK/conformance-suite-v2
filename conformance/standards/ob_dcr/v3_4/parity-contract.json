@@ -1,0 +1,1168 @@
+{
+  "contractVersion": "1.0",
+  "title": "Open Banking UK Dynamic Client Registration 3.4 parity contract",
+  "baseline": {
+    "repository": "OpenBankingUK/conformance-dcr",
+    "release": "v1.4.0",
+    "commit": "cc00a0065494e8e180c915621b9996bc2259ec8d",
+    "manifest": "DCR34",
+    "scenarioSource": "pkg/compliant/dcr32.go",
+    "versionAdapterSource": "pkg/compliant/dcr34.go",
+    "responseValidatorSource": "pkg/compliant/schema/version34.go"
+  },
+  "inventory": {
+    "scenarioCount": 10,
+    "caseCount": 34,
+    "stepCount": 79,
+    "scenarioIds": [
+      "DCR-001",
+      "DCR-002",
+      "DCR-003",
+      "DCR-004",
+      "DCR-005",
+      "DCR-007",
+      "DCR-008",
+      "DCR-009",
+      "DCR-010",
+      "DCR-011"
+    ],
+    "missingScenarioIds": ["DCR-006"]
+  },
+  "implementation": {
+    "catalogue": {
+      "status": "implemented",
+      "module": "conformance.catalogues.dcr",
+      "scenarioCount": 10,
+      "caseCount": 34,
+      "stepCount": 79
+    },
+    "optionalCoverage": {
+      "status": "implemented",
+      "module": "conformance.dcr_execution",
+      "selectedMethods": ["GET", "PUT", "DELETE"],
+      "disabledBehavior": "explicit-skipped-trace",
+      "executionPolicy": "strict-sequential-scenario-local-state",
+      "cleanupPolicy": "selected-delete-only-best-effort"
+    },
+    "responseValidation34": {
+      "status": "implemented",
+      "appliesTo": ["POST-success", "GET-success", "PUT-success"],
+      "hostIndependent": true
+    }
+  },
+  "canonicalPlanContract": {
+    "schemaVersion": "1.0",
+    "scheme": {
+      "id": "open-banking-uk",
+      "displayName": "Open Banking"
+    },
+    "specification": {
+      "id": "dynamic-client-registration",
+      "displayName": "Dynamic Client Registration",
+      "family": "OBL_DCR",
+      "version": "3.4"
+    },
+    "scopeRules": {
+      "scopeLocation": "endpoints",
+      "resourceGroups": "forbidden",
+      "postRegistration": "mandatory-and-locked",
+      "managementOperations": "participant-selected-optional",
+      "tokenOperation": "generated-dependency-not-selectable"
+    },
+    "example": {
+      "schemaVersion": "1.0",
+      "specification": {
+        "family": "OBL_DCR",
+        "scheme": "open-banking-uk",
+        "name": "dynamic-client-registration",
+        "version": "3.4"
+      },
+      "executionMode": "certification",
+      "securityEnvironment": {
+        "name": "Primary Authorization Server",
+        "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+        "clientAuthMethod": "private_key_jwt",
+        "signingAlgorithm": "PS256",
+        "signingPrivateKeyPath": "/secure/signing-key.pem",
+        "signingKeyId": "directory-key-id",
+        "mtls": {
+          "enabled": true,
+          "certificatePath": "/secure/transport-cert.pem",
+          "privateKeyPath": "/secure/transport-key.pem",
+          "caBundlePath": "/secure/ca-bundle.pem"
+        }
+      },
+      "endpoints": [
+        {
+          "method": "POST",
+          "path": "/register",
+          "operationId": "RegisterClient",
+          "required": true,
+          "locked": true
+        },
+        {
+          "method": "GET",
+          "path": "/register/{ClientId}",
+          "operationId": "GetClient",
+          "required": false,
+          "locked": false
+        },
+        {
+          "method": "PUT",
+          "path": "/register/{ClientId}",
+          "operationId": "UpdateClient",
+          "required": false,
+          "locked": false
+        },
+        {
+          "method": "DELETE",
+          "path": "/register/{ClientId}",
+          "operationId": "DeleteClient",
+          "required": false,
+          "locked": false
+        }
+      ],
+      "dynamicClientRegistration": {
+        "softwareStatementAssertionPath": "/secure/software-statement.jwt",
+        "signingCertificatePath": "/secure/signing-cert.pem",
+        "useNumericOidSubjectDn": false,
+        "disableKeepAlive": false
+      },
+      "metadata": {
+        "aspspName": "Example Bank",
+        "brandName": "Example Retail",
+        "environmentName": "Sandbox"
+      }
+    }
+  },
+  "configurationMapping": {
+    "directLegacyImportSupported": false,
+    "rule": "Map semantics into the canonical plan; do not parse or preserve the legacy config shape.",
+    "fields": [
+      {
+        "legacy": "spec_version",
+        "canonical": "specification.version",
+        "scope": "specification",
+        "migration": "Must equal 3.4; earlier DCR versions are unsupported."
+      },
+      {
+        "legacy": "wellknown_endpoint",
+        "canonical": "securityEnvironment.discoveryUrl",
+        "scope": "reusable-global",
+        "migration": "Use the common discovery URL field."
+      },
+      {
+        "legacy": "kid",
+        "canonical": "securityEnvironment.signingKeyId",
+        "scope": "reusable-global",
+        "migration": "Use the key identifier for PS256 registration JOSE signing."
+      },
+      {
+        "legacy": "private_key",
+        "canonical": "securityEnvironment.signingPrivateKeyPath",
+        "scope": "reusable-global",
+        "migration": "Store a file reference, never inline private-key material."
+      },
+      {
+        "legacy": "transport_cert",
+        "canonical": "securityEnvironment.mtls.certificatePath",
+        "scope": "reusable-global",
+        "migration": "Store a certificate file reference."
+      },
+      {
+        "legacy": "transport_key",
+        "canonical": "securityEnvironment.mtls.privateKeyPath",
+        "scope": "reusable-global",
+        "migration": "Store a private-key file reference, never inline key material."
+      },
+      {
+        "legacy": "transport_root_cas",
+        "canonical": "securityEnvironment.mtls.caBundlePath",
+        "scope": "reusable-global",
+        "migration": "Convert the legacy PEM array to a validated CA bundle file reference."
+      },
+      {
+        "legacy": "discovery.token_endpoint_auth_methods_supported",
+        "canonical": "securityEnvironment.clientAuthMethod",
+        "scope": "reusable-global",
+        "migration": "Select an executable method advertised by discovery; an explicit override must also be advertised."
+      },
+      {
+        "legacy": "discovery.token_endpoint_auth_signing_alg_values_supported",
+        "canonical": "securityEnvironment.clientAuthSigningAlgorithm",
+        "scope": "reusable-global",
+        "migration": "Use common discovery-driven token-auth metadata."
+      },
+      {
+        "legacy": "brand",
+        "canonical": "metadata.brandName",
+        "scope": "reusable-global",
+        "migration": "Use canonical reporting metadata."
+      },
+      {
+        "legacy": "environment",
+        "canonical": "metadata.environmentName",
+        "scope": "reusable-global",
+        "migration": "Use canonical reporting metadata."
+      },
+      {
+        "legacy": "get_implemented",
+        "canonical": "endpoints[GET /register/{ClientId}]",
+        "scope": "shared-endpoint-selection",
+        "migration": "Select the optional GET operation only when true."
+      },
+      {
+        "legacy": "put_implemented",
+        "canonical": "endpoints[PUT /register/{ClientId}]",
+        "scope": "shared-endpoint-selection",
+        "migration": "Select the optional PUT operation only when true."
+      },
+      {
+        "legacy": "delete_implemented",
+        "canonical": "endpoints[DELETE /register/{ClientId}]",
+        "scope": "shared-endpoint-selection",
+        "migration": "Select the optional DELETE operation only when true."
+      },
+      {
+        "legacy": "ssa",
+        "canonical": "dynamicClientRegistration.softwareStatementAssertionPath",
+        "scope": "dcr-specific",
+        "migration": "Store a file reference; SSA contents are sensitive evidence."
+      },
+      {
+        "legacy": "aud",
+        "canonical": "dynamicClientRegistration.registrationAudience",
+        "scope": "dcr-specific",
+        "migration": "Provide the required 1 to 18 character Base62 ASPSP identifier in every execution mode."
+      },
+      {
+        "legacy": "issuer",
+        "canonical": "dynamicClientRegistration.registrationIssuerOverride",
+        "scope": "dcr-specific",
+        "migration": "Prefer SSA derivation; validate an explicit override."
+      },
+      {
+        "legacy": "redirect_uris",
+        "canonical": "dynamicClientRegistration.redirectUrisOverride",
+        "scope": "dcr-specific",
+        "migration": "Prefer derivation from the SSA software_redirect_uris claim; validate explicit HTTPS callback values."
+      },
+      {
+        "legacy": "transport_cert_subject_dn",
+        "canonical": "dynamicClientRegistration.transportCertificateSubjectDnOverride",
+        "scope": "dcr-specific",
+        "migration": "Prefer certificate derivation; validate an explicit RFC 2253-style override."
+      },
+      {
+        "legacy": "use_oid",
+        "canonical": "dynamicClientRegistration.useNumericOidSubjectDn",
+        "scope": "dcr-specific",
+        "migration": "Retain numeric OID rendering for certificate subject-DN interoperability."
+      },
+      {
+        "legacy": "signing certificate input",
+        "canonical": "dynamicClientRegistration.signingCertificatePath",
+        "scope": "dcr-specific",
+        "migration": "Use only when registration claim construction requires the certificate; store a reference."
+      },
+      {
+        "legacy": "CLI flag disablekeepalives",
+        "canonical": "dynamicClientRegistration.disableKeepAlive",
+        "scope": "dcr-specific",
+        "migration": "Retain only as an explicit transport-compatibility option if runtime implementation requires it."
+      }
+    ]
+  },
+  "runtimeContract": {
+    "registrationRequest": {
+      "method": "POST",
+      "endpoint": "discovery.registration_endpoint",
+      "contentType": "application/jose",
+      "accept": "application/json",
+      "body": "raw compact JWS",
+      "signingAlgorithm": "PS256",
+      "mtls": true,
+      "expectedSuccessStatus": 201,
+      "expectedInvalidRequestStatus": 400
+    },
+    "tokenRequest": {
+      "method": "POST",
+      "endpoint": "discovery.token_endpoint",
+      "contentType": "application/x-www-form-urlencoded",
+      "grantType": "client_credentials",
+      "mtls": true,
+      "expectedStatus": 200,
+      "generatedDependency": true,
+      "executableAuthMethods": [
+        "tls_client_auth",
+        "private_key_jwt",
+        "client_secret_jwt",
+        "client_secret_basic"
+      ],
+      "unsupportedAuthMethods": ["client_secret_post"]
+    },
+    "managementRequests": {
+      "endpoint": "discovery.registration_endpoint + '/' + client_id",
+      "authorization": "Bearer client-credentials access token",
+      "mtls": true,
+      "getExpectedStatus": 200,
+      "putExpectedStatus": 200,
+      "deleteExpectedStatus": 204,
+      "deletedOrInvalidClientExpectedStatus": 401
+    },
+    "statePolicy": {
+      "isolation": "State is isolated per scenario and cases execute sequentially within a scenario.",
+      "values": [
+        "signedRegistrationJose",
+        "clientId",
+        "clientSecret",
+        "registrationAccessToken",
+        "clientCredentialsAccessToken",
+        "registrationResponse"
+      ],
+      "prerequisiteFailure": "Skip every dependent case and step explicitly; never execute with missing or stale state.",
+      "cleanup": "Cleanup is deterministic and best-effort, and cleanup failure cannot replace or hide the scenario outcome."
+    },
+    "evidencePolicy": {
+      "alwaysMasked": [
+        "softwareStatementAssertion",
+        "privateKeys",
+        "signedRegistrationJose",
+        "clientSecret",
+        "registrationAccessToken",
+        "clientCredentialsAccessToken",
+        "clientAssertions",
+        "Authorization",
+        "tokenResponse"
+      ],
+      "surfaces": [
+        "safe plan exports",
+        "reports",
+        "execution logs",
+        "REST responses",
+        "browser downloads"
+      ]
+    },
+    "responseValidation34": {
+      "rule": "Validate the complete DCR 3.4 response schema and cross-field semantics; hostname must never weaken validation.",
+      "requirements": [
+        "No localhost or host-based validation bypasses.",
+        "application_type accepts web or native, never the obsolete mobile value.",
+        "tls_client_auth_subject_dn uses the DCR 3.4 length limit of 512 and the specified DN pattern.",
+        "grant_types accepts urn:ietf:params:oauth:grant-type:jwt-bearer and enforces DCR 3.4 size and item constraints.",
+        "Required fields, URI formats, JOSE algorithms, auth-method-specific fields, and response/request consistency are validated.",
+        "Only token endpoint authentication methods executable by the suite can pass capability validation."
+      ]
+    }
+  },
+  "stepDefinitions": {
+    "validate-registration-endpoint": {
+      "kind": "assertion",
+      "legacyBuilderCall": "ValidateRegistrationEndpoint",
+      "behavior": "Require discovery.registration_endpoint to be an absolute HTTPS URL."
+    },
+    "generate-registration-jose": {
+      "kind": "state",
+      "legacyBuilderCall": "GenerateSignedClaims",
+      "behavior": "Build and PS256-sign the DCR registration claims as compact JOSE using the configured kid and SSA.",
+      "produces": ["signedRegistrationJose"],
+      "sensitive": true
+    },
+    "post-registration": {
+      "kind": "http",
+      "legacyBuilderCall": "PostClientRegister",
+      "behavior": "mTLS POST raw signedRegistrationJose to discovery.registration_endpoint with Content-Type application/jose and Accept application/json.",
+      "consumes": ["signedRegistrationJose"],
+      "produces": ["registrationResponse"],
+      "sensitive": true
+    },
+    "assert-status-201": {
+      "kind": "assertion",
+      "legacyBuilderCall": "AssertStatusCodeCreated",
+      "behavior": "Require HTTP 201.",
+      "expectedStatus": 201
+    },
+    "assert-status-200": {
+      "kind": "assertion",
+      "legacyBuilderCall": "AssertStatusCodeOk",
+      "behavior": "Require HTTP 200.",
+      "expectedStatus": 200
+    },
+    "assert-status-400": {
+      "kind": "assertion",
+      "legacyBuilderCall": "AssertStatusCodeBadRequest",
+      "behavior": "Require HTTP 400.",
+      "expectedStatus": 400
+    },
+    "assert-status-401": {
+      "kind": "assertion",
+      "legacyBuilderCall": "AssertStatusCodeUnauthorized",
+      "behavior": "Require HTTP 401.",
+      "expectedStatus": 401
+    },
+    "parse-registration-success": {
+      "kind": "state",
+      "legacyBuilderCall": "ParseClientRegisterResponse",
+      "behavior": "Decode a successful registration response and capture dynamic client credentials and registration metadata.",
+      "consumes": ["registrationResponse"],
+      "produces": ["clientId", "clientSecret", "registrationAccessToken"],
+      "sensitive": true
+    },
+    "request-client-credentials-token": {
+      "kind": "http",
+      "legacyBuilderCall": "GetClientCredentialsGrant",
+      "behavior": "mTLS POST a form-encoded client_credentials grant using an advertised executable auth method; require 200 and capture the access token.",
+      "expectedStatus": 200,
+      "consumes": ["clientId"],
+      "produces": ["clientCredentialsAccessToken"],
+      "sensitive": true
+    },
+    "delete-client": {
+      "kind": "http",
+      "legacyBuilderCall": "ClientDelete",
+      "behavior": "mTLS DELETE registration_endpoint/client_id with the client-credentials bearer token and require 204.",
+      "expectedStatus": 204,
+      "consumes": ["clientId", "clientCredentialsAccessToken"]
+    },
+    "get-client": {
+      "kind": "http",
+      "legacyBuilderCall": "ClientRetrieve",
+      "behavior": "mTLS GET registration_endpoint/client_id with the current bearer token.",
+      "consumes": ["clientId", "clientCredentialsAccessToken"],
+      "produces": ["registrationResponse"],
+      "sensitive": true
+    },
+    "put-client": {
+      "kind": "http",
+      "legacyBuilderCall": "ClientUpdate",
+      "behavior": "mTLS PUT raw signedRegistrationJose to registration_endpoint/client_id with Content-Type application/jose, Accept application/json, and the client-credentials bearer token.",
+      "consumes": ["signedRegistrationJose", "clientId", "clientCredentialsAccessToken"],
+      "produces": ["registrationResponse"],
+      "sensitive": true
+    },
+    "validate-registration-response-34": {
+      "kind": "assertion",
+      "legacyBuilderCall": "AssertValidSchemaResponse",
+      "behavior": "Apply the complete host-independent DCR 3.4 response validation contract."
+    },
+    "parse-retrieved-client": {
+      "kind": "assertion",
+      "legacyBuilderCall": "ParseClientRetrieveResponse",
+      "behavior": "Decode the retrieved registration and check it is usable and consistent with the registered client and token endpoint.",
+      "consumes": ["registrationResponse"]
+    },
+    "set-empty-bearer-token": {
+      "kind": "state",
+      "legacyBuilderCall": "SetInvalidGrantToken",
+      "behavior": "Set an empty bearer access token for the negative GET request.",
+      "produces": ["clientCredentialsAccessToken"],
+      "sensitive": true
+    },
+    "validate-registration-error": {
+      "kind": "assertion",
+      "legacyBuilderCall": "ParseClientRegisterResponse (corrected)",
+      "behavior": "Validate the expected DCR error response without decoding it as a successful client registration."
+    }
+  },
+  "scenarios": [
+    {
+      "id": "DCR-001",
+      "name": "Validate OIDC Config Registration URL",
+      "intent": "Validate the registration endpoint advertised by discovery.",
+      "sourceSymbol": "DCR32ValidateOIDCConfigRegistrationURL",
+      "normativeReferences": ["ob-dcr-34-discovery", "oidc-discovery-provider-metadata"],
+      "requiredSelectedMethods": ["POST"],
+      "cases": [
+        {
+          "id": "DCR-001-C01",
+          "legacyName": "Validate Registration URL",
+          "prerequisiteCaseIds": [],
+          "stateConsumes": ["discovery.registration_endpoint"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [],
+          "steps": [
+            {"id": "DCR-001-C01-S01", "definition": "validate-registration-endpoint"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-002",
+      "name": "Dynamically create a new software client",
+      "intent": "Register a client, prove client-credentials token use, and clean up when DELETE is selected.",
+      "sourceSymbol": "DCR32CreateSoftwareClient",
+      "normativeReferences": ["ob-dcr-34-post-register", "rfc7591", "rfc6749-client-credentials"],
+      "requiredSelectedMethods": ["POST"],
+      "cases": [
+        {
+          "id": "DCR-002-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": ["discovery.registration_endpoint"],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-002-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-002-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-002-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-002-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-002-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-002-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-002-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-002-C03",
+          "legacyName": "Delete software client",
+          "requiredSelectedMethods": ["DELETE"],
+          "absenceBehavior": "skip",
+          "prerequisiteCaseIds": ["DCR-002-C01", "DCR-002-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-002-C03-S01", "definition": "delete-client"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-003",
+      "name": "Delete software is supported",
+      "intent": "Delete a registered client and verify a subsequent GET is unauthorized.",
+      "sourceSymbol": "DCR32DeleteSoftwareClient",
+      "normativeReferences": ["ob-dcr-34-delete-register", "ob-dcr-34-get-register"],
+      "requiredSelectedMethods": ["POST", "GET", "DELETE"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-003-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-003-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-003-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-003-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-003-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-003-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-003-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-003-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-003-C03",
+          "legacyName": "Delete software client",
+          "prerequisiteCaseIds": ["DCR-003-C01", "DCR-003-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-003-C03-S01", "definition": "delete-client"}
+          ]
+        },
+        {
+          "id": "DCR-003-C04",
+          "legacyName": "Retrieve delete software client should fail",
+          "prerequisiteCaseIds": ["DCR-003-C03"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [401],
+          "steps": [
+            {"id": "DCR-003-C04-S01", "definition": "get-client"},
+            {"id": "DCR-003-C04-S02", "definition": "assert-status-401"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-004",
+      "name": "Dynamically create a new software client will fail on invalid registration request",
+      "intent": "Reject five invalid registration JOSE variants.",
+      "sourceSymbol": "DCR32CreateInvalidRegistrationRequest",
+      "normativeReferences": ["ob-dcr-34-post-register", "rfc7591-error-response"],
+      "requiredSelectedMethods": ["POST"],
+      "cases": [
+        {
+          "id": "DCR-004-C01",
+          "legacyName": "Register software client fails on expired claims",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-004-C01-S01", "definition": "generate-registration-jose", "variant": "expired-one-hour"},
+            {"id": "DCR-004-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-004-C01-S03", "definition": "assert-status-400"}
+          ]
+        },
+        {
+          "id": "DCR-004-C02",
+          "legacyName": "Register software client fails on invalid issuer",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-004-C02-S01", "definition": "generate-registration-jose", "variant": "issuer-foo.is/invalid"},
+            {"id": "DCR-004-C02-S02", "definition": "post-registration"},
+            {"id": "DCR-004-C02-S03", "definition": "assert-status-400"}
+          ]
+        },
+        {
+          "id": "DCR-004-C03",
+          "legacyName": "Register software client fails on invalid issuer too short",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-004-C03-S01", "definition": "generate-registration-jose", "variant": "issuer-empty"},
+            {"id": "DCR-004-C03-S02", "definition": "post-registration"},
+            {"id": "DCR-004-C03-S03", "definition": "assert-status-400"}
+          ]
+        },
+        {
+          "id": "DCR-004-C04",
+          "legacyName": "Register software client fails on invalid issuer too long",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-004-C04-S01", "definition": "generate-registration-jose", "variant": "issuer-30-characters"},
+            {"id": "DCR-004-C04-S02", "definition": "post-registration"},
+            {"id": "DCR-004-C04-S03", "definition": "assert-status-400"}
+          ]
+        },
+        {
+          "id": "DCR-004-C05",
+          "legacyName": "Register software client will fail with token endpoint auth method RS256",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-004-C05-S01", "definition": "generate-registration-jose", "variant": "registration-signing-alg-rs256"},
+            {"id": "DCR-004-C05-S02", "definition": "post-registration"},
+            {"id": "DCR-004-C05-S03", "definition": "assert-status-400"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-005",
+      "name": "Dynamically retrieve a new software client",
+      "intent": "Retrieve a registered client and apply complete DCR 3.4 response validation.",
+      "sourceSymbol": "DCR32RetrieveSoftwareClient",
+      "normativeReferences": ["ob-dcr-34-get-register", "ob-dcr-34-swagger"],
+      "requiredSelectedMethods": ["POST", "GET"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-005-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-005-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-005-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-005-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-005-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-005-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-005-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-005-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-005-C03",
+          "legacyName": "Retrieve software client",
+          "prerequisiteCaseIds": ["DCR-005-C01", "DCR-005-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-005-C03-S01", "definition": "get-client"},
+            {"id": "DCR-005-C03-S02", "definition": "assert-status-200"},
+            {"id": "DCR-005-C03-S03", "definition": "validate-registration-response-34"},
+            {"id": "DCR-005-C03-S04", "definition": "parse-retrieved-client"}
+          ]
+        },
+        {
+          "id": "DCR-005-C04",
+          "legacyName": "Delete software client",
+          "requiredSelectedMethods": ["DELETE"],
+          "absenceBehavior": "skip",
+          "prerequisiteCaseIds": ["DCR-005-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-005-C04-S01", "definition": "delete-client"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-007",
+      "name": "I should not be able to retrieve a software client with invalid credentials",
+      "intent": "Reject GET when its bearer token is empty, then obtain a valid token for optional cleanup.",
+      "sourceSymbol": "DCR32RetrieveWithInvalidCredentials",
+      "normativeReferences": ["ob-dcr-34-get-register", "rfc6750"],
+      "requiredSelectedMethods": ["POST", "GET"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-007-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-007-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-007-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-007-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-007-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-007-C02",
+          "legacyName": "Retrieve software client with invalid credentials grant",
+          "prerequisiteCaseIds": ["DCR-007-C01"],
+          "stateConsumes": ["clientId"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [401],
+          "steps": [
+            {"id": "DCR-007-C02-S01", "definition": "set-empty-bearer-token"},
+            {"id": "DCR-007-C02-S02", "definition": "get-client"},
+            {"id": "DCR-007-C02-S03", "definition": "assert-status-401"}
+          ]
+        },
+        {
+          "id": "DCR-007-C03",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-007-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-007-C03-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-007-C04",
+          "legacyName": "Delete software client",
+          "requiredSelectedMethods": ["DELETE"],
+          "absenceBehavior": "skip",
+          "prerequisiteCaseIds": ["DCR-007-C03"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-007-C04-S01", "definition": "delete-client"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-008",
+      "name": "I should be able update a registered software",
+      "intent": "Update an existing client with a newly signed registration JOSE.",
+      "sourceSymbol": "DCR32UpdateSoftwareClient",
+      "normativeReferences": ["ob-dcr-34-put-register"],
+      "requiredSelectedMethods": ["POST", "PUT"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-008-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-008-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-008-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-008-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-008-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-008-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-008-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-008-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-008-C03",
+          "legacyName": "Update an existing software client",
+          "prerequisiteCaseIds": ["DCR-008-C01", "DCR-008-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-008-C03-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-008-C03-S02", "definition": "put-client"},
+            {"id": "DCR-008-C03-S03", "definition": "assert-status-200"}
+          ]
+        },
+        {
+          "id": "DCR-008-C04",
+          "legacyName": "Delete software client",
+          "requiredSelectedMethods": ["DELETE"],
+          "absenceBehavior": "skip",
+          "prerequisiteCaseIds": ["DCR-008-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-008-C04-S01", "definition": "delete-client"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-009",
+      "name": "When I try to update a non existing software client I should be unauthorized",
+      "intent": "Delete a client and verify a subsequent PUT is unauthorized.",
+      "sourceSymbol": "DCR32UpdateSoftwareClientWithWrongId",
+      "normativeReferences": ["ob-dcr-34-put-register", "ob-dcr-34-delete-register"],
+      "requiredSelectedMethods": ["POST", "PUT", "DELETE"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-009-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-009-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-009-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-009-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-009-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-009-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-009-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-009-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-009-C03",
+          "legacyName": "Delete software client",
+          "prerequisiteCaseIds": ["DCR-009-C01", "DCR-009-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-009-C03-S01", "definition": "delete-client"}
+          ]
+        },
+        {
+          "id": "DCR-009-C04",
+          "legacyName": "Update a deleted software client",
+          "prerequisiteCaseIds": ["DCR-009-C03"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [401],
+          "steps": [
+            {"id": "DCR-009-C04-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-009-C04-S02", "definition": "put-client"},
+            {"id": "DCR-009-C04-S03", "definition": "assert-status-401"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-010",
+      "name": "When I try to retrieve a non existing software client I should be unauthorized",
+      "intent": "Delete a client and verify a subsequent GET is unauthorized.",
+      "sourceSymbol": "DCR32RetrieveSoftwareClientWrongId",
+      "normativeReferences": ["ob-dcr-34-get-register", "ob-dcr-34-delete-register"],
+      "requiredSelectedMethods": ["POST", "GET", "DELETE"],
+      "absenceBehavior": "skip",
+      "cases": [
+        {
+          "id": "DCR-010-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": ["clientId", "clientSecret", "registrationAccessToken"],
+          "expectedHttpStatuses": [201],
+          "steps": [
+            {"id": "DCR-010-C01-S01", "definition": "generate-registration-jose", "variant": "valid"},
+            {"id": "DCR-010-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-010-C01-S03", "definition": "assert-status-201"},
+            {"id": "DCR-010-C01-S04", "definition": "parse-registration-success"}
+          ]
+        },
+        {
+          "id": "DCR-010-C02",
+          "legacyName": "Retrieve client credentials grant",
+          "prerequisiteCaseIds": ["DCR-010-C01"],
+          "stateConsumes": ["clientId", "clientSecret"],
+          "stateProduces": ["clientCredentialsAccessToken"],
+          "expectedHttpStatuses": [200],
+          "steps": [
+            {"id": "DCR-010-C02-S01", "definition": "request-client-credentials-token"}
+          ]
+        },
+        {
+          "id": "DCR-010-C03",
+          "legacyName": "Delete software client",
+          "prerequisiteCaseIds": ["DCR-010-C01", "DCR-010-C02"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [204],
+          "steps": [
+            {"id": "DCR-010-C03-S01", "definition": "delete-client"}
+          ]
+        },
+        {
+          "id": "DCR-010-C04",
+          "legacyName": "Retrieve a deleted software client",
+          "prerequisiteCaseIds": ["DCR-010-C03"],
+          "stateConsumes": ["clientId", "clientCredentialsAccessToken"],
+          "stateProduces": [],
+          "expectedHttpStatuses": [401],
+          "steps": [
+            {"id": "DCR-010-C04-S01", "definition": "get-client"},
+            {"id": "DCR-010-C04-S02", "definition": "assert-status-401"}
+          ]
+        }
+      ]
+    },
+    {
+      "id": "DCR-011",
+      "name": "When I try to register a software with invalid response_types it should be fail",
+      "intent": "Reject registration metadata containing the invalid response_types id_token and token.",
+      "sourceSymbol": "DCR32RegisterSoftwareWrongResponseType",
+      "normativeReferences": ["ob-dcr-34-post-register", "rfc7591-error-response"],
+      "requiredSelectedMethods": ["POST"],
+      "cases": [
+        {
+          "id": "DCR-011-C01",
+          "legacyName": "Register software client",
+          "prerequisiteCaseIds": ["DCR-001-C01"],
+          "stateConsumes": [],
+          "stateProduces": [],
+          "expectedHttpStatuses": [400],
+          "steps": [
+            {"id": "DCR-011-C01-S01", "definition": "generate-registration-jose", "variant": "response-types-id_token-token"},
+            {"id": "DCR-011-C01-S02", "definition": "post-registration"},
+            {"id": "DCR-011-C01-S03", "definition": "assert-status-400"},
+            {"id": "DCR-011-C01-S04", "definition": "validate-registration-error", "deviation": "DCR-DEV-005"}
+          ]
+        }
+      ]
+    }
+  ],
+  "deviations": [
+    {
+      "id": "DCR-DEV-001",
+      "classification": "corrected",
+      "legacyDefect": "Optional GET, PUT, and DELETE capability flags are not respected by every scenario.",
+      "decision": "Gate each scenario and cleanup case on every optional operation it actually invokes.",
+      "justification": "DCR 3.4 makes management operations optional; unselected operations cannot be judged."
+    },
+    {
+      "id": "DCR-DEV-002",
+      "classification": "corrected",
+      "legacyDefect": "Disabled scenarios or zero-step cases are reported as passing.",
+      "decision": "Emit explicit SKIPPED outcomes with the missing endpoint capability as the reason.",
+      "justification": "A non-executed conformance check is not evidence of a pass."
+    },
+    {
+      "id": "DCR-DEV-003",
+      "classification": "corrected",
+      "legacyDefect": "Cases continue after failed prerequisites and consume missing or invalid state.",
+      "decision": "Skip every dependent case and step after a prerequisite failure.",
+      "justification": "Later outcomes would otherwise be misleading secondary failures or false results."
+    },
+    {
+      "id": "DCR-DEV-004",
+      "classification": "corrected",
+      "legacyDefect": "Debug dumps expose compact JOSE, Authorization headers, client secrets, and token responses.",
+      "decision": "Mask sensitive JOSE, authentication, client, and token evidence on every persisted or exported surface.",
+      "justification": "Conformance evidence must not disclose credentials or reusable bearer material."
+    },
+    {
+      "id": "DCR-DEV-005",
+      "classification": "corrected",
+      "legacyDefect": "DCR-011 decodes an expected HTTP 400 body as a successful client registration response.",
+      "decision": "Keep the fourth traceable step but validate the expected DCR error response instead.",
+      "justification": "An error response must not satisfy or mutate successful registration state."
+    },
+    {
+      "id": "DCR-DEV-006",
+      "classification": "strengthened",
+      "legacyDefect": "Discovery accepts a merely parseable registration endpoint URL.",
+      "decision": "Require an absolute HTTPS registration_endpoint.",
+      "justification": "Open Banking DCR transports registration and management traffic over TLS."
+    },
+    {
+      "id": "DCR-DEV-007",
+      "classification": "strengthened",
+      "legacyDefect": "Response validation contains localhost shortcuts and incomplete DCR 3.4 validation.",
+      "decision": "Apply complete DCR 3.4 schema and semantic validation identically for every host.",
+      "justification": "Hostnames cannot change conformance judgment; DCR 3.4 adds material response constraints."
+    },
+    {
+      "id": "DCR-DEV-008",
+      "classification": "deliberately-unsupported",
+      "legacyDefect": "client_secret_post is accepted by validation even though the legacy runner cannot execute it.",
+      "decision": "Support tls_client_auth, private_key_jwt, client_secret_jwt, and client_secret_basic; reject client_secret_post until execution support is intentionally added.",
+      "justification": "Capability validation and executable token behavior must agree."
+    },
+    {
+      "id": "DCR-DEV-009",
+      "classification": "corrected",
+      "legacyDefect": "The legacy Ozone golden output contains a schema failure while CI still passes.",
+      "decision": "Parse structured results and fail verification on any failed conformance case; text or golden-file equality is insufficient.",
+      "justification": "A failing conformance judgment can never be accepted as a successful live verification."
+    }
+  ],
+  "references": [
+    {
+      "id": "legacy-release",
+      "type": "provenance",
+      "url": "https://github.com/OpenBankingUK/conformance-dcr/tree/cc00a0065494e8e180c915621b9996bc2259ec8d"
+    },
+    {
+      "id": "legacy-scenarios",
+      "type": "provenance",
+      "url": "https://github.com/OpenBankingUK/conformance-dcr/blob/cc00a0065494e8e180c915621b9996bc2259ec8d/pkg/compliant/dcr32.go"
+    },
+    {
+      "id": "legacy-dcr34-adapter",
+      "type": "provenance",
+      "url": "https://github.com/OpenBankingUK/conformance-dcr/blob/cc00a0065494e8e180c915621b9996bc2259ec8d/pkg/compliant/dcr34.go"
+    },
+    {
+      "id": "legacy-dcr34-validator",
+      "type": "provenance",
+      "url": "https://github.com/OpenBankingUK/conformance-dcr/blob/cc00a0065494e8e180c915621b9996bc2259ec8d/pkg/compliant/schema/version34.go"
+    },
+    {
+      "id": "ob-dcr-34",
+      "type": "normative",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html"
+    },
+    {
+      "id": "ob-dcr-34-discovery",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#discovery"
+    },
+    {
+      "id": "ob-dcr-34-post-register",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#post-register"
+    },
+    {
+      "id": "ob-dcr-34-get-register",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#get-registerclientid"
+    },
+    {
+      "id": "ob-dcr-34-put-register",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#put-registerclientid"
+    },
+    {
+      "id": "ob-dcr-34-delete-register",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#delete-registerclientid"
+    },
+    {
+      "id": "ob-dcr-34-swagger",
+      "type": "normative-section",
+      "url": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#swagger-specifications"
+    },
+    {
+      "id": "oidc-discovery-provider-metadata",
+      "type": "normative",
+      "url": "https://openid.net/specs/openid-connect-discovery-1_0.html#ProviderMetadata"
+    },
+    {
+      "id": "rfc7591",
+      "type": "normative",
+      "url": "https://www.rfc-editor.org/rfc/rfc7591"
+    },
+    {
+      "id": "rfc7591-error-response",
+      "type": "normative",
+      "url": "https://www.rfc-editor.org/rfc/rfc7591#section-3.2.2"
+    },
+    {
+      "id": "rfc6749-client-credentials",
+      "type": "normative",
+      "url": "https://www.rfc-editor.org/rfc/rfc6749#section-4.4"
+    },
+    {
+      "id": "rfc6750",
+      "type": "normative",
+      "url": "https://www.rfc-editor.org/rfc/rfc6750"
+    },
+    {
+      "id": "rfc8705",
+      "type": "normative",
+      "url": "https://www.rfc-editor.org/rfc/rfc8705"
+    }
+  ],
+  "verification": {
+    "test": "tests/test_dcr_parity_contract.py",
+    "command": "uv run pytest tests/test_dcr_parity_contract.py",
+    "requirements": [
+      "Assert the pinned repository, release, and commit.",
+      "Assert exact scenario IDs and the intentional absence of DCR-006.",
+      "Assert exact per-scenario and total case/step counts.",
+      "Assert unique hierarchical scenario/case/step trace IDs and valid prerequisite references.",
+      "Assert every step definition and normative reference resolves.",
+      "Assert the DCR canonical scope shape and endpoint locking rules.",
+      "Assert the complete legacy-field migration mapping and approved deviation set.",
+      "Live Ozone verification must parse structured results and fail on any failed case."
+    ]
+  }
+}

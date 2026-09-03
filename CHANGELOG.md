@@ -17,6 +17,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browser implemented-endpoint selection grouped by resource area, inline required/optional capability selectors, endpoint/capability-derived runtime prompts, launch integration, and a read-only generated-plan preview with collapsed low-level audit details.
 - Multi-step browser test-plan builder flow with session-backed drafts, grouped execution config, JSON-first plan import, generated review summaries, safe/secret export actions, and launch from the reviewed plan.
 - Canonical JSON-first test-plan schema `1.0` with `specification`, single `securityEnvironment`, `resourceGroups`, `businessTestData`, `metadata`, and certification/development `executionMode`.
+- Narrow Open Banking specification registry and family-discriminated canonical plan scope for Read/Write and Dynamic Client Registration 3.4, including mandatory locked registration POST and optional direct management endpoints.
+- Executable Open Banking DCR 3.4 catalogue metadata for the pinned 10-scenario, 34-case, 79-step parity inventory, including endpoint gates, dependencies, state flow, locked assertions, runtime requirements, and legacy/normative traceability.
+- Typed DCR 3.4 runtime primitives for strict discovery/JWKS validation, compact PS256 registration JOSE, certificate subject-DN derivation, mTLS, four executable token authentication methods, scenario-local state, dependency skips, cleanup, and masked shared result/log evidence.
+- First-class DCR 3.4 CLI, local REST, browser import/builder/review/launch, persisted run-detail, structured scenario/case/step result, certification, and opt-in Ozone verification-gate integration.
 - Shared pre-run validation evidence and secret-safe test-plan snapshots embedded in JSON run results for canonical plan launches.
 - Structured v2 config sections for resource-server headers, OAuth defaults, client credentials, Open Banking signature metadata, AIS/PIS/CBPII business defaults, and conditional properties.
 - Result JSON catalogue traceability, runtime input snapshots with sensitive values omitted, certification/non-certification reasons, and per-step catalogue evidence.
@@ -61,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - AIS, PIS, CBPII, and VRP v4 catalogue cases now emit bundled OpenAPI response-schema assertions for legacy JSON-response scripts that had `schemaCheck: true`.
 - CBPII v4 executable assertions now restore missing legacy FAPI interaction and JSON content-type header checks on read, funds-confirmation, and delete flows.
 - Business-data requirement badges now render on a consistent line beneath field labels, keeping inputs aligned across AIS, PIS, and CBPII sections even when labels wrap.
+- DCR run snapshots now include every selected catalogue execution step, hierarchical reports carry exact runtime statuses, and approved-release policies reach DCR certification eligibility.
+- DCR registration requests now derive callback URLs from the Open Banking SSA `software_redirect_uris` claim when no explicit redirect override is configured.
+- DCR plans now require an explicit 1 to 18 character Base62 ASPSP `registrationAudience` in every execution mode; discovery-issuer audience compatibility has been removed.
 
 ### Removed
 

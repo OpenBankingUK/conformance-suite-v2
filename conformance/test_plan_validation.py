@@ -6,6 +6,7 @@ from collections.abc import Iterable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass
 from pathlib import Path
+from types import MappingProxyType
 from typing import Literal
 
 from jsonschema import Draft202012Validator  # type: ignore[import-untyped]  # runtime schema library lacks stubs
@@ -24,6 +25,11 @@ from conformance.catalogue import (
 from conformance.catalogue_registry import supported_catalogues
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
+from conformance.plan_configuration import (
+    dcr_execution_runtime_inputs,
+    parse_dcr_plan_configuration,
+    validate_dcr_file_references,
+)
 
 ValidationLayer = Literal["schema", "semantic", "security", "business", "execution"]
 """Validation layers reported for JSON-first test-plan checks."""
@@ -40,8 +46,6 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
         "schemaVersion",
         "specification",
         "securityEnvironment",
-        "resourceGroups",
-        "businessTestData",
         "metadata",
     ],
     "additionalProperties": False,
@@ -49,15 +53,32 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
         "schemaVersion": {"const": "1.0"},
         "executionMode": {"enum": ["certification", "development"]},
         "specification": {
-            "type": "object",
-            "required": ["family", "version"],
-            "additionalProperties": False,
-            "properties": {
-                "family": {"const": "OBL_READ_WRITE"},
-                "version": {"type": "string", "minLength": 1},
-                "profile": {"enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]},
-                "securityProfile": {"enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]},
-            },
+            "oneOf": [
+                {
+                    "type": "object",
+                    "required": ["family", "version"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "family": {"const": "OBL_READ_WRITE"},
+                        "version": {"type": "string", "minLength": 1},
+                        "profile": {"enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]},
+                        "securityProfile": {
+                            "enum": ["FAPI1_ADVANCED", "FAPI2", "ALL", "fapi1-advanced", "fapi2", "all"]
+                        },
+                    },
+                },
+                {
+                    "type": "object",
+                    "required": ["family", "scheme", "name", "version"],
+                    "additionalProperties": False,
+                    "properties": {
+                        "family": {"const": "OBL_DCR"},
+                        "scheme": {"const": "open-banking-uk"},
+                        "name": {"const": "dynamic-client-registration"},
+                        "version": {"const": "3.4"},
+                    },
+                },
+            ]
         },
         "securityEnvironment": {
             "type": "object",
@@ -68,7 +89,15 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                 "issuer": {"type": "string", "minLength": 1},
                 "authorizationEndpoint": {"type": "string", "minLength": 1},
                 "tokenEndpoint": {"type": "string", "minLength": 1},
-                "clientAuthMethod": {"enum": ["private_key_jwt", "tls_client_auth"]},
+                "clientAuthMethod": {
+                    "enum": [
+                        "private_key_jwt",
+                        "tls_client_auth",
+                        "client_secret_jwt",
+                        "client_secret_basic",
+                    ]
+                },
+                "clientAuthSigningAlgorithm": {"type": "string", "minLength": 1},
                 "signingAlgorithm": {"type": "string", "minLength": 1},
                 "mtls": {
                     "type": "object",
@@ -126,9 +155,130 @@ CANONICAL_TEST_PLAN_JSON_SCHEMA: JsonObject = {
                 ]
             },
         },
+        "endpoints": {
+            "type": "array",
+            "minItems": 1,
+            "uniqueItems": True,
+            "contains": {
+                "type": "object",
+                "required": ["method", "path", "required", "locked"],
+                "properties": {
+                    "method": {"const": "POST"},
+                    "path": {"const": "/register"},
+                    "required": {"const": True},
+                    "locked": {"const": True},
+                },
+            },
+            "minContains": 1,
+            "maxContains": 1,
+            "items": {
+                "oneOf": [
+                    {
+                        "type": "object",
+                        "required": ["method", "path", "required", "locked"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "method": {"const": "POST"},
+                            "path": {"const": "/register"},
+                            "operationId": {"type": "string", "minLength": 1},
+                            "required": {"const": True},
+                            "locked": {"const": True},
+                        },
+                    },
+                    {
+                        "type": "object",
+                        "required": ["method", "path", "required", "locked"],
+                        "additionalProperties": False,
+                        "properties": {
+                            "method": {"enum": ["GET", "PUT", "DELETE"]},
+                            "path": {"const": "/register/{ClientId}"},
+                            "operationId": {"type": "string", "minLength": 1},
+                            "required": {"const": False},
+                            "locked": {"const": False},
+                        },
+                    },
+                ]
+            },
+        },
         "businessTestData": {"type": "object"},
-        "metadata": {"type": "object"},
+        "dynamicClientRegistration": {
+            "type": "object",
+            "required": ["softwareStatementAssertionPath", "registrationAudience"],
+            "additionalProperties": False,
+            "properties": {
+                "softwareStatementAssertionPath": {"type": "string", "minLength": 1},
+                "registrationAudience": {
+                    "type": "string",
+                    "minLength": 1,
+                    "pattern": "^[0-9A-Za-z]{1,18}$",
+                },
+                "registrationIssuerOverride": {"type": "string", "minLength": 1},
+                "redirectUrisOverride": {
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {"type": "string", "minLength": 1},
+                },
+                "signingCertificatePath": {"type": "string", "minLength": 1},
+                "transportCertificateSubjectDnOverride": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 512,
+                },
+                "useNumericOidSubjectDn": {"type": "boolean"},
+                "disableKeepAlive": {"type": "boolean"},
+            },
+        },
+        "metadata": {
+            "type": "object",
+            "properties": {
+                "aspspName": {"type": "string", "minLength": 1},
+                "brandName": {"type": "string", "minLength": 1},
+                "environmentName": {"type": "string", "minLength": 1},
+            },
+        },
     },
+    "allOf": [
+        {
+            "if": {
+                "properties": {
+                    "specification": {
+                        "type": "object",
+                        "properties": {"family": {"const": "OBL_READ_WRITE"}},
+                        "required": ["family"],
+                    }
+                }
+            },
+            "then": {
+                "required": ["resourceGroups", "businessTestData"],
+                "not": {
+                    "anyOf": [
+                        {"required": ["endpoints"]},
+                        {"required": ["dynamicClientRegistration"]},
+                    ]
+                },
+            },
+        },
+        {
+            "if": {
+                "properties": {
+                    "specification": {
+                        "type": "object",
+                        "properties": {"family": {"const": "OBL_DCR"}},
+                        "required": ["family"],
+                    }
+                }
+            },
+            "then": {
+                "required": ["endpoints", "dynamicClientRegistration"],
+                "not": {
+                    "anyOf": [
+                        {"required": ["resourceGroups"]},
+                        {"required": ["businessTestData"]},
+                    ]
+                },
+            },
+        },
+    ],
 }
 """JSON Schema for canonical Open Banking UK JSON-first test plans."""
 
@@ -320,6 +470,9 @@ def prepare_test_plan_for_run(
         raise TestPlanValidationError(result)
 
     issues = list(_execution_mode_issues(parsed))
+    issues.extend(_configuration_issues(parsed, require_existing_files=True))
+    if any(issue.blocking for issue in issues):
+        raise TestPlanValidationError(_validation_result(parsed, issues))
     try:
         config = parse_model_bank_config(model_bank_config_from_plan_document(parsed), base_dir=base_dir)
     except ConfigError as error:
@@ -336,11 +489,22 @@ def prepare_test_plan_for_run(
     validation = _validation_result(parsed, issues)
     if not validation.valid:
         raise TestPlanValidationError(validation)
+    runtime_inputs = dict(parsed.runtime_inputs)
+    if parsed.specification == "dynamic-client-registration":
+        runtime_inputs.update(
+            dcr_execution_runtime_inputs(
+                parse_dcr_plan_configuration(
+                    parsed.security_environment,
+                    parsed.dynamic_client_registration,
+                    parsed.metadata,
+                )
+            )
+        )
     return PreparedTestPlan(
         document=parsed,
         config=config,
         compiled_plan=compiled_plan,
-        runtime_inputs=parsed.runtime_inputs,
+        runtime_inputs=MappingProxyType(runtime_inputs),
         snapshot=safe_test_plan_snapshot(parsed, compiled_plan=compiled_plan),
         validation=validation,
     )
@@ -405,7 +569,9 @@ def validate_test_plan_for_load(raw_plan: object) -> TestPlanValidationResult:
                 ),
             ),
         )
-    return _validation_result(parsed, _execution_mode_issues(parsed))
+    issues = list(_execution_mode_issues(parsed))
+    issues.extend(_configuration_issues(parsed))
+    return _validation_result(parsed, issues)
 
 
 def safe_test_plan_snapshot(
@@ -434,6 +600,7 @@ def safe_test_plan_snapshot(
     sensitive_input_ids.update(sensitive_runtime_input_ids)
     snapshot = _safe_json_object(plan_document_to_json_object(document), sensitive_input_ids)
     _restore_ais_business_account_ids(snapshot, document)
+    _restore_dcr_file_references(snapshot, document)
     return snapshot
 
 
@@ -454,6 +621,29 @@ def _restore_ais_business_account_ids(snapshot: JsonObject, document: PlanDocume
     if not isinstance(snapshot_ais, dict):
         return
     snapshot_ais["accountIds"] = deepcopy(ais_business_data["accountIds"])
+
+
+def _restore_dcr_file_references(snapshot: JsonObject, document: PlanDocumentV2) -> None:
+    """Restore DCR file references that contain no inline credential material.
+
+    Args:
+        snapshot: Mutable safe-export snapshot.
+        document: Source plan document containing canonical file references.
+    """
+    if document.specification != "dynamic-client-registration":
+        return
+    snapshot_security = snapshot.get("securityEnvironment")
+    if not isinstance(snapshot_security, dict):
+        return
+    signing_key_path = document.security_environment.get("signingPrivateKeyPath")
+    if isinstance(signing_key_path, str):
+        snapshot_security["signingPrivateKeyPath"] = signing_key_path
+    source_mtls = document.security_environment.get("mtls")
+    snapshot_mtls = snapshot_security.get("mtls")
+    if isinstance(source_mtls, dict) and isinstance(snapshot_mtls, dict):
+        private_key_path = source_mtls.get("privateKeyPath")
+        if isinstance(private_key_path, str):
+            snapshot_mtls["privateKeyPath"] = private_key_path
 
 
 def _validation_result(
@@ -581,6 +771,36 @@ def _execution_mode_issues(document: PlanDocumentV2) -> tuple[TestPlanValidation
             "Development-mode runs are marked as non-certification evidence.",
         ),
     )
+
+
+def _configuration_issues(
+    document: PlanDocumentV2,
+    *,
+    require_existing_files: bool = False,
+) -> tuple[TestPlanValidationIssue, ...]:
+    """Return specification-aware canonical configuration issues.
+
+    Args:
+        document: Parsed canonical test-plan document.
+        require_existing_files: Whether configured references must exist for execution.
+
+    Returns:
+        Blocking configuration issues for the selected specification.
+    """
+    if document.specification != "dynamic-client-registration":
+        return ()
+    issues: list[TestPlanValidationIssue] = []
+    try:
+        config = parse_dcr_plan_configuration(
+            document.security_environment,
+            document.dynamic_client_registration,
+            document.metadata,
+        )
+        if require_existing_files:
+            validate_dcr_file_references(config)
+    except ConfigError as error:
+        return (TestPlanValidationIssue("security", "error", f"DCR configuration validation failed: {error}"),)
+    return tuple(issues)
 
 
 def _compiled_plan_issues(

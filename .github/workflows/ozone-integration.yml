@@ -52,6 +52,11 @@ on:
         required: false
         default: false
         type: boolean
+      run_dcr_34:
+        description: "Run DCR 3.4 with repository-configured Ozone credentials"
+        required: false
+        default: false
+        type: boolean
   schedule:
     # Nightly at 03:17 UTC. Non-round minute avoids the top-of-hour scheduling
     # spike on shared GitHub Actions infrastructure.
@@ -153,6 +158,114 @@ jobs:
             -v \
             tests/integration | tee pytest-output.log
 
+      - name: Run and gate Ozone DCR 3.4
+        if: steps.resolve.outputs.available == 'true' && inputs.run_dcr_34 == true
+        env:
+          OZONE_DISCOVERY_URL: ${{ steps.resolve.outputs.discovery_url }}
+          DCR_CLIENT_AUTH_METHOD: ${{ vars.OZONE_DCR_CLIENT_AUTH_METHOD }}
+          DCR_SIGNING_KEY_ID: ${{ vars.OZONE_DCR_SIGNING_KEY_ID }}
+          DCR_TRANSPORT_CERTIFICATE: ${{ secrets.OZONE_DCR_TRANSPORT_CERTIFICATE }}
+          DCR_TRANSPORT_PRIVATE_KEY: ${{ secrets.OZONE_DCR_TRANSPORT_PRIVATE_KEY }}
+          DCR_CA_BUNDLE: ${{ secrets.OZONE_DCR_CA_BUNDLE }}
+          DCR_SIGNING_PRIVATE_KEY: ${{ secrets.OZONE_DCR_SIGNING_PRIVATE_KEY }}
+          DCR_SOFTWARE_STATEMENT_ASSERTION: ${{ secrets.OZONE_DCR_SOFTWARE_STATEMENT_ASSERTION }}
+        run: |
+          set -euo pipefail
+          credential_root="$PWD/.ozone-dcr"
+          mkdir -p "$credential_root"
+          chmod 700 "$credential_root"
+          if [[ -z "$DCR_SIGNING_KEY_ID" \
+            || -z "$DCR_TRANSPORT_CERTIFICATE" \
+            || -z "$DCR_TRANSPORT_PRIVATE_KEY" \
+            || -z "$DCR_SIGNING_PRIVATE_KEY" \
+            || -z "$DCR_SOFTWARE_STATEMENT_ASSERTION" ]]
+          then
+            echo "::error::DCR signing kid, transport pair, signing key, and SSA secrets are required"
+            exit 2
+          fi
+          printf '%s' "$DCR_TRANSPORT_CERTIFICATE" > "$credential_root/transport.pem"
+          printf '%s' "$DCR_TRANSPORT_PRIVATE_KEY" > "$credential_root/transport.key"
+          printf '%s' "$DCR_SIGNING_PRIVATE_KEY" > "$credential_root/signing.key"
+          printf '%s' "$DCR_SOFTWARE_STATEMENT_ASSERTION" > "$credential_root/ssa.jwt"
+          if [[ -n "$DCR_CA_BUNDLE" ]]; then
+            printf '%s' "$DCR_CA_BUNDLE" > "$credential_root/ca.pem"
+          fi
+          chmod 600 "$credential_root"/*
+          DCR_CREDENTIAL_ROOT="$credential_root" uv run python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          root = Path(os.environ["DCR_CREDENTIAL_ROOT"])
+          mtls = {
+              "enabled": True,
+              "certificatePath": str(root / "transport.pem"),
+              "privateKeyPath": str(root / "transport.key"),
+          }
+          if (root / "ca.pem").is_file():
+              mtls["caBundlePath"] = str(root / "ca.pem")
+          plan = {
+              "schemaVersion": "1.0",
+              "specification": {
+                  "family": "OBL_DCR",
+                  "scheme": "open-banking-uk",
+                  "name": "dynamic-client-registration",
+                  "version": "3.4",
+              },
+              "executionMode": "certification",
+              "securityEnvironment": {
+                  "discoveryUrl": os.environ["OZONE_DISCOVERY_URL"],
+                  "clientAuthMethod": os.environ.get("DCR_CLIENT_AUTH_METHOD") or "tls_client_auth",
+                  "signingPrivateKeyPath": str(root / "signing.key"),
+                  "signingKeyId": os.environ["DCR_SIGNING_KEY_ID"],
+                  "mtls": mtls,
+              },
+              "endpoints": [
+                  {"method": "POST", "path": "/register", "required": True, "locked": True},
+                  {
+                      "method": "GET",
+                      "path": "/register/{ClientId}",
+                      "required": False,
+                      "locked": False,
+                  },
+                  {
+                      "method": "PUT",
+                      "path": "/register/{ClientId}",
+                      "required": False,
+                      "locked": False,
+                  },
+                  {
+                      "method": "DELETE",
+                      "path": "/register/{ClientId}",
+                      "required": False,
+                      "locked": False,
+                  },
+              ],
+              "dynamicClientRegistration": {
+                  "softwareStatementAssertionPath": str(root / "ssa.jwt"),
+              },
+              "metadata": {"environmentName": "Ozone live verification"},
+          }
+          (root / "plan.json").write_text(json.dumps(plan), encoding="utf-8")
+          PY
+          set +e
+          uv run python main.py --test-plan "$credential_root/plan.json"
+          execution_status=$?
+          set -e
+          if [[ ! -f out/test-results.json ]]; then
+            echo "::error::DCR execution did not produce a structured result"
+            exit "${execution_status:-2}"
+          fi
+          uv run python -m conformance.result_gate out/test-results.json
+          if [[ "$execution_status" -ne 0 ]]; then
+            echo "::error::DCR CLI returned ${execution_status} despite producing a result"
+            exit "$execution_status"
+          fi
+
+      - name: Remove Ozone DCR credential files
+        if: always() && inputs.run_dcr_34 == true
+        run: rm -rf "$PWD/.ozone-dcr"
+
       - name: Publish summary to PR check
         # Renders a short summary on the workflow run page (visible from the PR
         # "Checks" tab) so reviewers do not have to download an artefact to see
@@ -194,3 +307,13 @@ jobs:
           name: ozone-integration-results-${{ github.run_id }}
           path: ozone-integration-results.json
           if-no-files-found: ignore
+
+      - name: Upload masked DCR result
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: always() && inputs.run_dcr_34 == true
+        with:
+          name: ozone-dcr-results-${{ github.run_id }}
+          path: |
+            out/test-results.json
+            out/execution-log.ndjson
+          if-no-files-found: error

@@ -185,8 +185,8 @@ def test_catalogue_boundary_form_defers_resource_group_selection() -> None:
 
 
 @pytest.mark.unit
-def test_catalogue_boundary_form_allows_selector_only_dcr_without_resource_groups() -> None:
-    """DCR v3.4 can be selected without Read/Write resource groups."""
+def test_catalogue_boundary_form_allows_dcr_without_resource_groups() -> None:
+    """DCR v3.4 can continue directly to endpoint selection."""
     boundary = PlanDocumentBoundary("open-banking-uk", "dynamic-client-registration", "3.4")
     form = CatalogueBoundaryForm(
         data={
@@ -200,7 +200,8 @@ def test_catalogue_boundary_form_allows_selector_only_dcr_without_resource_group
     assert form.is_valid(), form.errors.as_json()
     assert form.selected_resource_group_ids == ()
     assert catalogue_scope_hierarchy(boundary).resource_groups == ()
-    assert catalogue_boundary_continue_blocker(boundary) is not None
+    assert len(catalogue_scope_hierarchy(boundary).direct_endpoints) == 4
+    assert catalogue_boundary_continue_blocker(boundary) is None
 
 
 @pytest.mark.unit

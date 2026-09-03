@@ -314,8 +314,8 @@ class TestBuilderWizardUi:
         assert "Step 2: security environment discovery" in content
         assert "Optionally enter the `.well-known/openid-configuration` URL" in content
 
-    def test_selector_only_dcr_boundary_blocks_continuation(self) -> None:
-        """DCR can be displayed but still cannot continue into the executable flow."""
+    def test_dcr_boundary_continues_to_direct_endpoint_scope(self) -> None:
+        """DCR continues to locked POST and optional management endpoints."""
         client = Client()
         create_response = client.post("/builder/new/")
         draft_id = _draft_id_from_builder_redirect(create_response["Location"])
@@ -329,13 +329,14 @@ class TestBuilderWizardUi:
             },
         )
 
-        assert response.status_code == 400
-        content = response.content.decode("utf-8")
-        assert "Dynamic Client Registration v3.4 is shown as a selector-only example." in content
-
-        scope_response = client.get(f"/builder/{draft_id}/scope/")
-        assert scope_response.status_code == 302
-        assert scope_response["Location"] == f"/builder/{draft_id}/catalogue/"
+        assert response.status_code == 302
+        assert response["Location"] == f"/builder/{draft_id}/scope/"
+        scope_response = client.get(response["Location"])
+        assert scope_response.status_code == 200
+        content = scope_response.content.decode("utf-8")
+        assert "POST /register" in content
+        assert "Required and locked" in content
+        assert "POST /token" not in content
 
     def test_scope_allows_security_environment_to_be_empty_before_resource_groups(self) -> None:
         """The scope step can be opened before optional security fields are filled."""

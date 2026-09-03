@@ -7,7 +7,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from types import MappingProxyType
-from typing import TYPE_CHECKING, Literal
+from typing import TYPE_CHECKING, Literal, cast
 
 from conformance.json_types import JsonObject, JsonValue
 from conformance.manifest import CertificationCoverage
@@ -156,7 +156,7 @@ class SmokeCheckResult:
         if self.plan_summary is not None:
             body["plan"] = dict(self.plan_summary)
         if self.compiled_plan is not None:
-            body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan)
+            body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan, steps=self.steps)
         return body
 
 
@@ -245,6 +245,14 @@ def mark_development_result_evidence(validation_result: JsonObject, result_objec
     reasons = list(raw_reasons) if isinstance(raw_reasons, list) else []
     if reason not in reasons:
         reasons.insert(0, reason)
+    raw_issues = validation_result.get("issues")
+    if isinstance(raw_issues, list):
+        for raw_issue in raw_issues:
+            if not isinstance(raw_issue, dict) or raw_issue.get("severity") != "warning":
+                continue
+            message = raw_issue.get("message")
+            if isinstance(message, str) and message not in reasons:
+                reasons.append(message)
     eligibility["eligible"] = False
     eligibility["reason"] = reason
     eligibility["reasons"] = reasons
@@ -381,11 +389,16 @@ def _build_eligibility(
     return block
 
 
-def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject:
+def _compiled_plan_to_json_object(
+    compiled_plan: CompiledTestPlan,
+    *,
+    steps: tuple[StepResult, ...],
+) -> JsonObject:
     """Convert compiled catalogue traceability into report JSON.
 
     Args:
         compiled_plan: Compiled catalogue plan that drove execution.
+        steps: Final execution results used to populate hierarchical statuses.
 
     Returns:
         JSON object containing catalogue identity, selected endpoints,
@@ -393,7 +406,7 @@ def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject
         and certification planning status.
     """
     traceability = compiled_plan.traceability
-    return {
+    result: JsonObject = {
         "standard": traceability.catalogue_key.standard,
         "version": traceability.catalogue_key.version,
         "api": traceability.catalogue_key.api,
@@ -401,6 +414,7 @@ def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject
         "securityProfile": traceability.security_profile,
         "certifying": compiled_plan.certifying,
         "generatedTestCaseIds": list(traceability.generated_test_case_ids),
+        "skippedTestCaseIds": [case.test_case_id for case in compiled_plan.skipped_test_cases],
         "selectedEndpoints": [
             {
                 "method": endpoint.method,
@@ -443,6 +457,138 @@ def _compiled_plan_to_json_object(compiled_plan: CompiledTestPlan) -> JsonObject
         ],
         "nonCertifyingReasons": list(traceability.non_certifying_reasons),
     }
+    if traceability.provenance is not None:
+        result["provenance"] = {
+            "repository": traceability.provenance.repository,
+            "release": traceability.provenance.release,
+            "commit": traceability.provenance.commit,
+            "sourcePaths": list(traceability.provenance.source_paths),
+            "references": dict(traceability.provenance.references),
+        }
+    trace_groups = _compiled_trace_groups_to_json_object(compiled_plan, steps=steps)
+    if trace_groups:
+        result["traceGroups"] = trace_groups
+    return result
+
+
+def _compiled_trace_groups_to_json_object(
+    compiled_plan: CompiledTestPlan,
+    *,
+    steps: tuple[StepResult, ...],
+) -> list[JsonValue]:
+    """Serialize selected scenario, case, and execution-step trace hierarchy.
+
+    Args:
+        compiled_plan: Compiled plan containing generic catalogue trace groups.
+        steps: Final step outcomes keyed by each execution step's stable ID.
+
+    Returns:
+        Ordered trace groups with their selected cases and protocol-neutral steps.
+    """
+    grouped_cases: dict[str, list[JsonValue]] = {}
+    group_metadata: dict[str, JsonObject] = {}
+    group_order: list[str] = []
+    skipped_ids = {case.test_case_id for case in compiled_plan.skipped_test_cases}
+    result_by_step_id = {step.name: step for step in steps}
+    trace_cases = sorted(
+        (*compiled_plan.test_cases, *compiled_plan.skipped_test_cases),
+        key=lambda case: case.test_case_id,
+    )
+    for test_case in trace_cases:
+        trace_group = test_case.trace_group
+        if trace_group is None:
+            continue
+        if trace_group.group_id not in grouped_cases:
+            grouped_cases[trace_group.group_id] = []
+            group_order.append(trace_group.group_id)
+            group_metadata[trace_group.group_id] = {
+                "traceGroupId": trace_group.group_id,
+                "name": trace_group.name,
+                "intent": trace_group.intent,
+                "sourceSymbol": trace_group.source_symbol,
+                "normativeReferenceIds": list(trace_group.normative_reference_ids),
+            }
+        case_is_unselected = test_case.test_case_id in skipped_ids
+        rendered_steps: list[JsonValue] = []
+        case_statuses: list[CheckStatus] = []
+        for execution_step in test_case.execution_steps:
+            step_result = result_by_step_id.get(execution_step.step_id)
+            status: CheckStatus = "skipped" if case_is_unselected else step_result.status if step_result else "skipped"
+            case_statuses.append(status)
+            rendered_steps.append(
+                {
+                    "stepId": execution_step.step_id,
+                    "definitionId": execution_step.definition_id,
+                    "name": execution_step.name,
+                    "kind": execution_step.kind,
+                    "status": status,
+                    **(
+                        {"expectedStatus": execution_step.expected_status}
+                        if execution_step.expected_status is not None
+                        else {}
+                    ),
+                    **(
+                        {"actualStatusCode": step_result.status_code}
+                        if step_result is not None and step_result.status_code is not None
+                        else {}
+                    ),
+                    **({"message": step_result.message} if step_result is not None else {}),
+                    **({"variant": execution_step.variant} if execution_step.variant is not None else {}),
+                    **({"deviationId": execution_step.deviation_id} if execution_step.deviation_id is not None else {}),
+                    **({"skipReason": "endpoint-not-selected"} if case_is_unselected else {}),
+                }
+            )
+        case_status = _aggregate_trace_status(case_statuses)
+        grouped_cases[trace_group.group_id].append(
+            {
+                "testCaseId": test_case.test_case_id,
+                "name": test_case.name,
+                "role": test_case.role,
+                "mandatory": test_case.mandatory,
+                "status": case_status,
+                "complianceScope": list(test_case.compliance_scope),
+                "expectedHttpStatuses": list(test_case.expected_http_statuses),
+                **({"skipReason": "endpoint-not-selected"} if case_is_unselected else {}),
+                "steps": rendered_steps,
+            }
+        )
+    rendered_groups: list[JsonValue] = []
+    for group_id in group_order:
+        test_cases = grouped_cases[group_id]
+        statuses = [
+            case["status"]
+            for case in test_cases
+            if isinstance(case, dict) and case.get("status") in {"passed", "failed", "warn", "skipped"}
+        ]
+        group_status = _aggregate_trace_status(cast("list[CheckStatus]", statuses))
+        rendered_groups.append(
+            {
+                **group_metadata[group_id],
+                "status": group_status,
+                **({"skipReason": "endpoint-not-selected"} if group_status == "skipped" else {}),
+                "testCases": test_cases,
+            }
+        )
+    return rendered_groups
+
+
+def _aggregate_trace_status(statuses: list[CheckStatus]) -> CheckStatus:
+    """Aggregate child outcomes for a catalogue trace case or group.
+
+    Args:
+        statuses: Ordered child statuses.
+
+    Returns:
+        Failed when any child failed, warn when any child warned without a
+        failure, passed when at least one child passed, otherwise skipped.
+    """
+    if "failed" in statuses:
+        return "failed"
+    if "warn" in statuses:
+        return "warn"
+    if "passed" in statuses:
+        return "passed"
+    return "skipped"
 
 
 def _build_approved_release_eligibility(

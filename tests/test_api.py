@@ -260,7 +260,12 @@ class TestRunStore:
         result: JsonObject = {"metadata": {}, "certificationEligibility": {"eligible": True}}
 
         mark_development_result_evidence(
-            {"schemaVersion": "1.0", "executionMode": "development", "valid": True, "issues": []},
+            {
+                "schemaVersion": "1.0",
+                "executionMode": "development",
+                "valid": True,
+                "issues": [],
+            },
             result,
         )
 

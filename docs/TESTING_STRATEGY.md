@@ -44,7 +44,7 @@ for:
 - Dependency inclusion and deterministic ordering.
 - Runtime input requirement validation and sensitive-value snapshots.
 - Assertion override non-certifying behaviour.
-- Bundled catalogue registry coverage for AIS, PIS, CBPII, and VRP, with
+- Bundled catalogue registry coverage for AIS, PIS, CBPII, VRP, and DCR 3.4, with
   retained cVRP catalogue code covered outside the participant-facing registry.
 - Aggregate v2 Read/Write compilation across AIS, PIS, CBPII, and VRP catalogue
   areas, with cVRP rejected from the Open Banking UK boundary.
@@ -87,6 +87,9 @@ Regression coverage should prove that replacing public manifests did not weaken:
   contract.
 - Run-detail rendering of catalogue traceability evidence from completed result
   JSON.
+- DCR CLI, local REST, browser import/review/launch, persisted run lifecycle,
+  scenario/case/step statuses, optional-operation skips, safe evidence, and
+  certification eligibility.
 
 Focused run:
 
@@ -124,6 +127,23 @@ DJANGO_DEBUG=true uv run pytest \
 Coverage must include approved versions, unapproved versions, absent policies,
 mandatory passed/warn acceptance, mandatory failed/skipped/missing rejection,
 malformed report rejection, and Confluence summary rendering.
+
+## DCR live verification gate
+
+The deterministic mTLS service covers DCR protocol and result parsing offline.
+Run:
+
+```bash
+uv run pytest tests/test_dcr_product_integration.py tests/test_dcr_execution.py -v
+uv run python -m conformance.result_gate out/test-results.json
+```
+
+The result gate reads JSON only and requires a passing aggregate, zero reported
+failed steps, and no failed scenario/case/step in `catalogue.traceGroups`.
+Expected endpoint-not-selected skips are permitted. The Ozone workflow exposes
+an opt-in `run_dcr_34` dispatch input and applies this same gate to the generated
+DCR result; it requires repository-configured mTLS/signing/SSA secrets and must
+not be described as run unless that job actually executed.
 
 ## Code quality and coverage targets
 

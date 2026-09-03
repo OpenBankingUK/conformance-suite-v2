@@ -262,15 +262,19 @@
     <header>
         <div>
             <h1>Select test plan scope</h1>
-            <div class="muted">Steps 4 and 5: resource groups, endpoints, and capabilities</div>
+            <div class="muted">{% if direct_endpoints %}Step 2: direct endpoint selection{% else %}Steps 4 and 5: resource groups, endpoints, and capabilities{% endif %}</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="scope-heading">
-        <h2 id="scope-heading">Resource groups, endpoints, and scoped features</h2>
-        <p class="helper">Select the resource groups that share the security environment from the previous step, then select implemented endpoints and optional capabilities within those groups.</p>
-        <p class="helper">On this page, baseline and optional labels describe generated conformance coverage. Required and optional badges on later config pages describe user-entered fields.</p>
+        <h2 id="scope-heading">{% if direct_endpoints %}Registration endpoints{% else %}Resource groups, endpoints, and scoped features{% endif %}</h2>
+        {% if direct_endpoints %}
+            <p class="helper">Select the Dynamic Client Registration management operations implemented by the participant. Token traffic is generated and is not selectable.</p>
+        {% else %}
+            <p class="helper">Select the resource groups that share the security environment from the previous step, then select implemented endpoints and optional capabilities within those groups.</p>
+            <p class="helper">On this page, baseline and optional labels describe generated conformance coverage. Required and optional badges on later config pages describe user-entered fields.</p>
+        {% endif %}
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         <div class="boundary-summary" aria-label="Selected catalogue boundary">
@@ -282,7 +286,7 @@
         {% if saved %}
             <div class="message success">Endpoints and scoped features saved.</div>
         {% endif %}
-        <div class="message info">Next you will enter resource-group-specific business test data.</div>
+        <div class="message info">{% if direct_endpoints %}Next you will configure discovery and DCR security references.{% else %}Next you will enter resource-group-specific business test data.{% endif %}</div>
 
         <form method="post"
               action="{% url 'builder-scope' draft.draft_id %}"
@@ -296,8 +300,8 @@
             {% include "conformance/partials/builder_scope_options.html" %}
 
             <div class="actions">
-                <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Back to security</a>
-                <button type="submit">Continue to business data</button>
+                <a class="button secondary" href="{% if direct_endpoints %}{% url 'builder-catalogue-boundary' draft.draft_id %}{% else %}{% url 'builder-security-config' draft.draft_id %}{% endif %}">{% if direct_endpoints %}Back to specification{% else %}Back to security{% endif %}</a>
+                <button type="submit">{% if direct_endpoints %}Continue to DCR configuration{% else %}Continue to business data{% endif %}</button>
             </div>
         </form>
     </section>
