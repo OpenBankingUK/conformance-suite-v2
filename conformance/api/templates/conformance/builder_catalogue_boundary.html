@@ -104,7 +104,7 @@
 
         .field-grid {
             display: grid;
-            grid-template-columns: repeat(4, minmax(0, 1fr));
+            grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 12px;
             margin-top: 16px;
         }
@@ -213,7 +213,7 @@
     <header>
         <div>
             <h1>Choose specification</h1>
-            <div class="muted">Step 1: specification and profile</div>
+            <div class="muted">Step 1: specification</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
@@ -273,15 +273,6 @@
                     </select>
                 </div>
 
-                <div>
-                    <label for="{{ form.security_profile.id_for_label }}">Security profile</label>
-                    {{ form.security_profile.errors }}
-                    <select id="{{ form.security_profile.id_for_label }}" name="security_profile">
-                        {% for value,label in form.security_profile.field.choices %}
-                            <option value="{{ value }}" {% if form.security_profile.value == value %}selected{% endif %}>{{ label }}</option>
-                        {% endfor %}
-                    </select>
-                </div>
             </div>
 
             <div class="actions">

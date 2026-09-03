@@ -54,7 +54,6 @@ from conformance.catalogue import (
     CompiledTestPlan,
     PlanDocumentBoundary,
     PlanDocumentV2,
-    SecurityProfile,
     compile_test_plan_document,
     parse_test_plan_document,
     plan_document_to_json_object,
@@ -183,7 +182,6 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 scheme=selected_boundary.scheme,
                 specification=selected_boundary.specification,
                 version=selected_boundary.version,
-                security_profile=cast(SecurityProfile, form.cleaned_data["security_profile"]),
             ).with_scope_selection(
                 resource_group_ids=pruned_scope.selected_resource_group_ids,
                 endpoint_ids=pruned_scope.selected_endpoint_ids,
@@ -876,7 +874,6 @@ def _boundary_form_initial(draft: BuilderDraft) -> dict[str, object]:
         initial["specification"] = draft.specification
     if draft.version is not None:
         initial["version"] = draft.version
-    initial["security_profile"] = draft.security_profile
     initial["resource_groups"] = list(draft.resource_group_ids)
     return initial
 

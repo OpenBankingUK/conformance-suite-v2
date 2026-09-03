@@ -143,7 +143,7 @@ class TestBuilderWizardUi:
     """Browser coverage for the canonical multi-page builder flow."""
 
     def test_new_builder_starts_with_specification_only(self) -> None:
-        """POST /builder/new/ creates a draft and renders specification/profile step one."""
+        """POST /builder/new/ renders specification-only step one."""
         client = Client()
 
         response = client.post("/builder/new/")
@@ -157,7 +157,9 @@ class TestBuilderWizardUi:
         assert step_response.status_code == 200
         content = step_response.content.decode("utf-8")
         assert "Choose specification" in content
-        assert "Step 1: specification and profile" in content
+        assert "Step 1: specification" in content
+        assert 'name="security_profile"' not in content
+        assert "FAPI 2" not in content
         assert "Open Banking UK" in content
         assert "Read/Write" in content
         assert "4.0.1" in content
@@ -935,6 +937,29 @@ class TestBuilderWizardUi:
 
         assert response.status_code == 400
         assert "canonical schemaVersion 1.0 test plan document" in response.content.decode("utf-8")
+
+    def test_import_rejects_profile_not_declared_by_specification_version(self) -> None:
+        """Browser import rejects Read/Write FAPI 2 for the v4.0.1 boundary."""
+        client = Client()
+        plan_document = {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_READ_WRITE",
+                "version": "4.0.1",
+                "profile": "FAPI2",
+            },
+            "securityEnvironment": {
+                "discoveryUrl": "https://example.com/.well-known/openid-configuration",
+            },
+            "resourceGroups": ["AIS"],
+            "businessTestData": {},
+            "metadata": {},
+        }
+
+        response = client.post("/builder/import/", data={"plan_json": json.dumps(plan_document)})
+
+        assert response.status_code == 400
+        assert "profile must be one of: FAPI1_ADVANCED" in response.content.decode("utf-8")
 
     def test_removed_single_page_builder_routes_return_404(self) -> None:
         """The legacy /plan/ builder routes are no longer mounted."""

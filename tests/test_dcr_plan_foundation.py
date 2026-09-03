@@ -23,6 +23,8 @@ from conformance.catalogue import (
 )
 from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
+    derived_security_profile_for_boundary,
+    security_profiles_for_boundary,
     specification_for_boundary,
     specification_for_family,
     supported_specifications,
@@ -154,6 +156,8 @@ def test_specification_registry_covers_read_write_and_dcr_3_4() -> None:
         "v3.4",
         ("dcr",),
     )
+    assert security_profiles_for_boundary("open-banking-uk", "read-write", "4.0.1") == ("fapi1-advanced",)
+    assert derived_security_profile_for_boundary("open-banking-uk", dcr.specification, "3.4") == "all"
 
 
 @pytest.mark.unit

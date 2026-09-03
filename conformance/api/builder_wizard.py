@@ -22,7 +22,6 @@ from conformance.catalogue import (
     PlanDocumentV2,
     PlanExecutionMode,
     RuntimeInputRequirement,
-    SecurityProfile,
     TestCatalogue,
     business_test_data_from_plan_config,
     catalogue_areas_for_plan_document_boundary,
@@ -131,12 +130,6 @@ SecurityRequirementStatus = Literal["required", "conditional", "optional"]
 
 _RUNTIME_CONFIG_KEYS = frozenset({"inputs"})
 """Config keys owned by the runtime-artifact step."""
-
-_SUPPORTED_SECURITY_PROFILE_OPTIONS: tuple[tuple[SecurityProfile, str], ...] = (
-    ("fapi1-advanced", "FAPI 1 Advanced"),
-    ("fapi2", "FAPI 2"),
-)
-"""Security-profile choices exposed by the specification step."""
 
 
 @dataclass(frozen=True)
@@ -638,16 +631,13 @@ class CatalogueBoundaryForm(forms.Form):
         specification: Specification family selector filtered by scheme.
         version: Specification-version selector filtered by scheme and
             specification.
-        security_profile: Security profile selector written into the canonical
-            test plan's specification profile.
         resource_groups: Deprecated compatibility field ignored by the
-            specification/profile step.
+            specification step.
     """
 
     scheme: forms.ChoiceField = forms.ChoiceField(label="Scheme")
     specification: forms.ChoiceField = forms.ChoiceField(label="Specification")
     version: forms.ChoiceField = forms.ChoiceField(label="Version")
-    security_profile: forms.ChoiceField = forms.ChoiceField(label="Security profile", required=False)
     resource_groups: forms.MultipleChoiceField = forms.MultipleChoiceField(required=False)
 
     def __init__(
@@ -672,7 +662,6 @@ class CatalogueBoundaryForm(forms.Form):
         self._validate_resource_groups = validate_resource_groups
         effective_initial = _effective_initial(initial, boundaries=self._boundaries)
         selected_boundary = _boundary_from_form_values(data, effective_initial, boundaries=self._boundaries)
-        effective_initial.setdefault("security_profile", "fapi1-advanced")
         self.selected_boundary = selected_boundary
         selected_resource_groups = _raw_or_initial_values(data, effective_initial, "resource_groups")
         self.resource_group_hierarchy = catalogue_scope_hierarchy(
@@ -697,7 +686,6 @@ class CatalogueBoundaryForm(forms.Form):
         cast(forms.ChoiceField, self.fields["version"]).choices = [
             (option.value, option.label) for option in version_options(boundaries=self._boundaries)
         ]
-        cast(forms.ChoiceField, self.fields["security_profile"]).choices = security_profile_options()
         cast(forms.MultipleChoiceField, self.fields["resource_groups"]).choices = [
             (group.id, group.label) for group in self.resource_group_hierarchy.resource_groups
         ]
@@ -725,12 +713,6 @@ class CatalogueBoundaryForm(forms.Form):
                 "Choose a supported scheme, specification, and version from the available catalogue options.",
                 code="unsupported_boundary",
             )
-        security_profile = cleaned_data.get("security_profile") or "fapi1-advanced"
-        supported_values = {value for value, _label in security_profile_options()}
-        if security_profile not in supported_values:
-            supported = ", ".join(label for _value, label in security_profile_options())
-            self.add_error("security_profile", f"Choose a supported security profile: {supported}.")
-        cleaned_data["security_profile"] = security_profile
         return cleaned_data
 
     @property
@@ -1914,15 +1896,6 @@ def version_options(*, boundaries: Iterable[PlanDocumentBoundary] | None = None)
         )
         for boundary in boundary_values
     )
-
-
-def security_profile_options() -> tuple[tuple[SecurityProfile, str], ...]:
-    """Return security-profile choices for the specification step.
-
-    Returns:
-        Security profile value/label pairs in display order.
-    """
-    return _SUPPORTED_SECURITY_PROFILE_OPTIONS
 
 
 def endpoint_capability_value(*, endpoint_id: str, capability_id: str) -> str:

@@ -12,6 +12,8 @@ from conformance.json_types import JsonObject, JsonValue
 from conformance.specification_registry import (
     SpecificationDefinition,
     SpecificationVersionDefinition,
+    derived_security_profile_for_boundary,
+    security_profiles_for_boundary,
     specification_for_boundary,
     specification_for_family,
     supported_specifications,
@@ -2099,11 +2101,32 @@ def _parse_canonical_specification(
             raise CatalogueError(f"testPlan.specification.scheme must be {definition.scheme}")
         if name != definition.specification:
             raise CatalogueError(f"testPlan.specification.name must be {definition.specification}")
-        return boundary, definition, "all"
+        try:
+            security_profile = derived_security_profile_for_boundary(
+                boundary.scheme,
+                boundary.specification,
+                boundary.version,
+            )
+        except ValueError as error:
+            raise CatalogueError(f"testPlan.{error}") from error
+        return boundary, definition, security_profile
 
     raw_profile = raw_specification.get("profile")
     raw_security_profile = raw_specification.get("securityProfile")
-    security_profile = _parse_canonical_security_profile(raw_profile, location="testPlan.specification.profile")
+    if raw_profile is None and raw_security_profile is None:
+        try:
+            security_profile = derived_security_profile_for_boundary(
+                boundary.scheme,
+                boundary.specification,
+                boundary.version,
+            )
+        except ValueError as error:
+            raise CatalogueError(f"testPlan.{error}") from error
+    else:
+        security_profile = _parse_canonical_security_profile(
+            raw_profile,
+            location="testPlan.specification.profile",
+        )
     if raw_profile is None and raw_security_profile is not None:
         security_profile = _parse_canonical_security_profile(
             raw_security_profile,
@@ -2119,6 +2142,12 @@ def _parse_canonical_specification(
                 "testPlan.specification.profile and testPlan.specification.securityProfile must match when both "
                 "are supplied"
             )
+    valid_profiles = security_profiles_for_boundary(boundary.scheme, boundary.specification, boundary.version)
+    if security_profile not in valid_profiles:
+        supported = ", ".join(_canonical_security_profile(profile) for profile in valid_profiles)
+        raise CatalogueError(
+            f"testPlan.specification.profile must be one of: {supported} for {definition.family} {boundary.version}"
+        )
     return boundary, definition, security_profile
 
 
