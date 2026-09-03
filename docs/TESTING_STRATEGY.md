@@ -126,7 +126,15 @@ DJANGO_DEBUG=true uv run pytest \
 
 Coverage must include approved versions, unapproved versions, absent policies,
 mandatory passed/warn acceptance, mandatory failed/skipped/missing rejection,
-malformed report rejection, and Confluence summary rendering.
+malformed report rejection, and Confluence summary rendering. Tests must also
+show that mandatory coverage and release approval are recomputed from
+independently supplied inputs rather than accepted from any self-assessment in
+the report.
+
+These are consistency and certification-readiness tests. Phase 1 tests must not
+treat a passing local validation as proof of report authenticity. Tests for
+trusted plan/result binding, provenance, and tamper-evident audit history belong
+to the Phase 2 portal.
 
 ## DCR live verification gate
 

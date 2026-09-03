@@ -211,3 +211,16 @@ Approved-release policy files use this shape:
 Generated reports include catalogue traceability, runtime input snapshots with
 sensitive values omitted, certification/non-certification reasons, and stable
 `metadata.reportVersion` plus `tool.version` fields consumed by the validator.
+
+### Phase 1 assurance boundary
+
+A passing validator result means that the submitted report is consistent with
+the independently supplied mandatory-test criteria and approved-release policy.
+It is certification-ready evidence for OBL review, not proof that a locally
+produced report is authentic and not an automated certification decision.
+
+Participants control the Phase 1 container and filesystem, so deliberate report
+tampering cannot be excluded. This is an accepted Phase 1 risk. Tamper-resistant
+provenance is a Phase 2 portal responsibility and applies to runs managed within
+OBL-controlled infrastructure; uploading a local report does not by itself
+establish authenticity.
