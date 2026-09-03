@@ -80,12 +80,13 @@ The new platform will:
 
 ### OBL Certification/Monitoring Team Stories
 
-1. As an OBL certification team member, I want an internal tool that reads a submitted report and verifies all mandatory tests passed, so that I can certify participants faster and more reliably than the current bash script process.
-2. As an OBL certification team member, I want the validation to check mandatory test criteria from configuration (not hardcoded), so that the tool remains accurate as the test suite evolves.
+1. As an OBL certification team member, I want an internal tool that reads a submitted report and checks that it is structurally valid, internally consistent, and contains passing outcomes for all mandatory tests, so that I can review certification submissions faster and more reliably than with the current bash script process.
+2. As an OBL certification team member, I want the validation to derive mandatory test criteria from independently supplied trusted configuration rather than trusting the report's embedded eligibility assessment or hardcoded rules, so that the tool remains accurate as the test suite evolves.
 3. As an OBL certification team member, I want the tool to confirm the FCS version used is an approved release.
 4. As an OBL certification team member, I want the tool to output a certification summary for pasting into Confluence, so that the Phase 1 workflow (Salesforce → validate → Confluence → close) is preserved with reduced manual effort.
 5. As an OBL monitoring team member, I want a portal with a certification management workflow — where participants publish results and the OBL team can review, approve, and track them — so that the manual Salesforce/Confluence process is replaced. _(Phase 2 only.)_
 6. As an OBL monitoring team member, I want a dashboard showing certification history and test results across participants. _(Phase 2 only.)_
+7. As an OBL certification team member, I want portal-managed runs to have trusted server-side provenance and a tamper-evident audit history, so that OBL can distinguish authenticated portal evidence from locally produced reports. _(Phase 2 only.)_
 
 ### OBL Engineering Team Stories
 
@@ -175,7 +176,7 @@ Both modes are Phase 1 requirements. Both use the FAPI hybrid flow. The FCS must
 
 ### Certification Eligibility Assessment
 
-Every test run report includes a built-in certification eligibility assessment. This is a self-service check for participants — not OBL's formal certification decision.
+Every test run report includes a built-in certification eligibility assessment. This is a local self-service check for participants — not OBL's formal certification decision or proof that the report is authentic. Product copy and documentation must describe a passing assessment as **certification-ready** or **locally validated**, not certified.
 
 The assessment indicates:
 
@@ -184,6 +185,8 @@ The assessment indicates:
 - Whether the FCS version used is an approved release
 
 If any mandatory tests were deselected or failed, the report explicitly states the run is not eligible for certification submission. The criteria for this assessment are driven by configuration, not hardcoded.
+
+The Phase 1 assessment and OBL-side CertificationValidator check report completeness and consistency. They do not provide cryptographic attestation because the participant controls the local container, filesystem, plan, and resulting report. Deliberate tampering detection is a Phase 2 portal requirement.
 
 ---
 
@@ -244,6 +247,8 @@ Participants run a single Docker container on their own infrastructure. No datab
 
 OBL hosts a multi-container deployment. Components: web/API server, background worker(s), persistent database, state coordination service, identity management. Phase 2 also includes a certification management feature — a UI for participants to submit results and for the OBL team to review, approve, and track certifications — replacing the current Salesforce/Confluence manual process. Phase 2 supports multiple concurrent runs.
 
+The portal is the trust boundary for tamper-resistant certification evidence. For portal-managed runs it must validate and freeze the plan server-side, execute or coordinate the run within OBL-controlled infrastructure, bind results to the validated plan and approved tool release, and retain immutable provenance and audit records. A locally generated report uploaded after execution remains locally validated unless the portal can verify an independently trustworthy attestation; upload alone does not establish authenticity.
+
 ### Deployment Mode Switching
 
 The platform must support switching between local and portal modes through configuration, without changing application code or the Docker image.
@@ -256,6 +261,7 @@ The platform must support switching between local and portal modes through confi
 | Report delivery | Written to output volume | Stored and downloadable via portal |
 | Callback coordination | In-process | Across worker processes (mechanism TBD) |
 | Certification workflow | Participant submits report to OBL via Salesforce (preserved from current process) | Managed within portal — submission, OBL review, and certificate publication |
+| Result assurance | Local consistency and certification-readiness checks; no authenticity guarantee | Trusted server-side provenance and tamper-evident audit history for portal-managed runs |
 
 ---
 
@@ -265,13 +271,13 @@ The Phase 1 certification process is preserved from the current workflow:
 
 1. Participant submits a Salesforce ticket with the report attachment.
 2. Billing handled separately before certification.
-3. OBL runs the internal CertificationValidator against the report.
-4. Validator checks: all mandatory tests present and passed, FCS version is an approved release, report schema is valid.
+3. OBL runs the internal CertificationValidator against the report, independently controlled test criteria, and the approved-release policy.
+4. Validator checks: report schema and internal consistency are valid, all independently required mandatory tests are present and passed, and the FCS version is an approved release. It must recompute these checks rather than trust the report's embedded eligibility assessment.
 5. OBL publishes the certificate to Confluence and closes the Salesforce ticket.
 
-The CertificationValidator criteria are driven by configuration, not hardcoded, so they remain accurate as the test suite evolves.
+The CertificationValidator criteria are driven by independently supplied trusted configuration, not hardcoded, so they remain accurate as the test suite evolves. A passing result means the report is certification-ready under those criteria; it is an input to OBL's decision, not a formal certification decision by the tool.
 
-**Result integrity risk:** Reports produced by a locally-run Docker container cannot be cryptographically verified by OBL. This risk is formally accepted for Phase 1. It must be logged on the RAID log with Risk Team sign-off. It is not resolved unless Phase 2 is approved.
+**Result integrity risk:** Reports produced by a locally-run Docker container cannot be cryptographically verified by OBL. The separate trusted criteria can detect missing, failed, skipped, malformed, or inconsistent results, but cannot prove that the locally produced evidence was not deliberately altered. This risk is formally accepted for Phase 1 and must be logged on the RAID log with Risk Team sign-off. Tamper-resistant assurance is deferred to OBL-controlled Phase 2 portal runs.
 
 ---
 
@@ -323,7 +329,7 @@ Documentation lives in the repository as the primary home. In-app contextual hel
 - **Spec versions prior to v3.1.11** — not supported.
 - **cVRP manifest content** — the engine must support new standards by configuration, but cVRP manifest content is a separate deliverable.
 - **Automated certification workflow (Salesforce, Confluence, billing)** — Phase 2.
-- **Portal result integrity verification** — risk accepted for Phase 1.
+- **Tamper-resistant result attestation** — local validation is included, but authenticity and tamper-resistant provenance are deferred to Phase 2 portal-managed runs; risk accepted for Phase 1.
 - **Phase 2 portal** — subject to separate business case approval.
 
 ---
@@ -348,12 +354,13 @@ Documentation lives in the repository as the primary home. In-app contextual hel
 - **Report output format** — detailed format requirements for JSON report and execution log require further discussion.
 - **Decision log format** — informal Jira notes vs repo log file to be agreed.
 - **Logging requirements detail** — structured logging and OWASP A09 compliance requirements to be detailed during design.
+- **Phase 2 result-integrity design** — define controlled execution, plan/result binding, provenance, immutable audit storage, and the assurance status of uploaded local reports.
 
 ---
 
 ## RAID Items to Raise
 
-- **Phase 1 result integrity risk** — Docker-run results can be falsified. Requires formal Risk Team acceptance and RAID log entry. Unresolved if Phase 2 is not approved.
+- **Phase 1 result integrity risk** — Docker-run results can be falsified. Local validation establishes consistency and certification readiness only. Requires formal Risk Team acceptance and RAID log entry; tamper-resistant assurance remains unresolved without OBL-controlled Phase 2 portal runs.
 - **Ozone contract** — Procurement engagement required as critical path action.
 - **Engineering capacity** — BAU, planned leave, competing priorities. Flag impact on Phase 1 timeline.
 - **Single-point-of-failure on Standards team knowledge** — documentation is the mitigation.

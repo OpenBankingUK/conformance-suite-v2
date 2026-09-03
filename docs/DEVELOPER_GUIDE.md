@@ -291,6 +291,18 @@ Participant config may include `approvedReleasePolicyPath` for advisory
 self-assessment in generated reports. OBL-side validation remains authoritative
 and recomputes approved-release status from independently supplied inputs.
 
+For Phase 1, validator authority is limited to consistency and
+certification-readiness. It must derive expected mandatory coverage and approved
+release status from OBL-controlled inputs and must not trust an eligibility
+assessment embedded in the submitted report. A passing validation does not
+cryptographically authenticate a report produced in a participant-controlled
+container.
+
+Tamper-resistant evidence is a Phase 2 portal concern. Portal-managed runs must
+bind a server-validated plan to its results and retain trusted provenance and an
+immutable audit history. Uploaded local reports retain the Phase 1 assurance
+level unless an independently trustworthy attestation can be verified.
+
 ## CI pipeline
 
 GitHub Actions run the same checks as `make check`: ruff, mypy, pytest with
