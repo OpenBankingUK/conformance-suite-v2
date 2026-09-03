@@ -1,5 +1,32 @@
 <section id="scope-options">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
+    {% if direct_endpoints %}
+        {{ form.endpoints.errors }}
+        <section aria-labelledby="direct-endpoints-heading">
+            <h3 id="direct-endpoints-heading">Dynamic Client Registration endpoints</h3>
+            <p class="helper">POST registration is mandatory and locked. Select any implemented registration-management operations.</p>
+            <div class="endpoint-tree">
+                {% for endpoint in direct_endpoints %}
+                    <article class="endpoint-card{% if endpoint.selected %} selected{% endif %}">
+                        <div class="endpoint-heading">
+                            <label>
+                                {% if endpoint.baseline %}
+                                    <input type="hidden" name="endpoints" value="{{ endpoint.id }}">
+                                {% endif %}
+                                <input type="checkbox"
+                                       name="{% if endpoint.baseline %}locked_endpoint{% else %}endpoints{% endif %}"
+                                       value="{{ endpoint.id }}"
+                                       {% if endpoint.selected %}checked{% endif %}
+                                       {% if endpoint.baseline %}disabled aria-disabled="true"{% endif %}>
+                                <strong>{{ endpoint.method }} {{ endpoint.display_path }}</strong>
+                            </label>
+                            <span class="chip">{% if endpoint.baseline %}Required and locked{% else %}Optional endpoint{% endif %}</span>
+                        </div>
+                    </article>
+                {% endfor %}
+            </div>
+        </section>
+    {% else %}
     {{ form.resource_groups.errors }}
 
     <section aria-labelledby="resource-groups-heading">
@@ -20,6 +47,7 @@
                 <div class="message info">No resource groups are available for this catalogue boundary.</div>
             {% endfor %}
         </div>
+        {% endif %}
     </section>
 
     {% if selected_resource_groups %}

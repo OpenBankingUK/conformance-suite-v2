@@ -76,6 +76,7 @@
 
         <form method="post" action="{% url 'builder-security-config' draft.draft_id %}">
             {% csrf_token %}
+            {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="oauth-heading">
                 <h3 id="oauth-heading">OAuth/client</h3>
                 <div class="grid field-row">
@@ -133,7 +134,9 @@
                     </div>
                 </div>
             </section>
+            {% endif %}
 
+            {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="resource-server-heading">
                 <h3 id="resource-server-heading">Resource server targets and headers</h3>
                 <div class="grid field-row">
@@ -145,7 +148,9 @@
                     </div>
                 </div>
             </section>
+            {% endif %}
 
+            {% if not dcr_mode %}
             <section class="config-card" aria-labelledby="signing-heading">
                 <h3 id="signing-heading">FAPI signing and Open Banking signatures</h3>
                 <p class="helper">FAPI signing fields are conditional: if you configure signing, complete every signing field in this section.</p>
@@ -182,10 +187,103 @@
                     </div>
                 </div>
             </section>
+            {% else %}
+            <section class="config-card" aria-labelledby="dcr-heading">
+                <h3 id="dcr-heading">DCR signing and registration claims</h3>
+                <p class="helper">References only: private keys and SSA contents are never embedded in canonical exports. Overrides are optional and used only when values cannot be derived from discovery, the SSA, or certificates.</p>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.dcr_execution_mode.id_for_label }}">Execution mode <span class="requirement-badge required">Required</span></label>
+                        {{ form.dcr_execution_mode.errors }}
+                        <select id="{{ form.dcr_execution_mode.id_for_label }}" name="dcr_execution_mode">
+                            {% for value,label in form.dcr_execution_mode.field.choices %}
+                                <option value="{{ value }}" {% if form.dcr_execution_mode.value == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                        <div class="helper">Certification enforces the OB DCR audience format. Development permits explicit compatibility behavior and is non-certifying.</div>
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_kid.id_for_label }}">Signing key ID <span class="requirement-badge required">Required</span></label>
+                        {{ form.signing_kid.errors }}
+                        <input id="{{ form.signing_kid.id_for_label }}" name="signing_kid" type="text" value="{{ form.signing_kid.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_private_key_path.id_for_label }}">Signing private key absolute path <span class="requirement-badge required">Required</span></label>
+                        {{ form.signing_private_key_path.errors }}
+                        <input id="{{ form.signing_private_key_path.id_for_label }}" name="signing_private_key_path" type="text" value="{{ form.signing_private_key_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_token_endpoint_auth_method.id_for_label }}">Client authentication method <span class="requirement-badge required">Required</span></label>
+                        {{ form.signing_token_endpoint_auth_method.errors }}
+                        <select id="{{ form.signing_token_endpoint_auth_method.id_for_label }}" name="signing_token_endpoint_auth_method">
+                            {% for value,label in form.signing_token_endpoint_auth_method.field.choices %}
+                                <option value="{{ value }}" {% if form.signing_token_endpoint_auth_method.value == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div>
+                        <label for="{{ form.signing_client_auth_algorithm.id_for_label }}">Client authentication signing algorithm <span class="requirement-badge optional">Optional</span></label>
+                        <input id="{{ form.signing_client_auth_algorithm.id_for_label }}" name="signing_client_auth_algorithm" type="text" value="{{ form.signing_client_auth_algorithm.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">Prefer the algorithm advertised by discovery.</div>
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_software_statement_assertion_path.id_for_label }}">Software Statement Assertion absolute path <span class="requirement-badge required">Required</span></label>
+                        {{ form.dcr_software_statement_assertion_path.errors }}
+                        <input id="{{ form.dcr_software_statement_assertion_path.id_for_label }}" name="dcr_software_statement_assertion_path" type="text" value="{{ form.dcr_software_statement_assertion_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_registration_audience.id_for_label }}">Registration audience <span class="requirement-badge required">Required</span></label>
+                        {{ form.dcr_registration_audience.errors }}
+                        <input id="{{ form.dcr_registration_audience.id_for_label }}" name="dcr_registration_audience" type="text" value="{{ form.dcr_registration_audience.value|default_if_none:'' }}" autocomplete="off">
+                        <div class="helper">Open Banking DCR requires the 1-18 character Base62 ASPSP Organisation ID in every execution mode.</div>
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_registration_issuer_override.id_for_label }}">Registration issuer override <span class="requirement-badge optional">Optional</span></label>
+                        {{ form.dcr_registration_issuer_override.errors }}
+                        <input id="{{ form.dcr_registration_issuer_override.id_for_label }}" name="dcr_registration_issuer_override" type="text" value="{{ form.dcr_registration_issuer_override.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_redirect_uris_override.id_for_label }}">Redirect URI overrides <span class="requirement-badge optional">Optional</span></label>
+                        {{ form.dcr_redirect_uris_override.errors }}
+                        <textarea id="{{ form.dcr_redirect_uris_override.id_for_label }}" name="dcr_redirect_uris_override">{{ form.dcr_redirect_uris_override.value|default_if_none:'' }}</textarea>
+                        <div class="helper">One HTTPS URI per line.</div>
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_signing_certificate_path.id_for_label }}">DCR signing certificate absolute path <span class="requirement-badge optional">Optional</span></label>
+                        {{ form.dcr_signing_certificate_path.errors }}
+                        <input id="{{ form.dcr_signing_certificate_path.id_for_label }}" name="dcr_signing_certificate_path" type="text" value="{{ form.dcr_signing_certificate_path.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                    <div>
+                        <label for="{{ form.dcr_transport_subject_dn_override.id_for_label }}">Transport certificate subject-DN override <span class="requirement-badge optional">Optional</span></label>
+                        {{ form.dcr_transport_subject_dn_override.errors }}
+                        <input id="{{ form.dcr_transport_subject_dn_override.id_for_label }}" name="dcr_transport_subject_dn_override" type="text" maxlength="512" value="{{ form.dcr_transport_subject_dn_override.value|default_if_none:'' }}" autocomplete="off">
+                    </div>
+                </div>
+                <div class="field-row">
+                    <label><input name="dcr_use_numeric_oid_subject_dn" type="checkbox" {% if form.dcr_use_numeric_oid_subject_dn.value %}checked{% endif %}> Render certificate subject DN with numeric OIDs</label>
+                    <label><input name="dcr_disable_keep_alive" type="checkbox" {% if form.dcr_disable_keep_alive.value %}checked{% endif %}> Disable HTTP keepalive for runtime compatibility</label>
+                </div>
+                <h3 class="field-row">Reporting metadata</h3>
+                <div class="grid field-row">
+                    <div>
+                        <label for="{{ form.metadata_aspsp_name.id_for_label }}">ASPSP name <span class="requirement-badge optional">Optional</span></label>
+                        <input id="{{ form.metadata_aspsp_name.id_for_label }}" name="metadata_aspsp_name" type="text" value="{{ form.metadata_aspsp_name.value|default_if_none:'' }}">
+                    </div>
+                    <div>
+                        <label for="{{ form.metadata_brand_name.id_for_label }}">Brand name <span class="requirement-badge optional">Optional</span></label>
+                        <input id="{{ form.metadata_brand_name.id_for_label }}" name="metadata_brand_name" type="text" value="{{ form.metadata_brand_name.value|default_if_none:'' }}">
+                    </div>
+                    <div>
+                        <label for="{{ form.metadata_environment_name.id_for_label }}">Environment name <span class="requirement-badge optional">Optional</span></label>
+                        <input id="{{ form.metadata_environment_name.id_for_label }}" name="metadata_environment_name" type="text" value="{{ form.metadata_environment_name.value|default_if_none:'' }}">
+                    </div>
+                </div>
+            </section>
+            {% endif %}
 
             <section class="config-card" aria-labelledby="tls-heading">
                 <h3 id="tls-heading">TLS/certificates</h3>
-                <p class="helper">mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.</p>
+                <p class="helper">{% if dcr_mode %}mTLS client certificate and private key references are required for DCR. The CA bundle is optional.{% else %}mTLS client certificate and private key are conditional: provide both paths together, or leave both blank.{% endif %}</p>
                 <div class="grid field-row">
                     <div>
                         <label for="{{ form.tls_ca_bundle_path.id_for_label }}">CA bundle absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_ca_bundle_path.status label=security_requirements.tls_ca_bundle_path.label only %}</label>
@@ -194,13 +292,13 @@
                         <div class="helper">{{ security_requirements.tls_ca_bundle_path.description }} Type: {{ security_requirements.tls_ca_bundle_path.type_hint }}. {{ security_requirements.tls_ca_bundle_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_certificate_path.status label=security_requirements.tls_client_certificate_path.label only %}</label>
+                        <label for="{{ form.tls_client_certificate_path.id_for_label }}">mTLS client certificate absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_certificate_path.status label=security_requirements.tls_client_certificate_path.label only %}{% endif %}</label>
                         {{ form.tls_client_certificate_path.errors }}
                         <input id="{{ form.tls_client_certificate_path.id_for_label }}" name="tls_client_certificate_path" type="text" value="{{ form.tls_client_certificate_path.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.tls_client_certificate_path.description }} Type: {{ security_requirements.tls_client_certificate_path.type_hint }}. {{ security_requirements.tls_client_certificate_path.requirement }}</div>
                     </div>
                     <div>
-                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key absolute path {% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_private_key_path.status label=security_requirements.tls_client_private_key_path.label only %}</label>
+                        <label for="{{ form.tls_client_private_key_path.id_for_label }}">mTLS client private key absolute path {% if dcr_mode %}<span class="requirement-badge required">Required</span>{% else %}{% include "conformance/partials/builder_requirement_badge.html" with status=security_requirements.tls_client_private_key_path.status label=security_requirements.tls_client_private_key_path.label only %}{% endif %}</label>
                         {{ form.tls_client_private_key_path.errors }}
                         <input id="{{ form.tls_client_private_key_path.id_for_label }}" name="tls_client_private_key_path" type="text" value="{{ form.tls_client_private_key_path.value|default_if_none:'' }}" autocomplete="off">
                         <div class="helper">{{ security_requirements.tls_client_private_key_path.description }} Type: {{ security_requirements.tls_client_private_key_path.type_hint }}. {{ security_requirements.tls_client_private_key_path.requirement }}</div>
@@ -210,7 +308,7 @@
 
             <div class="actions">
                 <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Back to discovery</a>
-                <button type="submit">Continue to resource groups</button>
+                <button type="submit">{% if dcr_mode %}Continue to review{% else %}Continue to resource groups{% endif %}</button>
             </div>
         </form>
     </section>

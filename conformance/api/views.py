@@ -343,7 +343,12 @@ def _api_file_reference_error(
     compiled_plan: CompiledTestPlan,
     runtime_inputs: Mapping[str, JsonValue],
 ) -> JsonResponse | None:
-    """Return a 400 response when an API plan would read server-local files.
+    """Return a 400 response for unsupported API server-local file references.
+
+    DCR plans necessarily use operator-provisioned SSA, mTLS, and signing files.
+    Those canonical references are accepted after shared preparation has verified
+    that they are absolute existing files. Other catalogue runtime file inputs
+    remain rejected at this REST boundary.
 
     Args:
         compiled_plan: Compiled catalogue plan used to identify selected runtime
@@ -354,6 +359,8 @@ def _api_file_reference_error(
         Error response when any selected ``file_reference`` input is supplied,
         otherwise ``None``.
     """
+    if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+        return None
     file_reference_input_ids = sorted(
         trace.input_id
         for trace in compiled_plan.traceability.runtime_input_snapshot

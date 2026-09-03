@@ -24,6 +24,7 @@ from conformance.api.builder_wizard import (
     ScopeSelectionForm,
     SecurityConfigForm,
     WizardRuntimeInputPrompt,
+    boundary_requires_resource_groups,
     business_config_form_initial,
     catalogue_boundary_continue_blocker,
     config_visibility_for_plan_document,
@@ -64,6 +65,7 @@ from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.ozone_client import OzoneClientError, OzoneModelBankClient
+from conformance.plan_configuration import parse_dcr_plan_configuration, validate_dcr_file_references
 from conformance.test_plan_validation import (
     TestPlanValidationError,
     prepare_test_plan_for_run,
@@ -195,6 +197,8 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                     _builder_catalogue_boundary_context(draft=updated_draft, form=form, saved=False),
                     status=400,
                 )
+            if not boundary_requires_resource_groups(selected_boundary):
+                return redirect("builder-scope", draft_id=draft.draft_id)
             return redirect("builder-discovery-config", draft_id=draft.draft_id)
         return render(
             request,
@@ -242,6 +246,8 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
                 endpoint_capability_ids=form.selected_endpoint_capability_ids,
             )
             draft_store.save(updated_draft)
+            if not boundary_requires_resource_groups(boundary):
+                return redirect("builder-discovery-config", draft_id=draft.draft_id)
             return redirect("builder-config", draft_id=draft.draft_id)
         return render(
             request,
@@ -310,6 +316,9 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         return HttpResponseNotFound("Builder draft not found")
     if _draft_boundary(draft) is None:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
+    boundary = _draft_boundary(draft)
+    if boundary is not None and not boundary_requires_resource_groups(boundary):
+        return redirect("builder-discovery-config", draft_id=draft.draft_id)
     if not draft.resource_group_ids:
         return redirect("builder-scope", draft_id=draft.draft_id)
 
@@ -374,7 +383,11 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
 
     if request.method == "POST":
-        form = DiscoveryConfigForm(data=request.POST, initial=discovery_config_form_initial(draft.config))
+        form = DiscoveryConfigForm(
+            data=request.POST,
+            initial=discovery_config_form_initial(draft.config),
+            discovery_required=_is_dcr_draft(draft),
+        )
         if form.is_valid() and form.config is not None:
             updated_config = merge_discovery_config(draft.config, form.config)
             metadata = (
@@ -391,7 +404,10 @@ def builder_discovery_config(request: HttpRequest, draft_id: str) -> HttpRespons
             status=400,
         )
 
-    form = DiscoveryConfigForm(initial=discovery_config_form_initial(draft.config))
+    form = DiscoveryConfigForm(
+        initial=discovery_config_form_initial(draft.config),
+        discovery_required=_is_dcr_draft(draft),
+    )
     return render(
         request,
         "conformance/builder_discovery_config.html",
@@ -420,14 +436,32 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
     if request.method == "POST":
         form = SecurityConfigForm(
             data=request.POST,
-            initial=security_config_form_initial(draft.config, draft.discovery_metadata),
+            initial=security_config_form_initial(
+                draft.config,
+                draft.discovery_metadata,
+                security_environment=draft.security_environment,
+                dynamic_client_registration=draft.dynamic_client_registration,
+                metadata=draft.metadata,
+                execution_mode=draft.execution_mode,
+            ),
+            dcr_mode=_is_dcr_draft(draft),
         )
         if form.is_valid() and form.config is not None:
             updated_config = merge_security_config(draft.config, form.config)
-            validation_error = _validate_model_config(updated_config)
+            validation_error = None if _is_dcr_draft(draft) else _validate_model_config(updated_config)
             if validation_error is None:
-                draft_store.save(draft.with_config(config=updated_config))
-                return redirect("builder-scope", draft_id=draft.draft_id)
+                updated_draft = draft.with_config(config=updated_config)
+                if _is_dcr_draft(draft):
+                    updated_draft = updated_draft.with_plan_context(
+                        security_environment=form.security_environment or {},
+                        business_test_data=draft.business_test_data,
+                        metadata=form.metadata or {},
+                        execution_mode=form.execution_mode or draft.execution_mode,
+                        dynamic_client_registration=form.dynamic_client_registration or {},
+                    )
+                draft_store.save(updated_draft)
+                destination = "builder-review" if _is_dcr_draft(draft) else "builder-scope"
+                return redirect(destination, draft_id=draft.draft_id)
             form.add_error(None, validation_error)
         return render(
             request,
@@ -436,7 +470,17 @@ def builder_security_config(request: HttpRequest, draft_id: str) -> HttpResponse
             status=400,
         )
 
-    form = SecurityConfigForm(initial=security_config_form_initial(draft.config, draft.discovery_metadata))
+    form = SecurityConfigForm(
+        initial=security_config_form_initial(
+            draft.config,
+            draft.discovery_metadata,
+            security_environment=draft.security_environment,
+            dynamic_client_registration=draft.dynamic_client_registration,
+            metadata=draft.metadata,
+            execution_mode=draft.execution_mode,
+        ),
+        dcr_mode=_is_dcr_draft(draft),
+    )
     return render(
         request,
         "conformance/builder_security_config.html",
@@ -557,6 +601,7 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             business_test_data=parsed_document.business_test_data,
             metadata=parsed_document.metadata,
             execution_mode=parsed_document.execution_mode,
+            dynamic_client_registration=parsed_document.dynamic_client_registration,
         )
     )
     draft_store.save(imported_draft)
@@ -850,6 +895,18 @@ def _draft_boundary(draft: BuilderDraft) -> PlanDocumentBoundary | None:
     return PlanDocumentBoundary(scheme=draft.scheme, specification=draft.specification, version=draft.version)
 
 
+def _is_dcr_draft(draft: BuilderDraft) -> bool:
+    """Return whether a browser draft targets Open Banking DCR 3.4.
+
+    Args:
+        draft: Current browser builder draft.
+
+    Returns:
+        True for the DCR specification boundary.
+    """
+    return draft.specification == "dynamic-client-registration" and draft.version == "3.4"
+
+
 def _scope_form_initial(draft: BuilderDraft) -> dict[str, object]:
     """Return initial scope form values from a builder draft.
 
@@ -927,6 +984,7 @@ def _builder_scope_options_context(form: ScopeSelectionForm) -> dict[str, object
         "form": form,
         "hierarchy": form.hierarchy,
         "selected_resource_groups": tuple(group for group in form.hierarchy.resource_groups if group.selected),
+        "direct_endpoints": form.hierarchy.direct_endpoints,
     }
 
 
@@ -996,6 +1054,7 @@ def _builder_security_config_context(
         "form": form,
         "discovery_metadata": _discovery_metadata_context(draft.discovery_metadata),
         "security_requirements": security_field_metadata(),
+        "dcr_mode": _is_dcr_draft(draft),
     }
 
 
@@ -1060,6 +1119,7 @@ def _discovery_metadata_context(discovery_metadata: Mapping[str, JsonValue]) -> 
         "token_endpoint": "Token endpoint",
         "jwks_uri": "JWKS URI",
         "token_endpoint_auth_methods_supported": "Token endpoint auth methods supported",
+        "token_endpoint_auth_signing_alg_values_supported": "Token endpoint auth signing algorithms supported",
         "response_types_supported": "Response types supported",
         "request_object_signing_alg_values_supported": "Request object signing algorithms supported",
     }
@@ -1120,6 +1180,7 @@ def _normalised_discovery_metadata(raw_metadata: Mapping[str, JsonValue]) -> Jso
             metadata[key] = value.strip()
     for key in (
         "token_endpoint_auth_methods_supported",
+        "token_endpoint_auth_signing_alg_values_supported",
         "response_types_supported",
         "request_object_signing_alg_values_supported",
     ):
@@ -1242,7 +1303,7 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
         if boundary_blocker is not None:
             blockers.append(boundary_blocker)
         blockers.extend(f"Required runtime input '{prompt.input_id}' is missing." for prompt in missing_prompts)
-        has_selected_scope = any(
+        has_selected_scope = bool(document.endpoints) or any(
             resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
         )
         if not has_selected_scope:
@@ -1308,6 +1369,14 @@ def _model_config_blockers(document: PlanDocumentV2) -> tuple[str, ...]:
         Empty tuple when the model-bank config is valid, otherwise one blocker.
     """
     try:
+        if document.specification == "dynamic-client-registration":
+            validate_dcr_file_references(
+                parse_dcr_plan_configuration(
+                    document.security_environment,
+                    document.dynamic_client_registration,
+                    document.metadata,
+                )
+            )
         parse_model_bank_config(model_bank_config_from_plan_config(document.config), base_dir=Path.cwd())
     except ConfigError as error:
         return (f"Config validation failed: {error}",)
@@ -1347,7 +1416,11 @@ def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
         endpoint_count = len(state.compiled_plan.traceability.selected_endpoints)
     else:
         endpoint_count = (
-            sum(len(resource_group.endpoints) for resource_group in document.resource_groups)
+            (
+                len(document.endpoints)
+                if document.endpoints
+                else sum(len(resource_group.endpoints) for resource_group in document.resource_groups)
+            )
             if document is not None
             else 0
         )
@@ -2163,6 +2236,16 @@ def _catalogue_trace_summary(result: JsonObject | None) -> dict[str, object] | N
     selected_endpoints = catalogue.get("selectedEndpoints")
     selected_capabilities = catalogue.get("selectedCapabilities")
     non_certifying_reasons = catalogue.get("nonCertifyingReasons")
+    trace_groups = catalogue.get("traceGroups")
+    trace_group_statuses = (
+        [
+            group.get("status")
+            for group in trace_groups
+            if isinstance(group, dict) and isinstance(group.get("status"), str)
+        ]
+        if isinstance(trace_groups, list)
+        else []
+    )
     return {
         "standard": catalogue.get("standard") if isinstance(catalogue.get("standard"), str) else "-",
         "version": catalogue.get("version") if isinstance(catalogue.get("version"), str) else "-",
@@ -2173,6 +2256,10 @@ def _catalogue_trace_summary(result: JsonObject | None) -> dict[str, object] | N
         "generatedCount": len(generated_cases) if isinstance(generated_cases, list) else 0,
         "endpointCount": len(selected_endpoints) if isinstance(selected_endpoints, list) else 0,
         "capabilityCount": len(selected_capabilities) if isinstance(selected_capabilities, list) else 0,
+        "traceGroupCount": len(trace_groups) if isinstance(trace_groups, list) else 0,
+        "traceGroupPassed": sum(status == "passed" for status in trace_group_statuses),
+        "traceGroupFailed": sum(status == "failed" for status in trace_group_statuses),
+        "traceGroupSkipped": sum(status == "skipped" for status in trace_group_statuses),
         "nonCertifyingReasons": non_certifying_reasons if isinstance(non_certifying_reasons, list) else [],
     }
 

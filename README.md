@@ -15,10 +15,11 @@ The supported workflow is:
 4. Enter the single security environment for the plan, starting with the OpenID
    discovery URL and then confirming OAuth/FAPI, mTLS, and resource-server
    values.
-5. Select one or more compatible resource groups, such as Read/Write Account and
-   Transaction or Payment Initiation.
-6. Select implemented endpoints inside the chosen resource groups when the
-   selected specification is catalogue-backed.
+5. For Read/Write, select compatible resource groups and implemented endpoints.
+   For Dynamic Client Registration 3.4, select direct endpoints: POST is always
+   selected and locked; GET, PUT, and DELETE are optional.
+6. Confirm endpoint capabilities. DCR token traffic is generated and is never a
+   participant-selected endpoint.
 7. Review the endpoint capabilities shown inline on each selected endpoint card.
    Required capabilities are checked and locked; optional capabilities are
    unchecked until the participant declares that behaviour as implemented.
@@ -35,8 +36,8 @@ request and assertion details stay collapsed under audit details.
 ## CLI plan execution
 
 The preferred CLI path accepts a canonical JSON-first test plan that contains
-the specification, security environment, resource groups, business test data,
-and reporting metadata in one portable document:
+the specification, security environment, specification-owned scope/config, and
+reporting metadata in one portable document:
 
 ```bash
 uv run python main.py --test-plan path/to/test-plan.json
@@ -93,6 +94,14 @@ CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
 intentionally rejected. Mandatory applicable catalogue tests cannot be
 arbitrarily deselected.
 
+DCR plans instead use family `OBL_DCR`, specification
+`dynamic-client-registration`, version `3.4`, top-level `endpoints`, and
+`dynamicClientRegistration`; they must not contain `resourceGroups` or
+`businessTestData`. See
+[`docs/DCR_3_4_PARITY_CONTRACT.md`](docs/DCR_3_4_PARITY_CONTRACT.md) for the
+complete canonical example, configuration migration, supported auth methods, and
+operator workflow. Legacy `conformance-dcr` JSON is not directly importable.
+
 ## Browser and REST launch
 
 The browser wizard imports, exports, reviews, and launches the same canonical
@@ -118,8 +127,9 @@ Browser exports are secret-safe by default: the generated schemaVersion `1.0`
 test plan preserves resource-group, endpoint, capability, business-data, and
 non-sensitive runtime references, but writes secret-bearing strings as empty strings. A separate
 export-with-secrets action is available for local power-user workflows. Launch
-still uses the sensitive values retained in the same browser session or supplied
-inline by direct CLI/API submission.
+still uses Read/Write runtime values retained in the same browser session or
+supplied by direct CLI/API submission. DCR accepts credential file references
+only, never inline SSA, PEM, assertion, secret, or token material.
 
 Run detail, result downloads, and NDJSON execution logs keep the existing
 masking and evidence behaviour. Result JSON includes the safe test-plan snapshot,
@@ -129,6 +139,13 @@ input snapshots with sensitive values omitted, and non-certifying reasons. Manua
 PSU authorisation handoff URLs remain transient browser state; persisted
 artifacts mask credentials, tokens, request objects, client assertions, detached
 JWS values, and sensitive headers.
+
+DCR results additionally contain ordered scenario → case → step trace groups.
+Unselected optional operations are explicit `skipped` cases/steps with
+`endpoint-not-selected`; prerequisite failures skip dependent runtime steps and
+fail the aggregate run. Automation must use
+`python -m conformance.result_gate out/test-results.json`, which rejects any
+failed structured case or step regardless of console transcript text.
 
 ## Bundled catalogues
 
@@ -140,6 +157,7 @@ The bundled catalogue registry currently covers the legacy FCS baseline for:
 | `open-banking` | `v4.0` | `pis` |
 | `open-banking` | `v4.0` | `cbpii` |
 | `open-banking` | `v4.0` | `vrp` |
+| `open-banking` | `v3.4` | `dcr` |
 
 Each catalogue case carries traceability back to the relevant legacy FCS
 coverage in its compliance scope. Each catalogue can also define endpoint-scoped
@@ -147,9 +165,9 @@ capabilities that explain baseline and optional implementation coverage without
 turning generated tests into participant selections. The hand-maintained mapping
 lives in `docs/FCS_LEGACY_BENCHMARK_MAPPING.md`.
 
-The browser catalogue selector also lists Dynamic Client Registration v3.4 as a
-selector-only example. It deliberately hides Read/Write resource groups and
-blocks continuation until DCR catalogue coverage is implemented.
+Dynamic Client Registration 3.4 is first-class across browser, CLI, and local
+REST execution. It has no resource-group page or resource-server/business-data
+configuration.
 
 ## Outputs and exit codes
 

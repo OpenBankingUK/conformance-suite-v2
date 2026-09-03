@@ -291,6 +291,22 @@ def _compiled_plan_steps_snapshot(compiled_plan: CompiledTestPlan) -> tuple[RunP
             )
         )
     for test_case in compiled_plan.test_cases:
+        if test_case.execution_steps:
+            trace_group_id = test_case.trace_group.group_id if test_case.trace_group is not None else "catalogue"
+            for execution_step in test_case.execution_steps:
+                planned_steps.append(
+                    RunPlanStep(
+                        step_id=execution_step.step_id,
+                        name=execution_step.name,
+                        kind=execution_step.kind,
+                        group=f"{trace_group_id} / {test_case.test_case_id}",
+                        phase=test_case.role,
+                        mandatory=test_case.mandatory,
+                        optional=not test_case.mandatory,
+                        order=len(planned_steps),
+                    )
+                )
+            continue
         for request_step in test_case.request_steps:
             replacement_steps = _compiled_plan_replacement_steps_snapshot(
                 compiled_plan,

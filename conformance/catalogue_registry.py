@@ -6,6 +6,7 @@ from conformance.catalogue import CatalogueError, CatalogueKey, TestCatalogue
 from conformance.catalogues import (
     AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
     CBPII_FCS_CATALOGUE,
+    DCR_3_4_CATALOGUE,
     PIS_PAYMENT_CATALOGUE,
     VRP_LEGACY_FCS_CATALOGUE,
 )
@@ -15,6 +16,7 @@ _BUNDLED_CATALOGUES: tuple[TestCatalogue, ...] = (
     PIS_PAYMENT_CATALOGUE,
     CBPII_FCS_CATALOGUE,
     VRP_LEGACY_FCS_CATALOGUE,
+    DCR_3_4_CATALOGUE,
 )
 """Catalogue set available to plan-spec compilation without external plugins."""
 

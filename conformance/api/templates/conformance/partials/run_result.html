@@ -46,6 +46,12 @@
                 <div class="metric"><strong>{{ catalogue_trace_summary.generatedCount }}</strong><span>Generated test cases</span></div>
                 <div class="metric"><strong>{{ catalogue_trace_summary.endpointCount }}</strong><span>Selected endpoints</span></div>
                 <div class="metric"><strong>{{ catalogue_trace_summary.capabilityCount }}</strong><span>Selected capabilities</span></div>
+                {% if catalogue_trace_summary.traceGroupCount %}
+                    <div class="metric"><strong>{{ catalogue_trace_summary.traceGroupCount }}</strong><span>Trace scenarios</span></div>
+                    <div class="metric"><strong>{{ catalogue_trace_summary.traceGroupPassed }}</strong><span>Scenarios passed</span></div>
+                    <div class="metric"><strong>{{ catalogue_trace_summary.traceGroupFailed }}</strong><span>Scenarios failed</span></div>
+                    <div class="metric"><strong>{{ catalogue_trace_summary.traceGroupSkipped }}</strong><span>Scenarios skipped</span></div>
+                {% endif %}
             </div>
             {% if catalogue_trace_summary.nonCertifyingReasons %}
                 <ul class="issue-list">

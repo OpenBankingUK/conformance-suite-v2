@@ -45,7 +45,7 @@
 
     <section class="panel" aria-labelledby="discovery-heading">
         <h2 id="discovery-heading">OpenID discovery</h2>
-        <p class="helper">Optionally enter the `.well-known/openid-configuration` URL for this executable test plan. The builder will try to fetch metadata for the next security step, but you can leave it blank and fill values manually.</p>
+        <p class="helper">{% if draft.specification == "dynamic-client-registration" %}Enter the required `.well-known/openid-configuration` URL. DCR endpoints and token authentication metadata are derived from discovery.{% else %}Optionally enter the `.well-known/openid-configuration` URL for this executable test plan. The builder will try to fetch metadata for the next security step, but you can leave it blank and fill values manually.{% endif %}</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         {% if discovery_metadata.fetch_error %}

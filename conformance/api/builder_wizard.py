@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Iterable, Mapping, MutableMapping
 from dataclasses import dataclass
 from hashlib import sha256
@@ -19,6 +20,7 @@ from conformance.catalogue import (
     HttpMethod,
     PlanDocumentBoundary,
     PlanDocumentV2,
+    PlanExecutionMode,
     RuntimeInputRequirement,
     SecurityProfile,
     TestCatalogue,
@@ -33,16 +35,17 @@ from conformance.catalogue import (
 from conformance.catalogue_registry import supported_catalogues
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.specification_registry import (
+    specification_for_boundary,
+    supported_specifications,
+)
 from conformance.test_plan_validation import safe_test_plan_snapshot
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url
 
-_SCHEME_LABELS = {"open-banking-uk": "Open Banking UK"}
+_SCHEME_LABELS = {definition.scheme: definition.scheme_display_name for definition in supported_specifications()}
 """Participant-facing labels for supported v2 plan schemes."""
 
-_DCR_SPECIFICATION = "dynamic-client-registration"
-"""User-facing v2 specification id for Dynamic Client Registration."""
-
-_SPECIFICATION_LABELS = {"read-write": "Read/Write", _DCR_SPECIFICATION: "Dynamic Client Registration (DCR)"}
+_SPECIFICATION_LABELS = {definition.specification: definition.display_name for definition in supported_specifications()}
 """Participant-facing labels for supported v2 plan specifications."""
 
 _API_LABELS = {
@@ -169,10 +172,24 @@ _RESOURCE_GROUP_METADATA_BY_API = {
 }
 """High-level resource groups shown by the Read/Write wizard."""
 
-_SELECTOR_ONLY_BOUNDARIES = (
-    PlanDocumentBoundary(scheme="open-banking-uk", specification=_DCR_SPECIFICATION, version="3.4"),
+_REGISTERED_BOUNDARIES = tuple(
+    PlanDocumentBoundary(
+        scheme=definition.scheme,
+        specification=definition.specification,
+        version=version.version,
+    )
+    for definition in supported_specifications()
+    for version in definition.versions
 )
-"""Plan boundaries shown in the wizard before catalogue compilation support exists."""
+"""Plan boundaries declared by the narrow specification registry."""
+
+_DCR_ENDPOINTS: tuple[tuple[HttpMethod, str, str, bool], ...] = (
+    ("POST", "/register", "RegisterClient", True),
+    ("GET", "/register/{ClientId}", "GetClient", False),
+    ("PUT", "/register/{ClientId}", "UpdateClient", False),
+    ("DELETE", "/register/{ClientId}", "DeleteClient", False),
+)
+"""Participant-selectable DCR endpoints; POST registration is mandatory."""
 
 
 @dataclass(frozen=True)
@@ -306,15 +323,18 @@ class ResourceGroupOption:
 
 @dataclass(frozen=True)
 class CatalogueScopeHierarchy:
-    """Catalogue-derived resource/endpoints/features tree for wizard step two.
+    """Specification-aware resource-group or direct-endpoint wizard scope.
 
     Attributes:
         boundary: User-facing scheme/specification/version boundary.
         resource_groups: Resource groups available under the boundary.
+        direct_endpoints: Direct endpoint options for specifications without
+            resource groups.
     """
 
     boundary: PlanDocumentBoundary
     resource_groups: tuple[ResourceGroupOption, ...]
+    direct_endpoints: tuple[EndpointOption, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -851,6 +871,13 @@ class ScopeSelectionForm(forms.Form):
         selected_group_ids = set(_cleaned_string_tuple(cleaned_data.get("resource_groups")))
         selected_endpoint_ids = set(_cleaned_string_tuple(cleaned_data.get("endpoints")))
         endpoint_options = {endpoint.id: endpoint for endpoint in _endpoint_options(self.hierarchy)}
+        if self.hierarchy.direct_endpoints:
+            mandatory_endpoint_ids = {endpoint.id for endpoint in endpoint_options.values() if endpoint.baseline}
+            selected_endpoint_ids.update(mandatory_endpoint_ids)
+            cleaned_data["endpoints"] = tuple(
+                endpoint.id for endpoint in _endpoint_options(self.hierarchy) if endpoint.id in selected_endpoint_ids
+            )
+            return cleaned_data
         for endpoint_id in selected_endpoint_ids:
             endpoint = endpoint_options.get(endpoint_id)
             if endpoint is not None and endpoint.resource_group_id not in selected_group_ids:
@@ -1321,17 +1348,20 @@ class DiscoveryConfigForm(forms.Form):
         data: Mapping[str, object] | None = None,
         *,
         initial: Mapping[str, object] | None = None,
+        discovery_required: bool = False,
     ) -> None:
         """Initialise the discovery config form.
 
         Args:
             data: Optional bound form data.
             initial: Initial values decoded from the draft config.
+            discovery_required: Whether the selected specification mandates discovery.
         """
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
+        self.fields["discovery_url"].required = discovery_required
 
     def clean_discovery_url(self) -> str:
         """Validate the submitted OpenID discovery URL.
@@ -1387,7 +1417,24 @@ class SecurityConfigForm(forms.Form):
         tls_ca_bundle_path: Optional absolute CA bundle path.
         tls_client_certificate_path: Optional absolute mTLS client certificate path.
         tls_client_private_key_path: Optional absolute mTLS private-key path.
+        dcr_software_statement_assertion_path: Required DCR SSA file reference.
+        dcr_registration_audience: Required Base62 ASPSP audience identifier.
+        dcr_execution_mode: Certification or development execution mode.
+        dcr_registration_issuer_override: Optional DCR issuer override.
+        dcr_redirect_uris_override: Optional newline-separated redirect overrides.
+        dcr_signing_certificate_path: Optional DCR signing certificate reference.
+        dcr_transport_subject_dn_override: Optional transport certificate subject DN.
+        dcr_use_numeric_oid_subject_dn: Numeric OID subject-DN rendering switch.
+        dcr_disable_keep_alive: Explicit DCR transport compatibility switch.
+        metadata_aspsp_name: Shared ASPSP reporting name.
+        metadata_brand_name: Shared brand reporting name.
+        metadata_environment_name: Shared environment reporting name.
+        signing_client_auth_algorithm: Optional client-auth signing algorithm.
         config: Parsed partial v2 config owned by this step.
+        security_environment: Canonical shared security values emitted in DCR mode.
+        dynamic_client_registration: Canonical DCR-only values emitted in DCR mode.
+        metadata: Canonical reporting metadata emitted in DCR mode.
+        execution_mode: Canonical execution mode emitted in DCR mode.
     """
 
     oauth_client_id: forms.CharField = forms.CharField(label="Client ID", required=False)
@@ -1434,14 +1481,58 @@ class SecurityConfigForm(forms.Form):
         label="mTLS client private key absolute path",
         required=False,
     )
+    dcr_software_statement_assertion_path: forms.CharField = forms.CharField(
+        label="Software Statement Assertion absolute path",
+        required=False,
+    )
+    dcr_registration_audience: forms.CharField = forms.CharField(
+        label="ASPSP registration audience identifier",
+        required=False,
+    )
+    dcr_execution_mode: forms.ChoiceField = forms.ChoiceField(
+        label="Execution mode",
+        choices=(("certification", "Certification"), ("development", "Development")),
+        required=False,
+    )
+    dcr_registration_issuer_override: forms.CharField = forms.CharField(
+        label="Registration issuer override",
+        required=False,
+    )
+    dcr_redirect_uris_override: forms.CharField = forms.CharField(
+        label="Redirect URI overrides",
+        required=False,
+        widget=forms.Textarea,
+    )
+    dcr_signing_certificate_path: forms.CharField = forms.CharField(
+        label="DCR signing certificate absolute path",
+        required=False,
+    )
+    dcr_transport_subject_dn_override: forms.CharField = forms.CharField(
+        label="Transport certificate subject-DN override",
+        required=False,
+    )
+    dcr_use_numeric_oid_subject_dn: forms.BooleanField = forms.BooleanField(required=False)
+    dcr_disable_keep_alive: forms.BooleanField = forms.BooleanField(required=False)
+    metadata_aspsp_name: forms.CharField = forms.CharField(label="ASPSP name", required=False)
+    metadata_brand_name: forms.CharField = forms.CharField(label="Brand name", required=False)
+    metadata_environment_name: forms.CharField = forms.CharField(label="Environment name", required=False)
+    signing_client_auth_algorithm: forms.CharField = forms.CharField(
+        label="Client authentication signing algorithm",
+        required=False,
+    )
 
     config: JsonObject | None = None
+    security_environment: JsonObject | None = None
+    dynamic_client_registration: JsonObject | None = None
+    metadata: JsonObject | None = None
+    execution_mode: PlanExecutionMode | None = None
 
     def __init__(
         self,
         data: Mapping[str, object] | None = None,
         *,
         initial: Mapping[str, object] | None = None,
+        dcr_mode: bool = False,
     ) -> None:
         """Initialise the OAuth/FAPI/security config form.
 
@@ -1449,16 +1540,38 @@ class SecurityConfigForm(forms.Form):
             data: Optional bound form data.
             initial: Initial values decoded from draft config and discovery
                 helper metadata.
+            dcr_mode: Whether to apply DCR-specific fields and requiredness.
         """
+        self.dcr_mode = dcr_mode
         super().__init__(
             data=cast(MutableMapping[str, object] | None, data),
             initial=cast(MutableMapping[str, object] | None, initial),
         )
-        cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = [
+        auth_choices = [
             ("", "Select auth method"),
             ("private_key_jwt", "private_key_jwt"),
             ("tls_client_auth", "tls_client_auth"),
         ]
+        if dcr_mode:
+            auth_choices.extend(
+                [
+                    ("client_secret_jwt", "client_secret_jwt"),
+                    ("client_secret_basic", "client_secret_basic"),
+                ]
+            )
+        cast(forms.ChoiceField, self.fields["signing_token_endpoint_auth_method"]).choices = auth_choices
+        if dcr_mode:
+            for name in (
+                "signing_private_key_path",
+                "signing_kid",
+                "signing_token_endpoint_auth_method",
+                "tls_client_certificate_path",
+                "tls_client_private_key_path",
+                "dcr_software_statement_assertion_path",
+                "dcr_registration_audience",
+                "dcr_execution_mode",
+            ):
+                self.fields[name].required = True
 
     def clean(self) -> dict[str, object]:
         """Build and validate the security partial config.
@@ -1478,7 +1591,9 @@ class SecurityConfigForm(forms.Form):
             "signing_client_assertion_subject",
             "signing_token_endpoint_auth_method",
         )
-        if any(_cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields):
+        if not self.dcr_mode and any(
+            _cleaned_optional_string(cleaned_data.get(field_name)) is not None for field_name in signing_fields
+        ):
             for field_name in signing_fields:
                 if _cleaned_optional_string(cleaned_data.get(field_name)) is None:
                     self.add_error(field_name, "Complete every FAPI signing field, or leave the whole group blank.")
@@ -1494,7 +1609,17 @@ class SecurityConfigForm(forms.Form):
 
         if self.errors:
             return cleaned_data
-        self.config = _security_config_from_fields(cleaned_data)
+        if self.dcr_mode:
+            _validate_dcr_form_fields(self, cleaned_data)
+            if self.errors:
+                return cleaned_data
+            self.config = {}
+            self.security_environment = _dcr_security_environment_from_fields(cleaned_data)
+            self.dynamic_client_registration = _dcr_config_from_fields(cleaned_data)
+            self.metadata = _dcr_metadata_from_fields(cleaned_data)
+            self.execution_mode = cast(PlanExecutionMode, cleaned_data["dcr_execution_mode"])
+        else:
+            self.config = _security_config_from_fields(cleaned_data)
         return cleaned_data
 
 
@@ -1566,15 +1691,14 @@ class RuntimeInputsConfigForm(forms.Form):
 
 
 def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
-    """Return v2 plan boundaries shown by the wizard.
+    """Return canonical plan boundaries shown by the wizard.
 
     Returns:
-        User-facing catalogue boundaries, including catalogue-backed options and
-        selector-only examples.
+        Catalogue-backed boundaries followed by registered future boundaries.
     """
     catalogue_backed_boundaries = supported_plan_document_boundaries(supported_catalogues())
     return catalogue_backed_boundaries + tuple(
-        boundary for boundary in _SELECTOR_ONLY_BOUNDARIES if boundary not in catalogue_backed_boundaries
+        boundary for boundary in _REGISTERED_BOUNDARIES if boundary not in catalogue_backed_boundaries
     )
 
 
@@ -1587,11 +1711,19 @@ def boundary_requires_resource_groups(boundary: PlanDocumentBoundary) -> bool:
     Returns:
         True when the boundary uses Read/Write-style resource groups.
     """
-    return not boundary_is_selector_only(boundary)
+    try:
+        definition, _version = specification_for_boundary(
+            boundary.scheme,
+            boundary.specification,
+            boundary.version,
+        )
+    except ValueError:
+        return True
+    return definition.uses_resource_groups
 
 
 def boundary_is_selector_only(boundary: PlanDocumentBoundary) -> bool:
-    """Return whether a boundary is present only for selector UX demonstration.
+    """Return whether a registered boundary has no executable catalogue.
 
     Args:
         boundary: User-facing scheme/specification/version boundary.
@@ -1600,7 +1732,9 @@ def boundary_is_selector_only(boundary: PlanDocumentBoundary) -> bool:
         True when the wizard can display the boundary but cannot compile or
         launch plans for it yet.
     """
-    return boundary in _SELECTOR_ONLY_BOUNDARIES
+    return boundary in _REGISTERED_BOUNDARIES and boundary not in supported_plan_document_boundaries(
+        supported_catalogues()
+    )
 
 
 def catalogue_boundary_continue_blocker(boundary: PlanDocumentBoundary) -> str | None:
@@ -1610,15 +1744,12 @@ def catalogue_boundary_continue_blocker(boundary: PlanDocumentBoundary) -> str |
         boundary: User-facing scheme/specification/version boundary.
 
     Returns:
-        Blocking message for selector-only boundaries, otherwise ``None``.
+        Generic blocking message for unavailable future boundaries, otherwise
+        ``None``.
     """
     if not boundary_is_selector_only(boundary):
         return None
-    return (
-        "Dynamic Client Registration v3.4 is shown as a selector-only example. "
-        "DCR catalogue coverage is not implemented yet, so this builder cannot "
-        "continue to endpoints or launch a DCR plan."
-    )
+    return f"{boundary.scheme}/{boundary.specification}/{boundary.version} does not have an executable catalogue yet."
 
 
 def catalogue_scope_hierarchy(
@@ -1648,8 +1779,26 @@ def catalogue_scope_hierarchy(
     Raises:
         CatalogueError: If the boundary has no backing catalogue areas.
     """
-    if boundary_is_selector_only(boundary):
-        return CatalogueScopeHierarchy(boundary=boundary, resource_groups=())
+    if not boundary_requires_resource_groups(boundary):
+        selected_endpoints = set(selected_endpoint_ids)
+        options = tuple(
+            EndpointOption(
+                id=_endpoint_id("dcr", EndpointRef(method=method, path=path)),
+                method=method,
+                path=path,
+                display_path=path,
+                operation_id=operation_id,
+                api="dcr",
+                api_label="DCR",
+                resource_group_id="",
+                resource_group_label="",
+                baseline=required,
+                selected=required or _endpoint_id("dcr", EndpointRef(method=method, path=path)) in selected_endpoints,
+                features=(),
+            )
+            for method, path, operation_id, required in _DCR_ENDPOINTS
+        )
+        return CatalogueScopeHierarchy(boundary=boundary, resource_groups=(), direct_endpoints=options)
 
     selected_endpoints = set(selected_endpoint_ids)
     candidate_catalogues = catalogue_areas_for_plan_document_boundary(
@@ -1986,12 +2135,21 @@ def discovery_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, 
 def security_config_form_initial(
     config: Mapping[str, JsonValue],
     discovery_metadata: Mapping[str, JsonValue],
+    *,
+    security_environment: Mapping[str, JsonValue] | None = None,
+    dynamic_client_registration: Mapping[str, JsonValue] | None = None,
+    metadata: Mapping[str, JsonValue] | None = None,
+    execution_mode: PlanExecutionMode = "certification",
 ) -> dict[str, object]:
     """Return security form initial values from config and discovery metadata.
 
     Args:
         config: Draft executable config object.
         discovery_metadata: Session-only discovery metadata used for defaults.
+        security_environment: Optional canonical shared security configuration.
+        dynamic_client_registration: Optional canonical DCR-only configuration.
+        metadata: Optional canonical shared reporting metadata.
+        execution_mode: Canonical execution mode used by DCR audience controls.
 
     Returns:
         Initial form values keyed by security field name.
@@ -2032,6 +2190,63 @@ def security_config_form_initial(
         "tls_client_certificate_path": _string_config_value(tls, "clientCertificatePath"),
         "tls_client_private_key_path": _string_config_value(tls, "clientPrivateKeyPath"),
     }
+    canonical_security = security_environment or {}
+    canonical_mtls = _object_config_value(canonical_security, "mtls")
+    dcr = dynamic_client_registration or {}
+    reporting_metadata = metadata or {}
+    if canonical_security:
+        initial.update(
+            {
+                "signing_private_key_path": _string_config_value(
+                    canonical_security,
+                    "signingPrivateKeyPath",
+                ),
+                "signing_kid": _string_config_value(canonical_security, "signingKeyId"),
+                "signing_token_endpoint_auth_method": _string_config_value(
+                    canonical_security,
+                    "clientAuthMethod",
+                ),
+                "signing_client_auth_algorithm": _string_config_value(
+                    canonical_security,
+                    "clientAuthSigningAlgorithm",
+                )
+                or _single_discovery_list_value(
+                    discovery_metadata,
+                    "token_endpoint_auth_signing_alg_values_supported",
+                ),
+                "tls_ca_bundle_path": _string_config_value(canonical_mtls, "caBundlePath"),
+                "tls_client_certificate_path": _string_config_value(canonical_mtls, "certificatePath"),
+                "tls_client_private_key_path": _string_config_value(canonical_mtls, "privateKeyPath"),
+            }
+        )
+    initial.update(
+        {
+            "dcr_software_statement_assertion_path": _string_config_value(
+                dcr,
+                "softwareStatementAssertionPath",
+            ),
+            "dcr_registration_audience": _string_config_value(
+                dcr,
+                "registrationAudience",
+            ),
+            "dcr_execution_mode": execution_mode,
+            "dcr_registration_issuer_override": _string_config_value(
+                dcr,
+                "registrationIssuerOverride",
+            ),
+            "dcr_redirect_uris_override": "\n".join(_string_list_config_value(dcr, "redirectUrisOverride")),
+            "dcr_signing_certificate_path": _string_config_value(dcr, "signingCertificatePath"),
+            "dcr_transport_subject_dn_override": _string_config_value(
+                dcr,
+                "transportCertificateSubjectDnOverride",
+            ),
+            "dcr_use_numeric_oid_subject_dn": dcr.get("useNumericOidSubjectDn") is True,
+            "dcr_disable_keep_alive": dcr.get("disableKeepAlive") is True,
+            "metadata_aspsp_name": _string_config_value(reporting_metadata, "aspspName"),
+            "metadata_brand_name": _string_config_value(reporting_metadata, "brandName"),
+            "metadata_environment_name": _string_config_value(reporting_metadata, "environmentName"),
+        }
+    )
     return initial
 
 
@@ -2146,6 +2361,48 @@ def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonVa
         selected_endpoint_ids=draft.endpoint_ids,
         selected_capability_values=endpoint_capability_values_from_mapping(draft.endpoint_capability_ids),
     )
+    if hierarchy.direct_endpoints:
+        selected_endpoint_ids = set(draft.endpoint_ids)
+        selected_endpoint_ids.update(endpoint.id for endpoint in hierarchy.direct_endpoints if endpoint.baseline)
+        known_endpoint_ids = {endpoint.id for endpoint in hierarchy.direct_endpoints}
+        unknown_endpoint_ids = selected_endpoint_ids - known_endpoint_ids
+        if unknown_endpoint_ids:
+            raise CatalogueError(f"Unknown endpoint id(s): {', '.join(sorted(unknown_endpoint_ids))}")
+        dcr_raw_endpoints: list[JsonValue] = []
+        for endpoint in hierarchy.direct_endpoints:
+            if endpoint.id not in selected_endpoint_ids:
+                continue
+            dcr_raw_endpoints.append(
+                {
+                    "method": endpoint.method,
+                    "path": endpoint.path,
+                    "operationId": endpoint.operation_id,
+                    "required": endpoint.baseline,
+                    "locked": endpoint.baseline,
+                }
+            )
+        config_object = _copy_json_mapping(config if config is not None else draft.config)
+        dcr_raw_plan: JsonObject = {
+            "schemaVersion": "1.0",
+            "specification": {
+                "family": "OBL_DCR",
+                "scheme": boundary.scheme,
+                "name": boundary.specification,
+                "version": boundary.version,
+            },
+            "executionMode": draft.execution_mode,
+            "securityEnvironment": _merged_plan_context(
+                draft.security_environment,
+                security_environment_from_plan_config(config_object),
+            ),
+            "endpoints": dcr_raw_endpoints,
+            "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
+            "metadata": _copy_json_mapping(draft.metadata),
+        }
+        document = parse_test_plan_document(dcr_raw_plan)
+        if not isinstance(document, PlanDocumentV2):
+            raise CatalogueError("Builder drafts must produce a canonical test plan document")
+        return document
     selected_group_ids = _normalized_resource_group_ids_for_hierarchy(draft.resource_group_ids, hierarchy=hierarchy)
     selected_endpoint_ids = set(draft.endpoint_ids)
     known_group_ids = {group.id for group in hierarchy.resource_groups}
@@ -2299,6 +2556,16 @@ def draft_scope_from_plan_document(
     resource_group_ids: list[str] = []
     endpoint_ids: list[str] = []
     capability_ids_by_endpoint: dict[str, tuple[str, ...]] = {}
+    if document.endpoints:
+        hierarchy = catalogue_scope_hierarchy(
+            PlanDocumentBoundary(document.scheme, document.specification, document.version)
+        )
+        options_by_ref = {(endpoint.method, endpoint.path): endpoint.id for endpoint in hierarchy.direct_endpoints}
+        for endpoint in document.endpoints:
+            endpoint_id = options_by_ref.get((endpoint.method, endpoint.path))
+            if endpoint_id is not None:
+                endpoint_ids.append(endpoint_id)
+        return (), tuple(endpoint_ids), {}
     for resource_group in document.resource_groups:
         api = _api_from_resource_group_id(resource_group.resource_group_id)
         resource_group_id = _resource_group_id(api) if api is not None else resource_group.resource_group_id
@@ -2357,7 +2624,9 @@ def runtime_input_prompts_for_plan_document(document: PlanDocumentV2) -> tuple[W
     Raises:
         CatalogueError: If endpoint scope cannot be compiled.
     """
-    if not any(resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups):
+    if not document.endpoints and not any(
+        resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
+    ):
         return ()
     boundary_requirements = _runtime_requirements_for_boundary(
         PlanDocumentBoundary(document.scheme, document.specification, document.version)
@@ -2779,7 +3048,9 @@ def _endpoint_options(hierarchy: CatalogueScopeHierarchy) -> tuple[EndpointOptio
     Returns:
         Flattened endpoint options from selected resource groups.
     """
-    return tuple(endpoint for group in hierarchy.resource_groups for endpoint in group.endpoints)
+    return hierarchy.direct_endpoints + tuple(
+        endpoint for group in hierarchy.resource_groups for endpoint in group.endpoints
+    )
 
 
 def _feature_options(hierarchy: CatalogueScopeHierarchy) -> tuple[FeatureOption, ...]:
@@ -3242,6 +3513,139 @@ def _security_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObje
     return config
 
 
+def _dcr_security_environment_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+    """Build canonical shared security fields entered for a DCR plan.
+
+    Args:
+        cleaned_data: Cleaned DCR security form values.
+
+    Returns:
+        Canonical ``securityEnvironment`` values excluding discovery.
+    """
+    environment: JsonObject = {
+        "signingPrivateKeyPath": cast(str, cleaned_data["signing_private_key_path"]).strip(),
+        "signingKeyId": cast(str, cleaned_data["signing_kid"]).strip(),
+        "clientAuthMethod": cast(str, cleaned_data["signing_token_endpoint_auth_method"]).strip(),
+        "signingAlgorithm": "PS256",
+    }
+    _set_optional_string(
+        environment,
+        "clientAuthSigningAlgorithm",
+        cleaned_data.get("signing_client_auth_algorithm"),
+    )
+    mtls: JsonObject = {
+        "enabled": True,
+        "certificatePath": cast(str, cleaned_data["tls_client_certificate_path"]).strip(),
+        "privateKeyPath": cast(str, cleaned_data["tls_client_private_key_path"]).strip(),
+    }
+    _set_optional_string(mtls, "caBundlePath", cleaned_data.get("tls_ca_bundle_path"))
+    environment["mtls"] = mtls
+    return environment
+
+
+def _dcr_config_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+    """Build canonical DCR-only configuration from form fields.
+
+    Args:
+        cleaned_data: Cleaned DCR security form values.
+
+    Returns:
+        Canonical ``dynamicClientRegistration`` object.
+    """
+    config: JsonObject = {
+        "softwareStatementAssertionPath": cast(
+            str,
+            cleaned_data["dcr_software_statement_assertion_path"],
+        ).strip(),
+        "registrationAudience": cast(str, cleaned_data["dcr_registration_audience"]).strip(),
+        "useNumericOidSubjectDn": cleaned_data.get("dcr_use_numeric_oid_subject_dn") is True,
+        "disableKeepAlive": cleaned_data.get("dcr_disable_keep_alive") is True,
+    }
+    _set_optional_string(
+        config,
+        "registrationIssuerOverride",
+        cleaned_data.get("dcr_registration_issuer_override"),
+    )
+    redirects = _dcr_redirect_uri_lines(cleaned_data.get("dcr_redirect_uris_override"))
+    if redirects:
+        config["redirectUrisOverride"] = list(redirects)
+    _set_optional_string(config, "signingCertificatePath", cleaned_data.get("dcr_signing_certificate_path"))
+    _set_optional_string(
+        config,
+        "transportCertificateSubjectDnOverride",
+        cleaned_data.get("dcr_transport_subject_dn_override"),
+    )
+    return config
+
+
+def _dcr_metadata_from_fields(cleaned_data: Mapping[str, object]) -> JsonObject:
+    """Build shared canonical reporting metadata from DCR form fields.
+
+    Args:
+        cleaned_data: Cleaned DCR security form values.
+
+    Returns:
+        Canonical non-secret metadata object.
+    """
+    metadata: JsonObject = {}
+    _set_optional_string(metadata, "aspspName", cleaned_data.get("metadata_aspsp_name"))
+    _set_optional_string(metadata, "brandName", cleaned_data.get("metadata_brand_name"))
+    _set_optional_string(metadata, "environmentName", cleaned_data.get("metadata_environment_name"))
+    return metadata
+
+
+def _validate_dcr_form_fields(form: SecurityConfigForm, cleaned_data: Mapping[str, object]) -> None:
+    """Add DCR URL, path, and subject-DN errors to a security form.
+
+    Args:
+        form: Bound DCR security form to update.
+        cleaned_data: Cleaned form values to validate.
+    """
+    for field_name in (
+        "signing_private_key_path",
+        "tls_ca_bundle_path",
+        "tls_client_certificate_path",
+        "tls_client_private_key_path",
+        "dcr_software_statement_assertion_path",
+        "dcr_signing_certificate_path",
+    ):
+        value = _cleaned_optional_string(cleaned_data.get(field_name))
+        if value is not None and not Path(value).is_absolute():
+            form.add_error(field_name, "Enter an absolute file path.")
+    audience = _cleaned_optional_string(cleaned_data.get("dcr_registration_audience"))
+    if audience is None or re.fullmatch(r"[0-9A-Za-z]{1,18}", audience) is None:
+        form.add_error(
+            "dcr_registration_audience",
+            "Enter the 1 to 18 character Base62 ASPSP identifier required by Open Banking DCR.",
+        )
+    for redirect in _dcr_redirect_uri_lines(cleaned_data.get("dcr_redirect_uris_override")):
+        try:
+            validate_https_url(redirect, label="Redirect URI override")
+        except HttpsUrlValidationError as error:
+            form.add_error("dcr_redirect_uris_override", str(error))
+    subject_dn = _cleaned_optional_string(cleaned_data.get("dcr_transport_subject_dn_override"))
+    if subject_dn is not None and (
+        len(subject_dn) > 512 or "=" not in subject_dn or any(ord(char) < 32 for char in subject_dn)
+    ):
+        form.add_error(
+            "dcr_transport_subject_dn_override",
+            "Enter an RFC 2253-style subject DN no longer than 512 characters.",
+        )
+
+
+def _dcr_redirect_uri_lines(value: object) -> tuple[str, ...]:
+    """Parse newline-separated DCR redirect URI overrides.
+
+    Args:
+        value: Raw or cleaned form value.
+
+    Returns:
+        Non-empty trimmed redirect URI values.
+    """
+    text = _cleaned_optional_string(value)
+    return () if text is None else tuple(line.strip() for line in text.splitlines() if line.strip())
+
+
 def _set_object_from_fields_or_json(
     target: JsonObject,
     key: str,
@@ -3610,6 +4014,8 @@ def _plan_document_with_config(document: PlanDocumentV2, config: Mapping[str, Js
         business_test_data=document.business_test_data,
         metadata=document.metadata,
         execution_mode=document.execution_mode,
+        endpoints=document.endpoints,
+        dynamic_client_registration=document.dynamic_client_registration,
     )
 
 
@@ -4051,6 +4457,22 @@ def _string_config_value(config: Mapping[str, JsonValue], key: str) -> str:
     """
     value = config.get(key)
     return value if isinstance(value, str) else ""
+
+
+def _string_list_config_value(config: Mapping[str, JsonValue], key: str) -> tuple[str, ...]:
+    """Return string values from a config array.
+
+    Args:
+        config: Config mapping to inspect.
+        key: Config key to read.
+
+    Returns:
+        Trimmed non-empty string values.
+    """
+    value = config.get(key)
+    if not isinstance(value, list):
+        return ()
+    return tuple(item.strip() for item in value if isinstance(item, str) and item.strip())
 
 
 def _scalar_config_value(config: Mapping[str, JsonValue], key: str) -> str:

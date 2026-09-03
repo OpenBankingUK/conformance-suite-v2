@@ -48,6 +48,7 @@ from conformance.context import (
     resolve_in_structure,
     resolve_placeholders,
 )
+from conformance.dcr_execution import DcrCatalogueExecutionAdapter
 from conformance.execution_log import ExecutionLogger, NullExecutionLogger, is_developer_mode_enabled, new_run_id
 from conformance.execution_schedule import ExecutionGroup, build_execution_schedule
 from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
@@ -78,6 +79,7 @@ from conformance.manifest import (
 )
 from conformance.masking import SENSITIVE_JSON_KEYS, mask_form_fields, mask_headers, mask_json_value, mask_url_query
 from conformance.model_bank_config import FapiSigningConfig
+from conformance.plan_configuration import parse_dcr_execution_runtime_inputs
 from conformance.psu_authorization import (
     build_authorization_url,
     extract_redirect_parameters,
@@ -573,6 +575,8 @@ def run_compiled_test_plan(
     fapi_signing_config: FapiSigningConfig | None = None,
     mtls_client_configured: bool = False,
     approved_release_policy: ApprovedReleasePolicy | None = None,
+    dcr_clock: Callable[[], datetime] | None = None,
+    dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
     """Run a compiled catalogue plan and return structured result evidence.
 
@@ -592,6 +596,8 @@ def run_compiled_test_plan(
             credentials configured.
         approved_release_policy: Optional approved-release policy used by the
             report's certification self-assessment.
+        dcr_clock: Optional timezone-aware clock for deterministic DCR JOSE tests.
+        dcr_jwt_id_factory: Optional DCR JWT identifier factory for deterministic tests.
 
     Returns:
         Smoke-check result populated with catalogue traceability metadata.
@@ -617,19 +623,32 @@ def run_compiled_test_plan(
         },
     )
     try:
-        result = _run_manifest_v1(
-            synthetic_manifest,
-            client=client,
-            execution_logger=logger_sink,
-            plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
-            run_id=effective_run_id,
-            auth_session_store=effective_store,
-            runtime_config=runtime_config,
-            fapi_signing_config=fapi_signing_config,
-            mtls_client_configured=mtls_client_configured,
-            approved_release_policy=approved_release_policy,
-            compiled_plan=compiled_plan,
-        )
+        if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+            dcr_adapter = DcrCatalogueExecutionAdapter(
+                compiled_plan=compiled_plan,
+                config=parse_dcr_execution_runtime_inputs(runtime_inputs),
+                execution_logger=logger_sink,
+                approved_release_policy=approved_release_policy,
+            )
+            if dcr_clock is not None:
+                dcr_adapter.clock = dcr_clock
+            if dcr_jwt_id_factory is not None:
+                dcr_adapter.jwt_id_factory = dcr_jwt_id_factory
+            result = dcr_adapter.run()
+        else:
+            result = _run_manifest_v1(
+                synthetic_manifest,
+                client=client,
+                execution_logger=logger_sink,
+                plan=TestPlan.default_plan_from_manifest(synthetic_manifest),
+                run_id=effective_run_id,
+                auth_session_store=effective_store,
+                runtime_config=runtime_config,
+                fapi_signing_config=fapi_signing_config,
+                mtls_client_configured=mtls_client_configured,
+                approved_release_policy=approved_release_policy,
+                compiled_plan=compiled_plan,
+            )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
         raise
