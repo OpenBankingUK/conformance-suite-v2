@@ -1071,6 +1071,26 @@ class TestRunDetailUi:
         assert 'href="/">Home page</a>' in content
         assert "New plan" not in content
 
+    def test_run_detail_sizes_psu_popup_within_available_screen(self) -> None:
+        """PSU authorisation popups target 900 square pixels without exceeding the available screen."""
+        record = run_store.create_run()
+
+        response = Client().get(f"/runs/{record.run_id}/")
+
+        assert response.status_code == 200
+        content = response.content.decode("utf-8")
+        assert "const popupTargetSize = 900;" in content
+        assert "Math.min(popupTargetSize, availableWidth)" in content
+        assert "Math.min(popupTargetSize, availableHeight)" in content
+        assert "window.screen.availLeft" in content
+        assert "window.screen.availTop" in content
+        assert "availableLeft + availableWidth - popupWidth" in content
+        assert "availableTop + availableHeight - popupHeight" in content
+        assert "`width=${popupWidth}`" in content
+        assert "`height=${popupHeight}`" in content
+        assert "`left=${popupLeft}`" in content
+        assert "`top=${popupTop}`" in content
+
     def test_run_detail_returns_404_for_unknown_run(self) -> None:
         """Unknown run detail pages return 404."""
         response = Client().get("/runs/missing/")
