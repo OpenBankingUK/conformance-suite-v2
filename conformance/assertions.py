@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import math
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
 
@@ -12,6 +13,7 @@ from conformance.manifest import (
     HeaderAssertion,
     HttpStatusAssertion,
     JsonFieldAssertion,
+    LegacyFcsAssertion,
     ManifestAssertion,
     ResponseSchemaAssertion,
 )
@@ -56,7 +58,271 @@ def evaluate_assertion(
         return _evaluate_response_schema(assertion, body=body)
     if isinstance(assertion, HeaderAssertion):
         return _evaluate_header(assertion, headers=headers)
+    if isinstance(assertion, LegacyFcsAssertion):
+        return _evaluate_legacy_fcs_assertion(
+            assertion,
+            status_code=status_code,
+            headers=headers,
+            body=body,
+        )
     return _evaluate_json_field(assertion, body=body)
+
+
+def _evaluate_legacy_fcs_assertion(
+    assertion: LegacyFcsAssertion,
+    *,
+    status_code: int,
+    headers: Mapping[str, str] | None,
+    body: JsonObject,
+) -> AssertionResult:
+    """Evaluate one pinned legacy FCS row using its original group semantics.
+
+    Args:
+        assertion: Legacy row assertion bundle.
+        status_code: Actual HTTP response status.
+        headers: HTTP response headers.
+        body: Parsed JSON response body.
+
+    Returns:
+        Aggregate assertion result for the source row.
+    """
+    normalized_headers = {name.lower(): value for name, value in (headers or {}).items()}
+    for expectation in assertion.all_of:
+        passed, message = _evaluate_legacy_expectation(
+            expectation,
+            status_code=status_code,
+            headers=normalized_headers,
+            body=body,
+        )
+        if not passed:
+            return AssertionResult(passed=False, message=f"{assertion.row_key}: {message}")
+
+    if assertion.one_of and not any(
+        _evaluate_legacy_expectation(
+            expectation,
+            status_code=status_code,
+            headers=normalized_headers,
+            body=body,
+        )[0]
+        for expectation in assertion.one_of
+    ):
+        return AssertionResult(passed=False, message=f"{assertion.row_key}: no one-of expectation matched")
+
+    if len(assertion.last_if_all) > 1:
+        conditions = assertion.last_if_all[:-1]
+        conditions_match = all(
+            _evaluate_legacy_expectation(
+                expectation,
+                status_code=status_code,
+                headers=normalized_headers,
+                body=body,
+            )[0]
+            for expectation in conditions
+        )
+        if conditions_match:
+            passed, message = _evaluate_legacy_expectation(
+                assertion.last_if_all[-1],
+                status_code=status_code,
+                headers=normalized_headers,
+                body=body,
+            )
+            if not passed:
+                return AssertionResult(passed=False, message=f"{assertion.row_key}: {message}")
+
+    if assertion.schema_document is not None:
+        schema_ref = assertion.schema_refs.get(status_code)
+        if schema_ref is None:
+            if status_code != 204:
+                return AssertionResult(
+                    passed=False,
+                    message=f"{assertion.row_key}: no response schema is defined for HTTP {status_code}",
+                )
+        else:
+            validation_message = validate_json_instance_against_response_schema(
+                source="bundled_openapi",
+                document=assertion.schema_document,
+                schema_ref=schema_ref,
+                inline_schema=None,
+                instance=body,
+            )
+            if validation_message is not None:
+                return AssertionResult(
+                    passed=False,
+                    message=f"{assertion.row_key}: response schema validation failed: {validation_message}",
+                )
+    return AssertionResult(passed=True, message=f"{assertion.row_key}: legacy FCS expectations passed")
+
+
+def _evaluate_legacy_expectation(
+    expectation: Mapping[str, JsonValue],
+    *,
+    status_code: int,
+    headers: Mapping[str, str],
+    body: JsonObject,
+) -> tuple[bool, str]:
+    """Evaluate one legacy FCS expectation object.
+
+    Args:
+        expectation: Resolved legacy expectation.
+        status_code: Actual HTTP response status.
+        headers: Lowercase response headers.
+        body: Parsed JSON response body.
+
+    Returns:
+        Pass flag and concise diagnostic message.
+    """
+    expected_status = expectation.get("status-code")
+    if isinstance(expected_status, int) and status_code != expected_status:
+        return False, f"expected HTTP {expected_status}, got {status_code}"
+    matches = expectation.get("matches", [])
+    if not isinstance(matches, list):
+        return False, "legacy expectation matches must be an array"
+    for raw_match in matches:
+        if not isinstance(raw_match, dict):
+            return False, "legacy expectation match must be an object"
+        passed, message = _evaluate_legacy_match(raw_match, headers=headers, body=body)
+        if not passed:
+            return False, message
+    return True, "expectation passed"
+
+
+def _evaluate_legacy_match(
+    match: Mapping[str, JsonValue],
+    *,
+    headers: Mapping[str, str],
+    body: JsonObject,
+) -> tuple[bool, str]:
+    """Evaluate one legacy response-header or JSON match.
+
+    Args:
+        match: Legacy match object.
+        headers: Lowercase response headers.
+        body: Parsed JSON response body.
+
+    Returns:
+        Pass flag and concise diagnostic message.
+    """
+    present_header_name = match.get("header-present")
+    if isinstance(present_header_name, str):
+        if present_header_name.lower() not in headers:
+            return False, f"response header {present_header_name} is missing"
+        return True, f"response header {present_header_name} is present"
+
+    header_name = match.get("header")
+    if isinstance(header_name, str):
+        actual_header = headers.get(header_name.lower())
+        if actual_header is None:
+            return False, f"response header {header_name} is missing"
+        expected_header = match.get("value")
+        if isinstance(expected_header, str) and actual_header != expected_header:
+            return False, f"response header {header_name} did not match"
+        return True, f"response header {header_name} matched"
+
+    json_path = match.get("JSON")
+    if isinstance(json_path, str):
+        value = _resolve_legacy_json_path(body, json_path)
+        if isinstance(value, _MissingValue):
+            return False, f"JSON field {json_path} is missing"
+        expected_value = match.get("Value")
+        if "Value" in match and (
+            _legacy_scalar_text(value) != expected_value if isinstance(expected_value, str) else value != expected_value
+        ):
+            return False, f"JSON field {json_path} did not match"
+        return True, f"JSON field {json_path} matched"
+
+    absent_path = match.get("JSON-NOT-PRESENT")
+    if isinstance(absent_path, str):
+        value = _resolve_legacy_json_path(body, absent_path)
+        if not isinstance(value, _MissingValue):
+            return False, f"JSON field {absent_path} must be absent"
+        return True, f"JSON field {absent_path} is absent"
+    return False, "legacy match has no supported selector"
+
+
+def _resolve_legacy_json_path(body: JsonObject, path: str) -> JsonValue | _MissingValue:
+    """Resolve the legacy FCS JSON-path subset used by v3.1.11 assertions.
+
+    Args:
+        body: Parsed JSON response body.
+        path: Legacy dotted path with optional array presence/filter segments.
+
+    Returns:
+        Selected JSON value, a list of selected values, or a missing sentinel.
+    """
+    current: JsonValue | _MissingValue = body
+    for segment in _legacy_json_path_segments(path):
+        if isinstance(current, _MissingValue):
+            return current
+        presence_match = re.fullmatch(r"#\(([^)]+)\)", segment)
+        if presence_match is not None:
+            if not isinstance(current, list):
+                return _MISSING
+            field_name = presence_match.group(1)
+            values = [item[field_name] for item in current if isinstance(item, dict) and field_name in item]
+            current = values if values else _MISSING
+            continue
+        filter_match = re.fullmatch(r'#\[([^=]+)="([^"]*)"\]', segment)
+        if filter_match is not None:
+            if not isinstance(current, list):
+                return _MISSING
+            field_name, expected = filter_match.groups()
+            current = next(
+                (item for item in current if isinstance(item, dict) and item.get(field_name) == expected),
+                _MISSING,
+            )
+            continue
+        if not isinstance(current, dict) or segment not in current:
+            return _MISSING
+        current = current[segment]
+    return current
+
+
+def _legacy_json_path_segments(path: str) -> tuple[str, ...]:
+    """Split a legacy GJSON path without splitting quoted filter values.
+
+    Args:
+        path: Legacy dotted path.
+
+    Returns:
+        Ordered path segments with filter expressions intact.
+    """
+    segments: list[str] = []
+    current: list[str] = []
+    bracket_depth = 0
+    quoted = False
+    for character in path:
+        if character == '"':
+            quoted = not quoted
+        elif not quoted and character == "[":
+            bracket_depth += 1
+        elif not quoted and character == "]":
+            bracket_depth -= 1
+        if character == "." and bracket_depth == 0 and not quoted:
+            segments.append("".join(current))
+            current = []
+            continue
+        current.append(character)
+    segments.append("".join(current))
+    return tuple(segments)
+
+
+def _legacy_scalar_text(value: JsonValue) -> str:
+    """Render a JSON scalar using the legacy GJSON comparison form.
+
+    Args:
+        value: JSON value selected by a legacy assertion.
+
+    Returns:
+        Lowercase JSON text for booleans/null and ordinary string form for
+        other scalar values.
+    """
+    if value is True:
+        return "true"
+    if value is False:
+        return "false"
+    if value is None:
+        return "null"
+    return str(value)
 
 
 def _evaluate_response_schema(assertion: ResponseSchemaAssertion, *, body: JsonObject) -> AssertionResult:

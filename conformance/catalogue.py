@@ -47,16 +47,24 @@ type GeneratedRuntimeValue = Literal[
     "uuid4",
     "uuid4-hex",
     "invalid-resource-id",
+    "legacy-invalid-consent-id",
     "invalid-access-token",
+    "next-day-date-offset",
+    "next-day-date-utc",
     "next-day-date-time-offset",
+    "next-day-date-time-offset-milliseconds",
     "next-day-date-time-utc",
+    "next-day-date-time-utc-milliseconds",
 ]
 """Generated runtime value strategies supported by catalogue request steps."""
+
+type CatalogueDetachedJwsProfile = Literal["legacy-b64-false", "ob-v3.1.4+"]
+"""Open Banking detached-JWS profiles declared by catalogue request steps."""
 
 type TestCaseRole = Literal["setup", "security", "resource", "consent", "token"]
 """Execution/compliance role assigned to catalogue test cases."""
 
-type AssertionKind = Literal["http_status", "json_field", "header", "response_schema"]
+type AssertionKind = Literal["http_status", "json_field", "header", "response_schema", "legacy_fcs"]
 """Assertion families supported by the catalogue foundation model."""
 
 type CatalogueExecutionStepKind = Literal["assertion", "http", "state"]
@@ -427,6 +435,25 @@ class CatalogueRequestHeader:
 
 
 @dataclass(frozen=True)
+class CataloguePsuAuthorization:
+    """Catalogue-owned metadata for a generated PSU authorization flow.
+
+    Attributes:
+        authorization_step_id: Stable id for the interactive authorization step.
+        authorization_step_name: Participant-facing authorization step name.
+        token_step_id: Stable id for the authorization-code token exchange.
+        token_id: Semantic token id produced by the exchange.
+        flow_label: Short payment-flow label used in generated evidence.
+    """
+
+    authorization_step_id: str
+    authorization_step_name: str
+    token_step_id: str
+    token_id: str
+    flow_label: str
+
+
+@dataclass(frozen=True)
 class CatalogueRequestStep:
     """Executable request-step skeleton owned by a catalogue test case.
 
@@ -435,6 +462,8 @@ class CatalogueRequestStep:
         name: Human-readable request-step name.
         method: HTTP method to execute.
         path: Standards path to resolve against participant runtime config.
+        query_parameters: Ordered static query parameters appended to the
+            resolved request URL.
         runtime_input_refs: Runtime input identifiers consumed by this step.
         headers: Outbound request headers sourced from runtime inputs.
         body_template: Optional catalogue-owned JSON request body template.
@@ -450,12 +479,19 @@ class CatalogueRequestStep:
             explain which permission set the request token represents.
         detached_jws_omit_claims: Open Banking detached-JWS protected-header
             aliases to omit for negative request-signature tests.
+        detached_jws_profile: Explicit Open Banking detached-JWS profile to use,
+            or ``None`` when the request must not be signed.
+        psu_authorization: Metadata for a PSU authorization flow generated
+            after this request creates a consent.
+        required_psu_authorization_step_id: Consent request step that must be
+            authorized before this request executes.
     """
 
     step_id: str
     name: str
     method: HttpMethod
     path: str
+    query_parameters: Mapping[str, str] = field(default_factory=lambda: MappingProxyType({}))
     runtime_input_refs: tuple[str, ...] = ()
     headers: tuple[CatalogueRequestHeader, ...] = ()
     body_template: JsonValue | None = None
@@ -464,6 +500,9 @@ class CatalogueRequestStep:
     produced_token_id: str | None = None
     authorization_profile: str | None = None
     detached_jws_omit_claims: tuple[str, ...] = ()
+    detached_jws_profile: CatalogueDetachedJwsProfile | None = None
+    psu_authorization: CataloguePsuAuthorization | None = None
+    required_psu_authorization_step_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -3704,6 +3743,12 @@ def _merge_structured_runtime_inputs(runtime_inputs: JsonObject, config: Mapping
                 standing_order_frequency.get("pointInTime"),
                 location="planSpec.config.pis.standingOrderFrequency.pointInTime",
             )
+        _merge_optional_structured_runtime_input(
+            runtime_inputs,
+            "pisStandingOrderFrequencyV31",
+            pis.get("standingOrderFrequencyV31"),
+            location="planSpec.config.pis.standingOrderFrequencyV31",
+        )
 
         _merge_optional_structured_runtime_input(
             runtime_inputs,

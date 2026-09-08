@@ -48,7 +48,15 @@ exported JSON includes only the final accepted values without recording whether
 they came from discovery or manual entry. A single Read/Write plan can span AIS,
 PIS, CBPII, and VRP catalogue areas when those groups use one security
 environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
-UK Read/Write boundary for now.
+UK Read/Write boundary for now. Read/Write version `3.1.11` is backed by
+dedicated v3.1 catalogue areas and the pinned v3.1.11 OpenAPI documents; it is
+not routed through the v4 catalogues.
+
+For v3.1.11 domestic standing orders, set
+`businessTestData.pis.standingOrderFrequencyV31` to the scalar frequency format
+defined by the v3.1 specification, such as `EvryDay` or
+`IntrvlWkDay:01:03`. The v4 `standingOrderFrequency` object remains unchanged
+for v4 plans.
 
 ```json
 {
@@ -153,12 +161,18 @@ The bundled catalogue registry currently covers the legacy FCS baseline for:
 
 | Standard | Version | API family |
 | --- | --- | --- |
+| `open-banking` | `v3.1` | `ais` |
+| `open-banking` | `v3.1` | `pis` |
+| `open-banking` | `v3.1` | `cbpii` |
+| `open-banking` | `v3.1` | `vrp` |
 | `open-banking` | `v4.0` | `ais` |
 | `open-banking` | `v4.0` | `pis` |
 | `open-banking` | `v4.0` | `cbpii` |
 | `open-banking` | `v4.0` | `vrp` |
 | `open-banking` | `v3.4` | `dcr` |
 
+The participant-facing Read/Write versions are `3.1.11`, `4.0`, `4.0.0`, and
+`4.0.1`; the internal `v3.1` key is used only to bind exact `3.1.11` plans.
 Each catalogue case carries traceability back to the relevant legacy FCS
 coverage in its compliance scope. Each catalogue can also define endpoint-scoped
 capabilities that explain baseline and optional implementation coverage without

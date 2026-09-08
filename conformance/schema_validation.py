@@ -28,6 +28,18 @@ class SchemaValidationConfigurationError(Exception):
 
 
 _BUNDLED_OPENAPI_DOCUMENT_PATHS: dict[str, Path] = {
+    "ob-read-write-v3.1.11-account-info-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "account-info-openapi.json"
+    ),
+    "ob-read-write-v3.1.11-payment-initiation-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "payment-initiation-openapi.json"
+    ),
+    "ob-read-write-v3.1.11-confirmation-funds-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "confirmation-funds-openapi.json"
+    ),
+    "ob-read-write-v3.1.11-vrp-openapi": (
+        Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v3_1_11" / "vrp-openapi.json"
+    ),
     "ob-read-write-v4.0-account-info-openapi": (
         Path(__file__).resolve().parent / "standards" / "ob_read_write" / "v4_0" / "account-info-openapi.json"
     ),

@@ -1,0 +1,83 @@
+{
+  "retrievedAt": "2026-09-07",
+  "sources": [
+    {
+      "file": "account-info-openapi.json",
+      "ref": "v3.1.11",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "sha256": "36afb5a9a76a79c74fe523e6a84ccfc002cf7f6b74f1c304ea22af27510c442f",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/account-info-openapi.json"
+    },
+    {
+      "file": "payment-initiation-openapi.json",
+      "ref": "v3.1.11",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "sha256": "86540bf84d2a17fd24d1ca0aab84839dde33704cf66a63d7763d093e10ac3e58",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/payment-initiation-openapi.json"
+    },
+    {
+      "file": "confirmation-funds-openapi.json",
+      "ref": "v3.1.11",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "sha256": "4f61a2971b248d6a4199d1191ee39f60b0b92ddc7ffb05a753c3107dc9b3dce9",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/confirmation-funds-openapi.json"
+    },
+    {
+      "file": "vrp-openapi.json",
+      "ref": "v3.1.11",
+      "repository": "OpenBankingUK/read-write-api-specs",
+      "sha256": "16a6231aacf10548ee8ba778295371d41ea02d26232867dd916eb3cafbc7db12",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/vrp-openapi.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/ob_3.1_accounts_transactions_fca.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "2b90a1c7091ab4f8adb5713d962e475e915c4c3f1fa096ec2851e036ee6b3420",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/ob_3.1_accounts_transactions_fca.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/ob_3.1_payment_fca.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "bca1ad8d2ae6fc05981b3cbe9979f7e8cedc7e302e391333734c34cb893a7ae9",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/ob_3.1_payment_fca.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/ob_3.1_cbpii_fca.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "6b1ad45e3a24dbc0a1876a1d2622a13c47d5f4eb1bc864762582becffa476f80",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/ob_3.1_cbpii_fca.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/ob_3.1_variable_recurring_payments.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "5d5fd01452f14f45f9e257fa51e50a8d72a23e202d43bbc356fd92a4a208a8dc",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/ob_3.1_variable_recurring_payments.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/assertions.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "c74b52a40917f310601c10bef86d78cb5f93b1a8b0b530fc07a0e8f5d2c9319a",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/assertions.json"
+    },
+    {
+      "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "file": "legacy/data.json",
+      "ref": "v1.10.0",
+      "repository": "OpenBankingUK/conformance-suite",
+      "sha256": "7ecd1b801ad9dd38bbb74540c0aea6036cdda8883b0c1236341dc9b7daac7a10",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/v1.10.0/manifests/data.json"
+    }
+  ],
+  "specVersion": "v3.1.11",
+  "standard": "ob-read-write"
+}

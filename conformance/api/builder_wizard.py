@@ -67,6 +67,9 @@ _CANONICAL_RESOURCE_GROUP_ID_BY_API = {
 _API_PATH_SEGMENTS = {"ais": "aisp", "pis": "pisp", "cbpii": "cbpii", "vrp": "vrp", "cvrp": "cvrp"}
 """Path segments used to infer resource-group labels from bundled catalogues."""
 
+_VRP_RESOURCE_PATH_SEGMENTS = frozenset({"domestic-vrp-consents", "domestic-vrps"})
+"""VRP resource names that share the Payment Initiation ``pisp`` path segment."""
+
 _CAPABILITY_VALUE_SEPARATOR = "::"
 """Separator used in endpoint-scoped capability checkbox values."""
 
@@ -399,6 +402,8 @@ class ConfigVisibility:
             need a first payment date/time.
         pis_standing_order_frequency_required: Whether selected PIS endpoints
             need a standing-order frequency object.
+        pis_v311_standing_order_frequency_required: Whether selected v3.1.11
+            PIS endpoints need a scalar legacy frequency.
     """
 
     selected_api_ids: frozenset[str]
@@ -415,6 +420,7 @@ class ConfigVisibility:
     pis_requested_execution_date_time_required: bool = False
     pis_first_payment_date_time_required: bool = False
     pis_standing_order_frequency_required: bool = False
+    pis_v311_standing_order_frequency_required: bool = False
 
 
 @dataclass(frozen=True)
@@ -1138,6 +1144,8 @@ class BusinessConfigForm(forms.Form):
         pis_standing_order_frequency_type: Standing-order frequency type.
         pis_standing_order_frequency_point_in_time: Standing-order frequency
             point in time.
+        pis_standing_order_frequency_v311: Encoded v3.1 standing-order
+            frequency.
         pis_standing_order_frequency_json: Advanced standing-order frequency
             fallback.
         cbpii_debtor_account_scheme_name: CBPII debtor account scheme.
@@ -1217,6 +1225,11 @@ class BusinessConfigForm(forms.Form):
     pis_standing_order_frequency_point_in_time: forms.CharField = forms.CharField(
         label="Standing-order frequency point in time",
         required=False,
+    )
+    pis_standing_order_frequency_v311: forms.CharField = forms.CharField(
+        label="Standing-order frequency (v3.1)",
+        required=False,
+        help_text="Use the v3.1 encoded form, for example EvryDay or IntrvlWkDay:01:03.",
     )
     pis_standing_order_frequency_json: forms.CharField = forms.CharField(
         label="Standing-order frequency JSON",
@@ -1997,6 +2010,7 @@ def config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, object]:
             "pis_currency_of_transfer": _string_config_value(pis, "currencyOfTransfer"),
             "pis_requested_execution_date_time": _string_config_value(pis, "requestedExecutionDateTime"),
             "pis_first_payment_date_time": _string_config_value(pis, "firstPaymentDateTime"),
+            "pis_standing_order_frequency_v311": _string_config_value(pis, "standingOrderFrequencyV31"),
             "pis_standing_order_frequency_json": _json_config_value(pis, "standingOrderFrequency"),
         }
     )
@@ -2056,6 +2070,7 @@ def business_config_form_initial(config: Mapping[str, JsonValue]) -> dict[str, o
             "pis_currency_of_transfer": _string_config_value(pis, "currencyOfTransfer"),
             "pis_requested_execution_date_time": _string_config_value(pis, "requestedExecutionDateTime"),
             "pis_first_payment_date_time": _string_config_value(pis, "firstPaymentDateTime"),
+            "pis_standing_order_frequency_v311": _string_config_value(pis, "standingOrderFrequencyV31"),
             "pis_standing_order_frequency_type": _string_config_value(standing_order_frequency, "type"),
             "pis_standing_order_frequency_point_in_time": _string_config_value(standing_order_frequency, "pointInTime"),
             "pis_standing_order_frequency_json": _json_config_value(pis, "standingOrderFrequency"),
@@ -2681,7 +2696,12 @@ def config_visibility_for_plan_document(document: PlanDocumentV2) -> ConfigVisib
         pis_currency_of_transfer_required=pis_requiredness.get("currency_of_transfer", False),
         pis_requested_execution_date_time_required=pis_requiredness.get("requested_execution_date_time", False),
         pis_first_payment_date_time_required=pis_requiredness.get("first_payment_date_time", False),
-        pis_standing_order_frequency_required=pis_requiredness.get("standing_order_frequency", False),
+        pis_standing_order_frequency_required=(
+            document.version != "3.1.11" and pis_requiredness.get("standing_order_frequency", False)
+        ),
+        pis_v311_standing_order_frequency_required=(
+            document.version == "3.1.11" and pis_requiredness.get("standing_order_frequency", False)
+        ),
     )
 
 
@@ -3188,6 +3208,11 @@ def _business_config_from_fields(
             },
             label="Standing-order frequency JSON",
         )
+        _set_optional_string(
+            pis,
+            "standingOrderFrequencyV31",
+            cleaned_data.get("pis_standing_order_frequency_v311"),
+        )
         if pis:
             config["pis"] = pis
         _set_optional_json_array(config, "conditionalProperties", cleaned_data.get("conditional_properties_json"))
@@ -3349,6 +3374,14 @@ def _add_required_pis_errors(form: BusinessConfigForm, cleaned_data: Mapping[str
                 _cleaned_optional_string(cleaned_data.get("pis_standing_order_frequency_json")) is not None
             ),
             message="Standing-order frequency is required for selected standing-order PIS endpoints.",
+        )
+    if visibility.pis_v311_standing_order_frequency_required:
+        _add_required_string_error(
+            form,
+            pis,
+            config_key="standingOrderFrequencyV31",
+            field_name="pis_standing_order_frequency_v311",
+            message="A v3.1 standing-order frequency is required for selected standing-order PIS endpoints.",
         )
 
 
@@ -4800,6 +4833,8 @@ def _api_from_endpoint_path(path: str) -> str | None:
         Internal API-family id when the path contains a known API segment.
     """
     segments = {segment for segment in path.split("/") if segment}
+    if segments & _VRP_RESOURCE_PATH_SEGMENTS:
+        return "vrp"
     for api, api_segment in _API_PATH_SEGMENTS.items():
         if api_segment in segments:
             return api

@@ -1,4 +1,5 @@
 import json
+from datetime import UTC, datetime
 from io import StringIO
 from pathlib import Path
 
@@ -6,6 +7,8 @@ import httpx
 import pytest
 
 from conformance import cli
+from conformance.catalogue import CatalogueKey, CompiledTestPlan
+from conformance.results import SmokeCheckResult
 
 
 class _TtyStringIO(StringIO):
@@ -393,3 +396,74 @@ def test_cli_rejects_removed_deselect_flag(tmp_path: Path) -> None:
     exit_code = cli.run([str(config_path), "--deselect", "any"])
 
     assert exit_code == 2
+
+
+@pytest.mark.unit
+def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    """CLI accepts v3.1.11 and passes only v3.1 requests to execution."""
+    plan_path = tmp_path / "v311-plan.json"
+    plan_path.write_text(
+        json.dumps(
+            {
+                "schemaVersion": "1.0",
+                "specification": {
+                    "family": "OBL_READ_WRITE",
+                    "version": "3.1.11",
+                    "profile": "FAPI1_ADVANCED",
+                },
+                "executionMode": "development",
+                "securityEnvironment": {
+                    "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+                    "resourceBaseUrl": "https://resource.example.com",
+                },
+                "resourceGroups": [
+                    {
+                        "id": "AIS",
+                        "endpoints": [
+                            {
+                                "method": "GET",
+                                "path": "/open-banking/v3.1/aisp/accounts",
+                            }
+                        ],
+                    }
+                ],
+                "businessTestData": {},
+                "metadata": {},
+            }
+        ),
+        encoding="utf-8",
+    )
+    captured_plans: list[CompiledTestPlan] = []
+
+    def run_compiled_plan(**kwargs: object) -> SmokeCheckResult:
+        """Capture the compiled plan and return a successful CLI result.
+
+        Args:
+            **kwargs: Keyword arguments passed by the CLI execution wrapper.
+
+        Returns:
+            Minimal successful smoke-check result.
+        """
+        compiled_plan = kwargs["compiled_plan"]
+        assert isinstance(compiled_plan, CompiledTestPlan)
+        captured_plans.append(compiled_plan)
+        now = datetime.now(UTC)
+        return SmokeCheckResult(status="passed", started_at=now, finished_at=now, steps=())
+
+    monkeypatch.setattr(cli, "_run_cli_compiled_plan", run_compiled_plan)
+    monkeypatch.chdir(tmp_path)
+
+    exit_code = cli.run(["--test-plan", str(plan_path)])
+
+    assert exit_code == 0
+    assert len(captured_plans) == 1
+    assert captured_plans[0].catalogue_key == CatalogueKey(
+        "open-banking-uk",
+        "3.1.11",
+        "read-write",
+    )
+    assert all(
+        "/v4.0/" not in request.path
+        for test_case in captured_plans[0].test_cases
+        for request in test_case.request_steps
+    )

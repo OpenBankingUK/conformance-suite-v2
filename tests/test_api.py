@@ -1005,6 +1005,34 @@ class TestCreateRunEndpoint:
         assert mock_execute.call_args.kwargs == {"browser_psu_prompts": False}
 
     @patch("conformance.api.run_lifecycle._execute_run")
+    def test_creates_v311_run_from_canonical_plan(self, mock_execute: Mock) -> None:
+        """REST creation compiles the exact v3.1.11 Read/Write boundary."""
+        client = Client()
+        body = json.loads(json.dumps(VALID_TEST_PLAN))
+        body["specification"]["version"] = "3.1.11"
+        body["resourceGroups"][0]["endpoints"][0]["path"] = "/open-banking/v3.1/aisp/accounts"
+
+        response = client.post("/api/runs/", data=json.dumps(body), content_type="application/json")
+
+        assert response.status_code == 201
+        record = run_store.get_run(response.json()["id"])
+        assert record is not None
+        assert record.plan_snapshot is not None
+        specification = record.plan_snapshot["specification"]
+        assert isinstance(specification, dict)
+        assert specification["version"] == "3.1.11"
+        _wait_for_value(
+            lambda: True if mock_execute.call_args is not None else None,
+            timeout_seconds=1.0,
+        )
+        compiled_plan = mock_execute.call_args.args[2]
+        assert all(
+            "/v4.0/" not in request.path
+            for test_case in compiled_plan.test_cases
+            for request in test_case.request_steps
+        )
+
+    @patch("conformance.api.run_lifecycle._execute_run")
     def test_creates_run_from_canonical_json_test_plan(self, mock_execute: Mock) -> None:
         """REST API accepts the PRD schemaVersion 1.0 test-plan body directly."""
         client = Client()

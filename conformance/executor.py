@@ -11,10 +11,10 @@ import uuid
 from collections.abc import Callable, Mapping
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import replace
-from datetime import UTC, datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import cast
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 import httpx
 
@@ -63,6 +63,7 @@ from conformance.manifest import (
     JsonBody,
     JsonFieldAssertion,
     JsonFieldRule,
+    LegacyFcsAssertion,
     Manifest,
     ManifestAssertion,
     ManifestError,
@@ -107,11 +108,16 @@ cap prevents unbounded thread creation while preserving queue-based execution
 for additional groups.
 """
 
-_OB_ACCOUNT_ACCESS_CONSENTS_PATH = "/open-banking/v4.0/aisp/account-access-consents"
-"""Open Banking AIS consent-creation path requiring detached JWS support."""
+_OB_ACCOUNT_ACCESS_CONSENTS_PATHS = frozenset(
+    {
+        "/open-banking/v3.1/aisp/account-access-consents",
+        "/open-banking/v4.0/aisp/account-access-consents",
+    }
+)
+"""Open Banking AIS consent-creation paths supporting detached JWS."""
 
-_OB_PIS_PATH_PREFIX = "/open-banking/v4.0/pisp/"
-"""Open Banking PIS path prefix for payment-initiation detached JWS support."""
+_OB_PIS_PATH_PREFIXES = ("/open-banking/v3.1/pisp/", "/open-banking/v4.0/pisp/")
+"""Open Banking PIS path prefixes supporting payment-initiation detached JWS."""
 
 _OB_VRP_RESOURCE_PATH_PREFIXES = ("/domestic-vrp-consents", "/domestic-vrps")
 """Open Banking VRP resource paths requiring detached JWS support."""
@@ -233,88 +239,6 @@ _AIS_ACCOUNT_ACCESS_CONSENT_BODIES: Mapping[str, JsonObject] = {
 
 _PIS_MISSING_SIGNATURE_STEP_ID = "pis-v4-domestic-payment-consent-reject-invalid-signature-request"
 """PIS negative test step that must deliberately omit a detached JWS header."""
-
-_PIS_CONSENT_AUTHORIZATION_STEPS = {
-    "pis-v4-domestic-payment-consent-create-request": (
-        "setup-pis-domestic-payment-consent-authorisation",
-        "Authorise domestic payment consent",
-        "setup-token-pis-domestic-payment-access",
-        "pis-domestic-payment-access",
-        "domestic payment",
-    ),
-    "pis-v4-domestic-scheduled-payment-consent-create-request": (
-        "setup-pis-domestic-scheduled-payment-consent-authorisation",
-        "Authorise domestic scheduled payment consent",
-        "setup-token-pis-domestic-scheduled-payment-access",
-        "pis-domestic-scheduled-payment-access",
-        "domestic scheduled payment",
-    ),
-    "pis-v4-domestic-standing-order-consent-create-request": (
-        "setup-pis-domestic-standing-order-consent-authorisation",
-        "Authorise domestic standing-order consent",
-        "setup-token-pis-domestic-standing-order-access",
-        "pis-domestic-standing-order-access",
-        "domestic standing-order",
-    ),
-    "pis-v4-international-payment-consent-create-request": (
-        "setup-pis-international-payment-consent-authorisation",
-        "Authorise international payment consent",
-        "setup-token-pis-international-payment-access",
-        "pis-international-payment-access",
-        "international payment",
-    ),
-    "pis-v4-international-scheduled-payment-consent-create-request": (
-        "setup-pis-international-scheduled-payment-consent-authorisation",
-        "Authorise international scheduled payment consent",
-        "setup-token-pis-international-scheduled-payment-access",
-        "pis-international-scheduled-payment-access",
-        "international scheduled payment",
-    ),
-}
-"""Synthetic PSU and token-exchange metadata keyed by PIS consent-creation step."""
-
-_PIS_CONSENT_AUTHORIZATION_DEPENDENT_STEPS = {
-    "pis-v4-domestic-payment-consent-create-request": frozenset(
-        {
-            "pis-v4-domestic-payment-consent-read-authorised-request",
-            "pis-v4-domestic-payment-funds-confirmation-request",
-            "pis-v4-domestic-payment-create-request",
-            "pis-v4-domestic-payment-read-request",
-        }
-    ),
-    "pis-v4-domestic-scheduled-payment-consent-create-request": frozenset(
-        {
-            "pis-v4-domestic-scheduled-payment-consent-read-request",
-            "pis-v4-domestic-scheduled-payment-create-request",
-            "pis-v4-domestic-scheduled-payment-read-request",
-        }
-    ),
-    "pis-v4-domestic-standing-order-consent-create-request": frozenset(
-        {
-            "pis-v4-domestic-standing-order-consent-read-request",
-            "pis-v4-domestic-standing-order-create-request",
-            "pis-v4-domestic-standing-order-read-request",
-            "pis-v4-domestic-standing-order-read-with-number-and-final-date-request",
-            "pis-v4-domestic-standing-order-read-with-final-amount-only-request",
-            "pis-v4-domestic-standing-order-reject-invalid-frequency-request",
-        }
-    ),
-    "pis-v4-international-payment-consent-create-request": frozenset(
-        {
-            "pis-v4-international-payment-consent-read-request",
-            "pis-v4-international-payment-create-request",
-            "pis-v4-international-payment-read-request",
-        }
-    ),
-    "pis-v4-international-scheduled-payment-consent-create-request": frozenset(
-        {
-            "pis-v4-international-scheduled-payment-consent-read-request",
-            "pis-v4-international-scheduled-payment-create-request",
-            "pis-v4-international-scheduled-payment-read-request",
-        }
-    ),
-}
-"""PIS request steps that need each consent to be PSU-authorised first."""
 
 _VRP_CONSENT_AUTHORIZATION_STEP_IDS = frozenset(
     {
@@ -835,11 +759,11 @@ def _pis_inline_authorization_steps(
             exchange when downstream PIS steps need the created consent authorised,
             otherwise an empty tuple.
     """
-    if request_step.step_id not in _PIS_CONSENT_AUTHORIZATION_STEPS:
+    if request_step.psu_authorization is None:
         return ()
-    if not _compiled_plan_requires_pis_consent_authorization(compiled_plan, request_step.step_id):
+    if not _compiled_plan_requires_pis_consent_authorization(compiled_plan, request_step):
         return ()
-    return (_pis_psu_authorization_step(request_step.step_id), _pis_authorization_code_token_step(request_step.step_id))
+    return (_pis_psu_authorization_step(request_step), _pis_authorization_code_token_step(request_step))
 
 
 def _vrp_inline_authorization_steps(
@@ -868,20 +792,22 @@ def _vrp_inline_authorization_steps(
     )
 
 
-def _compiled_plan_requires_pis_consent_authorization(compiled_plan: CompiledTestPlan, consent_step_id: str) -> bool:
+def _compiled_plan_requires_pis_consent_authorization(
+    compiled_plan: CompiledTestPlan,
+    consent_step: CatalogueRequestStep,
+) -> bool:
     """Return whether selected PIS steps need a PSU-authorised consent.
 
     Args:
         compiled_plan: Compiled catalogue plan to inspect.
-        consent_step_id: PIS consent-creation request step id.
+        consent_step: PIS consent-creation request step.
 
     Returns:
         ``True`` when any selected downstream step consumes the consent created
         by ``consent_step_id``.
     """
-    dependent_step_ids = _PIS_CONSENT_AUTHORIZATION_DEPENDENT_STEPS.get(consent_step_id, frozenset())
     return any(
-        request_step.step_id in dependent_step_ids
+        request_step.required_psu_authorization_step_id == consent_step.step_id
         for test_case in compiled_plan.test_cases
         for request_step in test_case.request_steps
     )
@@ -1127,28 +1053,27 @@ def _cbpii_psu_authorization_step() -> PsuAuthorizationStep:
     )
 
 
-def _pis_psu_authorization_step(consent_step_id: str) -> PsuAuthorizationStep:
+def _pis_psu_authorization_step(consent_step: CatalogueRequestStep) -> PsuAuthorizationStep:
     """Build a PIS PSU consent-authorisation step.
 
     Args:
-        consent_step_id: PIS consent-creation request step whose response body
-            contains the intent id to authorise.
+        consent_step: PIS consent-creation request step whose response body
+            contains the intent id and authorization metadata.
 
     Returns:
         PSU authorisation step that binds the captured PIS consent id into a
         generated FAPI request object.
 
     Raises:
-        ValueError: If ``consent_step_id`` is not a known PIS consent step.
+        ValueError: If the request does not declare PSU authorization metadata.
     """
-    step_metadata = _PIS_CONSENT_AUTHORIZATION_STEPS.get(consent_step_id)
+    step_metadata = consent_step.psu_authorization
     if step_metadata is None:
-        raise ValueError(f"Unknown PIS consent step id: {consent_step_id}")
-    step_id, step_name, _token_step_id, _token_id, _flow_label = step_metadata
-    captured_consent_id = f"${{steps.{consent_step_id}.response.body.Data.ConsentId}}"
+        raise ValueError(f"PIS consent step {consent_step.step_id} is missing authorization metadata")
+    captured_consent_id = f"${{steps.{consent_step.step_id}.response.body.Data.ConsentId}}"
     return PsuAuthorizationStep(
-        id=step_id,
-        name=step_name,
+        id=step_metadata.authorization_step_id,
+        name=step_metadata.authorization_step_name,
         mode="manual",
         authorization_endpoint="${config.oauth.authorizationEndpoint}",
         client_id="${config.oauth.clientId}",
@@ -1165,34 +1090,33 @@ def _pis_psu_authorization_step(consent_step_id: str) -> PsuAuthorizationStep:
     )
 
 
-def _pis_authorization_code_token_step(consent_step_id: str) -> ManifestStep:
+def _pis_authorization_code_token_step(consent_step: CatalogueRequestStep) -> ManifestStep:
     """Build a PIS authorisation-code token exchange step for one consent flow.
 
     Args:
-        consent_step_id: PIS consent-creation request step whose PSU
-            authorisation code should be exchanged.
+        consent_step: PIS consent-creation request step whose PSU authorization
+            code should be exchanged.
 
     Returns:
         HTTP token-exchange step that records a flow-specific PIS bearer token
         for downstream consent, funds-confirmation, and payment requests.
 
     Raises:
-        ValueError: If ``consent_step_id`` is not a known PIS consent step.
+        ValueError: If the request does not declare PSU authorization metadata.
     """
-    step_metadata = _PIS_CONSENT_AUTHORIZATION_STEPS.get(consent_step_id)
+    step_metadata = consent_step.psu_authorization
     if step_metadata is None:
-        raise ValueError(f"Unknown PIS consent step id: {consent_step_id}")
-    psu_step_id, _psu_step_name, token_step_id, token_id, flow_label = step_metadata
+        raise ValueError(f"PIS consent step {consent_step.step_id} is missing authorization metadata")
     return ManifestStep(
-        id=token_step_id,
-        name=f"Exchange PIS {flow_label} authorisation code for payments token",
+        id=step_metadata.token_step_id,
+        name=f"Exchange PIS {step_metadata.flow_label} authorisation code for payments token",
         request=ManifestRequest(
             method="POST",
             url="${config.oauth.tokenEndpoint}",
             body=FormBody(
                 fields={
                     "grant_type": "authorization_code",
-                    "code": f"${{steps.{psu_step_id}.response.body.code}}",
+                    "code": f"${{steps.{step_metadata.authorization_step_id}.response.body.code}}",
                     "redirect_uri": "${config.oauth.redirectUri}",
                     "client_id": "${config.oauth.clientId}",
                 }
@@ -1203,7 +1127,7 @@ def _pis_authorization_code_token_step(consent_step_id: str) -> ManifestStep:
         group="catalogue",
         phase="execution",
         token_endpoint_auth_policy=TokenEndpointAuthPolicy(source="fapi-signing"),
-        produces_token_id=token_id,
+        produces_token_id=step_metadata.token_id,
     )
 
 
@@ -1505,11 +1429,17 @@ def _catalogue_detached_jws_policy(request_step: CatalogueRequestStep) -> Detach
         Detached-JWS policy for AIS account-access consent creation and PIS
         payment-initiation write requests, otherwise ``None``.
     """
+    if request_step.detached_jws_profile is not None:
+        return DetachedJwsPolicy(
+            source="fapi-signing",
+            omit_protected_headers=request_step.detached_jws_omit_claims,
+            profile=request_step.detached_jws_profile,
+        )
     if request_step.step_id == _AIS_CONSENT_CREATE_STEP_ID:
         return DetachedJwsPolicy(source="fapi-signing")
     if (
         request_step.method in {"POST", "PUT", "PATCH"}
-        and request_step.path.startswith(_OB_PIS_PATH_PREFIX)
+        and request_step.path.startswith("/open-banking/v4.0/pisp/")
         and request_step.step_id.startswith("pis-v4-")
         and request_step.step_id != _PIS_MISSING_SIGNATURE_STEP_ID
     ):
@@ -1580,6 +1510,21 @@ def _catalogue_request_url(
         generated_runtime_values=generated_runtime_values,
         runtime_inputs=runtime_inputs,
     )
+    if request_step.query_parameters:
+        query = urlencode(
+            tuple(
+                (
+                    name,
+                    _resolve_catalogue_template_string(
+                        value,
+                        generated_runtime_values=generated_runtime_values,
+                        runtime_inputs=runtime_inputs,
+                    ),
+                )
+                for name, value in request_step.query_parameters.items()
+            )
+        )
+        resolved_path = f"{resolved_path}?{query}"
     return f"{base_url.rstrip('/')}/{resolved_path.lstrip('/')}"
 
 
@@ -1764,17 +1709,26 @@ def _generated_runtime_value(generated_value: str) -> str:
         return uuid.uuid4().hex
     if generated_value == "invalid-resource-id":
         return f"invalid-{uuid.uuid4()}"
+    if generated_value == "legacy-invalid-consent-id":
+        return "42"
     if generated_value == "invalid-access-token":
         return f"invalid-{secrets.token_urlsafe(24)}"
-    if generated_value == "next-day-date-time-offset":
+    if generated_value == "next-day-date-offset":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0).isoformat()
+    if generated_value == "next-day-date-utc":
         return (
             (datetime.now(UTC) + timedelta(days=1))
-            .astimezone(timezone(timedelta(hours=-7)))
-            .replace(microsecond=0)
-            .isoformat()
+            .replace(hour=0, minute=0, second=0, microsecond=0)
+            .strftime("%Y-%m-%dT%H:%M:%SZ")
         )
+    if generated_value == "next-day-date-time-offset":
+        return (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).isoformat()
+    if generated_value == "next-day-date-time-offset-milliseconds":
+        return (datetime.now(UTC) + timedelta(days=1)).isoformat(timespec="milliseconds")
     if generated_value == "next-day-date-time-utc":
         return (datetime.now(UTC) + timedelta(days=1)).replace(microsecond=0).strftime("%Y-%m-%dT%H:%M:%SZ")
+    if generated_value == "next-day-date-time-utc-milliseconds":
+        return (datetime.now(UTC) + timedelta(days=1)).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
     raise ValueError(f"Unsupported generated runtime value strategy '{generated_value}'")
 
 
@@ -2150,7 +2104,135 @@ def _catalogue_assertion_to_manifest_assertion(
             runtime_inputs=runtime_inputs,
             generated_header_values=generated_header_values,
         )
+    if assertion.kind == "legacy_fcs":
+        return _catalogue_legacy_fcs_assertion(
+            assertion,
+            generated_header_values=generated_header_values,
+        )
     return _catalogue_response_schema_assertion(assertion)
+
+
+def _catalogue_legacy_fcs_assertion(
+    assertion: CatalogueAssertion,
+    *,
+    generated_header_values: Mapping[str, str],
+) -> LegacyFcsAssertion:
+    """Convert a pinned legacy FCS catalogue assertion bundle.
+
+    Args:
+        assertion: Catalogue assertion with ``kind == "legacy_fcs"``.
+        generated_header_values: Generated request-header values used by
+            playback expectations.
+
+    Returns:
+        Manifest-compatible legacy FCS assertion bundle.
+
+    Raises:
+        ValueError: If the parity rule is malformed.
+    """
+    row_key = assertion.rule.get("rowKey")
+    if not isinstance(row_key, str) or not row_key:
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.rowKey")
+    schema_document = assertion.rule.get("schemaDocument")
+    if schema_document is not None and not isinstance(schema_document, str):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires string rule.schemaDocument")
+    raw_schema_refs = assertion.rule.get("schemaRefs", {})
+    if not isinstance(raw_schema_refs, dict):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires object rule.schemaRefs")
+    schema_refs: dict[int, str] = {}
+    for raw_status, raw_ref in raw_schema_refs.items():
+        if not raw_status.isdigit() or not isinstance(raw_ref, str):
+            raise ValueError(
+                f"Catalogue assertion '{assertion.assertion_id}' requires status-to-string rule.schemaRefs"
+            )
+        schema_refs[int(raw_status)] = raw_ref
+    return LegacyFcsAssertion(
+        type="legacy_fcs",
+        row_key=row_key,
+        all_of=_catalogue_legacy_expectations(
+            assertion,
+            key="allOf",
+            generated_header_values=generated_header_values,
+        ),
+        one_of=_catalogue_legacy_expectations(
+            assertion,
+            key="oneOf",
+            generated_header_values=generated_header_values,
+        ),
+        last_if_all=_catalogue_legacy_expectations(
+            assertion,
+            key="lastIfAll",
+            generated_header_values=generated_header_values,
+        ),
+        schema_document=schema_document,
+        schema_refs=schema_refs,
+    )
+
+
+def _catalogue_legacy_expectations(
+    assertion: CatalogueAssertion,
+    *,
+    key: str,
+    generated_header_values: Mapping[str, str],
+) -> tuple[Mapping[str, JsonValue], ...]:
+    """Resolve one legacy expectation group for manifest execution.
+
+    Args:
+        assertion: Catalogue assertion containing the parity rule.
+        key: Legacy expectation-group key.
+        generated_header_values: Generated request-header values used by
+            playback expectations.
+
+    Returns:
+        Ordered resolved legacy expectation objects.
+
+    Raises:
+        ValueError: If the expectation group is malformed.
+    """
+    raw_expectations = assertion.rule.get(key, [])
+    if not isinstance(raw_expectations, list):
+        raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires array rule.{key}")
+    expectations: list[Mapping[str, JsonValue]] = []
+    for raw_expectation in raw_expectations:
+        if not isinstance(raw_expectation, dict):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' requires object entries in rule.{key}")
+        resolved = _resolve_legacy_assertion_value(
+            raw_expectation,
+            generated_header_values=generated_header_values,
+        )
+        if not isinstance(resolved, dict):
+            raise ValueError(f"Catalogue assertion '{assertion.assertion_id}' resolved rule.{key} incorrectly")
+        expectations.append(resolved)
+    return tuple(expectations)
+
+
+def _resolve_legacy_assertion_value(
+    value: JsonValue,
+    *,
+    generated_header_values: Mapping[str, str],
+) -> JsonValue:
+    """Resolve generated request-header references in legacy expectations.
+
+    Args:
+        value: Legacy assertion JSON value.
+        generated_header_values: Generated request headers keyed by lowercase
+            header name.
+
+    Returns:
+        Assertion value with supported playback references resolved.
+    """
+    if value == "$x-fapi-interaction-id":
+        return generated_header_values.get("x-fapi-interaction-id", value)
+    if isinstance(value, list):
+        return [
+            _resolve_legacy_assertion_value(item, generated_header_values=generated_header_values) for item in value
+        ]
+    if isinstance(value, dict):
+        return {
+            key: _resolve_legacy_assertion_value(item, generated_header_values=generated_header_values)
+            for key, item in value.items()
+        }
+    return value
 
 
 def _catalogue_json_field_assertion(assertion: CatalogueAssertion) -> JsonFieldAssertion:
@@ -4380,7 +4462,7 @@ def _maybe_apply_ob_detached_jws(
         raise ValueError("Detached request signing requires fapiSigning configuration")
     detached_signature = signing_service.sign_detached_json_payload(
         serialized_json_body,
-        profile=_detached_jws_profile_for_request(resolved_url),
+        profile=manifest_step.request.detached_jws.profile or _detached_jws_profile_for_request(resolved_url),
         omit_protected_headers=manifest_step.request.detached_jws.omit_protected_headers,
     )
     validate_header_value(
@@ -4404,7 +4486,7 @@ def _detached_jws_profile_for_request(resolved_url: str) -> OpenBankingDetachedJ
         signing keeps the legacy unencoded-payload profile.
     """
     normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
-    if normalized_path.startswith(_OB_PIS_PATH_PREFIX) or _is_ob_vrp_path(normalized_path):
+    if normalized_path.startswith(_OB_PIS_PATH_PREFIXES) or _is_ob_vrp_path(normalized_path):
         return "ob-v3.1.4+"
     return "legacy-b64-false"
 
@@ -4445,8 +4527,8 @@ def _requires_ob_detached_jws(*, manifest_step: ManifestStep, resolved_url: str)
         return False
     normalized_path = _normalize_url_path_for_match(urlsplit(resolved_url).path)
     return (
-        normalized_path == _OB_ACCOUNT_ACCESS_CONSENTS_PATH
-        or normalized_path.startswith(_OB_PIS_PATH_PREFIX)
+        normalized_path in _OB_ACCOUNT_ACCESS_CONSENTS_PATHS
+        or normalized_path.startswith(_OB_PIS_PATH_PREFIXES)
         or _is_ob_vrp_path(normalized_path)
     )
 

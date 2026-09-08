@@ -3455,16 +3455,19 @@ def test_compiled_cbpii_manifest_uses_configured_debtor_account(tmp_path: Path) 
     assert isinstance(cbpii_step, ManifestStep)
     body = cbpii_step.request.body
     assert isinstance(body, JsonBody)
-    assert body.value == {
-        "Data": {
-            "DebtorAccount": {
-                "SchemeName": "UK.OBIE.SortCodeAccountNumber",
-                "Identification": "12345678901234",
-                "Name": "Model Bank Account",
-            },
-            "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
-        }
+    assert isinstance(body.value, dict)
+    data = body.value["Data"]
+    assert isinstance(data, dict)
+    assert data["DebtorAccount"] == {
+        "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+        "Identification": "12345678901234",
+        "Name": "Model Bank Account",
     }
+    expiration = data["ExpirationDateTime"]
+    assert isinstance(expiration, str)
+    parsed_expiration = datetime.fromisoformat(expiration.replace("Z", "+00:00"))
+    assert parsed_expiration.time() == datetime.min.time()
+    assert parsed_expiration.date() == (datetime.now(UTC) + timedelta(days=1)).date()
 
 
 @pytest.mark.unit
@@ -3584,9 +3587,8 @@ def test_compiled_pis_manifest_builds_signed_payment_bodies_and_authorisation_st
     assert isinstance(instruction_identification, str)
     assert isinstance(end_to_end_identification, str)
     assert len(instruction_identification) == 32
-    assert len(end_to_end_identification) == 32
+    assert end_to_end_identification == "e2e-domestic-pay"
     assert instruction_identification != "FCSV2DomesticPaymentInstruction"
-    assert end_to_end_identification != "FCSV2DomesticPaymentEndToEnd"
     assert consent_step.request.body.value == {
         "Data": {
             "Initiation": {
@@ -3700,16 +3702,14 @@ def test_compiled_pis_manifest_builds_distinct_domestic_consent_parity_cases(tmp
         runtime_config=RuntimeConfig(discovery_url="https://auth.example.com/.well-known/openid-configuration"),
     )
 
-    no_financial_id_step = next(
+    without_authorisation_step = next(
         step
         for step in manifest.steps
-        if step.id == "pis-v4-domestic-payment-consent-create-without-financial-id-request"
+        if step.id == "pis-v4-domestic-payment-consent-create-without-authorisation-request"
     )
-    assert isinstance(no_financial_id_step, ManifestStep)
-    assert no_financial_id_step.request.headers is not None
-    assert "x-fapi-financial-id" not in {header.lower() for header in no_financial_id_step.request.headers}
-    assert no_financial_id_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
-    assert no_financial_id_step.response_signature_policy is not None
+    assert isinstance(without_authorisation_step, ManifestStep)
+    assert without_authorisation_step.request.detached_jws == DetachedJwsPolicy(source="fapi-signing")
+    assert without_authorisation_step.response_signature_policy is not None
 
     missing_claim_step = next(
         step
@@ -4082,10 +4082,10 @@ def test_compiled_pis_manifest_builds_legacy_scheduled_datetime_variant_bodies(t
     utc_value = utc_initiation["RequestedExecutionDateTime"]
     assert isinstance(offset_value, str)
     assert isinstance(utc_value, str)
-    assert offset_value.endswith("-07:00")
-    assert datetime.fromisoformat(offset_value).tzinfo is not None
+    assert offset_value.endswith("+00:00")
+    assert datetime.fromisoformat(offset_value).timetz().isoformat() == "00:00:00+00:00"
     assert utc_value.endswith("Z")
-    assert datetime.fromisoformat(utc_value.replace("Z", "+00:00")).tzinfo is not None
+    assert datetime.fromisoformat(utc_value.replace("Z", "+00:00")).timetz().isoformat() == "00:00:00+00:00"
 
 
 @pytest.mark.unit
@@ -4196,7 +4196,7 @@ def test_compiled_pis_manifest_uses_per_flow_authorisation_code_tokens(tmp_path:
     }
     assert set(token_steps) == {
         "setup-token-pis-domestic-payment-access",
-        "setup-token-pis-domestic-scheduled-payment-access",
+        "setup-token-pis-domestic-scheduled-payment-legacy-access",
         "setup-token-pis-domestic-standing-order-access",
         "setup-token-pis-international-payment-access",
         "setup-token-pis-international-scheduled-payment-access",
@@ -4218,13 +4218,13 @@ def test_compiled_pis_manifest_uses_per_flow_authorisation_code_tokens(tmp_path:
     )
     assert required_tokens_by_step_id["pis-v4-domestic-payment-create-request"] == "pis-domestic-payment-access"
     assert required_tokens_by_step_id["pis-v4-domestic-payment-read-request"] == "pis-payment-access"
-    assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-consent-read-request"] == (
-        "pis-payment-access"
+    assert (
+        required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-consent-read-after-authorisation-request"]
+        == "pis-payment-access"
     )
     assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-create-request"] == (
         "pis-domestic-scheduled-payment-access"
     )
-    assert required_tokens_by_step_id["pis-v4-domestic-scheduled-payment-read-request"] == "pis-payment-access"
     assert required_tokens_by_step_id["pis-v4-domestic-standing-order-consent-read-request"] == "pis-payment-access"
     assert required_tokens_by_step_id["pis-v4-domestic-standing-order-create-request"] == (
         "pis-domestic-standing-order-access"

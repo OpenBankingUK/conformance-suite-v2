@@ -769,6 +769,50 @@ def test_config_visibility_restores_cbpii_business_defaults() -> None:
 
 
 @pytest.mark.unit
+def test_config_visibility_classifies_v311_pisp_vrp_paths_as_vrp() -> None:
+    """Show only VRP business fields for v3.1 VRP resources under ``pisp``."""
+    boundary = PlanDocumentBoundary("open-banking-uk", "read-write", "3.1.11")
+    hierarchy = catalogue_scope_hierarchy(
+        boundary,
+        selected_resource_group_ids=("variable-recurring-payments",),
+    )
+    vrp_endpoint = next(
+        endpoint
+        for group in hierarchy.resource_groups
+        for endpoint in group.endpoints
+        if endpoint.method == "POST" and endpoint.path == "/open-banking/v3.1/pisp/domestic-vrp-consents"
+    )
+    draft = (
+        SessionBuilderDraftStore(SessionStore())
+        .create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="3.1.11",
+        )
+        .with_scope_selection(
+            resource_group_ids=("variable-recurring-payments",),
+            endpoint_ids=(vrp_endpoint.id,),
+            endpoint_capability_ids={},
+        )
+        .with_config(config=DISCOVERY_CONFIG)
+    )
+
+    visibility = config_visibility_for_draft(draft)
+    form = BusinessConfigForm(data={}, config_visibility=visibility)
+
+    assert visibility.selected_api_ids == frozenset({"vrp"})
+    assert visibility.show_ais is False
+    assert visibility.show_pis is False
+    assert visibility.show_cbpii is False
+    assert visibility.show_vrp is True
+    assert visibility.show_business_defaults is True
+    assert form.is_valid() is False
+    assert "vrp_creditor_account_scheme_name" in form.errors
+    assert "pis_creditor_account_scheme_name" not in form.errors
+
+
+@pytest.mark.unit
 def test_config_visibility_restores_pis_business_defaults() -> None:
     """PIS endpoint selections show payment business defaults."""
     draft = (

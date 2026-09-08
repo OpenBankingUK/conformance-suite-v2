@@ -387,6 +387,10 @@ def test_parse_v1_manifest_accepts_payment_initiation_response_schema_documents(
             },
             (
                 r"steps\[0\]\.assertions\[0\]\.document must be one of: "
+                r"ob-read-write-v3\.1\.11-account-info-openapi, "
+                r"ob-read-write-v3\.1\.11-confirmation-funds-openapi, "
+                r"ob-read-write-v3\.1\.11-payment-initiation-openapi, "
+                r"ob-read-write-v3\.1\.11-vrp-openapi, "
                 r"ob-read-write-v4\.0-account-info-openapi, "
                 r"ob-read-write-v4\.0-payment-initiation-openapi, "
                 r"ob-read-write-v4\.0\.1-account-info-openapi, "

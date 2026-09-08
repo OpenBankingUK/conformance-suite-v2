@@ -1,8 +1,9 @@
 # FCS Legacy Benchmark Mapping
 
 This document records the hand-maintained mapping from legacy Functional
-Conformance Suite coverage into the v2 catalogue model. The source baseline is
-the legacy `OpenBankingUK/conformance-suite` manifest set under `manifests/`.
+Conformance Suite coverage into the v2 catalogue model. The v3.1.11 source baseline is `OpenBankingUK/conformance-suite` release
+`v1.10.0`, commit `1908789b52e26e0a79fc5a565e411f771006c3ce`.
+The v4 mapping continues to use the legacy manifest set under `manifests/`.
 
 The v2 product no longer exposes legacy manifests, suite resources, or
 pre-selected smoke/slice suite names to participants. Legacy provenance is kept
@@ -12,15 +13,62 @@ inside catalogue test-case `compliance_scope` values and result traceability.
 
 | Legacy source | v2 catalogue key |
 | --- | --- |
-| `ob_3.1_accounts_transactions_fca.json`, `ob_4.0_accounts_transactions_fca.json` | `open-banking / v4.0 / ais` |
-| `ob_3.1_payment_fca.json`, `ob_4.0_payment_fca.json` | `open-banking / v4.0 / pis` |
-| `ob_3.1_cbpii_fca.json`, `ob_4.0_cbpii_fca.json` | `open-banking / v4.0 / cbpii` |
-| `ob_3.1_variable_recurring_payments.json`, `ob_4.0_variable_recurring_payments.json` | `open-banking / v4.0 / vrp` |
+| `ob_3.1_accounts_transactions_fca.json` | `open-banking / v3.1 / ais` |
+| `ob_3.1_payment_fca.json` | `open-banking / v3.1 / pis` |
+| `ob_3.1_cbpii_fca.json` | `open-banking / v3.1 / cbpii` |
+| `ob_3.1_variable_recurring_payments.json` | `open-banking / v3.1 / vrp` |
+| `ob_4.0_accounts_transactions_fca.json` | `open-banking / v4.0 / ais` |
+| `ob_4.0_payment_fca.json` | `open-banking / v4.0 / pis` |
+| `ob_4.0_cbpii_fca.json` | `open-banking / v4.0 / cbpii` |
+| `ob_4.0_variable_recurring_payments.json` | `open-banking / v4.0 / vrp` |
 | `cVRP_4.0_variable_recurring_payments.json` | `open-banking / v4.0 / cvrp` |
 
-Legacy v3.1 and v4.0 inputs are folded into v4.0 catalogue boundaries where the
-current v2 compiler has one canonical catalogue per API family. Security
-profiles remain applicability filters, not duplicate catalogues.
+Read/Write `3.1.11` binds only to the dedicated internal `v3.1` catalogue keys.
+The participant interface does not expose generic `3.1` or earlier v3.1.x
+versions. Security profile `FAPI1_ADVANCED` is normalized to
+`fapi1-advanced`.
+
+## Read/Write v3.1.11 parity contract
+
+The machine-checkable contract is
+[`conformance/standards/ob_read_write/v3_1_11/parity-contract.json`](../conformance/standards/ob_read_write/v3_1_11/parity-contract.json).
+It preserves manifest order, duplicate rows, missing versus empty fields,
+version predicates, request data, assertion order, context capture, schema
+flags, and response-signature flags. Only HTTP method casing and JSON object-key
+ordering are normalized. Assertion and data references resolve exclusively
+against the pinned v1.10.0 `assertions.json` and `data.json`.
+
+| API | Rows | Unique script IDs | Schema checks | Signature checks |
+| --- | ---: | ---: | ---: | ---: |
+| AIS | 96 | 96 | 35 | 0 |
+| PIS | 32 | 32 | 31 | 22 |
+| CBPII | 14 | 13 | 10 | 0 |
+| VRP | 14 | 14 | 14 | 11 |
+
+The duplicate `OB-301-CBPII-000009` delete and expiration variants retain
+separate row identities. VRP `apiVersion` predicates are evaluated against
+`3.1.11`, so pre-3.1.11 variants remain in the audit ledger but do not execute.
+CBPII consent expirations execute the pinned UTC `nextDayDate` and
+`nextDayDateTime` macro semantics, and the invalid-consent delete replays the
+legacy literal identifier `42`.
+The four normative OpenAPI snapshots are pinned from
+`OpenBankingUK/read-write-api-specs` tag `v3.1.11`.
+
+Each selected row compiles an executable legacy assertion bundle preserving
+the source `asserts`, `asserts_one_of`, and `asserts_last_if_all` group
+semantics. Response schema checks select the pinned v3.1.11 OpenAPI response
+schema by the actual HTTP status. Legacy query variants compile as distinct
+requests with their pinned query values; they are not suppressed by v2-only
+optional capability gates. Domestic standing-order requests use the
+scalar `businessTestData.pis.standingOrderFrequencyV31` value required by v3.1;
+the v4 frequency object remains isolated to v4 catalogues.
+
+The contract records one approved correction: AIS row
+`OB-301-PRO-103403` uses the normative plural `/products` endpoint instead of
+the legacy manifest's invalid singular `/product` path. Any further intentional
+departure from observable v1.10.0 behavior must add a source row, original and
+replacement behavior, rationale, and regression test to its `corrections`
+array. Any unlisted delta is a release blocker.
 
 ## Mapping conventions
 
@@ -37,9 +85,9 @@ profiles remain applicability filters, not duplicate catalogues.
 - Runtime values are represented as catalogue runtime input requirements.
 - Legacy script and manifest provenance is carried in `compliance_scope` values
   prefixed with `legacy-` or the older CBPII `legacy_` form.
-- For v4 Read/Write compilation, legacy v3-only variants are retained as
-  catalogue provenance but are filtered out by specification-version
-  applicability.
+- v3.1.11 compilation emits only v3.1 paths, schema documents, and source
+  provenance. v4 PIS compilation emits only the 29 pinned v4 rows and their
+  exact executable assertion bundles.
 - Legacy `schemaCheck: true` is represented as executable bundled OpenAPI
   `response_schema` assertions for JSON response bodies. Legacy 204/no-body
   schema checks remain represented by their status assertion because there is no
@@ -91,16 +139,30 @@ all 95 legacy v4 manifest scripts.
 ## PIS payments
 
 Catalogue: `open-banking / v4.0 / pis`
-Version: `2026.07.legacy-fcs-pis.1`
-Cases: 29 catalogue cases; full v4 execution filters v3-only variants and covers
-all 29 legacy v4 manifest scripts.
+Version: `2026.09.legacy-fcs-pis.2`
+Cases: 29 catalogue cases covering all 29 legacy v4 manifest rows one-for-one.
+
+The dedicated v4 catalogue executes the pinned legacy rows in source order.
+Each case runs the original `asserts`, `asserts_one_of`, and schema-check
+semantics rather than retaining some assertion ids as traceability-only
+metadata. It also preserves the source response-signature flags, fixed
+end-to-end identifiers, next-day UTC-midnight date macros, distinct invalid
+standing-order bodies, and the two independent domestic scheduled-payment
+consent flows.
+
+The dedicated v3.1.11 adapter executes all 32 selected v3.1 ledger rows as
+32 distinct request cases. It preserves the non-authorising and authorising
+domestic-consent rows separately, replays the pinned fixed end-to-end
+identifiers, reuses the consent initiation values for submissions, and
+renders the legacy `nextDayDate` scheduled-payment variants at next-day UTC
+midnight.
 
 | Endpoint area | Representative v2 catalogue IDs |
 | --- | --- |
 | Domestic payment consent | `pis-v4-domestic-payment-consent-create`, `pis-v4-domestic-payment-consent-reject-invalid-signature`, `pis-v4-domestic-payment-consent-read-authorised` |
 | Domestic payment execution | `pis-v4-domestic-payment-funds-confirmation`, `pis-v4-domestic-payment-create`, `pis-v4-domestic-payment-read` |
-| Domestic scheduled payments | `pis-v4-domestic-scheduled-payment-consent-create`, `pis-v4-domestic-scheduled-payment-consent-read`, `pis-v4-domestic-scheduled-payment-create`, `pis-v4-domestic-scheduled-payment-read` |
-| Domestic standing orders | `pis-v4-domestic-standing-order-consent-create`, `pis-v4-domestic-standing-order-consent-read`, `pis-v4-domestic-standing-order-create`, `pis-v4-domestic-standing-order-read`, `pis-v4-domestic-standing-order-read-with-number-and-final-date`, `pis-v4-domestic-standing-order-read-with-final-amount-only`, `pis-v4-domestic-standing-order-reject-invalid-frequency` |
+| Domestic scheduled payments | `pis-v4-domestic-scheduled-payment-consent-create`, `pis-v4-domestic-scheduled-payment-consent-read`, `pis-v4-domestic-scheduled-payment-consent-create-and-authorise`, `pis-v4-domestic-scheduled-payment-consent-read-after-authorisation`, `pis-v4-domestic-scheduled-payment-create` |
+| Domestic standing orders | `pis-v4-domestic-standing-order-consent-create`, `pis-v4-domestic-standing-order-consent-read`, `pis-v4-domestic-standing-order-create`, `pis-v4-domestic-standing-order-read`, `pis-v4-domestic-standing-order-reject-invalid-frequency` |
 | International payments | `pis-v4-international-payment-consent-create`, `pis-v4-international-payment-consent-read`, `pis-v4-international-payment-create`, `pis-v4-international-payment-read` |
 | International scheduled payments | `pis-v4-international-scheduled-payment-consent-create`, `pis-v4-international-scheduled-payment-consent-read`, `pis-v4-international-scheduled-payment-create`, `pis-v4-international-scheduled-payment-read` |
 
@@ -164,8 +226,12 @@ across browser, CLI, REST, run-result, and certification surfaces.
 The mapping is guarded by tests that assert:
 
 - The four public Open Banking Read/Write catalogue families are registered in
-  `conformance.catalogue_registry`; cVRP remains a private catalogue fixture
-  until a public plan boundary is supported.
+  both dedicated v3.1 and v4.0 catalogue boundaries in
+  `conformance.catalogue_registry`; cVRP remains a private catalogue fixture.
+- The v3.1.11 parity contract pins the v1.10.0 commit, source hashes, row
+  identities, duplicate CBPII row, selection predicates, and correction list.
+- v3.1.11 compilation rejects v4 paths, schema documents, provenance, and case
+  identifiers while preserving existing v4 behavior.
 - Each bundled catalogue test case carries legacy compliance-scope
   provenance.
 - Family-specific catalogue tests compile representative endpoint selections and

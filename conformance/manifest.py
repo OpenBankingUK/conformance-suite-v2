@@ -7,7 +7,7 @@ import json
 import math
 import re
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from types import MappingProxyType
 from typing import Literal, cast
@@ -53,10 +53,13 @@ TokenEndpointAuthSource = Literal["fapi-signing"]
 DetachedJwsSource = Literal["fapi-signing"]
 """Source selectors for detached JWS directives on HTTP requests."""
 
+DetachedJwsProfile = Literal["legacy-b64-false", "ob-v3.1.4+"]
+"""Open Banking detached-JWS signing profiles accepted by manifests."""
+
 ResponseSignatureSource = Literal["discovery-jwks"]
 """Source selectors for response JWS verification material."""
 
-AssertionType = Literal["http_status", "json_field", "header", "response_schema"]
+AssertionType = Literal["http_status", "json_field", "header", "response_schema", "legacy_fcs"]
 """Assertion discriminators supported by manifest assertions."""
 
 ResponseSchemaSource = Literal["bundled_openapi"]
@@ -201,10 +204,13 @@ class DetachedJwsPolicy:
             detached JWS.
         omit_protected_headers: Open Banking protected-header aliases to omit
             from the generated detached JWS for negative conformance tests.
+        profile: Explicit Open Banking detached-JWS signing profile. Older
+            manifests may omit it and retain URL-derived behavior.
     """
 
     source: DetachedJwsSource
     omit_protected_headers: tuple[str, ...] = ()
+    profile: DetachedJwsProfile | None = None
 
 
 @dataclass(frozen=True)
@@ -317,7 +323,34 @@ class ResponseSchemaAssertion:
     body_path: str | None = None
 
 
-ManifestAssertion = HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion
+@dataclass(frozen=True)
+class LegacyFcsAssertion:
+    """Exact legacy FCS assertion groups for one pinned manifest row.
+
+    Attributes:
+        type: Assertion discriminator for legacy parity evaluation.
+        row_key: Stable manifest-plus-row identity from the parity contract.
+        all_of: Expectations that must all pass.
+        one_of: Alternative expectations where at least one must pass.
+        last_if_all: Conditions followed by a final expectation that applies
+            only when every preceding condition passes.
+        schema_document: Optional bundled OpenAPI document used when the row
+            enables schema checking.
+        schema_refs: Response-status-to-schema-reference mapping.
+    """
+
+    type: Literal["legacy_fcs"]
+    row_key: str
+    all_of: tuple[Mapping[str, JsonValue], ...] = ()
+    one_of: tuple[Mapping[str, JsonValue], ...] = ()
+    last_if_all: tuple[Mapping[str, JsonValue], ...] = ()
+    schema_document: str | None = None
+    schema_refs: Mapping[int, str] = field(default_factory=lambda: MappingProxyType({}))
+
+
+ManifestAssertion = (
+    HttpStatusAssertion | JsonFieldAssertion | HeaderAssertion | ResponseSchemaAssertion | LegacyFcsAssertion
+)
 """Assertion variants accepted by manifest tests and sequential steps (v0 and v1)."""
 
 
@@ -1487,7 +1520,11 @@ def _parse_optional_detached_jws(
     policy_location = f"{location}.detachedJws"
     if not isinstance(raw_policy, dict):
         raise ManifestError(f"{policy_location} must be a JSON object when present")
-    _reject_unknown_keys(raw_policy, allowed_keys={"source", "omitProtectedHeaders"}, location=policy_location)
+    _reject_unknown_keys(
+        raw_policy,
+        allowed_keys={"source", "omitProtectedHeaders", "profile"},
+        location=policy_location,
+    )
 
     source = _required_string(raw_policy, "source", location=policy_location)
     _validate_placeholder_syntax(source, location=f"{policy_location}.source", seen_ids=seen_ids)
@@ -1496,7 +1533,35 @@ def _parse_optional_detached_jws(
     return DetachedJwsPolicy(
         source="fapi-signing",
         omit_protected_headers=_parse_detached_jws_omitted_headers(raw_policy, location=policy_location),
+        profile=_parse_detached_jws_profile(raw_policy, location=policy_location),
     )
+
+
+def _parse_detached_jws_profile(
+    raw_policy: dict[str, JsonValue],
+    *,
+    location: str,
+) -> DetachedJwsProfile | None:
+    """Parse an optional explicit Open Banking detached-JWS profile.
+
+    Args:
+        raw_policy: Raw detached-JWS policy JSON object.
+        location: Dot-path location used in validation errors.
+
+    Returns:
+        Validated profile, or ``None`` for backwards-compatible manifests.
+
+    Raises:
+        ManifestError: If the profile is not a supported string.
+    """
+    if "profile" not in raw_policy:
+        return None
+    profile = _required_string(raw_policy, "profile", location=location)
+    if profile == "legacy-b64-false":
+        return "legacy-b64-false"
+    if profile == "ob-v3.1.4+":
+        return "ob-v3.1.4+"
+    raise ManifestError(f"{location}.profile must be one of: legacy-b64-false, ob-v3.1.4+")
 
 
 def _parse_detached_jws_omitted_headers(raw_policy: dict[str, JsonValue], *, location: str) -> tuple[str, ...]:
@@ -1937,6 +2002,8 @@ def _parse_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> M
         return _parse_header_assertion(raw_assertion, location=location)
     if assertion_type == "response_schema":
         return _parse_response_schema_assertion(raw_assertion, location=location)
+    if assertion_type == "legacy_fcs":
+        return _parse_legacy_fcs_assertion(raw_assertion, location=location)
     # Defensive: _required_assertion_type already constrains assertion_type to the
     # AssertionType literal, but an explicit raise removes the implicit None
     # fall-through and guards against future literal additions.
@@ -2019,6 +2086,83 @@ def _parse_json_field_assertion(raw_assertion: dict[str, JsonValue], *, location
     return assertion
 
 
+def _parse_legacy_fcs_assertion(
+    raw_assertion: dict[str, JsonValue],
+    *,
+    location: str,
+) -> LegacyFcsAssertion:
+    """Parse a pinned legacy FCS assertion bundle.
+
+    Args:
+        raw_assertion: Raw legacy assertion bundle.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Parsed immutable legacy assertion bundle.
+
+    Raises:
+        ManifestError: If the bundle shape or schema metadata is invalid.
+    """
+    _reject_unknown_keys(
+        raw_assertion,
+        allowed_keys={"type", "rowKey", "allOf", "oneOf", "lastIfAll", "schemaDocument", "schemaRefs"},
+        location=location,
+    )
+    row_key = _required_string(raw_assertion, "rowKey", location=location)
+    schema_document = raw_assertion.get("schemaDocument")
+    if schema_document is not None and (
+        not isinstance(schema_document, str) or schema_document not in _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS
+    ):
+        raise ManifestError(f"{location}.schemaDocument must name an allowlisted bundled document")
+    raw_schema_refs = raw_assertion.get("schemaRefs", {})
+    if not isinstance(raw_schema_refs, dict):
+        raise ManifestError(f"{location}.schemaRefs must be a JSON object")
+    schema_refs: dict[int, str] = {}
+    for raw_status, raw_ref in raw_schema_refs.items():
+        if not raw_status.isdigit() or not isinstance(raw_ref, str) or not raw_ref.startswith("#/"):
+            raise ManifestError(f"{location}.schemaRefs must map HTTP status strings to local JSON pointers")
+        schema_refs[int(raw_status)] = raw_ref
+    return LegacyFcsAssertion(
+        type="legacy_fcs",
+        row_key=row_key,
+        all_of=_parse_legacy_expectations(raw_assertion, "allOf", location=location),
+        one_of=_parse_legacy_expectations(raw_assertion, "oneOf", location=location),
+        last_if_all=_parse_legacy_expectations(raw_assertion, "lastIfAll", location=location),
+        schema_document=schema_document,
+        schema_refs=MappingProxyType(schema_refs),
+    )
+
+
+def _parse_legacy_expectations(
+    raw_assertion: dict[str, JsonValue],
+    key: str,
+    *,
+    location: str,
+) -> tuple[Mapping[str, JsonValue], ...]:
+    """Parse one ordered legacy expectation group.
+
+    Args:
+        raw_assertion: Raw legacy assertion bundle.
+        key: Group field to parse.
+        location: Dot-path location string used in error messages.
+
+    Returns:
+        Immutable ordered expectation mappings.
+
+    Raises:
+        ManifestError: If the group is not an array of JSON objects.
+    """
+    raw_expectations = raw_assertion.get(key, [])
+    if not isinstance(raw_expectations, list):
+        raise ManifestError(f"{location}.{key} must be an array")
+    expectations: list[Mapping[str, JsonValue]] = []
+    for index, expectation in enumerate(raw_expectations):
+        if not isinstance(expectation, dict):
+            raise ManifestError(f"{location}.{key}[{index}] must be a JSON object")
+        expectations.append(MappingProxyType(copy.deepcopy(expectation)))
+    return tuple(expectations)
+
+
 def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: str) -> HeaderAssertion:
     """Parse a ``header`` assertion with rule-specific validation.
 
@@ -2055,6 +2199,10 @@ def _parse_header_assertion(raw_assertion: dict[str, JsonValue], *, location: st
 
 
 _ALLOWED_RESPONSE_SCHEMA_DOCUMENTS: set[str] = {
+    "ob-read-write-v3.1.11-account-info-openapi",
+    "ob-read-write-v3.1.11-payment-initiation-openapi",
+    "ob-read-write-v3.1.11-confirmation-funds-openapi",
+    "ob-read-write-v3.1.11-vrp-openapi",
     "ob-read-write-v4.0-account-info-openapi",
     "ob-read-write-v4.0-payment-initiation-openapi",
     "ob-read-write-v4.0.1-account-info-openapi",
@@ -2207,7 +2355,9 @@ def _required_assertion_type(raw_assertion: dict[str, JsonValue], *, location: s
         return "header"
     if assertion_type == "response_schema":
         return "response_schema"
-    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema")
+    if assertion_type == "legacy_fcs":
+        return "legacy_fcs"
+    raise ManifestError(f"{location}.type must be one of: http_status, json_field, header, response_schema, legacy_fcs")
 
 
 def _required_get_method(raw_config: dict[str, JsonValue], *, location: str) -> Literal["GET"]:

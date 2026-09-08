@@ -68,15 +68,24 @@ _OPEN_BANKING_READ_WRITE = SpecificationDefinition(
     family="OBL_READ_WRITE",
     specification="read-write",
     display_name="Read/Write",
-    versions=tuple(
+    versions=(
+        *(
+            SpecificationVersionDefinition(
+                version=version,
+                catalogue_standard="open-banking",
+                catalogue_version="v4.0",
+                catalogue_apis=("ais", "pis", "cbpii", "vrp"),
+                security_profiles=("fapi1-advanced",),
+            )
+            for version in ("4.0.1", "4.0.0", "4.0")
+        ),
         SpecificationVersionDefinition(
-            version=version,
+            version="3.1.11",
             catalogue_standard="open-banking",
-            catalogue_version="v4.0",
+            catalogue_version="v3.1",
             catalogue_apis=("ais", "pis", "cbpii", "vrp"),
             security_profiles=("fapi1-advanced",),
-        )
-        for version in ("4.0.1", "4.0.0", "4.0")
+        ),
     ),
     uses_resource_groups=True,
     scope_presentation="resource-groups",
