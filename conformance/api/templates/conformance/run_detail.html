@@ -488,26 +488,30 @@
         const href = anchor.getAttribute("href");
         if (!href) return null;
 
-        const popupWidth = 520;
-        const popupHeight = 720;
+        const popupTargetSize = 900;
+        const availableWidth = window.screen.availWidth;
+        const availableHeight = window.screen.availHeight;
+        const availableLeft = Number.isFinite(window.screen.availLeft) ? window.screen.availLeft : 0;
+        const availableTop = Number.isFinite(window.screen.availTop) ? window.screen.availTop : 0;
+        const popupWidth = Math.min(popupTargetSize, availableWidth);
+        const popupHeight = Math.min(popupTargetSize, availableHeight);
+        const popupLeft = Math.min(
+            Math.max(availableLeft + Math.round((availableWidth - popupWidth) / 2), availableLeft),
+            availableLeft + availableWidth - popupWidth,
+        );
+        const popupTop = Math.min(
+            Math.max(availableTop + Math.round((availableHeight - popupHeight) / 2), availableTop),
+            availableTop + availableHeight - popupHeight,
+        );
         const popupFeatures = [
             "popup=yes",
             "noopener=yes",
             "noreferrer=yes",
             `width=${popupWidth}`,
             `height=${popupHeight}`,
+            `left=${popupLeft}`,
+            `top=${popupTop}`,
         ];
-
-        if (
-            typeof window.screenX === "number"
-            && typeof window.screenY === "number"
-            && typeof window.outerWidth === "number"
-            && typeof window.outerHeight === "number"
-        ) {
-            const popupLeft = Math.max(window.screenX + Math.round((window.outerWidth - popupWidth) / 2), 0);
-            const popupTop = Math.max(window.screenY + Math.round((window.outerHeight - popupHeight) / 2), 0);
-            popupFeatures.push(`left=${popupLeft}`, `top=${popupTop}`);
-        }
 
         const popupWindow = window.open(href, "_blank", popupFeatures.join(","));
         if (popupWindow) {
