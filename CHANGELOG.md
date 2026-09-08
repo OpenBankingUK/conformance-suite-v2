@@ -59,6 +59,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   response schemas and signature flags, including separate domestic consent
   and scheduled-payment flows, fixed identifiers and UTC-midnight date macros,
   and the original invalid standing-order request bodies.
+- PSU authorisation popups now target 900x900 pixels and shrink, center, and remain within the current screen's usable area.
 - cVRP is no longer exposed through the bundled Open Banking catalogue registry, Open Banking UK Read/Write v2 builder, or aggregate compiler boundary.
 - VRP nested funds-confirmation operations now stay grouped under their parent domestic VRP consent resource group instead of appearing as a separate funds-confirmation resource group.
 - AIS resource runs no longer fail status-only negative cases on non-JSON error bodies, correctly resolve JSON assertion paths through arrays, and generate invalid account identifiers for legacy account-scoped negative cases.
