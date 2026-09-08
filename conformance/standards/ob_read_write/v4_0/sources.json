@@ -21,6 +21,30 @@
       "sha256Chunks": ["0c24d422", "7e6ff6df", "d6400b81", "aeb66238", "239fb336", "05a75290", "b7c334bc", "06ee7d13"]
     },
     {
+      "file": "legacy/ob_4.0_payment_fca.json",
+      "description": "Legacy FCS v1.10.0 v4 PIS manifest used as the strict behavioural parity contract.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/1908789b52e26e0a79fc5a565e411f771006c3ce/manifests/ob_4.0_payment_fca.json",
+      "repository": "OpenBankingUK/conformance-suite",
+      "ref": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "sha256Chunks": ["fabd4080", "b6d79aff", "e7b6ac39", "0597c6bc", "a546c5d4", "62ad27e4", "989581cc", "863dca4a"]
+    },
+    {
+      "file": "legacy/assertions.json",
+      "description": "Legacy FCS v1.10.0 assertion definitions executed exactly by v4 PIS cases.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/1908789b52e26e0a79fc5a565e411f771006c3ce/manifests/assertions.json",
+      "repository": "OpenBankingUK/conformance-suite",
+      "ref": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "sha256Chunks": ["c74b52a4", "0917f310", "601c10be", "f86d78cb", "5f93b1a8", "b0b530fc", "07a0e8f5", "d2c9319a"]
+    },
+    {
+      "file": "legacy/data.json",
+      "description": "Legacy FCS v1.10.0 request-body fixtures used to verify exact v4 PIS request parity.",
+      "url": "https://raw.githubusercontent.com/OpenBankingUK/conformance-suite/1908789b52e26e0a79fc5a565e411f771006c3ce/manifests/data.json",
+      "repository": "OpenBankingUK/conformance-suite",
+      "ref": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+      "sha256Chunks": ["7ecd1b80", "1ad9dd38", "bbb74540", "c0aea603", "6cdda888", "3b0c1236", "341dc9b7", "daac7a10"]
+    },
+    {
       "file": "confirmation-funds-openapi.json",
       "description": "Open Banking Read/Write v4.0 Confirmation of Funds API OpenAPI snapshot from the latest v4.0 swagger update tag.",
       "url": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/confirmation-funds-openapi.json",
@@ -53,5 +77,5 @@
       "sha256Chunks": ["525aec8b", "a2a4a6fd", "af55012b", "f2ba79e8", "ee3d56a4", "03abb070", "a719838c", "1d5ecd39"]
     }
   ],
-  "certificationNote": "These bundled sources support derived partial baseline coverage only. They are not a Standards-approved mandatory matrix or sign-off for certificationCoverage=complete."
+  "certificationNote": "The bundled PIS legacy sources define strict v1.10.0 behavioural parity. Other bundled v4 sources support derived partial baseline coverage and are not a Standards-approved mandatory matrix or sign-off for certificationCoverage=complete."
 }

@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
+  and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
+  schemas, explicit request-signing metadata, and a machine-checkable strict
+  parity contract against legacy FCS v1.10.0, including distinct execution of
+  every AIS query variant without v2-only capability omissions.
 - Catalogue-backed shared plan-document model for Open Banking conformance runs, including catalogue keys, v2 scheme/specification/version boundaries, security-profile applicability, implemented endpoints, runtime input requirements, assertion override tracking, compiled execution graphs, and traceability metadata.
 - Legacy FCS-derived bundled catalogues for AIS/accounts-transactions, PIS/payments, CBPII, and VRP under `conformance/catalogues/`, with registry coverage through `conformance.catalogue_registry`.
 - CLI, REST API, and browser builder support for canonical schemaVersion `1.0` test-plan execution.
@@ -34,6 +39,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Browser navigation now removes the redundant home-page health action and returns participants to the home page from finished run pages.
 - Participant-facing execution now compiles endpoint selections into catalogue plans and reuses the hardened HTTP, masking, signing, PSU authorisation, logging, and result-evidence execution path.
 - CBPII catalogue coverage now executes the distinct legacy invalid-account and expirationDateTime variants from the 3.1.11, 4.0.0, and 4.0.1 FCS manifests instead of grouping them into aggregated cases.
+- CBPII consent expiry and invalid-consent requests now replay the legacy next-day UTC macros and literal `42` identifier instead of fixed or generated substitutes.
 - PIS, AIS, and VRP catalogue coverage now has explicit parity guards for all legacy v3.1 and v4.0 FCS manifest scripts, with AIS expanded across the remaining accounts-and-transactions resource families.
 - Public documentation now describes canonical JSON-first test plans, grouped config plus endpoint/capability execution, and the guided builder workflow instead of checked-in examples, config-selected suites, public manifest authoring, `planSpec`, or generated-test selection.
 - Browser import/export now accepts and emits schemaVersion `1.0` JSON-first test plans only.
@@ -48,6 +54,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- PIS v4 strict parity now executes all 29 legacy FCS v1.10.0 rows as
+  independent cases with exact `asserts`/`asserts_one_of` error-code checks,
+  response schemas and signature flags, including separate domestic consent
+  and scheduled-payment flows, fixed identifiers and UTC-midnight date macros,
+  and the original invalid standing-order request bodies.
 - PSU authorisation popups now target 900x900 pixels and shrink, center, and remain within the current screen's usable area.
 - cVRP is no longer exposed through the bundled Open Banking catalogue registry, Open Banking UK Read/Write v2 builder, or aggregate compiler boundary.
 - VRP nested funds-confirmation operations now stay grouped under their parent domestic VRP consent resource group instead of appearing as a separate funds-confirmation resource group.
@@ -59,6 +70,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - PIS v4 payment write requests now use the Open Banking v3.1.4+ detached-JWS profile, and v4 response-signature validation no longer rejects valid encoded-payload signatures for missing `b64=false`.
 - PIS v4 domestic consent status assertions now use `Data.Status` with v4 status codes, and downstream PIS payment calls now use per-consent PSU-authorised payment tokens instead of the initial client-credentials token.
 - PIS payment consent creation now generates fresh instruction identifiers for each run, and PIS consent/payment status reads use the client-credentials payments token while authorised submissions use the matching PSU token.
+- PIS v3.1.11 strict parity now executes both legacy domestic-consent rows as
+  distinct requests, preserves their different PSU-authorisation behaviour,
+  restores fixed end-to-end identifiers and consent-value reuse, and renders
+  scheduled-payment `nextDayDate` variants at next-day UTC midnight.
 - PIS standing-order legacy schema-check cases now compile with bundled Payment Initiation OpenAPI metadata instead of failing at run launch.
 - VRP catalogue execution now sends legacy-shaped domestic VRP/cVRP JSON bodies to versioned Open Banking PISP resource paths, applies detached JWS signing to write requests, generates fresh payment identifiers, and inserts consent-specific PSU authorisation before authorised payment/funds-confirmation calls.
 - VRP Read/Write v4.0, v4.0.0, and v4.0.1 plans now honour the selected specification version and no longer execute legacy v3.1 pre/post-3.1.11 consent or payment variants.

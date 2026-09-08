@@ -17,6 +17,10 @@ def test_supported_catalogues_cover_legacy_fcs_api_families() -> None:
     keys = {(catalogue.key.standard, catalogue.key.version, catalogue.key.api) for catalogue in supported_catalogues()}
 
     assert keys == {
+        ("open-banking", "v3.1", "ais"),
+        ("open-banking", "v3.1", "pis"),
+        ("open-banking", "v3.1", "cbpii"),
+        ("open-banking", "v3.1", "vrp"),
         ("open-banking", "v4.0", "ais"),
         ("open-banking", "v4.0", "pis"),
         ("open-banking", "v4.0", "cbpii"),

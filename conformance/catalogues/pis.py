@@ -5,6 +5,7 @@ from __future__ import annotations
 from conformance.catalogue import (
     CatalogueAssertion,
     CatalogueKey,
+    CataloguePsuAuthorization,
     CatalogueRequestStep,
     CatalogueTestCase,
     EndpointCapability,
@@ -18,13 +19,15 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.catalogues.common import open_banking_request_headers_for
+from conformance.catalogues.read_write_v40_pis import ResponseSchemaRefs, build_v40_pis_catalogue
+from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonObject, JsonValue
 
 PIS_PAYMENT_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="pis")
 """Catalogue boundary for PIS payment coverage imported from legacy FCS manifests."""
 
-PIS_PAYMENT_CATALOGUE_VERSION = "2026.07.legacy-fcs-pis.1"
-"""Catalogue content version for the first legacy-payment import into v2."""
+PIS_PAYMENT_CATALOGUE_VERSION = "2026.09.legacy-fcs-pis.2"
+"""Catalogue version with exact v4 and v3.1.11 legacy-FCS parity."""
 
 _RESOURCE_BASE_URL = RuntimeInputRequirement(
     input_id="resourceBaseUrl",
@@ -155,6 +158,68 @@ _PIS_PSU_AUTH_TOKEN_IDS_BY_CASE_ID = {
     "pis-v4-international-scheduled-payment-create": _PIS_INTERNATIONAL_SCHEDULED_PAYMENT_AUTH_ID,
 }
 """Per-flow semantic token ids for PIS submit/funds requests that need PSU authorisation."""
+
+_PIS_AUTHORIZATION_BY_CONSENT_CASE_ID = {
+    "pis-v4-domestic-payment-consent-create": CataloguePsuAuthorization(
+        authorization_step_id="setup-pis-domestic-payment-consent-authorisation",
+        authorization_step_name="Authorise domestic payment consent",
+        token_step_id="setup-token-pis-domestic-payment-access",  # noqa: S106 - semantic step id
+        token_id=_PIS_DOMESTIC_PAYMENT_AUTH_ID,
+        flow_label="domestic payment",
+    ),
+    "pis-v4-domestic-scheduled-payment-consent-create": CataloguePsuAuthorization(
+        authorization_step_id="setup-pis-domestic-scheduled-payment-consent-authorisation",
+        authorization_step_name="Authorise domestic scheduled payment consent",
+        token_step_id="setup-token-pis-domestic-scheduled-payment-access",  # noqa: S106 - semantic step id
+        token_id=_PIS_DOMESTIC_SCHEDULED_PAYMENT_AUTH_ID,
+        flow_label="domestic scheduled payment",
+    ),
+    "pis-v4-domestic-standing-order-consent-create": CataloguePsuAuthorization(
+        authorization_step_id="setup-pis-domestic-standing-order-consent-authorisation",
+        authorization_step_name="Authorise domestic standing-order consent",
+        token_step_id="setup-token-pis-domestic-standing-order-access",  # noqa: S106 - semantic step id
+        token_id=_PIS_DOMESTIC_STANDING_ORDER_AUTH_ID,
+        flow_label="domestic standing-order",
+    ),
+    "pis-v4-international-payment-consent-create": CataloguePsuAuthorization(
+        authorization_step_id="setup-pis-international-payment-consent-authorisation",
+        authorization_step_name="Authorise international payment consent",
+        token_step_id="setup-token-pis-international-payment-access",  # noqa: S106 - semantic step id
+        token_id=_PIS_INTERNATIONAL_PAYMENT_AUTH_ID,
+        flow_label="international payment",
+    ),
+    "pis-v4-international-scheduled-payment-consent-create": CataloguePsuAuthorization(
+        authorization_step_id="setup-pis-international-scheduled-payment-consent-authorisation",
+        authorization_step_name="Authorise international scheduled payment consent",
+        token_step_id="setup-token-pis-international-scheduled-payment-access",  # noqa: S106 - semantic step id
+        token_id=_PIS_INTERNATIONAL_SCHEDULED_PAYMENT_AUTH_ID,
+        flow_label="international scheduled payment",
+    ),
+}
+"""PSU authorization metadata keyed by PIS consent-creation case id."""
+
+_PIS_AUTHORIZATION_CONSENT_CASE_BY_DEPENDENT_CASE_ID = {
+    "pis-v4-domestic-payment-consent-read-authorised": "pis-v4-domestic-payment-consent-create",
+    "pis-v4-domestic-payment-funds-confirmation": "pis-v4-domestic-payment-consent-create",
+    "pis-v4-domestic-payment-create": "pis-v4-domestic-payment-consent-create",
+    "pis-v4-domestic-payment-read": "pis-v4-domestic-payment-consent-create",
+    "pis-v4-domestic-scheduled-payment-consent-read": "pis-v4-domestic-scheduled-payment-consent-create",
+    "pis-v4-domestic-scheduled-payment-create": "pis-v4-domestic-scheduled-payment-consent-create",
+    "pis-v4-domestic-scheduled-payment-read": "pis-v4-domestic-scheduled-payment-consent-create",
+    "pis-v4-domestic-standing-order-consent-read": "pis-v4-domestic-standing-order-consent-create",
+    "pis-v4-domestic-standing-order-create": "pis-v4-domestic-standing-order-consent-create",
+    "pis-v4-domestic-standing-order-read": "pis-v4-domestic-standing-order-consent-create",
+    "pis-v4-domestic-standing-order-read-with-number-and-final-date": ("pis-v4-domestic-standing-order-consent-create"),
+    "pis-v4-domestic-standing-order-read-with-final-amount-only": ("pis-v4-domestic-standing-order-consent-create"),
+    "pis-v4-domestic-standing-order-reject-invalid-frequency": "pis-v4-domestic-standing-order-consent-create",
+    "pis-v4-international-payment-consent-read": "pis-v4-international-payment-consent-create",
+    "pis-v4-international-payment-create": "pis-v4-international-payment-consent-create",
+    "pis-v4-international-payment-read": "pis-v4-international-payment-consent-create",
+    "pis-v4-international-scheduled-payment-consent-read": ("pis-v4-international-scheduled-payment-consent-create"),
+    "pis-v4-international-scheduled-payment-create": "pis-v4-international-scheduled-payment-consent-create",
+    "pis-v4-international-scheduled-payment-read": "pis-v4-international-scheduled-payment-consent-create",
+}
+"""Consent-creation case required before each PSU-dependent PIS request."""
 
 _PIS_CREDITOR_ACCOUNT_SCHEME_NAME = RuntimeInputRequirement(
     input_id="pisCreditorAccountSchemeName",
@@ -731,7 +796,7 @@ _PIS_V40_SCHEMA_CHECK_SCRIPT_IDS = frozenset(
 )
 """Legacy v4 PIS scripts that enabled response schema checks."""
 
-_PIS_V40_RESPONSE_SCHEMA_REFS = {
+_PIS_V40_RESPONSE_SCHEMA_REFS: ResponseSchemaRefs = {
     ("POST", "/open-banking/v4.0/pisp/domestic-payment-consents", 201): (
         "#/components/schemas/OBWriteDomesticConsentResponse5"
     ),
@@ -1216,6 +1281,13 @@ def _build_case(
                 generated_values=generated_values or {},
                 required_token_id=required_token_id,
                 detached_jws_omit_claims=detached_jws_omit_claims,
+                psu_authorization=_PIS_AUTHORIZATION_BY_CONSENT_CASE_ID.get(test_case_id),
+                required_psu_authorization_step_id=(
+                    f"{consent_case_id}-request"
+                    if (consent_case_id := _PIS_AUTHORIZATION_CONSENT_CASE_BY_DEPENDENT_CASE_ID.get(test_case_id))
+                    is not None
+                    else None
+                ),
             ),
         ),
         assertions=executable_assertions,
@@ -1259,7 +1331,7 @@ def _path_with_captured_pis_values(path: str) -> str:
     return resolved_path
 
 
-PIS_PAYMENT_CATALOGUE = TestCatalogue(
+_PIS_MIXED_LEGACY_CATALOGUE = TestCatalogue(
     key=PIS_PAYMENT_CATALOGUE_KEY,
     catalogue_version=PIS_PAYMENT_CATALOGUE_VERSION,
     capabilities=PIS_PAYMENT_CAPABILITIES,
@@ -2110,7 +2182,16 @@ PIS_PAYMENT_CATALOGUE = TestCatalogue(
         ),
     ),
 )
-"""PIS payment catalogue expressing legacy FCS v3.1/v4.0 operation coverage."""
+"""Mixed-source PIS templates used to build version-isolated catalogues."""
+
+PIS_V31_PAYMENT_CATALOGUE = build_v311_catalogue(_PIS_MIXED_LEGACY_CATALOGUE, api="pis")
+"""Dedicated Open Banking Read/Write v3.1.11 PIS catalogue."""
+
+PIS_PAYMENT_CATALOGUE = build_v40_pis_catalogue(
+    _PIS_MIXED_LEGACY_CATALOGUE,
+    response_schema_refs=_PIS_V40_RESPONSE_SCHEMA_REFS,
+)
+"""Dedicated Open Banking Read/Write v4 PIS strict-parity catalogue."""
 
 
 def get_pis_payment_catalogue() -> TestCatalogue:

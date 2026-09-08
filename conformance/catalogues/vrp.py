@@ -22,6 +22,7 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.catalogues.common import open_banking_request_headers_for
+from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonValue
 
 type _CatalogueFamily = Literal["vrp", "cvrp"]
@@ -1310,6 +1311,9 @@ VRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
 )
 """Catalogue mapping legacy OB v3.1/v4.0 VRP FCS coverage into the v2 model."""
 
+VRP_V31_LEGACY_FCS_CATALOGUE = build_v311_catalogue(VRP_LEGACY_FCS_CATALOGUE, api="vrp")
+"""Dedicated Open Banking Read/Write v3.1.11 VRP catalogue."""
+
 CVRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
     key=CatalogueKey(standard="open-banking", version="v4.0", api="cvrp"),
     catalogue_version=_CATALOGUE_VERSION,
@@ -1318,4 +1322,4 @@ CVRP_LEGACY_FCS_CATALOGUE = TestCatalogue(
 )
 """Catalogue mapping legacy OB v4.0 cVRP FCS coverage into the v2 model."""
 
-__all__ = ["CVRP_LEGACY_FCS_CATALOGUE", "VRP_LEGACY_FCS_CATALOGUE"]
+__all__ = ["CVRP_LEGACY_FCS_CATALOGUE", "VRP_LEGACY_FCS_CATALOGUE", "VRP_V31_LEGACY_FCS_CATALOGUE"]

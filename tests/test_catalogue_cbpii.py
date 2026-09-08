@@ -145,7 +145,7 @@ def test_compile_surfaces_cbpii_runtime_input_requirements() -> None:
     assert traces["debtorAccountName"].value == "Model Bank Account"
     assert traces["fundsConfirmationConsentId"].required is False
     assert traces["fundsConfirmationConsentId"].provided is False
-    assert traces["invalidFundsConfirmationConsentId"].provided is False
+    assert "invalidFundsConfirmationConsentId" not in traces
 
 
 @pytest.mark.unit

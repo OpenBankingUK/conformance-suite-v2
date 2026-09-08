@@ -197,6 +197,17 @@
                             {{ form.pis_first_payment_date_time.errors }}
                             <input id="{{ form.pis_first_payment_date_time.id_for_label }}" name="pis_first_payment_date_time" type="text" value="{{ form.pis_first_payment_date_time.value|default_if_none:'' }}" autocomplete="off">
                         </div>
+                        {% if config_visibility.pis_v311_standing_order_frequency_required %}
+                        <div class="field">
+                            <div class="field-heading">
+                                <label for="{{ form.pis_standing_order_frequency_v311.id_for_label }}">Standing-order frequency (v3.1)</label>
+                                {% include "conformance/partials/builder_requirement_badge.html" with required=True only %}
+                            </div>
+                            {{ form.pis_standing_order_frequency_v311.errors }}
+                            <input id="{{ form.pis_standing_order_frequency_v311.id_for_label }}" name="pis_standing_order_frequency_v311" type="text" value="{{ form.pis_standing_order_frequency_v311.value|default_if_none:'' }}" placeholder="IntrvlWkDay:01:03" autocomplete="off">
+                            <p class="helper">Use the v3.1 encoded frequency defined by the Payment Initiation specification.</p>
+                        </div>
+                        {% else %}
                         <div class="field">
                             <div class="field-heading">
                                 <label for="{{ form.pis_standing_order_frequency_type.id_for_label }}">Standing-order frequency type</label>
@@ -213,6 +224,7 @@
                             {{ form.pis_standing_order_frequency_point_in_time.errors }}
                             <input id="{{ form.pis_standing_order_frequency_point_in_time.id_for_label }}" name="pis_standing_order_frequency_point_in_time" type="text" value="{{ form.pis_standing_order_frequency_point_in_time.value|default_if_none:'' }}" autocomplete="off">
                         </div>
+                        {% endif %}
                     </div>
                     <details>
                         <summary>Advanced PIS JSON fallbacks</summary>

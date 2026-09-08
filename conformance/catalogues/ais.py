@@ -23,6 +23,7 @@ from conformance.catalogue import (
     TestCatalogue,
 )
 from conformance.catalogues.common import open_banking_request_headers_for
+from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonValue
 
 AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
@@ -2279,6 +2280,12 @@ AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE = TestCatalogue(
     ),
 )
 """Imported AIS accounts-and-transactions catalogue for legacy FCS coverage."""
+
+AIS_V31_ACCOUNTS_TRANSACTIONS_CATALOGUE = build_v311_catalogue(
+    AIS_ACCOUNTS_TRANSACTIONS_CATALOGUE,
+    api="ais",
+)
+"""Dedicated Open Banking Read/Write v3.1.11 AIS catalogue."""
 
 
 def get_ais_accounts_transactions_catalogue() -> TestCatalogue:

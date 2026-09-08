@@ -11,12 +11,14 @@ from conformance.catalogue import (
     CatalogueTestCase,
     EndpointCapability,
     EndpointRef,
+    GeneratedRuntimeValue,
     RuntimeInputRequirement,
     SecurityProfileApplicability,
     TestCaseApplicability,
     TestCatalogue,
 )
 from conformance.catalogues.common import with_open_banking_request_metadata
+from conformance.catalogues.read_write_v311 import build_v311_catalogue
 from conformance.json_types import JsonObject
 
 CBPII_CATALOGUE_KEY = CatalogueKey(standard="open-banking", version="v4.0", api="cbpii")
@@ -166,12 +168,6 @@ _CONSENT_ID = RuntimeInputRequirement(
     required=False,
     source="captured",
 )
-_INVALID_CONSENT_ID = RuntimeInputRequirement(
-    input_id="invalidFundsConfirmationConsentId",
-    input_type="string",
-    label="Invalid consent identifier used for negative delete coverage",
-    source="generated",
-)
 _UNIQUE_CBPII_REFERENCE = RuntimeInputRequirement(
     input_id="uniqueCbpiiReference",
     input_type="string",
@@ -188,6 +184,34 @@ _CBPII_FUNDS_CONFIRMATION_AUTH_ID = "cbpii-funds-confirmation"
 _CAPTURED_FUNDS_CONFIRMATION_CONSENT_ID = "${steps.cbpii-consent-create-core-request.response.body.Data.ConsentId}"
 """Execution-context placeholder for the consent id returned by consent creation."""
 
+_GENERATED_EXPIRATION_DATE_TIME = "${generated.expirationDateTime}"
+"""Execution-context placeholder for a legacy CBPII expiration-date macro."""
+
+_CBPII_NEXT_DAY_DATE: dict[str, GeneratedRuntimeValue] = {
+    "expirationDateTime": "next-day-date-utc",
+}
+"""Legacy ``nextDayDate`` strategy for baseline CBPII consent requests."""
+
+_CBPII_NEXT_DAY_MILLISECONDS_Z: dict[str, GeneratedRuntimeValue] = {
+    "expirationDateTime": "next-day-date-time-utc-milliseconds",
+}
+"""Legacy ``nextDayDateTime`` strategy with UTC milliseconds."""
+
+_CBPII_NEXT_DAY_MILLISECONDS_OFFSET: dict[str, GeneratedRuntimeValue] = {
+    "expirationDateTime": "next-day-date-time-offset-milliseconds",
+}
+"""Legacy ``nextDayDateTime`` strategy with numeric-offset milliseconds."""
+
+_CBPII_NEXT_DAY_SECONDS_Z: dict[str, GeneratedRuntimeValue] = {
+    "expirationDateTime": "next-day-date-time-utc",
+}
+"""Legacy ``nextDayDateTime`` strategy with UTC seconds."""
+
+_CBPII_NEXT_DAY_SECONDS_OFFSET: dict[str, GeneratedRuntimeValue] = {
+    "expirationDateTime": "next-day-date-time-offset",
+}
+"""Legacy ``nextDayDateTime`` strategy with numeric-offset seconds."""
+
 _CBPII_CONSENT_REQUEST_TEMPLATE: JsonObject = {
     "Data": {
         "DebtorAccount": {
@@ -195,7 +219,7 @@ _CBPII_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """CBPII funds-confirmation-consent template parameterised by debtor account config."""
@@ -224,7 +248,7 @@ _CBPII_INVALID_ACCOUNT_NAME_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": _CBPII_INVALID_ACCOUNT_NAME,
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """Negative CBPII consent request fixture with an over-length debtor-account name."""
@@ -236,7 +260,7 @@ _CBPII_INVALID_ACCOUNT_IDENTIFICATION_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": _CBPII_INVALID_ACCOUNT_IDENTIFICATION,
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """Negative CBPII consent request fixture with an over-length debtor-account identification."""
@@ -248,7 +272,7 @@ _CBPII_INVALID_SCHEME_NAME_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """Negative CBPII consent request fixture with the legacy invalid debtor-account scheme name."""
@@ -260,7 +284,7 @@ _CBPII_EXPIRATION_MILLISECONDS_Z_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59.999Z",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """CBPII consent request using an ISO-8601 UTC timestamp with milliseconds."""
@@ -272,7 +296,7 @@ _CBPII_EXPIRATION_MILLISECONDS_OFFSET_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59.999+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """CBPII consent request using an ISO-8601 offset timestamp with milliseconds."""
@@ -284,7 +308,7 @@ _CBPII_EXPIRATION_SECONDS_Z_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59Z",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """CBPII consent request using an ISO-8601 UTC timestamp without milliseconds."""
@@ -296,7 +320,7 @@ _CBPII_EXPIRATION_SECONDS_OFFSET_CONSENT_REQUEST_TEMPLATE: JsonObject = {
             "Identification": "${runtime.debtorAccountIdentification}",
             "Name": "${runtime.debtorAccountName}",
         },
-        "ExpirationDateTime": "2026-12-31T23:59:59+00:00",
+        "ExpirationDateTime": _GENERATED_EXPIRATION_DATE_TIME,
     }
 }
 """CBPII consent request using an ISO-8601 offset timestamp without milliseconds."""
@@ -536,6 +560,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_DATE,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -603,6 +628,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_INVALID_ACCOUNT_NAME_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_DATE,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -646,6 +672,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_INVALID_ACCOUNT_IDENTIFICATION_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_DATE,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -689,6 +716,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_INVALID_SCHEME_NAME_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_DATE,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -732,6 +760,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_EXPIRATION_MILLISECONDS_Z_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_MILLISECONDS_Z,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -775,6 +804,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_EXPIRATION_MILLISECONDS_OFFSET_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_MILLISECONDS_OFFSET,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -818,6 +848,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_EXPIRATION_SECONDS_Z_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_SECONDS_Z,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -861,6 +892,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                         path="/open-banking/v4.0/cbpii/funds-confirmation-consents",
                         runtime_input_refs=("resourceBaseUrl",),
                         body_template=_CBPII_EXPIRATION_SECONDS_OFFSET_CONSENT_REQUEST_TEMPLATE,
+                        generated_values=_CBPII_NEXT_DAY_SECONDS_OFFSET,
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -1028,7 +1060,6 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                 runtime_input_requirements=(
                     _RESOURCE_BASE_URL,
                     _ACCESS_TOKEN,
-                    _INVALID_CONSENT_ID,
                 ),
                 request_steps=(
                     CatalogueRequestStep(
@@ -1040,7 +1071,7 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
                             "${generated.invalidFundsConfirmationConsentId}"
                         ),
                         runtime_input_refs=("resourceBaseUrl",),
-                        generated_values={"invalidFundsConfirmationConsentId": "invalid-resource-id"},
+                        generated_values={"invalidFundsConfirmationConsentId": "legacy-invalid-consent-id"},
                         required_token_id=_CBPII_CLIENT_CREDENTIALS_AUTH_ID,
                     ),
                 ),
@@ -1058,4 +1089,12 @@ CBPII_FCS_CATALOGUE = TestCatalogue(
 )
 """CBPII FCS catalogue converted from legacy OB 3.1/4.0 manifests."""
 
-__all__ = ["CBPII_CATALOGUE_KEY", "CBPII_CATALOGUE_VERSION", "CBPII_FCS_CATALOGUE"]
+CBPII_V31_FCS_CATALOGUE = build_v311_catalogue(CBPII_FCS_CATALOGUE, api="cbpii")
+"""Dedicated Open Banking Read/Write v3.1.11 CBPII catalogue."""
+
+__all__ = [
+    "CBPII_CATALOGUE_KEY",
+    "CBPII_CATALOGUE_VERSION",
+    "CBPII_FCS_CATALOGUE",
+    "CBPII_V31_FCS_CATALOGUE",
+]

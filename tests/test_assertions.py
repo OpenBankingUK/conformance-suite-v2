@@ -36,6 +36,177 @@ def parsed_assertion(raw_assertion: dict[str, JsonValue]) -> ManifestAssertion:
 
 
 @pytest.mark.unit
+def test_evaluate_legacy_fcs_assertion_preserves_all_and_one_of_groups() -> None:
+    """Evaluate pinned status, header, JSON, and one-of expectations together."""
+    assertion = parsed_assertion(
+        {
+            "type": "legacy_fcs",
+            "rowKey": "manifest.json#0:ROW-1",
+            "allOf": [
+                {"status-code": 200},
+                {"matches": [{"header-present": "x-fapi-interaction-id"}]},
+                {"matches": [{"JSON": "Data.Status", "Value": "Authorised"}]},
+            ],
+            "oneOf": [
+                {"matches": [{"JSON": 'Errors.#[ErrorCode="UK.OBIE.Field.Invalid"].ErrorCode'}]},
+                {"matches": [{"JSON": "Data.ConsentId"}]},
+            ],
+            "lastIfAll": [],
+            "schemaRefs": {},
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"X-FAPI-Interaction-ID": "interaction-id"},
+        body={"Data": {"Status": "Authorised", "ConsentId": "consent-id"}},
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_legacy_fcs_assertion_preserves_last_if_all_semantics() -> None:
+    """Apply the final status only when every preceding field condition passes."""
+    assertion = parsed_assertion(
+        {
+            "type": "legacy_fcs",
+            "rowKey": "manifest.json#0:ROW-1",
+            "allOf": [],
+            "oneOf": [],
+            "lastIfAll": [
+                {"matches": [{"JSON": "Data.Initiation.NumberOfPayments"}]},
+                {"matches": [{"JSON": "Data.Initiation.FinalPaymentDateTime"}]},
+                {"status-code": 403},
+            ],
+            "schemaRefs": {},
+        }
+    )
+
+    rejected = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={
+            "Data": {
+                "Initiation": {
+                    "NumberOfPayments": "3",
+                    "FinalPaymentDateTime": "2026-12-01",
+                }
+            }
+        },
+    )
+    condition_not_met = evaluate_assertion(
+        assertion,
+        status_code=200,
+        body={"Data": {"Initiation": {"NumberOfPayments": "3"}}},
+    )
+
+    assert rejected.passed is False
+    assert condition_not_met.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_legacy_fcs_assertion_supports_filtered_paths_and_boolean_text() -> None:
+    """Match the GJSON filter and scalar coercion used by pinned FCS assertions."""
+    assertion = parsed_assertion(
+        {
+            "type": "legacy_fcs",
+            "rowKey": "manifest.json#0:ROW-1",
+            "allOf": [
+                {
+                    "matches": [
+                        {
+                            "JSON": 'Errors.#[ErrorCode="UK.OBIE.Field.Invalid"].ErrorCode',
+                            "Value": "UK.OBIE.Field.Invalid",
+                        }
+                    ]
+                },
+                {
+                    "matches": [
+                        {
+                            "JSON": "Data.FundsAvailableResult.FundsAvailable",
+                            "Value": "true",
+                        }
+                    ]
+                },
+            ],
+            "oneOf": [],
+            "lastIfAll": [],
+            "schemaRefs": {},
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=400,
+        body={
+            "Errors": [{"ErrorCode": "UK.OBIE.Field.Invalid"}],
+            "Data": {"FundsAvailableResult": {"FundsAvailable": True}},
+        },
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_legacy_fcs_header_presence_ignores_value_metadata() -> None:
+    """Legacy header-present checks require presence without value equality."""
+    assertion = parsed_assertion(
+        {
+            "type": "legacy_fcs",
+            "rowKey": "manifest.json#0:ROW-1",
+            "allOf": [
+                {
+                    "matches": [
+                        {
+                            "header-present": "content-type",
+                            "value": "application/json; charset=utf-8",
+                        }
+                    ]
+                }
+            ],
+            "oneOf": [],
+            "lastIfAll": [],
+            "schemaRefs": {},
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"Content-Type": "application/json"},
+        body={},
+    )
+
+    assert result.passed is True
+
+
+@pytest.mark.unit
+def test_evaluate_legacy_fcs_header_value_comparison_is_case_sensitive() -> None:
+    """Legacy header playback keeps exact value-comparison semantics."""
+    assertion = parsed_assertion(
+        {
+            "type": "legacy_fcs",
+            "rowKey": "manifest.json#0:ROW-1",
+            "allOf": [{"matches": [{"header": "x-test", "value": "abc"}]}],
+            "oneOf": [],
+            "lastIfAll": [],
+            "schemaRefs": {},
+        }
+    )
+
+    result = evaluate_assertion(
+        assertion,
+        status_code=200,
+        headers={"X-Test": "ABC"},
+        body={},
+    )
+
+    assert result.passed is False
+
+
+@pytest.mark.unit
 def test_evaluate_http_status_passes_when_status_matches() -> None:
     result = evaluate_assertion(
         HttpStatusAssertion(type="http_status", expected=200),
