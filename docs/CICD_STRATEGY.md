@@ -115,8 +115,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **2** (1 Copilot + 1 human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | **Enabled** |
-| Required status checks | `lint`, `test`, `security-scan`, `docker-build` |
+| Require status checks to pass before merging | Not currently configured |
+| Recommended required status checks | `Check`, `Docker Build`, and the external Snyk check |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** (merge squash or rebase only) |
@@ -131,8 +131,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **1** (human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | **Enabled** |
-| Required status checks | `lint`, `test`, `security-scan`, `docker-build` |
+| Require status checks to pass before merging | Not currently configured |
+| Recommended required status checks | `Check`, `Docker Build`, and the external Snyk check |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
@@ -184,7 +184,10 @@ Snyk is the primary security scanning platform. The repository is linked directl
 | Snyk Code (SAST) | Every PR | `high` + `critical` severity |
 | Snyk Container (Docker image) | Every PR | `high` + `critical` severity |
 
-The `security-scan` status check (posted by Snyk's GitHub integration) is a required check on both `main` and `develop`. PRs **must not** be merged if this check is failing.
+The status check posted by Snyk's GitHub integration is separate from
+`.github/workflows/ci.yml`. PRs must not be merged when it reports a high or
+critical vulnerability. To enforce this mechanically, add its exact status
+context to the repository ruleset.
 
 If the team encounters a security issue they are uncertain how to resolve, the Security team should be consulted. Code containing known `high` or `critical` vulnerabilities must not be merged.
 
@@ -210,34 +213,27 @@ or Ozone environment.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Trigger: Pull Request (→ develop, main, release/*, hotfix/*)     │
+│ Trigger: Pull Request or push (main, develop, release/*,         │
+│ hotfix/*)                                                       │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-      [lint]              [security-scan]       (parallel)
-   ruff check           via Snyk portal —
-   ruff format          posts status check
-   mypy                 to the PR
-          │                    │
-          └────────────┬───────┘
-                       ▼
-                    [test]
-          pytest (unit + component, offline)
-               coverage ≥ 80%
-                       │
-                       ▼
-                [docker-build]
-               build image
-               start container
-               health-check probe
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+           [Check]                      [Docker Build]
+     make check with full                build image
+     tracked-file secret scan           start container
+     ruff + mypy                         probe /health/
+     unit + component tests
+     aggregate coverage
+
+The external Snyk integration reports its own PR status independently.
 ```
 
 ### 4.2 Workflow Files
 
 | File | Triggers | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR + push to protected branches | Lint, offline unit/component tests, Docker build and health check |
+| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate plus parallel Docker build and health check |
 
 ### 4.3 Concurrency Control
 
@@ -286,7 +282,7 @@ git push origin v1.2.0
    - CI runs automatically on every push
 
 3. Open PR: release/1.2.0 → main
-   - Full CI gates enforced (lint, offline unit/component tests, Docker build and health check)
+   - Full CI gates enforced (`make check`, Docker build and health check)
    - Requires 2 approvals (Copilot + human)
 
 4. Merge into main (squash or merge commit)

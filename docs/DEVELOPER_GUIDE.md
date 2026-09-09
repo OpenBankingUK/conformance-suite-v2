@@ -39,7 +39,8 @@ The tracked-file secret scan runs first and can take around 15 seconds on a
 developer machine; `make check` reports its progress before pytest starts. The
 local scan skips versioned `*-openapi.json` reference snapshots because their
 size makes entropy scanning expensive. The staged-file hook and CI continue to
-scan those files.
+scan those files. CI requests that full scan explicitly with
+`make check SECRET_SCAN_EXCLUDE_PATHSPEC=`.
 
 ```bash
 make secrets
@@ -331,8 +332,12 @@ level unless an independently trustworthy attestation can be verified.
 
 ## CI pipeline
 
-GitHub Actions run the same checks as `make check`: ruff, mypy, the complete
-offline `unit`/`component` suite with coverage, secret scanning, Docker build,
-and container health checks. There is no live-network or end-to-end workflow;
-container startup and health checking are packaging concerns handled by the
-`Docker Build` job in `ci.yml`.
+GitHub Actions run two independent jobs in parallel. `Check` invokes the
+canonical `make check` gate with the local OpenAPI exclusion cleared, so it
+runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
+and a full tracked-file secret scan. `Docker Build` builds the image, starts a
+container, and probes `/health/`.
+
+There is no live-network or end-to-end workflow. Container startup and health
+checking validate packaging only; they are not an Ozone or conformance-system
+test.

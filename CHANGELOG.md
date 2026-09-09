@@ -35,8 +35,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Pull request CI now invokes the canonical `make check` gate with a full
+  tracked-file secret scan while Docker image build, startup, and `/health/`
+  validation run independently in parallel. The duplicated lint/test command
+  definitions and CI-only coverage/test-result artifacts have been removed.
 - Local `make secrets` and `make check` skip only versioned OpenAPI reference snapshots, cutting repeated entropy-scanning overhead while staged-file and CI secret scans continue to inspect those files.
-- The supported test suite is now offline-only and split into exactly two pytest categories, `unit` and `component`. Every collected test must declare exactly one of them; `tests/conftest.py` fails collection with the offending node ids otherwise. `make test` runs `-m "unit or component"` with aggregate coverage, and `make unit`/`make component` give focused iteration without coverage. The CI test job is renamed `Unit & Component Tests` and runs the same selection.
+- The supported test suite is now offline-only and split into exactly two pytest categories, `unit` and `component`. Every collected test must declare exactly one of them; `tests/conftest.py` fails collection with the offending node ids otherwise. `make test` runs `-m "unit or component"` with aggregate coverage, and `make unit`/`make component` give focused iteration without coverage. CI runs the same selection through `make check`.
 - Offline execution is now enforced rather than assumed: `tests/conftest.py` installs a session-wide socket guard that raises `ExternalNetworkAccessError` for any connection to a non-loopback address, naming the address that was attempted. Loopback TLS/mTLS transport fixtures are unaffected.
 - Quality tooling is narrowed to Ruff (lint + format), mypy strict, and pytest with coverage. Ruff's rule selection is focused on defect-finding families — `E4`/`E7`/`E9`, `F`, `I`, `S`, `B`, `A`, `DTZ`, `T20`, and docstring *presence* (`D100`–`D104`) — and drops the preference-heavy `N`, `UP`, `C4`, `PT`, `SIM`, `PTH`, and broad `D` style rules. `.github/copilot-instructions.md` is rewritten as a material-risk-only review rubric that no longer duplicates mechanically enforced findings.
 - Offline test lifecycle costs are removed. API tests that launch a run now own and deterministically join their background worker instead of every API test paying a fixed one-second best-effort settle in teardown, and the singleton run/auth-session resets are scoped to the tests that actually reach those singletons. DCR protocol and orchestration behaviour now runs in process through `httpx.MockTransport` at the product's own client boundary; the loopback mTLS listener is retained only for transport, TLS, mTLS, certificate, and real client-configuration behaviour, and its immutable certificate and JOSE material is generated once per session.
@@ -95,7 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Removed
 
 - Removed the `integration`, `ozone`, and `e2e` pytest markers, the live-network `make integration` target, the empty `tests/integration/` package, and the orphaned `tests/fixtures/e2e-default.yaml` placeholder. Former integration coverage is reclassified as `component`.
-- Removed the unsupported `.github/workflows/ozone-integration.yml` and placeholder `.github/workflows/e2e.yml` workflows. `.github/workflows/ci.yml` remains the single pipeline: lint/type/secret checks, the offline `unit`/`component` suite with coverage, and a Docker build that starts the container and probes `/health/`.
+- Removed the unsupported `.github/workflows/ozone-integration.yml` and placeholder `.github/workflows/e2e.yml` workflows. `.github/workflows/ci.yml` remains the single pipeline: the canonical `make check` gate and a parallel Docker build that starts the container and probes `/health/`.
 - Removed the `interrogate` and `pydoclint` dev dependencies together with their `pyproject.toml` configuration, their `make lint` commands, their CI steps, and `.github/instructions/docstrings.instructions.md`. Docstring *presence* on modules, packages, public classes, functions, and methods is still enforced by Ruff `D100`–`D104`; mandatory Google-style `Args`/`Returns` sections and universal private-helper docstrings are no longer required.
 - Removed checked-in public example payloads from `config/`.
 - Removed legacy bundled suite JSON resources and their resolver.

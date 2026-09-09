@@ -22,11 +22,8 @@ permissions:
   contents: read
 
 jobs:
-  # ────────────────────────────────────────────────
-  # Job 1: Lint & Type Check
-  # ────────────────────────────────────────────────
-  lint:
-    name: Lint & Type Check
+  check:
+    name: Check
     runs-on: ubuntu-latest
 
     steps:
@@ -43,76 +40,14 @@ jobs:
         # --no-install-project: this is a container-deployed app, not a package
         run: uv sync --frozen --no-install-project
 
-      - name: Ruff — lint check
-        run: uv run ruff check . --output-format=github
+      - name: Run canonical quality gate
+        # CI intentionally clears the local OpenAPI exclusion so every tracked
+        # file is scanned for secrets.
+        run: make check SECRET_SCAN_EXCLUDE_PATHSPEC=
 
-      - name: Ruff — format check
-        run: uv run ruff format --check .
-
-      - name: mypy — type check
-        run: uv run mypy .
-
-      - name: Detect secrets
-        run: |
-          git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
-
-  # ────────────────────────────────────────────────
-  # Job 2: Unit & Component Tests
-  # ────────────────────────────────────────────────
-  test:
-    name: Unit & Component Tests
-    runs-on: ubuntu-latest
-    needs: lint
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
-
-      - name: Set up uv
-        uses: astral-sh/setup-uv@08807647e7069bb48b6ef5acd8ec9567f424441b # v8.1.0
-        with:
-          enable-cache: true
-
-      - name: Install dependencies
-        # Includes the dev dependency group by default (ruff, mypy, pytest, etc.)
-        # --no-install-project: this is a container-deployed app, not a package
-        run: uv sync --frozen --no-install-project
-
-      - name: Run pytest (complete offline suite)
-        # The supported suite is offline-only: every collected test carries
-        # exactly one of the ``unit``/``component`` markers, enforced at
-        # collection time by tests/conftest.py.
-        run: |
-          uv run pytest \
-            --cov=. \
-            --cov-report=xml:coverage.xml \
-            --cov-report=term-missing \
-            --json-report \
-            --json-report-file=test-results.json \
-            -m "unit or component" \
-            -v
-
-      - name: Upload coverage report
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: coverage-report-${{ github.run_id }}
-          path: coverage.xml
-
-      - name: Upload test results
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        if: always()
-        with:
-          name: test-results-${{ github.run_id }}
-          path: test-results.json
-
-  # ────────────────────────────────────────────────
-  # Job 3: Docker Build
-  # ────────────────────────────────────────────────
   docker-build:
     name: Docker Build
     runs-on: ubuntu-latest
-    needs: test
 
     permissions:
       contents: read

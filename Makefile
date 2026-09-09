@@ -1,12 +1,14 @@
 .PHONY: check lint test unit component secrets audit dev dev-unmasked serve docker help
 
+SECRET_SCAN_EXCLUDE_PATHSPEC ?= :(exclude,top,glob)conformance/standards/ob_read_write/v*/*-openapi.json
+
 check: secrets lint test ## Run all local checks (secrets + lint + complete offline test suite)
 
 secrets: ## Scan for leaked secrets
-	@printf '%s\n' "==> Scanning tracked files for secrets (this may take about 15 seconds)"
-	@git ls-files -z | xargs -0 uv run detect-secrets-hook \
-		--baseline .secrets.baseline \
-		--exclude-files '^conformance/standards/ob_read_write/v[^/]+/[^/]+-openapi\.json$$' --
+	@printf '%s\n' "==> Scanning tracked files for secrets (this may take a while)"
+	@git ls-files -z -- ':(top,glob)**' \
+		$(if $(strip $(SECRET_SCAN_EXCLUDE_PATHSPEC)),'$(SECRET_SCAN_EXCLUDE_PATHSPEC)') | \
+		xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
 	@printf '%s\n' "==> Secret scan passed"
 
 audit: ## Audit secrets baseline for unreviewed entries
