@@ -34,7 +34,13 @@ developer-visible logs. Use it only for local debugging.
 ## Local checks
 
 Run `make check` before pushing. It runs secret scanning, ruff lint/format
-checks, mypy strict, and pytest.
+checks, mypy strict, and the complete offline test suite with coverage.
+The tracked-file secret scan runs first and can take around 15 seconds on a
+developer machine; `make check` reports its progress before pytest starts. The
+local scan skips versioned `*-openapi.json` reference snapshots because their
+size makes entropy scanning expensive. The staged-file hook and CI continue to
+scan those files. CI requests that full scan explicitly with
+`make check SECRET_SCAN_EXCLUDE_PATHSPEC=`.
 
 ```bash
 make secrets
@@ -42,6 +48,27 @@ make lint
 make test
 make check
 ```
+
+The supported suite is offline-only and split into two categories. Every
+collected test must carry exactly one of them; `tests/conftest.py` fails
+collection otherwise. The same conftest installs a session-wide socket guard:
+any attempt to connect to a non-loopback address fails the test immediately, so
+"offline" is enforced rather than assumed.
+
+Category is a directory: tests live under `tests/unit/<domain>/` or
+`tests/component/<domain>/`, each module declares its category once with a
+module-level `pytestmark`, and no test file sits directly in `tests/`. Shared
+fakes, fixtures, and builders live in `tests/support/`. See
+[Testing strategy](TESTING_STRATEGY.md) for the full layout.
+
+| Category | Scope | Focused command |
+| --- | --- | --- |
+| `unit` | Deterministic in-process behaviour: no sockets, no Django database or request boundary, and no background run worker. HTTP is mocked at the client boundary. In-process thread-safety checks that start and join their own threads stay here. | `make unit` |
+| `component` | Offline collaboration through a boundary: Django request/response handling, persistence, filesystem behaviour, complete executor flows, background run-worker behaviour, or a narrowly justified loopback transport/TLS/mTLS/certificate fixture. | `make component` |
+
+`make unit` and `make component` skip coverage so focused iteration stays fast.
+`make test` runs `-m "unit or component"` and enforces the aggregate coverage
+minimum.
 
 No environment variables are needed for local checks. `settings.py` supplies a
 safe `django-insecure-` fallback when `DJANGO_SECRET_KEY` is absent so tooling
@@ -52,7 +79,7 @@ can boot Django without production configuration.
 The repository uses `detect-secrets` and a staged-file pre-commit hook.
 
 ```bash
-uv run detect-secrets scan --exclude-files '\.env$' --exclude-files 'uv\.lock$' > .secrets.baseline
+uv run detect-secrets scan --baseline .secrets.baseline --exclude-files '\.env$' --exclude-files 'uv\.lock$'
 uv run detect-secrets audit .secrets.baseline
 ```
 
@@ -305,7 +332,12 @@ level unless an independently trustworthy attestation can be verified.
 
 ## CI pipeline
 
-GitHub Actions run the same checks as `make check`: ruff, mypy, pytest with
-coverage, secret scanning, Docker build, and health checks. The E2E workflow
-uses `tests/fixtures/e2e-default.yaml` as a placeholder path and can be pointed
-at environment-specific config via `workflow_dispatch`.
+GitHub Actions run two independent jobs in parallel. `Check` invokes the
+canonical `make check` gate with the local OpenAPI exclusion cleared, so it
+runs ruff, mypy, the complete offline `unit`/`component` suite with coverage,
+and a full tracked-file secret scan. `Docker Build` builds the image, starts a
+container, and probes `/health/`.
+
+There is no live-network or end-to-end workflow. Container startup and health
+checking validate packaging only; they are not an Ozone or conformance-system
+test.

@@ -4,7 +4,7 @@
       "id": "v311-ais-product-path-pluralization",
       "originalBehavior": "GET /open-banking/v3.1/aisp/product",
       "rationale": "The singular legacy path is not present in the pinned v3.1.11 Account Information OpenAPI document; the standards endpoint is /products.",
-      "regressionTest": "tests/test_v311_parity.py::test_v311_catalogues_match_legacy_operations_and_flags",
+      "regressionTest": "tests/unit/catalogue/test_v311_parity.py::test_v311_catalogues_match_legacy_operations_and_flags",
       "replacementBehavior": "GET /open-banking/v3.1/aisp/products",
       "sourceRow": "ob_3.1_accounts_transactions_fca.json#63:OB-301-PRO-103403"
     }

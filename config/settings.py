@@ -81,7 +81,7 @@ API_ALLOW_NON_LOCAL = os.environ.get("CONFORMANCE_API_ALLOW_NON_LOCAL", "false")
 # argv string handles the directory component; checking ``sys.modules``
 # provides a second independent signal for tools that have already
 # imported their own package before settings are evaluated.
-_TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "interrogate", "pydoclint", "coverage")
+_TOOLING_ENTRYPOINTS = ("mypy", "pytest", "ruff", "coverage")
 _argv0 = sys.argv[0] if sys.argv else ""
 _is_tooling_run = any(tool in _argv0 for tool in _TOOLING_ENTRYPOINTS) or any(
     tool in sys.modules for tool in _TOOLING_ENTRYPOINTS

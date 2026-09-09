@@ -115,8 +115,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **2** (1 Copilot + 1 human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | **Enabled** |
-| Required status checks | `lint`, `test`, `security-scan`, `docker-build`, `e2e` |
+| Require status checks to pass before merging | Not currently configured |
+| Recommended required status checks | `Check`, `Docker Build`, and the external Snyk check |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Require linear history | **Enabled** (merge squash or rebase only) |
@@ -131,8 +131,8 @@ These rules **must** be configured in **GitHub → Repository Settings → Branc
 | Required approving reviews | **1** (human) |
 | Dismiss stale pull request approvals when new commits are pushed | **Enabled** |
 | Require review from Code Owners | **Enabled** |
-| Require status checks to pass before merging | **Enabled** |
-| Required status checks | `lint`, `test`, `security-scan`, `docker-build`, `e2e` |
+| Require status checks to pass before merging | Not currently configured |
+| Recommended required status checks | `Check`, `Docker Build`, and the external Snyk check |
 | Require branches to be up to date before merging | **Enabled** |
 | Require conversation resolution before merging | **Enabled** |
 | Allow administrators to bypass | **Enabled** — repository admins may override in exceptional circumstances; see [Section 5.4](#54-release-exception-process) |
@@ -184,7 +184,10 @@ Snyk is the primary security scanning platform. The repository is linked directl
 | Snyk Code (SAST) | Every PR | `high` + `critical` severity |
 | Snyk Container (Docker image) | Every PR | `high` + `critical` severity |
 
-The `security-scan` status check (posted by Snyk's GitHub integration) is a required check on both `main` and `develop`. PRs **must not** be merged if this check is failing.
+The status check posted by Snyk's GitHub integration is separate from
+`.github/workflows/ci.yml`. PRs must not be merged when it reports a high or
+critical vulnerability. To enforce this mechanically, add its exact status
+context to the repository ruleset.
 
 If the team encounters a security issue they are uncertain how to resolve, the Security team should be consulted. Code containing known `high` or `critical` vulnerabilities must not be merged.
 
@@ -198,11 +201,9 @@ The following secrets must be configured in **Repository Settings → Secrets an
 |---|---|
 | `GITHUB_TOKEN` | Automatically provided by GitHub Actions; no manual setup |
 
-The following optional variables may be configured as repository-level variables (not secrets):
-
-| Variable | Description |
-|---|---|
-| `E2E_MODEL_BANK_URL` | Default model bank base URL for E2E tests in CI |
+There are currently no repository-level variables required by CI: the
+supported pytest suite is fully offline and does not target a live model bank
+or Ozone environment.
 
 ---
 
@@ -212,40 +213,27 @@ The following optional variables may be configured as repository-level variables
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│ Trigger: Pull Request (→ develop, main, release/*, hotfix/*)     │
+│ Trigger: Pull Request or push (main, develop, release/*,         │
+│ hotfix/*)                                                       │
 └──────────────────────────────┬──────────────────────────────────┘
                                │
-          ┌────────────────────┼────────────────────┐
-          ▼                    ▼                    ▼
-      [lint]              [security-scan]       (parallel)
-   ruff check           via Snyk portal —
-   ruff format          posts status check
-   mypy                 to the PR
-          │                    │
-          └────────────┬───────┘
-                       ▼
-                    [test]
-               pytest (not e2e)
-               coverage ≥ 80%
-                       │
-                       ▼
-                [docker-build]
-               build image
-                       │
-                       ▼
-                    [e2e]
-               testcontainers
-               model bank tests
-               result file assert
-               (all PRs → develop + main)
+               ┌───────────────┴───────────────┐
+               ▼                               ▼
+           [Check]                      [Docker Build]
+     make check with full                build image
+     tracked-file secret scan           start container
+     ruff + mypy                         probe /health/
+     unit + component tests
+     aggregate coverage
+
+The external Snyk integration reports its own PR status independently.
 ```
 
 ### 4.2 Workflow Files
 
 | File | Triggers | Purpose |
 |---|---|---|
-| `.github/workflows/ci.yml` | PR + push to protected branches | Lint, test, Docker build |
-| `.github/workflows/e2e.yml` | PR → `develop` or `main`, push to `release/**`, manual | End-to-end conformance tests |
+| `.github/workflows/ci.yml` | PR + push to protected branches | Canonical `make check` gate plus parallel Docker build and health check |
 
 ### 4.3 Concurrency Control
 
@@ -291,10 +279,10 @@ git push origin v1.2.0
    git checkout develop && git checkout -b release/1.2.0
 
 2. Stabilise on release branch (version bump, changelog, final fixes)
-   - CI + E2E run automatically on every push
+   - CI runs automatically on every push
 
 3. Open PR: release/1.2.0 → main
-   - Full CI + E2E gates enforced
+   - Full CI gates enforced (`make check`, Docker build and health check)
    - Requires 2 approvals (Copilot + human)
 
 4. Merge into main (squash or merge commit)
@@ -333,10 +321,13 @@ Beta releases allow pre-release images to be distributed before a final stable t
 
 ### 5.4 Release Exception Process
 
-In exceptional circumstances — for example, when E2E tests fail because of a bug in the Ozone model bank rather than in our code — a repository administrator may merge despite failing status checks.
+In exceptional circumstances — for example, when a CI test failure stems from a
+confirmed external dependency defect rather than a bug in this codebase — a
+repository administrator may merge despite failing status checks.
 
 **When this is appropriate:**
-- Tests are failing due to a confirmed external provider defect (e.g. Ozone model bank behaving incorrectly)
+- Tests are failing due to a confirmed external dependency defect (e.g. a
+  third-party package or base image regression) unrelated to this codebase
 - The team has verified that our implementation and test logic are correct
 - Waiting for the external fix would unreasonably block a release
 
@@ -353,7 +344,7 @@ In exceptional circumstances — for example, when E2E tests fail because of a b
    git checkout main && git checkout -b hotfix/107-fix-auth-header
 
 2. Fix, commit, push
-   - PR against main: requires CI + E2E pass + 2 approvals
+   - PR against main: requires CI pass + 2 approvals
 
 3. An admin tags on merge:
    git tag -a v1.1.1 -m "Hotfix 1.1.1"
