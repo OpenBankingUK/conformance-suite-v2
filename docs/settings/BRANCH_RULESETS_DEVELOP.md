@@ -105,7 +105,7 @@ The following rules are available but intentionally **not enabled**:
 | Require merge queue | Not needed at current team size; can be reconsidered as contributor count grows |
 | Require deployments to succeed | No deployment environments configured yet |
 | Require signed commits | Not enforced at this stage; may revisit based on organisation security policy |
-| Require status checks to pass | **Ready to enable** — CI workflows now exist (`ci.yml`, `e2e.yml`). Enable after the first successful run on `develop` so GitHub recognises the check contexts (see TODO below) |
+| Require status checks to pass | **Ready to enable** — the CI workflow now exists (`ci.yml`). Enable after the first successful run on `develop` so GitHub recognises the check contexts (see TODO below) |
 | Require code scanning results | Deferred until CodeQL or equivalent is configured in CI |
 | Require code quality results | Not yet configured |
 | Restrict commit metadata | Not needed at this stage |
@@ -115,7 +115,7 @@ The following rules are available but intentionally **not enabled**:
 
 ## Post-setup TODOs
 
-- [ ] **Enable required status checks** — CI workflows are now committed (`ci.yml` with jobs `Lint & Type Check`, `Unit & Integration Tests`, `Docker Build`; `e2e.yml` with job `End-to-End Conformance Tests`). After the first successful run on `develop`, enable the "Require status checks to pass" rule and add these check contexts
+- [ ] **Enable required status checks** — the CI workflow is now committed (`ci.yml` with jobs `Lint & Type Check`, `Unit & Component Tests`, `Docker Build`). After the first successful run on `develop`, enable the "Require status checks to pass" rule and add these check contexts
 - [ ] **Enable Code Owners review** — After committing a `CODEOWNERS` file to the repository, enable `require_code_owner_review` in the pull request rule to enforce ownership-based approvals
 
 ---

@@ -1,0 +1,485 @@
+import json
+from pathlib import Path
+
+import pytest
+
+from conformance.certification_validator import (
+    APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+    ApprovedReleasePolicy,
+    CertificationValidationError,
+    SubmittedReport,
+    parse_approved_release_policy,
+    parse_submitted_report,
+    render_confluence_summary,
+    validate_certification_report,
+    validate_report,
+)
+from conformance.json_types import JsonObject, JsonValue
+from conformance.manifest import Manifest, parse_manifest
+from conformance.results import CheckStatus
+from tests.support.paths import REPO_ROOT
+
+pytestmark = pytest.mark.unit
+
+
+def test_validate_report_accepts_pass_and_warn_mandatory_steps() -> None:
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery", "jwks"), optional_step_ids=("optional",))
+    report = _report(
+        tool_version="1.2.3",
+        steps=(
+            ("discovery", "passed"),
+            ("jwks", "warn"),
+            ("optional", "failed"),
+        ),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert result.reasons == ()
+    assert result.tool_version_approved is True
+    rendered = result.to_json_object()
+    assert rendered["valid"] is True
+    mandatory = rendered["mandatory"]
+    assert isinstance(mandatory, dict)
+    assert mandatory["total"] == 2
+    assert mandatory["passed"] == 1
+    assert mandatory["warn"] == 1
+    assert render_confluence_summary(result).startswith("Certification report validation: PASS")
+
+
+def test_validate_report_rejects_missing_failed_and_skipped_mandatory_steps() -> None:
+    manifest = _manifest_with_steps(mandatory_step_ids=("missing", "failed", "skipped", "passed"))
+    report = _report(
+        tool_version="1.2.3",
+        steps=(
+            ("failed", "failed"),
+            ("skipped", "skipped"),
+            ("passed", "passed"),
+        ),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.reasons == (
+        "mandatory_step_missing",
+        "mandatory_step_failed",
+        "mandatory_step_skipped",
+    )
+    rendered = result.to_json_object()
+    mandatory = rendered["mandatory"]
+    assert isinstance(mandatory, dict)
+    assert mandatory["missing"] == 1
+    assert mandatory["failed"] == 1
+    assert mandatory["skipped"] == 1
+    summary = render_confluence_summary(result)
+    assert "Certification report validation: FAIL" in summary
+    assert "Mandatory step is missing from the submitted report: missing" in summary
+    assert "Mandatory step failed in the submitted report: failed" in summary
+    assert "Mandatory step was skipped in the submitted report: skipped" in summary
+
+
+def test_validate_report_rejects_unapproved_tool_version() -> None:
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("2.0.0",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.tool_version_approved is False
+    assert result.reasons == ("tool_version_not_approved",)
+    assert "Tool version is not in the approved-release policy: 1.2.3" in render_confluence_summary(result)
+
+
+def test_validate_report_rejects_manifest_without_mandatory_steps() -> None:
+    manifest = _manifest_with_steps(mandatory_step_ids=(), optional_step_ids=("optional",))
+    report = _report(tool_version="1.2.3", steps=(("optional", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    with pytest.raises(CertificationValidationError, match="mandatory certification steps"):
+        validate_report(report=report, manifest=manifest, policy=policy)
+
+
+def test_parse_submitted_report_rejects_missing_metadata() -> None:
+    with pytest.raises(CertificationValidationError, match="report.metadata is required"):
+        parse_submitted_report({"tool": {"version": "1.2.3"}, "steps": []})
+
+
+def test_parse_submitted_report_rejects_invalid_step_status() -> None:
+    raw_report: JsonObject = {
+        "metadata": {"reportVersion": "1.0"},
+        "tool": {"version": "1.2.3"},
+        "steps": [{"name": "discovery", "status": "unknown"}],
+    }
+
+    with pytest.raises(CertificationValidationError, match=r"report.steps\[0\].status must be one of"):
+        parse_submitted_report(raw_report)
+
+
+def test_parse_approved_release_policy_rejects_wrong_schema_version() -> None:
+    with pytest.raises(CertificationValidationError, match="schemaVersion"):
+        parse_approved_release_policy({"schemaVersion": "v2", "approvedToolVersions": ["1.2.3"]})
+
+
+def test_parse_approved_release_policy_accepts_schema_version_and_versions() -> None:
+    policy = parse_approved_release_policy(
+        {
+            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+            "approvedToolVersions": [" 1.2.3 ", "2.0.0"],
+        }
+    )
+
+    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+    assert policy.approved_tool_versions == ("1.2.3", "2.0.0")
+
+
+def test_placeholder_approved_release_policy_shape_is_parseable() -> None:
+    policy = parse_approved_release_policy(
+        {
+            "schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+            "approvedToolVersions": ["EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION"],
+        }
+    )
+
+    assert policy.schema_version == APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+    assert policy.approved_tool_versions == ("EXAMPLE-REPLACE-WITH-OBL-APPROVED-VERSION",)
+
+
+def test_validate_certification_report_loads_inputs_from_paths(tmp_path: Path) -> None:
+    report_path = tmp_path / "report.json"
+    manifest_path = tmp_path / "manifest.json"
+    policy_path = tmp_path / "policy.json"
+    _write_json(
+        report_path,
+        _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),)),
+    )
+    _write_json(manifest_path, _manifest_json(mandatory_step_ids=("discovery",), optional_step_ids=()))
+    _write_json(
+        policy_path,
+        {"schemaVersion": APPROVED_RELEASE_POLICY_SCHEMA_VERSION, "approvedToolVersions": ["1.2.3"]},
+    )
+
+    result = validate_certification_report(
+        report_path,
+        manifest_path=manifest_path,
+        approved_releases_path=policy_path,
+    )
+
+    assert result.valid is True
+    assert result.report_version == "1.0"
+    assert result.tool_version == "1.2.3"
+
+
+def _manifest_with_steps(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tuple[str, ...] = ()) -> Manifest:
+    return parse_manifest(_manifest_json(mandatory_step_ids=mandatory_step_ids, optional_step_ids=optional_step_ids))
+
+
+def _manifest_json(*, mandatory_step_ids: tuple[str, ...], optional_step_ids: tuple[str, ...]) -> JsonObject:
+    steps: list[JsonValue] = []
+    for step_id in mandatory_step_ids:
+        steps.append(_manifest_step(step_id=step_id, mandatory=True, optional=False))
+    for step_id in optional_step_ids:
+        steps.append(_manifest_step(step_id=step_id, mandatory=False, optional=True))
+    return {"schemaVersion": "v1", "name": "validator", "certificationCoverage": "complete", "steps": steps}
+
+
+def _manifest_step(*, step_id: str, mandatory: bool, optional: bool) -> JsonObject:
+    request: JsonObject = {"method": "GET", "url": f"https://example.com/{step_id}"}
+    assertions: list[JsonValue] = [{"type": "http_status", "expected": 200}]
+    step: JsonObject = {
+        "id": step_id,
+        "name": step_id,
+        "request": request,
+        "assertions": assertions,
+    }
+    if mandatory:
+        step["mandatory"] = True
+    if optional:
+        step["optional"] = True
+    return step
+
+
+def _report(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> SubmittedReport:
+    return parse_submitted_report(_report_json(tool_version=tool_version, steps=steps))
+
+
+def _report_json(*, tool_version: str, steps: tuple[tuple[str, CheckStatus], ...]) -> JsonObject:
+    rendered_steps: list[JsonValue] = []
+    for step_id, status in steps:
+        rendered_steps.append({"name": step_id, "status": status, "message": "ok"})
+    return {
+        "metadata": {"reportVersion": "1.0"},
+        "tool": {"version": tool_version},
+        "steps": rendered_steps,
+    }
+
+
+def _write_json(path: Path, value: object) -> None:
+    path.write_text(json.dumps(value), encoding="utf-8")
+
+
+# ─── Packet B: certification coverage gating ─────────────────────────────────
+
+
+def test_validate_report_rejects_partial_coverage_manifest() -> None:
+    """A partial-coverage manifest fails OBL validation even when all mandatory steps pass.
+
+    This is the OBL-side analogue of the participant-side eligibility check:
+    a manifest not explicitly marked ``certificationCoverage: complete``
+    cannot validate as certification-ready regardless of step outcomes or
+    approved-release policy.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "manifest_coverage_partial" in result.reasons
+    assert result.manifest_coverage == "partial"
+
+
+def test_validate_report_omitted_coverage_defaults_to_partial_and_fails() -> None:
+    """A v1 manifest with no ``certificationCoverage`` key defaults to partial and fails.
+
+    Omitting the field is treated identically to an explicit ``partial`` declaration
+    so that old or third-party manifests cannot inadvertently become certifiable.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "no-coverage-key",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert "manifest_coverage_partial" in result.reasons
+    assert result.manifest_coverage == "partial"
+
+
+def test_validate_report_complete_coverage_is_valid_when_steps_pass() -> None:
+    """A complete-coverage manifest with all mandatory steps passing validates successfully."""
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is True
+    assert "manifest_coverage_partial" not in result.reasons
+    assert result.manifest_coverage == "complete"
+
+
+def test_validate_report_partial_coverage_reason_in_confluence_summary() -> None:
+    """Partial coverage blocker is surfaced in the Confluence summary text."""
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [_manifest_step(step_id="discovery", mandatory=True, optional=False)],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    summary = render_confluence_summary(result)
+
+    assert "Certification report validation: FAIL" in summary
+    assert "Certification coverage: partial" in summary
+    assert "Manifest is not marked as complete certification coverage" in summary
+
+
+def test_validate_report_confluence_summary_orders_partial_coverage_after_primary_blockers() -> None:
+    """Partial coverage is rendered after tool-version and mandatory-step blockers.
+
+    Verifies that _blocking_reason_lines follows the ordering established by
+    _validation_reasons so that more actionable blockers appear first in the
+    Confluence summary when multiple reasons are present.
+    """
+    raw_manifest: JsonObject = {
+        "schemaVersion": "v1",
+        "name": "partial",
+        "certificationCoverage": "partial",
+        "steps": [
+            _manifest_step(step_id="missing", mandatory=True, optional=False),
+            _manifest_step(step_id="failed", mandatory=True, optional=False),
+        ],
+    }
+    manifest = parse_manifest(raw_manifest)
+    report = _report(tool_version="1.2.3", steps=(("failed", "failed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("2.0.0",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    summary = render_confluence_summary(result)
+
+    assert result.reasons == (
+        "tool_version_not_approved",
+        "mandatory_step_missing",
+        "mandatory_step_failed",
+        "manifest_coverage_partial",
+    )
+    blocking_section = summary.split("Blocking reasons:\n", maxsplit=1)[1]
+    blocking_lines = blocking_section.splitlines()
+    assert blocking_lines == [
+        "- Tool version is not in the approved-release policy: 1.2.3",
+        "- Mandatory step is missing from the submitted report: missing",
+        "- Mandatory step failed in the submitted report: failed",
+        "- Manifest is not marked as complete certification coverage",
+    ]
+
+
+def test_validate_report_coverage_included_in_json_output() -> None:
+    """The ``certificationCoverage`` audit block is present in the JSON validation result."""
+    manifest = _manifest_with_steps(mandatory_step_ids=("discovery",))
+    report = _report(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+    rendered = result.to_json_object()
+
+    coverage_block = rendered["certificationCoverage"]
+    assert isinstance(coverage_block, dict)
+    assert coverage_block["value"] == "complete"
+
+
+def test_validate_report_bundled_v4_ais_slice_counts_protected_resource_skip() -> None:
+    """Inline manifest exposes protected resource skips in validator counts."""
+    manifest = _manifest_with_steps(
+        mandatory_step_ids=(
+            "openid-discovery",
+            "jwks-fetch",
+            "client-credentials-token",
+            "account-access-consent",
+            "psu-authorization",
+            "token-exchange",
+            "accounts-list",
+            "account-balances",
+            "account-transactions",
+        ),
+        optional_step_ids=(),
+    )
+    report = _report(
+        tool_version="1.2.3",
+        steps=(
+            ("openid-discovery", "passed"),
+            ("jwks-fetch", "passed"),
+            ("client-credentials-token", "passed"),
+            ("account-access-consent", "passed"),
+            ("psu-authorization", "passed"),
+            ("token-exchange", "passed"),
+            ("accounts-list", "passed"),
+            ("account-balances", "passed"),
+            ("account-transactions", "skipped"),
+        ),
+    )
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.2.3",),
+    )
+
+    result = validate_report(report=report, manifest=manifest, policy=policy)
+
+    assert result.valid is False
+    assert result.reasons == ("mandatory_step_skipped",)
+    rendered = result.to_json_object()
+    mandatory = rendered["mandatory"]
+    assert isinstance(mandatory, dict)
+    assert mandatory["total"] == 9
+    assert mandatory["passed"] == 8
+    assert mandatory["skipped"] == 1
+    steps = mandatory["steps"]
+    assert isinstance(steps, list)
+    assert steps[-1] == {
+        "stepId": "account-transactions",
+        "status": "skipped",
+        "valid": False,
+        "reason": "mandatory_step_skipped",
+    }
+
+
+def test_validate_report_smoke_suite_manifests_cannot_certify() -> None:
+    """Bundled discovery-JWKS smoke suite manifests cannot pass OBL certification validation.
+
+    Each bundled manifest must declare ``certificationCoverage: partial`` and the
+    validator must reject them even if every mandatory step passes.  This test
+    ensures the certification-safety correction introduced in Packet B is wired
+    end-to-end for the actual shipped manifest files.
+    """
+
+    from conformance.manifest import load_manifest
+
+    suites_dir = REPO_ROOT / "conformance" / "suites"
+    policy = ApprovedReleasePolicy(
+        schema_version=APPROVED_RELEASE_POLICY_SCHEMA_VERSION,
+        approved_tool_versions=("1.0.0",),
+    )
+
+    for manifest_file in sorted(suites_dir.glob("*.json")):
+        manifest = load_manifest(manifest_file)
+
+        assert manifest.certification_coverage == "partial", (
+            f"{manifest_file.name} must declare certificationCoverage: partial"
+        )
+
+        if not any(step.mandatory for step in manifest.steps):
+            # Manifests with no mandatory steps raise CertificationValidationError
+            # (the existing pre-coverage hard error) — skip OBL validation check.
+            continue
+
+        step_outcomes: tuple[tuple[str, CheckStatus], ...] = tuple(
+            (step.id, "passed") for step in manifest.steps if step.mandatory
+        )
+        report = _report(tool_version="1.0.0", steps=step_outcomes)
+
+        result = validate_report(report=report, manifest=manifest, policy=policy)
+
+        assert result.valid is False, (
+            f"Smoke suite manifest {manifest_file.name} must not validate as certification-ready"
+        )
+        assert "manifest_coverage_partial" in result.reasons

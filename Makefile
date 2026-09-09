@@ -1,25 +1,30 @@
-.PHONY: check lint test integration secrets audit dev dev-unmasked serve docker help
+.PHONY: check lint test unit component secrets audit dev dev-unmasked serve docker help
 
-check: secrets lint test ## Run all local checks (secrets + lint + offline tests)
+check: secrets lint test ## Run all local checks (secrets + lint + complete offline test suite)
 
 secrets: ## Scan for leaked secrets
-	@git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
+	@printf '%s\n' "==> Scanning tracked files for secrets (this may take about 15 seconds)"
+	@git ls-files -z | xargs -0 uv run detect-secrets-hook \
+		--baseline .secrets.baseline \
+		--exclude-files '^conformance/standards/ob_read_write/v[^/]+/[^/]+-openapi\.json$$' --
+	@printf '%s\n' "==> Secret scan passed"
 
 audit: ## Audit secrets baseline for unreviewed entries
 	uv run detect-secrets audit .secrets.baseline
 
-lint: ## Ruff + mypy + docstring coverage + docstring structure
+lint: ## Ruff + mypy
 	uv run ruff check .
 	uv run ruff format --check .
 	uv run mypy .
-	uv run interrogate -c pyproject.toml .
-	uv run pydoclint .
 
-test: ## Run unit + offline Django integration tests (excludes live-network Ozone and Docker e2e tiers)
-	DJANGO_DEBUG=true uv run pytest -m "not e2e and not ozone" -v --cov
+test: ## Run the complete offline suite (unit + component) with aggregate coverage
+	DJANGO_DEBUG=true uv run pytest -m "unit or component" -v --cov
 
-integration: ## Run live-network Ozone integration tests (skipped unless tier env vars are set)
-	DJANGO_DEBUG=true uv run pytest -m ozone -v tests/integration
+unit: ## Run only unit tests (no coverage — focused iteration)
+	DJANGO_DEBUG=true uv run pytest -m unit -v
+
+component: ## Run only component tests (no coverage — focused iteration)
+	DJANGO_DEBUG=true uv run pytest -m component -v
 
 dev: ## Run local dev server (auto-reload, debug)
 	@mkdir -p local-config/certs

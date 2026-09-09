@@ -236,11 +236,11 @@ uv run python -m conformance.result_gate out/test-results.json
 ```
 
 It requires `status: passed`, `summary.failed: 0`, zero failed result steps, and
-zero failed trace scenarios/cases/steps. The opt-in Ozone workflow dispatch
-`run_dcr_34` builds a canonical plan from repository-managed credentials and
-executes this gate. Local development has no live Ozone credentials, so offline
-deterministic service tests are the default verification and are not evidence of
-a live Ozone run.
+zero failed trace scenarios/cases/steps. The gate is run manually against a
+report produced from a live Ozone run; the repository has no automated Ozone
+workflow, so no CI job executes it. Local development has no live Ozone
+credentials, so offline deterministic service tests are the default
+verification and are not evidence of a live Ozone run.
 
 ## Normative sources
 
@@ -256,7 +256,7 @@ a live Ozone run.
 Run:
 
 ```bash
-uv run pytest tests/test_dcr_parity_contract.py
+uv run pytest tests/unit/catalogue/test_dcr_parity_contract.py
 ```
 
 The guard pins the commit and scenario IDs, exact per-scenario and aggregate

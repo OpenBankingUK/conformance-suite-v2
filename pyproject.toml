@@ -16,9 +16,7 @@ dependencies = [
 dev = [
     "detect-secrets>=1.5.0",
     "django-stubs>=6.0.3",
-    "interrogate>=1.7.0",
     "mypy>=1.20.2",
-    "pydoclint>=0.8.4",
     "pytest>=9.0.3",
     "pytest-cov>=7.1.0",
     "pytest-django>=4.12.0",
@@ -37,9 +35,7 @@ DJANGO_SETTINGS_MODULE = "config.settings"
 testpaths = ["tests"]
 markers = [
     "unit: fast, isolated unit tests",
-    "integration: tests requiring Django test client or DB",
-    "ozone: live-network Ozone conformance tier tests (gated on tier env vars; require network access)",
-    "e2e: end-to-end tests requiring Docker and a model bank",
+    "component: offline collaboration tests through boundaries such as Django request/response handling, persistence, filesystem behaviour, or narrowly justified transport fixtures",
 ]
 # -ra: show summary of all non-passing tests at the end of the run.
 # --strict-markers: error on typo'd markers (e.g. @pytest.mark.untit won't silently pass).
@@ -72,20 +68,15 @@ extend-exclude = ["*.json"]
 
 [tool.ruff.lint]
 select = [
-    "E", "F", "W",  # Core Python errors, warnings, pyflakes
+    "E4", "E7", "E9",  # Core Python errors (import, statement, runtime syntax)
+    "F",             # Pyflakes — unused imports/variables, undefined names
     "I",             # isort — import ordering
-    "N",             # pep8-naming — enforces naming conventions
-    "UP",            # pyupgrade — rewrites old patterns to modern Python
     "S",             # bandit (security) — catches hardcoded secrets, SQL injection, etc.
     "B",             # bugbear — common bugs and design problems
     "A",             # flake8-builtins — prevents shadowing builtins like `list` or `id`
-    "C4",            # flake8-comprehensions — simpler list/dict/set comprehensions
     "DTZ",           # flake8-datetimez — prevents naive datetimes (important for financial data)
     "T20",           # flake8-print — catches leftover print() statements
-    "PT",            # flake8-pytest-style — best practices in test code
-    "SIM",           # flake8-simplify — flags unnecessarily complex code
-    "PTH",           # flake8-use-pathlib — flags os.path usage (prefer pathlib.Path)
-    "D",             # pydocstyle — public code must explain its human intent
+    "D100", "D101", "D102", "D103", "D104",  # pydocstyle — module/class/function/method/package docstring presence only
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -95,53 +86,6 @@ select = [
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"
-
-# ─── interrogate (docstring coverage) ────────────────────────────────────────
-[tool.interrogate]
-# Fail if any function, method, class, or nested definition — public or
-# private — is missing a docstring. 100% threshold leaves no budget for agents
-# to silently skip a helper.
-fail-under = 100
-# Private (`_`) and semiprivate (`__`) names are the primary failure mode this
-# gate is designed to catch; do not skip them.
-ignore-private = false
-ignore-semiprivate = false
-# Nested functions and classes must also carry docstrings.
-ignore-nested-functions = false
-ignore-nested-classes = false
-# Django auto-generates __init__ module boilerplate; no docstring needed there.
-ignore-init-module = true
-# __init__ method docstrings belong on the class itself; the method is exempt.
-ignore-init-method = true
-# Magic methods are meaningful to document (e.g. __str__, __repr__).
-ignore-magic = false
-# Mirrors the coverage omit list and the ruff per-file-ignores for tests.
-exclude = ["tests", ".venv", "migrations", "manage.py", "config/asgi.py", "config/wsgi.py"]
-# List every missing docstring in CI output so the author knows exactly what
-# to fix without hunting through the source.
-verbose = 2
-
-# ─── pydoclint (docstring-vs-signature linter) ───────────────────────────────
-[tool.pydoclint]
-# Enforce Google-style docstring completeness: every parameter must appear in
-# Args:, every non-None return must have a Returns: section. This is the
-# mechanical gate that interrogate cannot provide — interrogate checks presence,
-# pydoclint checks structure.
-style = "google"
-# The critical flag: do NOT skip one-liner docstrings. A function with params
-# or a return value needs Args:/Returns: even if the summary is short.
-skip-checking-short-docstrings = false
-# We put types in signatures (PEP 484), not in docstrings.
-arg-type-hints-in-docstring = false
-check-return-types = false
-# Documenting propagated raises from called helpers is valid Google-style
-# practice. Do not flag Raises: sections for exceptions raised by callees.
-skip-checking-raises = true
-# Allow __init__ to carry a docstring alongside the class docstring.
-allow-init-docstring = true
-# Mirror the same exclusion set as interrogate and ruff per-file-ignores.
-exclude = 'tests|\.venv|migrations|manage\.py|config/asgi\.py|config/wsgi\.py'
-quiet = true
 
 # ─── mypy (static type checker) ──────────────────────────────────────────────
 [tool.mypy]

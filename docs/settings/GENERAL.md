@@ -122,7 +122,7 @@ Project management is handled at the organisation level, not per-repository. Dis
 |---------|-------|
 | Allow auto-merge | On |
 
-**Rationale**: Safe to enable because merges are gated by required status checks (`lint`, `test`, `security-scan`, `docker-build`, `e2e`) and required approvals via branch protection / rulesets. Auto-merge reduces waiting time once all checks pass.
+**Rationale**: Safe to enable because merges are gated by required status checks (`lint`, `test`, `security-scan`, `docker-build`) and required approvals via branch protection / rulesets. Auto-merge reduces waiting time once all checks pass.
 
 ---
 

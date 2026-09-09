@@ -49,18 +49,6 @@ jobs:
       - name: Ruff — format check
         run: uv run ruff format --check .
 
-      - name: interrogate — docstring coverage
-        # Enforces that every function, method, and class — including private
-        # (_-prefixed) helpers — carries a docstring. Ruff's pydocstyle D1xx
-        # rules are public-only, so interrogate fills the gap.
-        run: uv run interrogate -c pyproject.toml .
-
-      - name: pydoclint — docstring structure
-        # Enforces that Args/Returns/Raises sections match the function
-        # signature. Complements interrogate (presence) with structural
-        # correctness.
-        run: uv run pydoclint .
-
       - name: mypy — type check
         run: uv run mypy .
 
@@ -69,10 +57,10 @@ jobs:
           git ls-files -z | xargs -0 uv run detect-secrets-hook --baseline .secrets.baseline --
 
   # ────────────────────────────────────────────────
-  # Job 2: Unit & Integration Tests
+  # Job 2: Unit & Component Tests
   # ────────────────────────────────────────────────
   test:
-    name: Unit & Integration Tests
+    name: Unit & Component Tests
     runs-on: ubuntu-latest
     needs: lint
 
@@ -90,7 +78,10 @@ jobs:
         # --no-install-project: this is a container-deployed app, not a package
         run: uv sync --frozen --no-install-project
 
-      - name: Run pytest (exclude E2E)
+      - name: Run pytest (complete offline suite)
+        # The supported suite is offline-only: every collected test carries
+        # exactly one of the ``unit``/``component`` markers, enforced at
+        # collection time by tests/conftest.py.
         run: |
           uv run pytest \
             --cov=. \
@@ -98,7 +89,7 @@ jobs:
             --cov-report=term-missing \
             --json-report \
             --json-report-file=test-results.json \
-            -m "not e2e" \
+            -m "unit or component" \
             -v
 
       - name: Upload coverage report

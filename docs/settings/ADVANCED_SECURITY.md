@@ -258,7 +258,7 @@ Third-party code scanning tools can be added via GitHub Actions workflows. No ad
 |---------|-------|
 | Dependabot security updates | Enabled |
 
-**Rationale**: Automatically opens PRs to resolve open Dependabot alerts with available patches. Reduces mean time to remediation for known vulnerabilities. PRs are subject to the same CI checks (`lint`, `test`, `security-scan`, `docker-build`, `e2e`) and review requirements as any other PR.
+**Rationale**: Automatically opens PRs to resolve open Dependabot alerts with available patches. Reduces mean time to remediation for known vulnerabilities. PRs are subject to the same CI checks (`lint`, `test`, `security-scan`, `docker-build`) and review requirements as any other PR.
 
 ---
 
