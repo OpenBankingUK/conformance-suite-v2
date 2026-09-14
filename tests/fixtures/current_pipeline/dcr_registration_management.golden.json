@@ -1,0 +1,1330 @@
+{
+  "compiledPlan": {
+    "applicabilityDecisions": [
+      {
+        "dependencyOf": [
+          "DCR-002-C01",
+          "DCR-004-C01",
+          "DCR-004-C02",
+          "DCR-004-C03",
+          "DCR-004-C04",
+          "DCR-004-C05",
+          "DCR-005-C01",
+          "DCR-007-C01",
+          "DCR-011-C01"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-001-C01"
+      },
+      {
+        "dependencyOf": [
+          "DCR-002-C02"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-002-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-002-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-002-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-003-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-003-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-003-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-003-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-004-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-004-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-004-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-004-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-004-C05"
+      },
+      {
+        "dependencyOf": [
+          "DCR-005-C02",
+          "DCR-005-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-005-C01"
+      },
+      {
+        "dependencyOf": [
+          "DCR-005-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-005-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-005-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-005-C04"
+      },
+      {
+        "dependencyOf": [
+          "DCR-007-C02",
+          "DCR-007-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-007-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-007-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-007-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-007-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-008-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-008-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-008-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-008-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-009-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-009-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-009-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-009-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-010-C01"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-010-C02"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-010-C03"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "DCR-010-C04"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "DCR-011-C01"
+      }
+    ],
+    "catalogue": {
+      "api": "dynamic-client-registration",
+      "catalogueVersion": "dcr:2026.09.dcr-v3.4-parity.1",
+      "standard": "open-banking-uk",
+      "version": "3.4"
+    },
+    "certifying": true,
+    "generatedTestCaseIds": [
+      "DCR-001-C01",
+      "DCR-002-C01",
+      "DCR-002-C02",
+      "DCR-004-C01",
+      "DCR-004-C02",
+      "DCR-004-C03",
+      "DCR-004-C04",
+      "DCR-004-C05",
+      "DCR-005-C01",
+      "DCR-005-C02",
+      "DCR-005-C03",
+      "DCR-007-C01",
+      "DCR-007-C02",
+      "DCR-007-C03",
+      "DCR-011-C01"
+    ],
+    "nonCertifyingReasons": [],
+    "runtimeInputSnapshot": [],
+    "selectedCapabilities": [
+      {
+        "capabilityId": "dcr.registration.post",
+        "method": "POST",
+        "path": "/register",
+        "required": true
+      },
+      {
+        "capabilityId": "dcr.management.get",
+        "method": "GET",
+        "path": "/register/{ClientId}",
+        "required": true
+      }
+    ],
+    "selectedEndpoints": [
+      {
+        "capabilities": [],
+        "method": "POST",
+        "operationId": "RegisterClient",
+        "path": "/register",
+        "resourceGroup": "dynamic-client-registration"
+      },
+      {
+        "capabilities": [],
+        "method": "GET",
+        "operationId": "GetClient",
+        "path": "/register/{ClientId}",
+        "resourceGroup": "dynamic-client-registration"
+      }
+    ],
+    "skippedTestCaseIds": [
+      "DCR-002-C03",
+      "DCR-003-C01",
+      "DCR-003-C02",
+      "DCR-003-C03",
+      "DCR-003-C04",
+      "DCR-005-C04",
+      "DCR-007-C04",
+      "DCR-008-C01",
+      "DCR-008-C02",
+      "DCR-008-C03",
+      "DCR-008-C04",
+      "DCR-009-C01",
+      "DCR-009-C02",
+      "DCR-009-C03",
+      "DCR-009-C04",
+      "DCR-010-C01",
+      "DCR-010-C02",
+      "DCR-010-C03",
+      "DCR-010-C04"
+    ],
+    "testCases": [
+      {
+        "dependencies": [],
+        "mandatory": true,
+        "testCaseId": "DCR-001-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-002-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-002-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-002-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-004-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-004-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-004-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-004-C04"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-004-C05"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-005-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-005-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-005-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-005-C01",
+          "DCR-005-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-005-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-007-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-007-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-007-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-007-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-007-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-011-C01"
+      }
+    ]
+  },
+  "parsedPlan": {
+    "boundary": {
+      "scheme": "open-banking-uk",
+      "securityProfile": "all",
+      "specification": "dynamic-client-registration",
+      "version": "3.4"
+    },
+    "endpoints": [
+      {
+        "capabilities": [],
+        "locked": true,
+        "method": "POST",
+        "operationId": "RegisterClient",
+        "path": "/register",
+        "required": true
+      },
+      {
+        "capabilities": [],
+        "locked": false,
+        "method": "GET",
+        "operationId": "GetClient",
+        "path": "/register/{ClientId}",
+        "required": false
+      }
+    ],
+    "executionMode": "certification",
+    "resourceGroups": [],
+    "runtimeInputs": {
+      "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration"
+    },
+    "schemaVersion": "1.0"
+  },
+  "result": {
+    "catalogue": {
+      "api": "dynamic-client-registration",
+      "catalogueVersion": "dcr:2026.09.dcr-v3.4-parity.1",
+      "certifying": true,
+      "generatedTestCaseIds": [
+        "DCR-001-C01",
+        "DCR-002-C01",
+        "DCR-002-C02",
+        "DCR-004-C01",
+        "DCR-004-C02",
+        "DCR-004-C03",
+        "DCR-004-C04",
+        "DCR-004-C05",
+        "DCR-005-C01",
+        "DCR-005-C02",
+        "DCR-005-C03",
+        "DCR-007-C01",
+        "DCR-007-C02",
+        "DCR-007-C03",
+        "DCR-011-C01"
+      ],
+      "runtimeInputSnapshot": [],
+      "selectedCapabilities": [
+        {
+          "capabilityId": "dcr.registration.post",
+          "label": "Client registration",
+          "method": "POST",
+          "path": "/register",
+          "required": true
+        },
+        {
+          "capabilityId": "dcr.management.get",
+          "label": "Client retrieval",
+          "method": "GET",
+          "path": "/register/{ClientId}",
+          "required": true
+        }
+      ],
+      "selectedEndpoints": [
+        {
+          "method": "POST",
+          "operationId": "RegisterClient",
+          "path": "/register",
+          "resourceGroup": "dynamic-client-registration"
+        },
+        {
+          "method": "GET",
+          "operationId": "GetClient",
+          "path": "/register/{ClientId}",
+          "resourceGroup": "dynamic-client-registration"
+        }
+      ],
+      "skippedTestCaseIds": [
+        "DCR-002-C03",
+        "DCR-003-C01",
+        "DCR-003-C02",
+        "DCR-003-C03",
+        "DCR-003-C04",
+        "DCR-005-C04",
+        "DCR-007-C04",
+        "DCR-008-C01",
+        "DCR-008-C02",
+        "DCR-008-C03",
+        "DCR-008-C04",
+        "DCR-009-C01",
+        "DCR-009-C02",
+        "DCR-009-C03",
+        "DCR-009-C04",
+        "DCR-010-C01",
+        "DCR-010-C02",
+        "DCR-010-C03",
+        "DCR-010-C04"
+      ],
+      "standard": "open-banking-uk",
+      "traceGroups": [
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-001-C01-S01"
+                }
+              ],
+              "testCaseId": "DCR-001-C01"
+            }
+          ],
+          "traceGroupId": "DCR-001"
+        },
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-002-C01-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-002-C01-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-002-C01-S03"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-002-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-002-C01"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-002-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-002-C02"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-002-C03-S01"
+                }
+              ],
+              "testCaseId": "DCR-002-C03"
+            }
+          ],
+          "traceGroupId": "DCR-002"
+        },
+        {
+          "status": "skipped",
+          "testCases": [
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C01-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C01-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C01-S03"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-003-C01"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-003-C02"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C03-S01"
+                }
+              ],
+              "testCaseId": "DCR-003-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C04-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-003-C04-S02"
+                }
+              ],
+              "testCaseId": "DCR-003-C04"
+            }
+          ],
+          "traceGroupId": "DCR-003"
+        },
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C01-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C01-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C01-S03"
+                }
+              ],
+              "testCaseId": "DCR-004-C01"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C02-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C02-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C02-S03"
+                }
+              ],
+              "testCaseId": "DCR-004-C02"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C03-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C03-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C03-S03"
+                }
+              ],
+              "testCaseId": "DCR-004-C03"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C04-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C04-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C04-S03"
+                }
+              ],
+              "testCaseId": "DCR-004-C04"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C05-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C05-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-004-C05-S03"
+                }
+              ],
+              "testCaseId": "DCR-004-C05"
+            }
+          ],
+          "traceGroupId": "DCR-004"
+        },
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C01-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C01-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C01-S03"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-005-C01"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-005-C02"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C03-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C03-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C03-S03"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-005-C03-S04"
+                }
+              ],
+              "testCaseId": "DCR-005-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-005-C04-S01"
+                }
+              ],
+              "testCaseId": "DCR-005-C04"
+            }
+          ],
+          "traceGroupId": "DCR-005"
+        },
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C01-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C01-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C01-S03"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-007-C01"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C02-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C02-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C02-S03"
+                }
+              ],
+              "testCaseId": "DCR-007-C02"
+            },
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-007-C03-S01"
+                }
+              ],
+              "testCaseId": "DCR-007-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-007-C04-S01"
+                }
+              ],
+              "testCaseId": "DCR-007-C04"
+            }
+          ],
+          "traceGroupId": "DCR-007"
+        },
+        {
+          "status": "skipped",
+          "testCases": [
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C01-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C01-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C01-S03"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-008-C01"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-008-C02"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C03-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C03-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C03-S03"
+                }
+              ],
+              "testCaseId": "DCR-008-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-008-C04-S01"
+                }
+              ],
+              "testCaseId": "DCR-008-C04"
+            }
+          ],
+          "traceGroupId": "DCR-008"
+        },
+        {
+          "status": "skipped",
+          "testCases": [
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C01-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C01-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C01-S03"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-009-C01"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-009-C02"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C03-S01"
+                }
+              ],
+              "testCaseId": "DCR-009-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C04-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C04-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-009-C04-S03"
+                }
+              ],
+              "testCaseId": "DCR-009-C04"
+            }
+          ],
+          "traceGroupId": "DCR-009"
+        },
+        {
+          "status": "skipped",
+          "testCases": [
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C01-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C01-S02"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C01-S03"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-010-C01"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C02-S01"
+                }
+              ],
+              "testCaseId": "DCR-010-C02"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C03-S01"
+                }
+              ],
+              "testCaseId": "DCR-010-C03"
+            },
+            {
+              "status": "skipped",
+              "steps": [
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C04-S01"
+                },
+                {
+                  "status": "skipped",
+                  "stepId": "DCR-010-C04-S02"
+                }
+              ],
+              "testCaseId": "DCR-010-C04"
+            }
+          ],
+          "traceGroupId": "DCR-010"
+        },
+        {
+          "status": "passed",
+          "testCases": [
+            {
+              "status": "passed",
+              "steps": [
+                {
+                  "status": "passed",
+                  "stepId": "DCR-011-C01-S01"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-011-C01-S02"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-011-C01-S03"
+                },
+                {
+                  "status": "passed",
+                  "stepId": "DCR-011-C01-S04"
+                }
+              ],
+              "testCaseId": "DCR-011-C01"
+            }
+          ],
+          "traceGroupId": "DCR-011"
+        }
+      ],
+      "version": "3.4"
+    },
+    "certificationEligibility": {
+      "approvedRelease": {
+        "approved": true,
+        "checked": true,
+        "policySchemaVersion": "v1",
+        "toolVersion": "0.1.0-characterization"
+      },
+      "certificationCoverage": {
+        "value": "complete"
+      },
+      "eligible": true,
+      "mandatoryDeselected": 0,
+      "mandatoryDeselectedStepIds": [],
+      "mandatoryFailed": 0,
+      "mandatoryPassed": 42,
+      "mandatorySkipped": 0,
+      "mandatoryTotal": 42,
+      "mandatoryWarn": 0
+    },
+    "eligibilityWithoutApprovedReleasePolicy": {
+      "approvedRelease": {
+        "approved": false,
+        "checked": false,
+        "toolVersion": "0.1.0-characterization"
+      },
+      "certificationCoverage": {
+        "value": "complete"
+      },
+      "eligible": false,
+      "mandatoryDeselected": 0,
+      "mandatoryDeselectedStepIds": [],
+      "mandatoryFailed": 0,
+      "mandatoryPassed": 42,
+      "mandatorySkipped": 0,
+      "mandatoryTotal": 42,
+      "mandatoryWarn": 0,
+      "reason": "Approved-release policy was not supplied",
+      "reasons": [
+        "Approved-release policy was not supplied"
+      ]
+    },
+    "status": "passed",
+    "steps": [
+      {
+        "name": "DCR-001-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C02-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C02-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C03-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C03-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C04-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C04-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C05-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C05-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-004-C05-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C03-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C03-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-005-C03-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C02-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C02-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-007-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-011-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-011-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-011-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-011-C01-S04",
+        "status": "passed"
+      }
+    ],
+    "summary": {
+      "failed": 0,
+      "passed": 42,
+      "skipped": 0,
+      "total": 42,
+      "warn": 0
+    }
+  },
+  "syntheticManifest": {
+    "certificationCoverage": "complete",
+    "name": "open-banking-uk 3.4 dynamic-client-registration",
+    "schemaVersion": "v1",
+    "steps": []
+  }
+}
