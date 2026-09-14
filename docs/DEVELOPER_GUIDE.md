@@ -110,6 +110,11 @@ participant-supplied secret values until launch or explicit export.
 
 ## Catalogue architecture
 
+The accepted target boundaries and staged replacement sequence are recorded in
+the [Test Plan Architecture Migration Guide](TEST_PLAN_ARCHITECTURE_MIGRATION_GUIDE.md).
+The current modules below remain authoritative until their owning migration
+layers explicitly replace them.
+
 The participant-facing source of truth is now a canonical JSON-first test plan,
 not checked-in manifest examples or config-selected suites.
 
