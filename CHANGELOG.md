@@ -11,6 +11,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Versioned external schemas and immutable typed loading for the replacement
+  configuration-contract foundation, including common document envelopes,
+  lowercase opaque stable IDs, a document-specific provenance boundary,
+  suite-release descriptors with exact-byte artefact binding, deterministic
+  serialization, and structured diagnostics with stable codes and RFC 6901
+  instance paths. Golden valid and invalid fixtures cover unknown properties,
+  invalid and duplicate IDs, unsupported versions, unsafe relative paths,
+  unresolved artefacts, and digest mismatches without changing current runtime
+  consumers.
 - Golden characterization fixtures for the current canonical-plan pipeline,
   covering the complete AIS, PIS, CBPII, and VRP support matrix on Read/Write
   v3.1.11 and v4.0.1, PIS standing-order journeys on both versions, AIS account

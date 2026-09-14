@@ -1,0 +1,92 @@
+{
+  "$defs": {
+    "artifactReference": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "#/$defs/sha256Digest"
+        },
+        "id": {
+          "$ref": "#/$defs/stableId"
+        },
+        "kind": {
+          "$ref": "#/$defs/stableId"
+        },
+        "mediaType": {
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*/[A-Za-z0-9][A-Za-z0-9!#$&^_.+-]*$",
+          "type": "string"
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/version"
+        },
+        "uri": {
+          "description": "Normalized path relative to the release-bundle root.",
+          "pattern": "^[A-Za-z0-9_-][A-Za-z0-9._-]*(/[A-Za-z0-9_-][A-Za-z0-9._-]*)*$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "kind",
+        "mediaType",
+        "schemaVersion",
+        "uri",
+        "digest"
+      ],
+      "type": "object"
+    },
+    "documentEnvelope": {
+      "properties": {
+        "documentType": {
+          "$ref": "#/$defs/stableId"
+        },
+        "id": {
+          "$ref": "#/$defs/stableId"
+        },
+        "schemaVersion": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "schemaVersion",
+        "documentType",
+        "id"
+      ],
+      "type": "object"
+    },
+    "sha256Digest": {
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "type": "string"
+    },
+    "stableId": {
+      "maxLength": 128,
+      "pattern": "^[a-z0-9][a-z0-9._:-]*$",
+      "type": "string"
+    },
+    "toolRelease": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/stableId"
+        },
+        "version": {
+          "$ref": "#/$defs/version"
+        }
+      },
+      "required": [
+        "id",
+        "version"
+      ],
+      "type": "object"
+    },
+    "version": {
+      "maxLength": 128,
+      "minLength": 1,
+      "pattern": "^[!-~]+$",
+      "type": "string"
+    }
+  },
+  "$id": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Open Banking UK conformance shared configuration definitions"
+}

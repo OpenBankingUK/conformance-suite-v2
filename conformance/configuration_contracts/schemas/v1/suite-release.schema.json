@@ -1,0 +1,50 @@
+{
+  "$id": "https://schemas.openbanking.org.uk/conformance/v1/suite-release.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/documentEnvelope"
+    },
+    {
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/artifactReference"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "documentType": {
+          "const": "suite-release"
+        },
+        "publishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "releaseVersion": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "toolReleases": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/toolRelease"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "releaseVersion",
+        "publishedAt",
+        "toolReleases",
+        "artifacts"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Open Banking UK conformance suite release descriptor",
+  "type": "object",
+  "unevaluatedProperties": false
+}

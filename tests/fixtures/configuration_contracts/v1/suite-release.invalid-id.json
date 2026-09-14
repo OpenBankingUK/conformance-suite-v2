@@ -1,0 +1,23 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:394a0960cbfa7263b02952aed677b534fda4f0ed4f9540ca201347a7ebede7dc",
+      "id": "configuration common v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/common.schema.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl-suite-2026-09",
+  "publishedAt": "2026-09-14T14:30:00Z",
+  "releaseVersion": "2026.09",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

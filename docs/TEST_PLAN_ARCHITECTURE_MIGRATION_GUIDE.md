@@ -42,7 +42,7 @@ The status terms in this document have precise meanings:
 
 | Term | Meaning |
 | --- | --- |
-| **Suite release descriptor** | OBL-authored document that binds compatible source artefacts, schemas, catalogues, tool releases, and content hashes. |
+| **Suite release descriptor** | OBL-authored document that binds compatible released configuration artefacts, schemas, catalogues, tool releases, and content hashes. |
 | **Requirements catalogue** | Standards/domain-authored rules describing obligations, conditionality, cardinality, normative references, and allowed configurable inputs. |
 | **Test definition catalogue** | Test-author-authored reusable test cases, request bindings, assertions, dependencies, applicability, and covered requirement IDs. |
 | **Participant test plan** | Participant intent: target release, declared implementation scope, environment configuration, and values for predefined inputs. |
@@ -75,14 +75,14 @@ accepted JSON property names unless a later schema decision says otherwise.
 | `TPA-012` | Logical input ownership is split: requirements define which inputs are permitted or required; test definitions define technical request bindings; participant plans supply values; compilation records resolution. | Keeps test implementation details out of normative requirements and arbitrary request editing out of participant plans. |
 | `TPA-013` | Requirements rules begin as a small, explicit, typed vocabulary. A general expression language is not introduced without concrete specification cases and a superseding decision. | Keeps validation reviewable and avoids premature language design. |
 | `TPA-014` | Plan validity, permission to compile or execute, certification eligibility, individual test outcome, and overall conformance assessment are distinct facts. | A selected test can pass while the run remains incomplete or ineligible; an incomplete developer run is not automatically non-conformant. |
-| `TPA-015` | Compiler output explains every inferred or explicit selection, applied rule, default, dependency, finding, and source artefact. Equivalent inputs and source bytes produce equivalent output apart from explicitly declared runtime-generated values. | Makes generated scope reviewable and reproducible. |
-| `TPA-016` | The execution manifest contains resolved work only: exact instances and steps, order and dependencies, resolved input instructions, protocol/authentication instructions, assertions, evidence policy, and immutable provenance. | Keeps participant grammar, UI concepts, and obligation logic out of the runner. |
+| `TPA-015` | Compiler output explains every inferred or explicit selection, applied rule, default, dependency, finding, suite release, and released configuration artefact. Under the same tool release, equivalent participant inputs and suite-release artefact bytes produce equivalent output apart from explicitly declared runtime-generated values. | Makes generated scope reviewable and reproducible without making migration baselines production inputs. |
+| `TPA-016` | The execution manifest contains resolved work only: exact instances and steps, order and dependencies, resolved input instructions, protocol/authentication instructions, assertions, evidence policy, and immutable references to the suite release and released configuration artefacts. | Keeps participant grammar, UI concepts, obligation logic, and legacy comparison sources out of the runner. |
 | `TPA-017` | Results carry the stable traceability chain from requirement to test definition, compiled instance, manifest step, and result observation. | Allows evidence and independent assessment to be tied back to trusted sources. |
 | `TPA-018` | Certification assessment remains independent of participant-controlled compilation and execution inputs and uses trusted requirements plus approved-release policy. Certificate generation is deferred beyond MVP. | Preserves the current assurance boundary and avoids presenting local output as a formal certification decision. |
-| `TPA-019` | Sensitive values never enter resolved-plan trace snapshots, execution-manifest provenance, persisted evidence, or safe exports. | Traceability must not create a credential disclosure path. |
+| `TPA-019` | Sensitive values never enter resolved-plan trace snapshots, execution-manifest traceability, persisted evidence, or safe exports. | Traceability must not create a credential disclosure path. |
 | `TPA-020` | Existing behaviour is characterised before replacement; one representative vertical slice proves shared contracts before catalogue-family migration; legacy structures are deleted only after their consumers move. | Keeps every migration layer reviewable and the system operational. |
 | `TPA-021` | The first walking skeleton is the Open Banking Read/Write v4.0 domestic standing-order flow: consent creation and retrieval, payment submission and retrieval, its dependency chain, and the predefined frequency input. Valid and invalid frequency fixtures are both required. | Exercises conditional scope, multiple endpoints, dependencies, reusable input binding, and positive/negative validation without migrating all PIS content. |
-| `TPA-022` | Existing parity contracts remain the behavioural and provenance baseline until an explicit, reviewed compatibility decision replaces a behaviour. | Prevents the migration from silently dropping or normalising legacy coverage. |
+| `TPA-022` | Existing parity contracts remain pinned migration-verification baselines until an explicit, reviewed compatibility decision replaces a behaviour. Each replacement catalogue is authored in the new model and compared against the applicable parity contract before release; parity contracts and their legacy source files are not production suite artefacts or runtime dependencies. | Prevents the migration from silently dropping or normalising legacy coverage without permanently coupling the replacement architecture to legacy inputs. |
 | `TPA-023` | The MVP support matrix includes the complete AIS, PIS, CBPII, and VRP API families for both Open Banking Read/Write v3.1.11 and v4.0.1, plus Dynamic Client Registration v3.4. Migration layers must preserve the whole matrix even when one representative walking skeleton proves a new contract. | Separates the deliberately narrow implementation slice used to prove architecture from the product versions and API families that must remain fully supported. |
 
 ### Stable traceability chain
@@ -120,7 +120,7 @@ conventions.
 | Test definition catalogue | Test authors | Authoritative for executable cases, request bindings, assertions, dependencies, applicability, and declared requirement coverage. |
 | Participant test plan | Participant or builder | Authoritative only for participant intent and supplied values. It cannot redefine requirements or executable test definitions. |
 | Resolved plan | Compiler | Authoritative record of resolution for one compilation. It is generated, inspectable, deterministic, and not participant-editable. |
-| Execution manifest | Compiler | Authoritative runner input for one execution. It contains resolved instructions and immutable provenance, not unresolved domain rules. |
+| Execution manifest | Compiler | Authoritative runner input for one execution. It contains resolved instructions and immutable suite-release and configuration traceability, not unresolved domain rules or legacy comparison inputs. |
 | Results/evidence | Runner | Authoritative record of observations made during that execution. It does not decide normative completeness by itself. |
 | Certification assessment | Trusted validator | Authoritative assessment of completeness and eligibility against trusted requirements and release policy. |
 | Certificate | Certification process | Formal business decision and artefact, deferred beyond MVP. |
@@ -130,6 +130,28 @@ shape and constraints. Python loaders map a schema-valid document into immutable
 types. Semantic validators own rules that require domain knowledge,
 cross-document references, or comparison of values. A constraint must not be
 implemented independently in both layers merely for convenience.
+
+### PR 2 shared contract decisions
+
+The first shared contract version is implemented under
+`conformance/configuration_contracts/`. These names and wire rules are accepted
+for the shared foundation:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-024` | Shared external schemas use canonical HTTPS `$id` values under `https://schemas.openbanking.org.uk/conformance/v1/` and are bundled under `configuration_contracts/schemas/v1/`. The initial document `schemaVersion` is `1.0`. | Canonical identifiers make references independent of checkout paths while versioned bundled files keep validation deterministic and offline. |
+| `TPA-025` | Every shared document envelope has `schemaVersion`, `documentType`, and opaque stable `id`. Stable IDs are lowercase ASCII matching `[a-z0-9][a-z0-9._:-]*`, limited to 128 characters, and scoped to object kind and suite release. | Establishes minimum versioning, dispatch, and identity without deriving identity from names or ordering. Lowercase-only IDs avoid case-normalization ambiguity across tools and filesystems. |
+| `TPA-026` | Provenance is document-specific derivation metadata, not a mandatory common-envelope field. When a document has a genuine derivation use case, its owning schema defines the required source metadata. Exact SHA-256 digests are required only for artefacts bound by a suite-release descriptor. | Avoids speculative provenance fields and prevents parity-comparison inputs from becoming production dependencies while retaining exact release-byte integrity. |
+| `TPA-027` | A `suite-release` `1.0` descriptor adds `releaseVersion`, RFC 3339 `publishedAt`, compatible `toolReleases`, and content-addressed `artifacts`. Each artefact records stable `id`, `kind`, `mediaType`, `schemaVersion`, normalized bundle-relative `uri`, and exact-byte digest. Paths are confined to the release-bundle root and cannot contain absolute, empty, `.` or `..` segments. The descriptor never hashes itself. Canonical schema `$id` values remain absolute HTTPS URIs. | Implements deterministic local release binding without coupling artefact identity to a source checkout or permitting remote retrieval. |
+| `TPA-028` | Configuration failures use immutable diagnostics with stable dotted codes, severity, RFC 6901 `instance_path`, optional `schema_path`, and human-readable message. Schema, semantic uniqueness, unresolved artefact, and digest failures retain distinct codes. | Callers can automate on codes and paths without parsing library-dependent prose. |
+| `TPA-029` | Python models are frozen, slotted types created only after external schema validation. Python performs only cross-item ID uniqueness and supplied-byte digest checks in this layer; it does not repeat structural schema constraints. | Preserves one structural authority and prevents mutable parsed configuration from leaking into later compilation or execution. |
+
+The `suite-release` fixture in PR 2 binds only the shared schemas. It is contract
+evidence, not a product release descriptor and not catalogue content. Current
+builder, canonical plan, compiler, executor, catalogues, result formats, and
+approved-release policy remain unchanged. The foundation verifies caller-supplied
+bytes keyed by artefact kind and ID; a later packaging adapter may resolve
+bundle-relative paths, but the shared validator does not open filesystem paths.
 
 ## Target flow
 
@@ -273,8 +295,8 @@ behaviour as compatibility findings rather than normalising it.
 
 Introduce versioned external schemas, common document envelopes, stable IDs,
 immutable typed loading, structured diagnostics with stable codes and instance
-paths, provenance, and suite-release metadata. Do not migrate current
-consumers or catalogue content.
+paths, document-specific provenance where justified, and suite-release metadata.
+Do not migrate current consumers or catalogue content.
 
 ### PR 3: requirements and test-definition walking skeleton
 
@@ -288,8 +310,8 @@ Preserve the current runtime path.
 Introduce the new participant-plan contract and deterministic resolved-plan
 compiler for the walking skeleton. Infer required scope, evaluate the accepted
 typed rules, resolve predefined inputs, expand dependencies, preserve findings
-and provenance, and adapt to the current compiled execution path. Do not add
-developer-mode selection or override syntax.
+and suite-release traceability, and adapt to the current compiled execution
+path. Do not add developer-mode selection or override syntax.
 
 ### PR 5: execution-manifest boundary
 
@@ -310,7 +332,10 @@ certificate generation.
 After the contracts and walking skeleton are accepted, migrate PIS, AIS,
 CBPII, VRP, and DCR independently. Family work owns only its catalogue
 directory and fixtures. A coordinator-owned change integrates the central
-release registry.
+release registry. Each replacement catalogue is authored independently of the
+legacy manifests and parity contracts, then must pass a deterministic
+comparison against its pinned parity baseline before its release is accepted.
+The comparison report is release-gate evidence, not a production input.
 
 ### PR 8: participant surface cutover
 
@@ -336,6 +361,8 @@ retention reason.
   explicitly.
 - Preserve sensitive-value masking and the independent assessment boundary.
 - Record intentional behaviour changes as compatibility decisions with tests.
+- Gate each catalogue-family replacement against its pinned parity contract;
+  keep the comparison inputs and report outside the production suite release.
 - Stop on terminology, ownership, or schema-authority conflict; do not create a
   second source of truth to work around it.
 - Do not reduce existing parity or coverage without an explicit reviewed
