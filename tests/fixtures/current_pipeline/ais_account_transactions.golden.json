@@ -1,0 +1,1342 @@
+{
+  "compiledPlan": {
+    "applicabilityDecisions": [
+      {
+        "dependencyOf": [
+          "ais-at-setup-consent"
+        ],
+        "reason": "included as dependency",
+        "selected": true,
+        "testCaseId": "ais-at-setup-discovery"
+      },
+      {
+        "dependencyOf": [
+          "ais-at-setup-token"
+        ],
+        "reason": "included as dependency",
+        "selected": true,
+        "testCaseId": "ais-at-setup-consent"
+      },
+      {
+        "dependencyOf": [
+          "ais-at-account-transactions-200",
+          "ais-at-account-transactions-401",
+          "ais-at-account-transactions-detail-200",
+          "ais-at-account-transactions-playback",
+          "ais-at-legacy-transaction-tra-105700"
+        ],
+        "reason": "included as dependency",
+        "selected": true,
+        "testCaseId": "ais-at-setup-token"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-detail-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-accounts-list-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-detail-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-playback"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-by-id-404"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-balances-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-balances-playback"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-account-balances-404"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "ais-at-account-transactions-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "ais-at-account-transactions-detail-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile and implemented endpoints",
+        "selected": true,
+        "testCaseId": "ais-at-account-transactions-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile and implemented endpoints",
+        "selected": true,
+        "testCaseId": "ais-at-account-transactions-playback"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-transactions-list-200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-transactions-list-401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-transactions-list-playback"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-invalid-base-endpoint-404"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "not applicable to specification version 4.0.1",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-account-acc-100500"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "not applicable to specification version 4.0.1",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-account-acc-100600"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "not applicable to specification version 4.0.1",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-account-acc-101000"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "not applicable to specification version 4.0.1",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-account-acc-101100"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101300"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101400"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101500"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101600"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101700"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-balance-bal-101703"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-101800"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-101900"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102000"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102100"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102201"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102203"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102204"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-beneficiary-ben-102205"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102300"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102400"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102500"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102501"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102502"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102503"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-direct-debit-dir-102504"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102600"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102700"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102800"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102801"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102802"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102803"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-offer-off-102804"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-102900"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-102901"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-102902"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103000"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103100"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103101"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103102"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103103"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103104"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103105"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103106"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103107"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-party-par-103108"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103300"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103400"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103401"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-102802"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103402"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-product-pro-103403"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103500"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103600"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103700"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103701"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103702"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103703"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-scheduled-payment-scp-103704"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-103800"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-103900"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-103901"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-104000"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-104100"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-104101"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-104102"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-standing-order-sto-104103"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
+        "testCaseId": "ais-at-legacy-transaction-tra-105700"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-statement-sta-105900"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-statement-sta-106000"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-statement-sta-106100"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-statement-sta-106200"
+      },
+      {
+        "dependencyOf": [],
+        "reason": "no matching implemented endpoint",
+        "selected": false,
+        "testCaseId": "ais-at-legacy-statement-sta-106300"
+      }
+    ],
+    "catalogue": {
+      "api": "read-write",
+      "catalogueVersion": "ais:2026.07.legacy-fcs-ais-at.1",
+      "standard": "open-banking-uk",
+      "version": "4.0.1"
+    },
+    "certifying": true,
+    "generatedTestCaseIds": [
+      "ais-at-setup-discovery",
+      "ais-at-setup-consent",
+      "ais-at-setup-token",
+      "ais-at-account-transactions-200",
+      "ais-at-account-transactions-detail-200",
+      "ais-at-account-transactions-401",
+      "ais-at-account-transactions-playback",
+      "ais-at-legacy-transaction-tra-105700"
+    ],
+    "nonCertifyingReasons": [],
+    "runtimeInputSnapshot": [
+      {
+        "inputId": "resourceBaseUrl",
+        "inputType": "url",
+        "provided": true,
+        "required": true,
+        "sensitive": false,
+        "value": "https://resource.example.com"
+      },
+      {
+        "inputId": "accessToken",
+        "inputType": "string",
+        "provided": false,
+        "required": false,
+        "sensitive": true,
+        "value": null
+      },
+      {
+        "inputId": "consentedAccountId",
+        "inputType": "string",
+        "provided": true,
+        "required": true,
+        "sensitive": false,
+        "value": "account-123"
+      },
+      {
+        "inputId": "fromBookingDateTime",
+        "inputType": "string",
+        "provided": true,
+        "required": false,
+        "sensitive": false,
+        "value": "2026-08-01T00:00:00Z"
+      },
+      {
+        "inputId": "toBookingDateTime",
+        "inputType": "string",
+        "provided": true,
+        "required": false,
+        "sensitive": false,
+        "value": "2026-08-31T23:59:59Z"
+      },
+      {
+        "inputId": "invalidAccessToken",
+        "inputType": "string",
+        "provided": false,
+        "required": false,
+        "sensitive": true,
+        "value": null
+      }
+    ],
+    "selectedCapabilities": [
+      {
+        "capabilityId": "ais.accounts.transactions.core",
+        "method": "GET",
+        "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+        "required": true
+      },
+      {
+        "capabilityId": "ais.transactions.date-range-filtering",
+        "method": "GET",
+        "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+        "required": false
+      },
+      {
+        "capabilityId": "ais.legacy.accounts.account-id.transactions.core",
+        "method": "GET",
+        "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+        "required": true
+      }
+    ],
+    "selectedEndpoints": [
+      {
+        "capabilities": [
+          "ais.transactions.date-range-filtering"
+        ],
+        "method": "GET",
+        "operationId": null,
+        "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+        "resourceGroup": "account-and-transaction"
+      }
+    ],
+    "skippedTestCaseIds": [],
+    "testCases": [
+      {
+        "dependencies": [],
+        "mandatory": true,
+        "testCaseId": "ais-at-setup-discovery"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-discovery"
+        ],
+        "mandatory": true,
+        "testCaseId": "ais-at-setup-consent"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-consent"
+        ],
+        "mandatory": true,
+        "testCaseId": "ais-at-setup-token"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-token"
+        ],
+        "mandatory": true,
+        "testCaseId": "ais-at-account-transactions-200"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-token"
+        ],
+        "mandatory": true,
+        "testCaseId": "ais-at-account-transactions-detail-200"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-token"
+        ],
+        "mandatory": false,
+        "testCaseId": "ais-at-account-transactions-401"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-token"
+        ],
+        "mandatory": false,
+        "testCaseId": "ais-at-account-transactions-playback"
+      },
+      {
+        "dependencies": [
+          "ais-at-setup-token"
+        ],
+        "mandatory": true,
+        "testCaseId": "ais-at-legacy-transaction-tra-105700"
+      }
+    ]
+  },
+  "parsedPlan": {
+    "boundary": {
+      "scheme": "open-banking-uk",
+      "securityProfile": "fapi1-advanced",
+      "specification": "read-write",
+      "version": "4.0.1"
+    },
+    "endpoints": [],
+    "executionMode": "certification",
+    "resourceGroups": [
+      {
+        "endpoints": [
+          {
+            "capabilities": [
+              "ais.transactions.date-range-filtering"
+            ],
+            "method": "GET",
+            "operationId": null,
+            "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions"
+          }
+        ],
+        "id": "account-and-transaction",
+        "label": "Account transactions",
+        "selectAll": false
+      }
+    ],
+    "runtimeInputs": {
+      "consentedAccountId": "account-123",
+      "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+      "fromBookingDateTime": "2026-08-01T00:00:00Z",
+      "resourceBaseUrl": "https://resource.example.com",
+      "toBookingDateTime": "2026-08-31T23:59:59Z"
+    },
+    "schemaVersion": "1.0"
+  },
+  "result": {
+    "catalogue": {
+      "api": "read-write",
+      "catalogueVersion": "ais:2026.07.legacy-fcs-ais-at.1",
+      "certifying": true,
+      "generatedTestCaseIds": [
+        "ais-at-setup-discovery",
+        "ais-at-setup-consent",
+        "ais-at-setup-token",
+        "ais-at-account-transactions-200",
+        "ais-at-account-transactions-detail-200",
+        "ais-at-account-transactions-401",
+        "ais-at-account-transactions-playback",
+        "ais-at-legacy-transaction-tra-105700"
+      ],
+      "runtimeInputSnapshot": [
+        {
+          "inputId": "resourceBaseUrl",
+          "inputType": "url",
+          "provided": true,
+          "required": true,
+          "sensitive": false,
+          "value": "https://resource.example.com"
+        },
+        {
+          "inputId": "accessToken",
+          "inputType": "string",
+          "provided": false,
+          "required": false,
+          "sensitive": true
+        },
+        {
+          "inputId": "consentedAccountId",
+          "inputType": "string",
+          "provided": true,
+          "required": true,
+          "sensitive": false,
+          "value": "account-123"
+        },
+        {
+          "inputId": "fromBookingDateTime",
+          "inputType": "string",
+          "provided": true,
+          "required": false,
+          "sensitive": false,
+          "value": "2026-08-01T00:00:00Z"
+        },
+        {
+          "inputId": "toBookingDateTime",
+          "inputType": "string",
+          "provided": true,
+          "required": false,
+          "sensitive": false,
+          "value": "2026-08-31T23:59:59Z"
+        },
+        {
+          "inputId": "invalidAccessToken",
+          "inputType": "string",
+          "provided": false,
+          "required": false,
+          "sensitive": true
+        }
+      ],
+      "selectedCapabilities": [
+        {
+          "capabilityId": "ais.accounts.transactions.core",
+          "label": "AIS account transactions baseline coverage",
+          "method": "GET",
+          "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+          "required": true
+        },
+        {
+          "capabilityId": "ais.transactions.date-range-filtering",
+          "label": "AIS transaction date-range filtering",
+          "method": "GET",
+          "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+          "required": false
+        },
+        {
+          "capabilityId": "ais.legacy.accounts.account-id.transactions.core",
+          "label": "Legacy AIS coverage for GET accounts/{AccountId}/transactions",
+          "method": "GET",
+          "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+          "required": true
+        }
+      ],
+      "selectedEndpoints": [
+        {
+          "capabilities": [
+            "ais.transactions.date-range-filtering"
+          ],
+          "method": "GET",
+          "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+          "resourceGroup": "account-and-transaction"
+        }
+      ],
+      "skippedTestCaseIds": [],
+      "standard": "open-banking-uk",
+      "traceGroups": [],
+      "version": "4.0.1"
+    },
+    "certificationEligibility": {
+      "approvedRelease": {
+        "approved": true,
+        "checked": true,
+        "policySchemaVersion": "v1",
+        "toolVersion": "0.1.0-characterization"
+      },
+      "certificationCoverage": {
+        "value": "complete"
+      },
+      "eligible": true,
+      "mandatoryDeselected": 0,
+      "mandatoryDeselectedStepIds": [],
+      "mandatoryFailed": 0,
+      "mandatoryPassed": 11,
+      "mandatorySkipped": 0,
+      "mandatoryTotal": 11,
+      "mandatoryWarn": 0
+    },
+    "eligibilityWithoutApprovedReleasePolicy": {
+      "approvedRelease": {
+        "approved": false,
+        "checked": false,
+        "toolVersion": "0.1.0-characterization"
+      },
+      "certificationCoverage": {
+        "value": "complete"
+      },
+      "eligible": false,
+      "mandatoryDeselected": 0,
+      "mandatoryDeselectedStepIds": [],
+      "mandatoryFailed": 0,
+      "mandatoryPassed": 11,
+      "mandatorySkipped": 0,
+      "mandatoryTotal": 11,
+      "mandatoryWarn": 0,
+      "reason": "Approved-release policy was not supplied",
+      "reasons": [
+        "Approved-release policy was not supplied"
+      ]
+    },
+    "status": "passed",
+    "steps": [
+      {
+        "name": "setup-token-ais-client-credentials",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-setup-discovery-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-setup-basic-consent-request",
+        "status": "passed"
+      },
+      {
+        "name": "setup-ais-basic-consent-authorisation",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-setup-detail-consent-request",
+        "status": "passed"
+      },
+      {
+        "name": "setup-ais-detail-consent-authorisation",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-setup-basic-token-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-setup-detail-token-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-account-transactions-200-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-account-transactions-detail-200-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-account-transactions-401-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-account-transactions-playback-request",
+        "status": "passed"
+      },
+      {
+        "name": "ais-at-legacy-transaction-tra-105700-request",
+        "status": "passed"
+      }
+    ],
+    "summary": {
+      "failed": 0,
+      "passed": 13,
+      "skipped": 0,
+      "total": 13,
+      "warn": 0
+    }
+  },
+  "syntheticManifest": {
+    "certificationCoverage": "complete",
+    "name": "open-banking-uk 4.0.1 read-write",
+    "schemaVersion": "v1",
+    "steps": [
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "client_id": "${config.oauth.clientId}",
+            "grant_type": "client_credentials",
+            "scope": "accounts"
+          }
+        },
+        "detachedJws": null,
+        "headerNames": [],
+        "id": "setup-token-ais-client-credentials",
+        "kind": "http",
+        "mandatory": true,
+        "method": "POST",
+        "phase": "setup",
+        "producesTokenId": "ais-client-credentials",
+        "requiredTokenId": null,
+        "url": "${config.oauth.tokenEndpoint}"
+      },
+      {
+        "assertions": [],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [],
+        "id": "ais-at-setup-discovery-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "GET",
+        "phase": "setup",
+        "producesTokenId": null,
+        "requiredTokenId": null,
+        "url": "https://auth.example.com/.well-known/openid-configuration"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 201,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": {
+          "encoding": "json",
+          "value": {
+            "Data": {
+              "Permissions": [
+                "ReadAccountsBasic",
+                "ReadBalances",
+                "ReadBeneficiariesBasic",
+                "ReadDirectDebits",
+                "ReadOffers",
+                "ReadParty",
+                "ReadPartyPSU",
+                "ReadProducts",
+                "ReadScheduledPaymentsBasic",
+                "ReadStandingOrdersBasic",
+                "ReadStatementsBasic",
+                "ReadTransactionsBasic",
+                "ReadTransactionsCredits",
+                "ReadTransactionsDebits"
+              ]
+            },
+            "Risk": {}
+          }
+        },
+        "detachedJws": {
+          "omitProtectedHeaders": [],
+          "profile": null,
+          "source": "fapi-signing"
+        },
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-setup-basic-consent-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "POST",
+        "phase": "setup",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-client-credentials",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"
+      },
+      {
+        "id": "setup-ais-basic-consent-authorisation",
+        "kind": "psu-authorization",
+        "mandatory": true,
+        "mode": "manual",
+        "openbankingIntentId": "${steps.ais-at-setup-basic-consent-request.response.body.Data.ConsentId}",
+        "phase": "setup",
+        "scope": "openid accounts"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 201,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": {
+          "encoding": "json",
+          "value": {
+            "Data": {
+              "Permissions": [
+                "ReadAccountsDetail",
+                "ReadBalances",
+                "ReadBeneficiariesDetail",
+                "ReadDirectDebits",
+                "ReadOffers",
+                "ReadPAN",
+                "ReadParty",
+                "ReadPartyPSU",
+                "ReadProducts",
+                "ReadScheduledPaymentsDetail",
+                "ReadStandingOrdersDetail",
+                "ReadStatementsDetail",
+                "ReadTransactionsCredits",
+                "ReadTransactionsDebits",
+                "ReadTransactionsDetail"
+              ]
+            },
+            "Risk": {}
+          }
+        },
+        "detachedJws": {
+          "omitProtectedHeaders": [],
+          "profile": null,
+          "source": "fapi-signing"
+        },
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-setup-detail-consent-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "POST",
+        "phase": "setup",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-client-credentials",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/account-access-consents"
+      },
+      {
+        "id": "setup-ais-detail-consent-authorisation",
+        "kind": "psu-authorization",
+        "mandatory": true,
+        "mode": "manual",
+        "openbankingIntentId": "${steps.ais-at-setup-detail-consent-request.response.body.Data.ConsentId}",
+        "phase": "setup",
+        "scope": "openid accounts"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "client_id": "${config.oauth.clientId}",
+            "code": "${steps.setup-ais-basic-consent-authorisation.response.body.code}",
+            "grant_type": "authorization_code",
+            "redirect_uri": "${config.oauth.redirectUri}"
+          }
+        },
+        "detachedJws": null,
+        "headerNames": [],
+        "id": "ais-at-setup-basic-token-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "POST",
+        "phase": "setup",
+        "producesTokenId": "ais-account-access-basic",
+        "requiredTokenId": null,
+        "url": "${config.oauth.tokenEndpoint}"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": {
+          "encoding": "form",
+          "fields": {
+            "client_id": "${config.oauth.clientId}",
+            "code": "${steps.setup-ais-detail-consent-authorisation.response.body.code}",
+            "grant_type": "authorization_code",
+            "redirect_uri": "${config.oauth.redirectUri}"
+          }
+        },
+        "detachedJws": null,
+        "headerNames": [],
+        "id": "ais-at-setup-detail-token-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "POST",
+        "phase": "setup",
+        "producesTokenId": "ais-account-access-detail",
+        "requiredTokenId": null,
+        "url": "${config.oauth.tokenEndpoint}"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "expectedOneOf": [],
+            "type": "http_status"
+          },
+          {
+            "type": "header"
+          },
+          {
+            "type": "json_field"
+          },
+          {
+            "type": "response_schema"
+          }
+        ],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-account-transactions-200-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "GET",
+        "phase": "execution",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-account-access-basic",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 200,
+            "expectedOneOf": [],
+            "type": "http_status"
+          },
+          {
+            "type": "header"
+          },
+          {
+            "type": "response_schema"
+          }
+        ],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-account-transactions-detail-200-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "GET",
+        "phase": "execution",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-account-access-detail",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions"
+      },
+      {
+        "assertions": [
+          {
+            "expected": 401,
+            "expectedOneOf": [],
+            "type": "http_status"
+          }
+        ],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-account-transactions-401-request",
+        "kind": "http",
+        "mandatory": false,
+        "method": "GET",
+        "phase": "setup",
+        "producesTokenId": null,
+        "requiredTokenId": null,
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions"
+      },
+      {
+        "assertions": [
+          {
+            "type": "header"
+          }
+        ],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-account-transactions-playback-request",
+        "kind": "http",
+        "mandatory": false,
+        "method": "GET",
+        "phase": "setup",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-account-access-basic",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/account-123/transactions"
+      },
+      {
+        "assertions": [
+          {
+            "expected": null,
+            "expectedOneOf": [
+              400,
+              403
+            ],
+            "type": "http_status"
+          }
+        ],
+        "body": null,
+        "detachedJws": null,
+        "headerNames": [
+          "Authorization",
+          "x-fapi-interaction-id"
+        ],
+        "id": "ais-at-legacy-transaction-tra-105700-request",
+        "kind": "http",
+        "mandatory": true,
+        "method": "GET",
+        "phase": "execution",
+        "producesTokenId": null,
+        "requiredTokenId": "ais-account-access-detail",
+        "url": "https://resource.example.com/open-banking/v4.0/aisp/accounts/<generated-invalid-resource-id>/transactions"
+      }
+    ]
+  }
+}
