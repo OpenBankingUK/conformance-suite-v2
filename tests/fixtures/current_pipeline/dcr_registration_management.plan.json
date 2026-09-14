@@ -24,6 +24,20 @@
       "operationId": "GetClient",
       "required": false,
       "locked": false
+    },
+    {
+      "method": "PUT",
+      "path": "/register/{ClientId}",
+      "operationId": "UpdateClient",
+      "required": false,
+      "locked": false
+    },
+    {
+      "method": "DELETE",
+      "path": "/register/{ClientId}",
+      "operationId": "DeleteClient",
+      "required": false,
+      "locked": false
     }
   ],
   "metadata": {

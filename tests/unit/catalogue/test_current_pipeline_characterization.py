@@ -11,7 +11,15 @@ from typing import cast
 import pytest
 
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION, ApprovedReleasePolicy
-from conformance.catalogue import CompiledTestPlan, PlanDocumentV2, compile_test_plan_document, parse_test_plan_document
+from conformance.catalogue import (
+    CompiledTestPlan,
+    EndpointRef,
+    PlanDocumentV2,
+    RuntimeInputRequirement,
+    TestCatalogue,
+    compile_test_plan_document,
+    parse_test_plan_document,
+)
 from conformance.catalogue_registry import supported_catalogues
 from conformance.context import RuntimeConfig
 from conformance.executor import _compiled_plan_to_manifest
@@ -35,12 +43,53 @@ pytestmark = pytest.mark.unit
 _FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "current_pipeline"
 _CHARACTERIZATION_TOOL_VERSION = "0.1.0-characterization"
 _GENERATED_INVALID_RESOURCE_ID = re.compile(r"invalid-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+_MVP_READ_WRITE_MATRIX = (
+    ("3.1.11", "AIS", "v3.1", "ais"),
+    ("3.1.11", "PIS", "v3.1", "pis"),
+    ("3.1.11", "CBPII", "v3.1", "cbpii"),
+    ("3.1.11", "VRP", "v3.1", "vrp"),
+    ("4.0.1", "AIS", "v4.0", "ais"),
+    ("4.0.1", "PIS", "v4.0", "pis"),
+    ("4.0.1", "CBPII", "v4.0", "cbpii"),
+    ("4.0.1", "VRP", "v4.0", "vrp"),
+)
+_RUNTIME_INPUT_VALUES: dict[str, JsonValue] = {
+    "resourceBaseUrl": "https://resource.example.com",
+    "consentedAccountId": "account-123",
+    "fromBookingDateTime": "2026-08-01T00:00:00Z",
+    "toBookingDateTime": "2026-08-31T23:59:59Z",
+    "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+    "pisCreditorAccountIdentification": "70000170000002",
+    "pisCreditorAccountName": "Domestic creditor",
+    "pisInternationalCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+    "pisInternationalCreditorAccountIdentification": "70000170000003",
+    "pisInternationalCreditorAccountName": "International creditor",
+    "pisInstructedAmountAmount": "1.00",
+    "pisInstructedAmountCurrency": "GBP",
+    "pisCurrencyOfTransfer": "USD",
+    "pisRequestedExecutionDateTime": "2026-10-02T00:00:00+00:00",
+    "pisFirstPaymentDateTime": "2026-10-01T00:00:00+00:00",
+    "pisStandingOrderFrequencyType": "WEEK",
+    "pisStandingOrderFrequencyPointInTime": "03",
+    "pisStandingOrderFrequencyV31": "IntrvlWkDay:01:03",
+    "debtorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+    "debtorAccountIdentification": "70000170000004",
+    "debtorAccountName": "Debtor account",
+    "vrpCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+    "vrpCreditorAccountIdentification": "70000170000005",
+    "vrpCreditorAccountName": "VRP creditor",
+    "vrpInstructedAmountAmount": "1.00",
+    "vrpInstructedAmountCurrency": "GBP",
+    "vrpValidFromDateTime": "2026-09-14T00:00:00+00:00",
+    "vrpValidToDateTime": "2026-10-14T00:00:00+00:00",
+}
 
 
 @pytest.mark.parametrize(
     "journey",
     [
         "pis_standing_order",
+        "pis_v311_standing_order",
         "ais_account_transactions",
         "dcr_registration_management",
     ],
@@ -54,6 +103,13 @@ def test_current_pipeline_matches_golden_fixture(
     monkeypatch.setenv(CONFORMANCE_TOOL_VERSION_ENV, _CHARACTERIZATION_TOOL_VERSION)
 
     assert _pipeline_snapshot(journey, runtime_input_base_dir=tmp_path) == _load_fixture(f"{journey}.golden.json")
+
+
+def test_mvp_support_matrix_matches_golden_fixture(tmp_path: Path) -> None:
+    """Freeze complete catalogue selection and lowering for every MVP boundary."""
+    assert _mvp_support_matrix_snapshot(runtime_input_base_dir=tmp_path) == _load_fixture(
+        "mvp_support_matrix.golden.json"
+    )
 
 
 def _pipeline_snapshot(journey: str, *, runtime_input_base_dir: Path) -> JsonObject:
@@ -93,6 +149,192 @@ def _pipeline_snapshot(journey: str, *, runtime_input_base_dir: Path) -> JsonObj
         "compiledPlan": _compiled_plan_snapshot(compiled_plan),
         "syntheticManifest": _manifest_snapshot(manifest),
         "result": _result_snapshot(eligible_result, result_without_policy=result_without_policy),
+    }
+
+
+def _mvp_support_matrix_snapshot(*, runtime_input_base_dir: Path) -> JsonObject:
+    catalogues = supported_catalogues()
+    read_write: list[JsonValue] = []
+    for version, resource_group, catalogue_version, api in _MVP_READ_WRITE_MATRIX:
+        catalogue = next(
+            item
+            for item in catalogues
+            if item.key.standard == "open-banking" and item.key.version == catalogue_version and item.key.api == api
+        )
+        document = parse_test_plan_document(
+            _full_read_write_plan(
+                version=version,
+                resource_group=resource_group,
+                catalogue=catalogue,
+            )
+        )
+        assert isinstance(document, PlanDocumentV2)
+        compiled_plan = compile_test_plan_document(document, catalogues)
+        manifest = _compiled_plan_to_manifest(
+            compiled_plan,
+            runtime_inputs=document.runtime_inputs,
+            runtime_input_base_dir=runtime_input_base_dir,
+            runtime_config=RuntimeConfig(
+                discovery_url=cast(str, document.security_environment["discoveryUrl"]),
+            ),
+        )
+        read_write.append(
+            _matrix_entry_snapshot(
+                specification_version=version,
+                profile=resource_group,
+                catalogue=catalogue,
+                compiled_plan=compiled_plan,
+                manifest=manifest,
+            )
+        )
+
+    dcr_document = parse_test_plan_document(_load_fixture("dcr_registration_management.plan.json"))
+    assert isinstance(dcr_document, PlanDocumentV2)
+    dcr_plan = compile_test_plan_document(dcr_document, catalogues)
+    dcr_manifest = _compiled_plan_to_manifest(
+        dcr_plan,
+        runtime_inputs=dcr_document.runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+        runtime_config=RuntimeConfig(
+            discovery_url=cast(str, dcr_document.security_environment["discoveryUrl"]),
+        ),
+    )
+    dcr_catalogue = next(item for item in catalogues if item.key.api == "dcr")
+    return {
+        "readWrite": read_write,
+        "dcr": _matrix_entry_snapshot(
+            specification_version="3.4",
+            profile="DCR",
+            catalogue=dcr_catalogue,
+            compiled_plan=dcr_plan,
+            manifest=dcr_manifest,
+        ),
+    }
+
+
+def _full_read_write_plan(*, version: str, resource_group: str, catalogue: TestCatalogue) -> JsonObject:
+    endpoint_refs = _catalogue_endpoint_refs(catalogue)
+    endpoints: list[JsonValue] = []
+    for endpoint_ref in endpoint_refs:
+        capabilities = cast(
+            "list[JsonValue]",
+            [
+                capability.capability_id
+                for capability in catalogue.capabilities
+                if endpoint_ref in capability.endpoint_refs
+            ],
+        )
+        endpoints.append(
+            {
+                "method": endpoint_ref.method,
+                "path": endpoint_ref.path,
+                **({"capabilities": capabilities} if capabilities else {}),
+            }
+        )
+    return {
+        "schemaVersion": "1.0",
+        "specification": {
+            "family": "OBL_READ_WRITE",
+            "version": version,
+            "profile": "FAPI1_ADVANCED",
+        },
+        "executionMode": "certification",
+        "securityEnvironment": {
+            "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+            "resourceBaseUrl": "https://resource.example.com",
+        },
+        "resourceGroups": [{"id": resource_group, "endpoints": endpoints}],
+        "businessTestData": {
+            "runtimeInputs": _required_runtime_inputs(catalogue),
+        },
+        "metadata": {},
+    }
+
+
+def _catalogue_endpoint_refs(catalogue: TestCatalogue) -> tuple[EndpointRef, ...]:
+    endpoint_refs: list[EndpointRef] = []
+    seen: set[EndpointRef] = set()
+    candidates = (
+        endpoint_ref
+        for endpoint_refs in (
+            (
+                endpoint_ref
+                for test_case in catalogue.test_cases
+                for endpoint_ref in test_case.applicability.endpoint_refs
+            ),
+            (endpoint_ref for capability in catalogue.capabilities for endpoint_ref in capability.endpoint_refs),
+        )
+        for endpoint_ref in endpoint_refs
+    )
+    for endpoint_ref in candidates:
+        if endpoint_ref in seen:
+            continue
+        seen.add(endpoint_ref)
+        endpoint_refs.append(endpoint_ref)
+    return tuple(endpoint_refs)
+
+
+def _required_runtime_inputs(catalogue: TestCatalogue) -> JsonObject:
+    requirements = {
+        requirement.input_id: requirement
+        for test_case in catalogue.test_cases
+        for requirement in test_case.runtime_input_requirements
+        if requirement.source == "plan" and requirement.required
+    }
+    return {input_id: _runtime_input_value(requirement) for input_id, requirement in sorted(requirements.items())}
+
+
+def _runtime_input_value(requirement: RuntimeInputRequirement) -> JsonValue:
+    configured = _RUNTIME_INPUT_VALUES.get(requirement.input_id)
+    if configured is not None:
+        return configured
+    if requirement.input_type == "url":
+        return f"https://inputs.example.com/{requirement.input_id}"
+    if requirement.input_type == "number":
+        return 1
+    if requirement.input_type == "boolean":
+        return True
+    return f"fixture-{requirement.input_id}"
+
+
+def _matrix_entry_snapshot(
+    *,
+    specification_version: str,
+    profile: str,
+    catalogue: TestCatalogue,
+    compiled_plan: CompiledTestPlan,
+    manifest: Manifest,
+) -> JsonObject:
+    selected_decisions = cast(
+        "list[JsonValue]",
+        [decision.test_case_id for decision in compiled_plan.traceability.applicability_decisions if decision.selected],
+    )
+    return {
+        "specificationVersion": specification_version,
+        "profile": profile,
+        "catalogue": {
+            "standard": catalogue.key.standard,
+            "version": catalogue.key.version,
+            "api": catalogue.key.api,
+            "catalogueVersion": catalogue.catalogue_version,
+        },
+        "catalogueTestCaseIds": [test_case.test_case_id for test_case in catalogue.test_cases],
+        "catalogueCapabilityIds": [capability.capability_id for capability in catalogue.capabilities],
+        "selectedEndpointCount": len(compiled_plan.traceability.selected_endpoints),
+        "selectedCapabilityIds": [
+            capability.capability_id for capability in compiled_plan.traceability.selected_capabilities
+        ],
+        "selectedApplicabilityTestCaseIds": selected_decisions,
+        "compiledTestCaseIds": list(compiled_plan.traceability.generated_test_case_ids),
+        "skippedTestCaseIds": [test_case.test_case_id for test_case in compiled_plan.skipped_test_cases],
+        "runtimeInputIds": [
+            runtime_input.input_id for runtime_input in compiled_plan.traceability.runtime_input_snapshot
+        ],
+        "manifestStepIds": [step.id for step in manifest.steps],
+        "mandatoryManifestStepCount": sum(step.mandatory for step in manifest.steps),
+        "catalogueExecutionStepIds": [
+            step.step_id for test_case in compiled_plan.test_cases for step in test_case.execution_steps
+        ],
     }
 
 

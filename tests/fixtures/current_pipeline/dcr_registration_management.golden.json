@@ -4,6 +4,7 @@
       {
         "dependencyOf": [
           "DCR-002-C01",
+          "DCR-003-C01",
           "DCR-004-C01",
           "DCR-004-C02",
           "DCR-004-C03",
@@ -11,6 +12,9 @@
           "DCR-004-C05",
           "DCR-005-C01",
           "DCR-007-C01",
+          "DCR-008-C01",
+          "DCR-009-C01",
+          "DCR-010-C01",
           "DCR-011-C01"
         ],
         "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
@@ -19,46 +23,56 @@
       },
       {
         "dependencyOf": [
-          "DCR-002-C02"
+          "DCR-002-C02",
+          "DCR-002-C03"
         ],
         "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
         "selected": true,
         "testCaseId": "DCR-002-C01"
       },
       {
-        "dependencyOf": [],
+        "dependencyOf": [
+          "DCR-002-C03"
+        ],
         "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
         "selected": true,
         "testCaseId": "DCR-002-C02"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-002-C03"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-003-C02",
+          "DCR-003-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-003-C01"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-003-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-003-C02"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-003-C04"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-003-C03"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-003-C04"
       },
       {
@@ -102,7 +116,8 @@
       },
       {
         "dependencyOf": [
-          "DCR-005-C03"
+          "DCR-005-C03",
+          "DCR-005-C04"
         ],
         "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
         "selected": true,
@@ -116,8 +131,8 @@
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-005-C04"
       },
       {
@@ -136,87 +151,109 @@
         "testCaseId": "DCR-007-C02"
       },
       {
-        "dependencyOf": [],
+        "dependencyOf": [
+          "DCR-007-C04"
+        ],
         "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
         "selected": true,
         "testCaseId": "DCR-007-C03"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-007-C04"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-008-C02",
+          "DCR-008-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-008-C01"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-008-C03",
+          "DCR-008-C04"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-008-C02"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-008-C03"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-008-C04"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-009-C02",
+          "DCR-009-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-009-C01"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-009-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-009-C02"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-009-C04"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-009-C03"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-009-C04"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-010-C02",
+          "DCR-010-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-010-C01"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-010-C03"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-010-C02"
       },
       {
-        "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "dependencyOf": [
+          "DCR-010-C04"
+        ],
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-010-C03"
       },
       {
         "dependencyOf": [],
-        "reason": "no matching implemented endpoint",
-        "selected": false,
+        "reason": "applicable to selected profile, implemented endpoints, and selected capabilities",
+        "selected": true,
         "testCaseId": "DCR-010-C04"
       },
       {
@@ -237,6 +274,11 @@
       "DCR-001-C01",
       "DCR-002-C01",
       "DCR-002-C02",
+      "DCR-002-C03",
+      "DCR-003-C01",
+      "DCR-003-C02",
+      "DCR-003-C03",
+      "DCR-003-C04",
       "DCR-004-C01",
       "DCR-004-C02",
       "DCR-004-C03",
@@ -245,9 +287,23 @@
       "DCR-005-C01",
       "DCR-005-C02",
       "DCR-005-C03",
+      "DCR-005-C04",
       "DCR-007-C01",
       "DCR-007-C02",
       "DCR-007-C03",
+      "DCR-007-C04",
+      "DCR-008-C01",
+      "DCR-008-C02",
+      "DCR-008-C03",
+      "DCR-008-C04",
+      "DCR-009-C01",
+      "DCR-009-C02",
+      "DCR-009-C03",
+      "DCR-009-C04",
+      "DCR-010-C01",
+      "DCR-010-C02",
+      "DCR-010-C03",
+      "DCR-010-C04",
       "DCR-011-C01"
     ],
     "nonCertifyingReasons": [],
@@ -262,6 +318,18 @@
       {
         "capabilityId": "dcr.management.get",
         "method": "GET",
+        "path": "/register/{ClientId}",
+        "required": true
+      },
+      {
+        "capabilityId": "dcr.management.put",
+        "method": "PUT",
+        "path": "/register/{ClientId}",
+        "required": true
+      },
+      {
+        "capabilityId": "dcr.management.delete",
+        "method": "DELETE",
         "path": "/register/{ClientId}",
         "required": true
       }
@@ -280,29 +348,23 @@
         "operationId": "GetClient",
         "path": "/register/{ClientId}",
         "resourceGroup": "dynamic-client-registration"
+      },
+      {
+        "capabilities": [],
+        "method": "PUT",
+        "operationId": "UpdateClient",
+        "path": "/register/{ClientId}",
+        "resourceGroup": "dynamic-client-registration"
+      },
+      {
+        "capabilities": [],
+        "method": "DELETE",
+        "operationId": "DeleteClient",
+        "path": "/register/{ClientId}",
+        "resourceGroup": "dynamic-client-registration"
       }
     ],
-    "skippedTestCaseIds": [
-      "DCR-002-C03",
-      "DCR-003-C01",
-      "DCR-003-C02",
-      "DCR-003-C03",
-      "DCR-003-C04",
-      "DCR-005-C04",
-      "DCR-007-C04",
-      "DCR-008-C01",
-      "DCR-008-C02",
-      "DCR-008-C03",
-      "DCR-008-C04",
-      "DCR-009-C01",
-      "DCR-009-C02",
-      "DCR-009-C03",
-      "DCR-009-C04",
-      "DCR-010-C01",
-      "DCR-010-C02",
-      "DCR-010-C03",
-      "DCR-010-C04"
-    ],
+    "skippedTestCaseIds": [],
     "testCases": [
       {
         "dependencies": [],
@@ -322,6 +384,43 @@
         ],
         "mandatory": true,
         "testCaseId": "DCR-002-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-002-C01",
+          "DCR-002-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-002-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-003-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-003-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-003-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-003-C01",
+          "DCR-003-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-003-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-003-C03"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-003-C04"
       },
       {
         "dependencies": [
@@ -382,6 +481,13 @@
       },
       {
         "dependencies": [
+          "DCR-005-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-005-C04"
+      },
+      {
+        "dependencies": [
           "DCR-001-C01"
         ],
         "mandatory": true,
@@ -400,6 +506,100 @@
         ],
         "mandatory": true,
         "testCaseId": "DCR-007-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-007-C03"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-007-C04"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-008-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-008-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-008-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-008-C01",
+          "DCR-008-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-008-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-008-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-008-C04"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-009-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-009-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-009-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-009-C01",
+          "DCR-009-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-009-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-009-C03"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-009-C04"
+      },
+      {
+        "dependencies": [
+          "DCR-001-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-010-C01"
+      },
+      {
+        "dependencies": [
+          "DCR-010-C01"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-010-C02"
+      },
+      {
+        "dependencies": [
+          "DCR-010-C01",
+          "DCR-010-C02"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-010-C03"
+      },
+      {
+        "dependencies": [
+          "DCR-010-C03"
+        ],
+        "mandatory": true,
+        "testCaseId": "DCR-010-C04"
       },
       {
         "dependencies": [
@@ -433,6 +633,22 @@
         "operationId": "GetClient",
         "path": "/register/{ClientId}",
         "required": false
+      },
+      {
+        "capabilities": [],
+        "locked": false,
+        "method": "PUT",
+        "operationId": "UpdateClient",
+        "path": "/register/{ClientId}",
+        "required": false
+      },
+      {
+        "capabilities": [],
+        "locked": false,
+        "method": "DELETE",
+        "operationId": "DeleteClient",
+        "path": "/register/{ClientId}",
+        "required": false
       }
     ],
     "executionMode": "certification",
@@ -451,6 +667,11 @@
         "DCR-001-C01",
         "DCR-002-C01",
         "DCR-002-C02",
+        "DCR-002-C03",
+        "DCR-003-C01",
+        "DCR-003-C02",
+        "DCR-003-C03",
+        "DCR-003-C04",
         "DCR-004-C01",
         "DCR-004-C02",
         "DCR-004-C03",
@@ -459,9 +680,23 @@
         "DCR-005-C01",
         "DCR-005-C02",
         "DCR-005-C03",
+        "DCR-005-C04",
         "DCR-007-C01",
         "DCR-007-C02",
         "DCR-007-C03",
+        "DCR-007-C04",
+        "DCR-008-C01",
+        "DCR-008-C02",
+        "DCR-008-C03",
+        "DCR-008-C04",
+        "DCR-009-C01",
+        "DCR-009-C02",
+        "DCR-009-C03",
+        "DCR-009-C04",
+        "DCR-010-C01",
+        "DCR-010-C02",
+        "DCR-010-C03",
+        "DCR-010-C04",
         "DCR-011-C01"
       ],
       "runtimeInputSnapshot": [],
@@ -479,6 +714,20 @@
           "method": "GET",
           "path": "/register/{ClientId}",
           "required": true
+        },
+        {
+          "capabilityId": "dcr.management.put",
+          "label": "Client update",
+          "method": "PUT",
+          "path": "/register/{ClientId}",
+          "required": true
+        },
+        {
+          "capabilityId": "dcr.management.delete",
+          "label": "Client deletion",
+          "method": "DELETE",
+          "path": "/register/{ClientId}",
+          "required": true
         }
       ],
       "selectedEndpoints": [
@@ -493,29 +742,21 @@
           "operationId": "GetClient",
           "path": "/register/{ClientId}",
           "resourceGroup": "dynamic-client-registration"
+        },
+        {
+          "method": "PUT",
+          "operationId": "UpdateClient",
+          "path": "/register/{ClientId}",
+          "resourceGroup": "dynamic-client-registration"
+        },
+        {
+          "method": "DELETE",
+          "operationId": "DeleteClient",
+          "path": "/register/{ClientId}",
+          "resourceGroup": "dynamic-client-registration"
         }
       ],
-      "skippedTestCaseIds": [
-        "DCR-002-C03",
-        "DCR-003-C01",
-        "DCR-003-C02",
-        "DCR-003-C03",
-        "DCR-003-C04",
-        "DCR-005-C04",
-        "DCR-007-C04",
-        "DCR-008-C01",
-        "DCR-008-C02",
-        "DCR-008-C03",
-        "DCR-008-C04",
-        "DCR-009-C01",
-        "DCR-009-C02",
-        "DCR-009-C03",
-        "DCR-009-C04",
-        "DCR-010-C01",
-        "DCR-010-C02",
-        "DCR-010-C03",
-        "DCR-010-C04"
-      ],
+      "skippedTestCaseIds": [],
       "standard": "open-banking-uk",
       "traceGroups": [
         {
@@ -570,10 +811,10 @@
               "testCaseId": "DCR-002-C02"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-002-C03-S01"
                 }
               ],
@@ -583,59 +824,59 @@
           "traceGroupId": "DCR-002"
         },
         {
-          "status": "skipped",
+          "status": "passed",
           "testCases": [
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C01-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C01-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C01-S03"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C01-S04"
                 }
               ],
               "testCaseId": "DCR-003-C01"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C02-S01"
                 }
               ],
               "testCaseId": "DCR-003-C02"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C03-S01"
                 }
               ],
               "testCaseId": "DCR-003-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C04-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-003-C04-S02"
                 }
               ],
@@ -798,10 +1039,10 @@
               "testCaseId": "DCR-005-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-005-C04-S01"
                 }
               ],
@@ -864,10 +1105,10 @@
               "testCaseId": "DCR-007-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-007-C04-S01"
                 }
               ],
@@ -877,63 +1118,63 @@
           "traceGroupId": "DCR-007"
         },
         {
-          "status": "skipped",
+          "status": "passed",
           "testCases": [
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C01-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C01-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C01-S03"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C01-S04"
                 }
               ],
               "testCaseId": "DCR-008-C01"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C02-S01"
                 }
               ],
               "testCaseId": "DCR-008-C02"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C03-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C03-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C03-S03"
                 }
               ],
               "testCaseId": "DCR-008-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-008-C04-S01"
                 }
               ],
@@ -943,63 +1184,63 @@
           "traceGroupId": "DCR-008"
         },
         {
-          "status": "skipped",
+          "status": "passed",
           "testCases": [
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C01-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C01-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C01-S03"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C01-S04"
                 }
               ],
               "testCaseId": "DCR-009-C01"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C02-S01"
                 }
               ],
               "testCaseId": "DCR-009-C02"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C03-S01"
                 }
               ],
               "testCaseId": "DCR-009-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C04-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C04-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-009-C04-S03"
                 }
               ],
@@ -1009,59 +1250,59 @@
           "traceGroupId": "DCR-009"
         },
         {
-          "status": "skipped",
+          "status": "passed",
           "testCases": [
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C01-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C01-S02"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C01-S03"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C01-S04"
                 }
               ],
               "testCaseId": "DCR-010-C01"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C02-S01"
                 }
               ],
               "testCaseId": "DCR-010-C02"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C03-S01"
                 }
               ],
               "testCaseId": "DCR-010-C03"
             },
             {
-              "status": "skipped",
+              "status": "passed",
               "steps": [
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C04-S01"
                 },
                 {
-                  "status": "skipped",
+                  "status": "passed",
                   "stepId": "DCR-010-C04-S02"
                 }
               ],
@@ -1115,9 +1356,9 @@
       "mandatoryDeselected": 0,
       "mandatoryDeselectedStepIds": [],
       "mandatoryFailed": 0,
-      "mandatoryPassed": 42,
+      "mandatoryPassed": 79,
       "mandatorySkipped": 0,
-      "mandatoryTotal": 42,
+      "mandatoryTotal": 79,
       "mandatoryWarn": 0
     },
     "eligibilityWithoutApprovedReleasePolicy": {
@@ -1133,9 +1374,9 @@
       "mandatoryDeselected": 0,
       "mandatoryDeselectedStepIds": [],
       "mandatoryFailed": 0,
-      "mandatoryPassed": 42,
+      "mandatoryPassed": 79,
       "mandatorySkipped": 0,
-      "mandatoryTotal": 42,
+      "mandatoryTotal": 79,
       "mandatoryWarn": 0,
       "reason": "Approved-release policy was not supplied",
       "reasons": [
@@ -1166,6 +1407,42 @@
       },
       {
         "name": "DCR-002-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-002-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-003-C04-S02",
         "status": "passed"
       },
       {
@@ -1265,6 +1542,10 @@
         "status": "passed"
       },
       {
+        "name": "DCR-005-C04-S01",
+        "status": "passed"
+      },
+      {
         "name": "DCR-007-C01-S01",
         "status": "passed"
       },
@@ -1297,6 +1578,114 @@
         "status": "passed"
       },
       {
+        "name": "DCR-007-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C03-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C03-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-008-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C04-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-009-C04-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C01-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C01-S02",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C01-S03",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C01-S04",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C02-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C03-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C04-S01",
+        "status": "passed"
+      },
+      {
+        "name": "DCR-010-C04-S02",
+        "status": "passed"
+      },
+      {
         "name": "DCR-011-C01-S01",
         "status": "passed"
       },
@@ -1315,9 +1704,9 @@
     ],
     "summary": {
       "failed": 0,
-      "passed": 42,
+      "passed": 79,
       "skipped": 0,
-      "total": 42,
+      "total": 79,
       "warn": 0
     }
   },

@@ -83,6 +83,7 @@ accepted JSON property names unless a later schema decision says otherwise.
 | `TPA-020` | Existing behaviour is characterised before replacement; one representative vertical slice proves shared contracts before catalogue-family migration; legacy structures are deleted only after their consumers move. | Keeps every migration layer reviewable and the system operational. |
 | `TPA-021` | The first walking skeleton is the Open Banking Read/Write v4.0 domestic standing-order flow: consent creation and retrieval, payment submission and retrieval, its dependency chain, and the predefined frequency input. Valid and invalid frequency fixtures are both required. | Exercises conditional scope, multiple endpoints, dependencies, reusable input binding, and positive/negative validation without migrating all PIS content. |
 | `TPA-022` | Existing parity contracts remain the behavioural and provenance baseline until an explicit, reviewed compatibility decision replaces a behaviour. | Prevents the migration from silently dropping or normalising legacy coverage. |
+| `TPA-023` | The MVP support matrix includes the complete AIS, PIS, CBPII, and VRP API families for both Open Banking Read/Write v3.1.11 and v4.0.1, plus Dynamic Client Registration v3.4. Migration layers must preserve the whole matrix even when one representative walking skeleton proves a new contract. | Separates the deliberately narrow implementation slice used to prove architecture from the product versions and API families that must remain fully supported. |
 
 ### Stable traceability chain
 
@@ -354,4 +355,3 @@ known gaps
 explicitly deferred work
 the exact next PR boundary
 ```
-

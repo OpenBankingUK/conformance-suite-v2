@@ -12,9 +12,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Golden characterization fixtures for the current canonical-plan pipeline,
-  covering PIS domestic standing orders, AIS account transactions, DCR
-  registration management, compilation and dependency traceability, synthetic
-  manifests, result evidence, and certification eligibility.
+  covering the complete AIS, PIS, CBPII, and VRP support matrix on Read/Write
+  v3.1.11 and v4.0.1, PIS standing-order journeys on both versions, AIS account
+  transactions, full DCR 3.4 registration management, compilation and
+  dependency traceability, synthetic manifests, result evidence, and
+  certification eligibility.
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict
