@@ -104,6 +104,13 @@
     "request": {
       "additionalProperties": false,
       "properties": {
+        "authorizationProfile": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "contentType": {
+          "pattern": "^[^\\s/]+/[^\\s/]+$",
+          "type": "string"
+        },
         "inputBindings": {
           "items": {
             "$ref": "#/$defs/inputBinding"
@@ -113,6 +120,12 @@
         "modifications": {
           "items": {
             "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/requestModification"
+          },
+          "type": "array"
+        },
+        "stateBindings": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/stateBinding"
           },
           "type": "array"
         },
@@ -128,6 +141,9 @@
         "path": {
           "pattern": "^/",
           "type": "string"
+        },
+        "transportProfile": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         }
       },
       "required": [
@@ -171,6 +187,12 @@
         "name": {
           "minLength": 1,
           "type": "string"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/testOutput"
+          },
+          "type": "array"
         },
         "request": {
           "$ref": "#/$defs/request"
@@ -220,7 +242,10 @@
           "const": "1.0"
         },
         "securityProfile": {
-          "const": "fapi1-advanced"
+          "enum": [
+            "all",
+            "fapi1-advanced"
+          ]
         },
         "steps": {
           "items": {

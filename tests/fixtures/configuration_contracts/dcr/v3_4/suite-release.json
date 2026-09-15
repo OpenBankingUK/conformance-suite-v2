@@ -1,0 +1,47 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:e76a1c521efecdab3ccdc1cd8a6b991638174fc9f511a68dd3ee37bf3b6d5610",
+      "id": "execution-manifest-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+    },
+    {
+      "digest": "sha256:940702317d3ea8b71c99cc28cae2128e3e46b66ff0b8d3aa43e5a8f5cbf11c93",
+      "id": "obl.dcr-v34.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/requirements.json"
+    },
+    {
+      "digest": "sha256:5568cd9b2cbf9f4911bd6e3bf4f43d9aa860b4d99e28c634b9e4e892747343e2",
+      "id": "obl.dcr-v34.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/test-definitions.json"
+    },
+    {
+      "digest": "sha256:e40e48e8262701f979c93388f0f7598158cfc2ced6f2f330f8ecac51585ba04e",
+      "id": "ob-dcr-v34.openapi",
+      "kind": "technical-source",
+      "mediaType": "application/yaml",
+      "schemaVersion": "3.4",
+      "uri": "conformance/standards/ob_dcr/v3_4/client-registration-openapi.yaml"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.dcr-v34.catalogue-fixture",
+  "publishedAt": "2026-09-15T00:00:00Z",
+  "releaseVersion": "0.0.0-dcr-v34-fixture",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

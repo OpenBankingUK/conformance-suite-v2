@@ -61,7 +61,10 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "securityProfile": {
-          "const": "fapi1-advanced"
+          "enum": [
+            "all",
+            "fapi1-advanced"
+          ]
         },
         "selectedCapabilityIds": {
           "items": {

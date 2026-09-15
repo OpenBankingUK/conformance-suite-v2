@@ -11,6 +11,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replacement DCR 3.4 requirements and test-definition catalogues authored
+  from the pinned Open Banking specification and OpenAPI operation inventory.
+  The shared contracts now support setup-only test dependencies, explicit
+  cross-step state flow, optional source operation IDs, PUT/DELETE, protocol
+  request profiles, content-addressed assertion schemas, DCR security scope,
+  empty predefined-input sets, and JSON-presence assertions. Deterministic
+  resolved-plan, referential-integrity, and per-case parity-classification
+  fixtures keep legacy DCR behaviour as migration evidence only and surface
+  unobservable deletion-token invalidation as not assessed; central release
+  registry integration remains separate.
 - Replacement AIS requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, covering all 29 Account Information OpenAPI
   operations with explicit consent, permission, dependency, query-input,

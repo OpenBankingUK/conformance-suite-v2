@@ -1,0 +1,666 @@
+{
+  "capabilities": [
+    {
+      "id": "dcr.v34.capability.retrieval",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "participant.dcr-v34.full-management",
+            "dcr.v34.capability.retrieval"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dcr.v34.capability.update",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "participant.dcr-v34.full-management",
+            "dcr.v34.capability.update"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "dcr.v34.capability.deletion",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "participant.dcr-v34.full-management",
+            "dcr.v34.capability.deletion"
+          ]
+        }
+      ]
+    }
+  ],
+  "documentType": "resolved-plan",
+  "endpoints": [
+    {
+      "id": "dcr.v34.endpoint.client-retrieval",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "dcr.v34.requirement.retrieval-operation",
+            "dcr.v34.requirement.retrieval-unknown-client",
+            "dcr.v34.requirement.retrieval-unknown-token-revocation"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "dcr.v34.requirement.retrieval-operation",
+        "dcr.v34.requirement.retrieval-unknown-client",
+        "dcr.v34.requirement.retrieval-unknown-token-revocation"
+      ]
+    },
+    {
+      "id": "dcr.v34.endpoint.client-update",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "dcr.v34.requirement.update-operation",
+            "dcr.v34.requirement.update-token-continuity",
+            "dcr.v34.requirement.update-unknown-client",
+            "dcr.v34.requirement.update-unknown-token-revocation"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "dcr.v34.requirement.update-operation",
+        "dcr.v34.requirement.update-token-continuity",
+        "dcr.v34.requirement.update-unknown-client",
+        "dcr.v34.requirement.update-unknown-token-revocation"
+      ]
+    },
+    {
+      "id": "dcr.v34.endpoint.client-deletion",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "dcr.v34.requirement.deletion-operation",
+            "dcr.v34.requirement.deletion-token-invalidation",
+            "dcr.v34.requirement.deletion-unknown-client",
+            "dcr.v34.requirement.deletion-unknown-token-revocation"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "dcr.v34.requirement.deletion-operation",
+        "dcr.v34.requirement.deletion-token-invalidation",
+        "dcr.v34.requirement.deletion-unknown-client",
+        "dcr.v34.requirement.deletion-unknown-token-revocation"
+      ]
+    },
+    {
+      "id": "dcr.v34.endpoint.registration",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "tests.dependency.endpoint",
+          "sourceIds": [
+            "dcr.v34.test.registration.positive.instance"
+          ]
+        }
+      ],
+      "requirementIds": []
+    }
+  ],
+  "findings": [
+    {
+      "code": "plan.test.requirement-not-assessed",
+      "instancePath": "/testInstances",
+      "message": "Applicable requirement dcr.v34.requirement.deletion-token-invalidation is documented but has no deterministic test in this catalogue",
+      "relatedIds": [
+        "dcr.v34.requirement.deletion-token-invalidation"
+      ],
+      "severity": "warning",
+      "sourceDocument": "resolved-plan"
+    }
+  ],
+  "id": "resolved-plan:8f43e24d44ea6ebd18d06a533c8beedb56a8c0e9a967ecf8f83bda5102e79cd5",
+  "predefinedInputs": [],
+  "provenance": {
+    "artifacts": [
+      {
+        "digest": "sha256:e76a1c521efecdab3ccdc1cd8a6b991638174fc9f511a68dd3ee37bf3b6d5610",
+        "id": "execution-manifest-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+      },
+      {
+        "digest": "sha256:940702317d3ea8b71c99cc28cae2128e3e46b66ff0b8d3aa43e5a8f5cbf11c93",
+        "id": "obl.dcr-v34.requirements",
+        "kind": "requirements-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/requirements.json"
+      },
+      {
+        "digest": "sha256:5568cd9b2cbf9f4911bd6e3bf4f43d9aa860b4d99e28c634b9e4e892747343e2",
+        "id": "obl.dcr-v34.tests",
+        "kind": "test-definition-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/test-definitions.json"
+      },
+      {
+        "digest": "sha256:e40e48e8262701f979c93388f0f7598158cfc2ced6f2f330f8ecac51585ba04e",
+        "id": "ob-dcr-v34.openapi",
+        "kind": "technical-source",
+        "mediaType": "application/yaml",
+        "schemaVersion": "3.4",
+        "uri": "conformance/standards/ob_dcr/v3_4/client-registration-openapi.yaml"
+      }
+    ],
+    "participantPlanId": "participant.dcr-v34.full-management",
+    "requirementsCatalogueId": "obl.dcr-v34.requirements",
+    "suitePublishedAt": "2026-09-15T00:00:00Z",
+    "suiteReleaseId": "obl.dcr-v34.catalogue-fixture",
+    "suiteReleaseVersion": "0.0.0-dcr-v34-fixture",
+    "testDefinitionCatalogueId": "obl.dcr-v34.tests",
+    "toolReleases": [
+      {
+        "id": "conformance-suite-v2",
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "capabilityId": "dcr.v34.capability.retrieval",
+      "id": "dcr.v34.requirement.retrieval-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval",
+        "ob-dcr-v34.authentication"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.retrieval-operation",
+            "dcr.v34.capability.retrieval"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-retrieval",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.retrieval",
+      "id": "dcr.v34.requirement.retrieval-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.retrieval-unknown-client",
+            "dcr.v34.capability.retrieval"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-retrieval",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.retrieval",
+      "id": "dcr.v34.requirement.retrieval-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.retrieval-unknown-token-revocation",
+            "dcr.v34.capability.retrieval"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-retrieval",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.update",
+      "id": "dcr.v34.requirement.update-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update",
+        "ob-dcr-v34.authentication"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.update-operation",
+            "dcr.v34.capability.update"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-update",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.update",
+      "id": "dcr.v34.requirement.update-token-continuity",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.update-token-continuity",
+            "dcr.v34.capability.update"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-update",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.update",
+      "id": "dcr.v34.requirement.update-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.update-unknown-client",
+            "dcr.v34.capability.update"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-update",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.update",
+      "id": "dcr.v34.requirement.update-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.update-unknown-token-revocation",
+            "dcr.v34.capability.update"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-update",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.deletion",
+      "id": "dcr.v34.requirement.deletion-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion",
+        "ob-dcr-v34.authentication"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.deletion-operation",
+            "dcr.v34.capability.deletion"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-deletion",
+      "targetType": "endpoint"
+    },
+    {
+      "assessment": "documented-only",
+      "capabilityId": "dcr.v34.capability.deletion",
+      "id": "dcr.v34.requirement.deletion-token-invalidation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.deletion-token-invalidation",
+            "dcr.v34.capability.deletion"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-deletion",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.deletion",
+      "id": "dcr.v34.requirement.deletion-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.deletion-unknown-client",
+            "dcr.v34.capability.deletion"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-deletion",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "dcr.v34.capability.deletion",
+      "id": "dcr.v34.requirement.deletion-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "dcr.v34.requirement.deletion-unknown-token-revocation",
+            "dcr.v34.capability.deletion"
+          ]
+        }
+      ],
+      "targetId": "dcr.v34.endpoint.client-deletion",
+      "targetType": "endpoint"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "all",
+  "selectionValid": true,
+  "specification": {
+    "id": "dynamic-client-registration",
+    "requirementsScope": "dcr",
+    "version": "3.4"
+  },
+  "testInstances": [
+    {
+      "coveredRequirementIds": [],
+      "dependencyIds": [],
+      "id": "dcr.v34.test.registration.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.deletion.unknown-client",
+            "dcr.v34.test.retrieval.missing-authorization",
+            "dcr.v34.test.retrieval.positive",
+            "dcr.v34.test.retrieval.unknown-client",
+            "dcr.v34.test.update.positive",
+            "dcr.v34.test.update.unknown-client"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.registration.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.retrieval-operation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.retrieval.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.retrieval.positive",
+            "dcr.v34.capability.retrieval",
+            "dcr.v34.endpoint.client-retrieval"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.retrieval.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.retrieval-unknown-client"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.retrieval.unknown-client.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.retrieval.unknown-client",
+            "dcr.v34.capability.retrieval",
+            "dcr.v34.endpoint.client-retrieval"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.retrieval.revoked-token"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.retrieval.unknown-client"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.retrieval-unknown-token-revocation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.retrieval.unknown-client.instance"
+      ],
+      "id": "dcr.v34.test.retrieval.revoked-token.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.retrieval.revoked-token",
+            "dcr.v34.capability.retrieval",
+            "dcr.v34.endpoint.client-retrieval"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.retrieval.revoked-token"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.retrieval-operation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.retrieval.missing-authorization.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.retrieval.missing-authorization",
+            "dcr.v34.capability.retrieval",
+            "dcr.v34.endpoint.client-retrieval"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.retrieval.missing-authorization"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.update-operation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.update.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.update.positive",
+            "dcr.v34.capability.update",
+            "dcr.v34.endpoint.client-update"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.update.token-continuity"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.update.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.update-token-continuity"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.update.positive.instance"
+      ],
+      "id": "dcr.v34.test.update.token-continuity.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.update.token-continuity",
+            "dcr.v34.capability.update",
+            "dcr.v34.endpoint.client-update"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.update.token-continuity"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.update-unknown-client"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.update.unknown-client.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.update.unknown-client",
+            "dcr.v34.capability.update",
+            "dcr.v34.endpoint.client-update"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.update.revoked-token"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.update.unknown-client"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.update-unknown-token-revocation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.update.unknown-client.instance"
+      ],
+      "id": "dcr.v34.test.update.revoked-token.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.update.revoked-token",
+            "dcr.v34.capability.update",
+            "dcr.v34.endpoint.client-update"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.update.revoked-token"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.deletion-unknown-client"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.registration.positive.instance"
+      ],
+      "id": "dcr.v34.test.deletion.unknown-client.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.deletion.unknown-client",
+            "dcr.v34.capability.deletion",
+            "dcr.v34.endpoint.client-deletion"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.deletion.revoked-token"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.deletion.unknown-client"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.deletion-unknown-token-revocation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.deletion.unknown-client.instance"
+      ],
+      "id": "dcr.v34.test.deletion.revoked-token.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.deletion.revoked-token",
+            "dcr.v34.capability.deletion",
+            "dcr.v34.endpoint.client-deletion"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "dcr.v34.test.deletion.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.deletion.revoked-token"
+    },
+    {
+      "coveredRequirementIds": [
+        "dcr.v34.requirement.deletion-operation"
+      ],
+      "dependencyIds": [
+        "dcr.v34.test.deletion.revoked-token.instance"
+      ],
+      "id": "dcr.v34.test.deletion.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "dcr.v34.test.deletion.positive",
+            "dcr.v34.capability.deletion",
+            "dcr.v34.endpoint.client-deletion"
+          ]
+        }
+      ],
+      "testDefinitionId": "dcr.v34.test.deletion.positive"
+    }
+  ]
+}

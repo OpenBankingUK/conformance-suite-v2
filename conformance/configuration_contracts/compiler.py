@@ -68,6 +68,7 @@ class CompilationFindingCode(StrEnum):
     INPUT_REQUIRED = "plan.selection.input-required"
     RULE_UNSUPPORTED = "plan.requirement.rule-unsupported"
     REQUIREMENT_UNCOVERED = "plan.test.requirement-uncovered"
+    REQUIREMENT_NOT_ASSESSED = "plan.test.requirement-not-assessed"
 
 
 class ParticipantPlanCompilationError(ValueError):
@@ -134,6 +135,12 @@ def resolve_participant_plan(
         selected_capability_ids,
         {endpoint.id for endpoint in endpoints},
         {requirement.id for requirement in requirements},
+    )
+    endpoints = _include_dependency_endpoints(
+        requirements_catalogue,
+        test_definition_catalogue,
+        endpoints,
+        test_instances,
     )
     _append_uncovered_requirement_findings(requirements, test_instances, findings)
     immutable_findings = tuple(findings)
@@ -512,6 +519,7 @@ def _resolve_requirements(
                         source_ids=(requirement.id, requirement.rule.capability_id),
                     ),
                 ),
+                assessment=requirement.assessment,
             )
         )
     return tuple(resolved)
@@ -540,6 +548,38 @@ def _resolve_endpoints(
         for endpoint in requirements_catalogue.endpoints
         if endpoint.id in requirement_ids_by_endpoint
     )
+
+
+def _include_dependency_endpoints(
+    requirements_catalogue: RequirementsCatalogue,
+    test_definition_catalogue: TestDefinitionCatalogue,
+    endpoints: tuple[ResolvedEndpoint, ...],
+    test_instances: tuple[ResolvedTestInstance, ...],
+) -> tuple[ResolvedEndpoint, ...]:
+    """Include operation endpoints used only by generated setup dependencies."""
+    selected_ids = {endpoint.id for endpoint in endpoints}
+    definitions = {definition.id: definition for definition in test_definition_catalogue.test_definitions}
+    required_by_endpoint: dict[StableId, list[StableId]] = defaultdict(list)
+    for instance in test_instances:
+        definition = definitions[instance.test_definition_id]
+        if definition.request.endpoint_id not in selected_ids:
+            required_by_endpoint[definition.request.endpoint_id].append(instance.id)
+    dependency_endpoints = tuple(
+        ResolvedEndpoint(
+            id=endpoint.id,
+            origin=SelectionOrigin.INFERRED,
+            requirement_ids=(),
+            reasons=(
+                ResolutionReason(
+                    code=StableId("tests.dependency.endpoint"),
+                    source_ids=tuple(required_by_endpoint[endpoint.id]),
+                ),
+            ),
+        )
+        for endpoint in requirements_catalogue.endpoints
+        if endpoint.id in required_by_endpoint
+    )
+    return (*endpoints, *dependency_endpoints)
 
 
 def _resolve_predefined_inputs(
@@ -771,6 +811,21 @@ def _append_uncovered_requirement_findings(
         requirement_id for test_instance in test_instances for requirement_id in test_instance.covered_requirement_ids
     }
     for requirement in requirements:
+        if requirement.assessment == "documented-only":
+            findings.append(
+                CompilationFinding(
+                    code=StableId(CompilationFindingCode.REQUIREMENT_NOT_ASSESSED.value),
+                    severity=FindingSeverity.WARNING,
+                    message=(
+                        f"Applicable requirement {requirement.id!s} is documented but has no "
+                        "deterministic test in this catalogue"
+                    ),
+                    source_document=FindingSourceDocument.RESOLVED_PLAN,
+                    instance_path="/testInstances",
+                    related_ids=(requirement.id,),
+                )
+            )
+            continue
         if requirement.id not in covered_requirement_ids:
             findings.append(
                 _finding(

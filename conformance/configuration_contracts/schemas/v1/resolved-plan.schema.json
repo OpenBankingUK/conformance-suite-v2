@@ -116,7 +116,6 @@
           "items": {
             "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
           },
-          "minItems": 1,
           "type": "array",
           "uniqueItems": true
         }
@@ -183,6 +182,12 @@
     "resolvedRequirement": {
       "additionalProperties": false,
       "properties": {
+        "assessment": {
+          "enum": [
+            "documented-only",
+            "tested"
+          ]
+        },
         "capabilityId": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
@@ -382,7 +387,10 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "securityProfile": {
-          "const": "fapi1-advanced"
+          "enum": [
+            "all",
+            "fapi1-advanced"
+          ]
         },
         "selectionValid": {
           "type": "boolean"
