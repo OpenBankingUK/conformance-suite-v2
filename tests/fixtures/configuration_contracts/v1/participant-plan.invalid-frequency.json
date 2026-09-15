@@ -1,0 +1,26 @@
+{
+  "documentType": "participant-plan",
+  "id": "participant.pis-dso.invalid-frequency",
+  "predefinedInputs": [
+    {
+      "inputId": "pis.dso.input.frequency",
+      "value": {
+        "countPerPeriod": 2,
+        "frequencyType": "WEEK",
+        "pointInTime": "03"
+      }
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "pis.domestic-standing-order"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "4.0"
+  },
+  "suiteReleaseId": "obl.pis-dso-v4.walking-skeleton-suite"
+}

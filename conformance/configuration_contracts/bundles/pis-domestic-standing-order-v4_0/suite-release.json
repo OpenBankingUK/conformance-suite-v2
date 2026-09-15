@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:e33c58f289f99db3d5e4097252e2a3439b216586bba48cb29306b2ea7e405944",
+      "digest": "sha256:135470d5daf58f162e29b0324c985e78151d7df5335c7e03b257a3bdd25eb8d4",
       "id": "requirements-catalogue-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",
@@ -15,6 +15,22 @@
       "mediaType": "application/schema+json",
       "schemaVersion": "1.0",
       "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:ce6d3223602a32adda4b204fcd641ad8372976b29f34b4995d3046b67be4f925",
+      "id": "participant-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
+    },
+    {
+      "digest": "sha256:a59b39e7c5079b36bf093ad8d145fce614fda5dc6782b81e512e945a6f269be4",
+      "id": "resolved-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
       "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",

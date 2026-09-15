@@ -173,11 +173,21 @@ dependencies, mutual exclusion and cardinality, condition types other than
 capability selection, reusable input types beyond v4 standing-order frequency,
 request-template composition, assertion vocabularies beyond HTTP status, and
 full normative PIS coverage require evidence from later slices. Participant
-values, defaults, compilation, execution-manifest rendering, and runtime
-adapters remain owned by PRs 4 and 5. The current frequency shape enforces the
-v4 code list and rejects simultaneous `countPerPeriod` and `pointInTime`; it
-does not claim to encode every type-dependent semantic rule not expressed by
-the source OpenAPI schema.
+values, defaults, and resolved compilation are introduced by PR 4;
+execution-manifest rendering and broader runtime adapters remain owned by PR 5.
+The current frequency shape enforces the v4 code list and rejects simultaneous
+`countPerPeriod` and `pointInTime`; it does not claim to encode every
+type-dependent semantic rule not expressed by the source OpenAPI schema.
+
+### PR 4 participant-plan and resolved-compiler decisions
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-036` | The walking-skeleton `participant-plan` `1.0` names one suite release, scheme, specification/version/requirements scope, security profile, conditional capability IDs, and predefined logical input values. It has no test-selection, endpoint-selection, request-override, assertion-override, or developer-mode syntax. | Keeps participant intent smaller than generated scope and prevents bypassing immutable requirements or reusable test definitions. Existing environment and credential configuration remains at the compatibility boundary until participant-surface migration. |
+| `TPA-037` | Compilation applies only the accepted `required-when-capability-selected` rule. A strict walking-skeleton plan selects at least one conditional capability, which infers its endpoint and predefined-input requirements. Non-empty scope, array uniqueness, and exactly one value per input ID are the only cardinalities evaluated in this slice; general mutual-exclusion and cardinality rules remain deferred under `TPA-031`. | Implements the accepted walking skeleton without silently inventing the deferred generic rule vocabulary. |
+| `TPA-038` | `resolved-plan` `1.0` records explicit and inferred scope, applicable requirements and normative references, resolved non-sensitive input values and their participant/default source, topologically ordered test instances, dependency edges, stable inclusion reasons, findings, and the complete suite-release artefact/tool provenance. Its deterministic ID is a SHA-256 digest over normalized participant intent and the immutable compiler inputs. | Makes every inclusion and source inspectable while ensuring equivalent order-insensitive participant selections compile identically. |
+| `TPA-039` | The resolver always constructs inspectable output. The strict MVP compiler raises `ParticipantPlanCompilationError` when that output contains an error finding and exposes the invalid resolved plan on the exception. Stable findings name their source document and cover empty scope, release/specification mismatch, unknown or inapplicable selections, missing inputs, unsupported rules, and uncovered applicable requirements. | Preserves unambiguous diagnostics for review and audit without allowing an invalid MVP plan to reach execution. This is not a developer-mode enforcement policy. |
+| `TPA-040` | `AdaptedCompiledExecution` maps only the four accepted test-definition IDs to existing v4 PIS cases, compiles the unmodified legacy catalogue, explicitly deselects additional optional legacy work so it remains visible in traceability, and returns the translated runtime-input mapping alongside the `CompiledTestPlan`. Existing environment, credential, and non-frequency business values remain explicit adapter inputs. The adapter rejects mandatory unmapped work or frequency shapes the current runtime cannot render rather than weakening or silently changing either source plan. | Proves the new compiler can feed the characterised runtime without replacing consumers, hiding legacy applicability, or leaking legacy test IDs and input names into the new participant/resolved contracts. Broader execution rendering remains PR 5. |
 
 ## Target flow
 

@@ -142,6 +142,9 @@
         "description": {
           "$ref": "#/$defs/nonEmptyString"
         },
+        "defaultValue": {
+          "$ref": "#/$defs/frequencyValue"
+        },
         "exampleValue": {
           "$ref": "#/$defs/frequencyValue"
         },
