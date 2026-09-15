@@ -81,6 +81,7 @@ def test_frequency_is_logical_input_with_test_owned_request_bindings() -> None:
     predefined_input = requirements.predefined_inputs[0]
 
     assert predefined_input.id == "pis.dso.input.frequency"
+    assert not isinstance(predefined_input.example_value, str)
     assert predefined_input.example_value.frequency_type == "WEEK"
     assert predefined_input.example_value.point_in_time == "03"
     assert predefined_input.example_value.count_per_period is None

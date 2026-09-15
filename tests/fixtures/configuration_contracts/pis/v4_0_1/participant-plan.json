@@ -1,0 +1,29 @@
+{
+  "documentType": "participant-plan",
+  "id": "pis-v401-golden-plan",
+  "predefinedInputs": [
+    {
+      "inputId": "pis.v401.input.standing-order-frequency",
+      "value": {
+        "frequencyType": "WEEK",
+        "pointInTime": "03"
+      }
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "pis.v401.capability.domestic-payment",
+    "pis.v401.capability.domestic-scheduled-payment",
+    "pis.v401.capability.domestic-standing-order",
+    "pis.v401.capability.international-payment",
+    "pis.v401.capability.international-scheduled-payment"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "4.0.1"
+  },
+  "suiteReleaseId": "obl.pis-v401.catalogue-fixture"
+}

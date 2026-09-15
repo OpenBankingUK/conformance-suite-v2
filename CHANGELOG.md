@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replacement PIS requirements and test-definition catalogue families for
+  Read/Write v3.1.11 and v4.0.1, authored from content-addressed OpenAPI
+  operations and normative Payment Initiation profiles. The shared contracts
+  now support technical-source pointers, version-correct string and structured
+  frequency inputs, generic request modifications, richer assertions, stable
+  referential-integrity diagnostics, pinned parity classifications, and
+  deterministic resolved-plan goldens. Central release registry integration
+  remains separate.
 - Stable execution-manifest result traceability linking suite releases,
   requirement and test-definition IDs, compiled test instances, manifest
   steps, result observations, safe participant-plan snapshots, and retained

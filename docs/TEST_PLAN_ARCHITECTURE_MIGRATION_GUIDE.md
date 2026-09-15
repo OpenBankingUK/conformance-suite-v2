@@ -392,6 +392,15 @@ legacy manifests and parity contracts, then must pass a deterministic
 comparison against its pinned parity baseline before its release is accepted.
 The comparison report is release-gate evidence, not a production input.
 
+The PIS family migration accepts these additional decisions:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-045` | PIS has independent requirements and test-definition catalogues for the accepted Read/Write `3.1.11` and `4.0.1` versions. Each catalogue declares five participant-selectable MVP payment capabilities and the 21 exact OpenAPI operations needed by those journeys. File payments, international standing orders, and payment-detail operations remain outside the accepted MVP capability scope and are not represented as tested requirements. | Prevents a partial conformance suite from claiming coverage of every operation exposed by the source OpenAPI document while preserving the complete accepted PIS MVP surface. |
+| `TPA-046` | Requirements catalogues bind endpoints to a content-addressed technical source and exact JSON Pointer. Test definitions use generic positive, negative, and security purposes; request modifications; and HTTP-status, response-schema, header-presence, and JSON-value assertions. String and structured frequency inputs are distinct typed values so v3.1.11 and v4.0.1 retain their authoritative request shapes. | Expands the shared vocabulary from evidence in both accepted specifications without importing legacy request builders or identifiers into the target contracts. |
+| `TPA-047` | Pinned v3.1 and v4 legacy PIS rows are comparison-only fixtures. Every row is classified and names replacement test-definition IDs. The one intentional correction rejects invalid standing-order frequency at consent staging instead of constructing a submission from an invalid authorised consent; no pinned row is a genuine omission. | Makes retained coverage and intentional semantic change reviewable while keeping parity evidence out of production compilation and execution. |
+| `TPA-048` | PIS family fixtures include referential-integrity failure evidence and deterministic participant-to-resolved-plan goldens for both accepted versions. Test-only suite descriptors bind catalogue bytes but are not central registry entries or approved releases. | Proves the family artefacts compile reproducibly without coupling this PR to coordinator-owned release registration. |
+
 ### PR 8: participant surface cutover
 
 Move browser, CLI, REST, import/export, and review surfaces to the accepted

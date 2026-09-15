@@ -1,6 +1,6 @@
 {
   "documentType": "execution-manifest",
-  "id": "execution-manifest:6af08c9df4427440f80b1dd974bf79409cbe203a1cc8ba23b7ea7f035a7bb1f1",
+  "id": "execution-manifest:b4414029fddcf3db12b6f4c7d1d4046278f22475a5464fa50fb9004f00f9e495",
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -14,7 +14,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:135470d5daf58f162e29b0324c985e78151d7df5335c7e03b257a3bdd25eb8d4",
+        "digest": "sha256:fc13a169600c8d0f08591c976e8dddcc2369cb402ace1df65a93320a1956f450",
         "id": "requirements-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -22,7 +22,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
       },
       {
-        "digest": "sha256:4e5720d6e05497d709e9bd2f74eea5380b82e98fa4ce8aa8f4f94d1b7936035e",
+        "digest": "sha256:33ec1d80b17bfd5424a4e3c4debf26bf5e22118f93c370a2403f6c13cb5b6eed",
         "id": "test-definition-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -30,7 +30,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
       },
       {
-        "digest": "sha256:ce6d3223602a32adda4b204fcd641ad8372976b29f34b4995d3046b67be4f925",
+        "digest": "sha256:e17ff4d714ff6ce4af80e1982eee6b82df296dbef8d863837b9c6056d29c9d32",
         "id": "participant-plan-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -38,7 +38,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
       },
       {
-        "digest": "sha256:a59b39e7c5079b36bf093ad8d145fce614fda5dc6782b81e512e945a6f269be4",
+        "digest": "sha256:260600d33e1fd3cf57932e63b71a6e26b64ccdf11d72b1f435addc946753e54d",
         "id": "resolved-plan-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -46,7 +46,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
       },
       {
-        "digest": "sha256:eaa4ee9f8eb59c5874a582bd3f691e873bf39b2eee1db38650a667d59f0f4780",
+        "digest": "sha256:64cd47aa90de14d52bcc90aceb0ed5c2f04274d5ef36b41d99f5d3167118485d",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -54,7 +54,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
       },
       {
-        "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
+        "digest": "sha256:c1ab90e88e9787c0b99ba70474a1e472d257d89239f628f040e6605ffcf8d857",
         "id": "obl.pis-domestic-standing-order-v4.requirements",
         "kind": "requirements-catalogue",
         "mediaType": "application/json",
@@ -62,7 +62,7 @@
         "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/requirements.json"
       },
       {
-        "digest": "sha256:9ef19f111745cd0315f93f83d4c545b9ada63772073a4fdbf55aff838d8e11dc",
+        "digest": "sha256:63f74c034ec71edbe924128c90fa8f8ba698fe7ee8f32931da0494b68d842502",
         "id": "obl.pis-domestic-standing-order-v4.tests",
         "kind": "test-definition-catalogue",
         "mediaType": "application/json",
@@ -72,7 +72,7 @@
     ],
     "participantPlanId": "participant.pis-dso.example",
     "requirementsCatalogueId": "obl.pis-domestic-standing-order-v4.requirements",
-    "resolvedPlanId": "resolved-plan:fe087212d1b5776dd5b296a054c6a9471b903c450ba892082e9b75e29d52886a",
+    "resolvedPlanId": "resolved-plan:f951bf82d426b613820f1fb2a3ac4c91f70620adaf3478343db631ca115e202d",
     "suitePublishedAt": "2026-09-15T08:57:48Z",
     "suiteReleaseId": "obl.pis-dso-v4.walking-skeleton-suite",
     "suiteReleaseVersion": "walking-skeleton.1",
@@ -116,6 +116,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-order-consents"
       },
       "testDefinitionId": "pis.dso.test.consent-create",
@@ -144,6 +145,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-order-consents/{ConsentId}"
       },
       "testDefinitionId": "pis.dso.test.consent-read",
@@ -180,6 +182,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-orders"
       },
       "testDefinitionId": "pis.dso.test.order-create",
@@ -208,6 +211,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-orders/{DomesticStandingOrderId}"
       },
       "testDefinitionId": "pis.dso.test.order-read",

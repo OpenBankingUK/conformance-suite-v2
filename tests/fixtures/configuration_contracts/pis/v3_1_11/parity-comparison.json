@@ -1,0 +1,314 @@
+{
+  "allowedClassifications": [
+    "retained-coverage",
+    "intentional-correction",
+    "obsolete-behavior",
+    "genuine-omission"
+  ],
+  "baseline": {
+    "digest": "sha256:bca1ad8d2ae6fc05981b3cbe9979f7e8cedc7e302e391333734c34cb893a7ae9",
+    "file": "ob_3.1_payment_fca.json",
+    "purpose": "migration-cross-check-only"
+  },
+  "classifications": [
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100100",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#0:OB-301-DOP-100100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100110",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-payment-consent.missing-jws-issuer"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#1:OB-301-DOP-100110"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100300",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#2:OB-301-DOP-100300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-316-DOP-100310",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-payment-consent.invalid-jws-signature"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#3:OB-316-DOP-100310"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100400",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payment_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#4:OB-301-DOP-100400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100500",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payment_consents.consentid.funds_confirmation.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#5:OB-301-DOP-100500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100600",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#6:OB-301-DOP-100600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100700",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_payments.domesticpaymentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#7:OB-301-DOP-100700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100800",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_scheduled_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#8:OB-301-DOP-100800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100810",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-scheduled-payment-consent.offset-datetime"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#9:OB-301-DOP-100810"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100820",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-scheduled-payment-consent.utc-datetime"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#10:OB-301-DOP-100820"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-100900",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_scheduled_payment_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#11:OB-301-DOP-100900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101000",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_scheduled_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#12:OB-301-DOP-101000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101100",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_scheduled_payment_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#13:OB-301-DOP-101100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101101",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_scheduled_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#14:OB-301-DOP-101101"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101200",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_order_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#15:OB-301-DOP-101200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101300",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_order_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#16:OB-301-DOP-101300"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-301-DOP-101400",
+      "rationale": "Invalid frequency is rejected when the consent is staged, rather than constructing an impossible submission from an invalid authorised consent.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-standing-order-consent.invalid-frequency"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#17:OB-301-DOP-101400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101401",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_orders.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#18:OB-301-DOP-101401"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101500",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_orders.domesticstandingorderid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#19:OB-301-DOP-101500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-1015001",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_orders.domesticstandingorderid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#20:OB-301-DOP-1015001"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-1015002",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic_standing_orders.domesticstandingorderid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#21:OB-301-DOP-1015002"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-1015003",
+      "rationale": "The replacement definition retains the normative behaviour without preserving the legacy script shape.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-standing-order-consent.invalid-frequency"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#22:OB-301-DOP-1015003"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101600",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#23:OB-301-DOP-101600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101700",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_payment_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#24:OB-301-DOP-101700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101800",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#25:OB-301-DOP-101800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-101900",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_payments.internationalpaymentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#26:OB-301-DOP-101900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-102000",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_scheduled_payment_consents.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#27:OB-301-DOP-102000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-102100",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_scheduled_payment_consents.consentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#28:OB-301-DOP-102100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-102200",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_scheduled_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#29:OB-301-DOP-102200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DOP-102300",
+      "rationale": "The replacement test retains the standards-derived operation, dependency, and success contract.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.international_scheduled_payments.internationalscheduledpaymentid.positive"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#30:OB-301-DOP-102300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-313-DOP-100100",
+      "rationale": "The version-specific header relaxation is retained as an explicit standards-derived case.",
+      "replacementTestDefinitionIds": [
+        "pis.v311.test.domestic-payment-consent.without-financial-id"
+      ],
+      "sourceRow": "ob_3.1_payment_fca.json#31:OB-313-DOP-100100"
+    }
+  ],
+  "documentType": "pis-parity-comparison",
+  "requirementsCatalogueId": "obl.pis-v311.requirements",
+  "schemaVersion": "1.0",
+  "summary": {
+    "genuine-omission": 0,
+    "intentional-correction": 1,
+    "obsolete-behavior": 0,
+    "retained-coverage": 31
+  },
+  "targetSpecificationVersion": "3.1.11",
+  "testDefinitionCatalogueId": "obl.pis-v311.tests"
+}

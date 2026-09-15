@@ -1,0 +1,26 @@
+{
+  "documentType": "participant-plan",
+  "id": "pis-v311-golden-plan",
+  "predefinedInputs": [
+    {
+      "inputId": "pis.v311.input.standing-order-frequency",
+      "value": "EvryDay"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "pis.v311.capability.domestic-payment",
+    "pis.v311.capability.domestic-scheduled-payment",
+    "pis.v311.capability.domestic-standing-order",
+    "pis.v311.capability.international-payment",
+    "pis.v311.capability.international-scheduled-payment"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "3.1.11"
+  },
+  "suiteReleaseId": "obl.pis-v311.catalogue-fixture"
+}

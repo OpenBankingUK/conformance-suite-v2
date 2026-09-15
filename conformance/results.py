@@ -319,11 +319,15 @@ def build_safe_participant_plan_snapshot(
         }
         if not redacted:
             value = participant_input.value
-            snapshot_input["value"] = {
-                "frequencyType": value.frequency_type,
-                **({"countPerPeriod": value.count_per_period} if value.count_per_period is not None else {}),
-                **({"pointInTime": value.point_in_time} if value.point_in_time is not None else {}),
-            }
+            snapshot_input["value"] = (
+                value
+                if isinstance(value, str)
+                else {
+                    "frequencyType": value.frequency_type,
+                    **({"countPerPeriod": value.count_per_period} if value.count_per_period is not None else {}),
+                    **({"pointInTime": value.point_in_time} if value.point_in_time is not None else {}),
+                }
+            )
         snapshot_inputs.append(snapshot_input)
     return {
         "documentType": participant_plan.document_type,

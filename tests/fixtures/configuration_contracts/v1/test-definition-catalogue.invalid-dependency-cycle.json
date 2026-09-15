@@ -22,9 +22,11 @@
       "description": "First fixture node in a dependency cycle.",
       "id": "fixture.pis-dso.consent-create",
       "name": "Fixture consent creation",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.consent-create",
-        "inputBindings": []
+        "inputBindings": [],
+        "modifications": []
       }
     },
     {
@@ -45,9 +47,11 @@
       "description": "Second fixture node in a dependency cycle.",
       "id": "fixture.pis-dso.consent-read",
       "name": "Fixture consent retrieval",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.consent-read",
-        "inputBindings": []
+        "inputBindings": [],
+        "modifications": []
       }
     }
   ]

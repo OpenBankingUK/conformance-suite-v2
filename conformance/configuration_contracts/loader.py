@@ -47,6 +47,7 @@ from conformance.configuration_contracts.models import (
     ParticipantPlan,
     PredefinedInput,
     RequestInputBinding,
+    RequestModification,
     Requirement,
     RequirementRule,
     RequirementsCatalogue,
@@ -65,6 +66,7 @@ from conformance.configuration_contracts.models import (
     StableId,
     StandingOrderFrequency,
     SuiteRelease,
+    TechnicalSource,
     TestAssertion,
     TestDefinition,
     TestDefinitionCatalogue,
@@ -390,6 +392,8 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
                 "method": endpoint.method.value,
                 "operationId": endpoint.operation_id,
                 "path": endpoint.path,
+                "sourceId": str(endpoint.source_id),
+                "sourcePointer": endpoint.source_pointer,
             }
             for endpoint in catalogue.endpoints
         ],
@@ -410,9 +414,9 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
                     "defaultValue": (
                         None
                         if predefined_input.default_value is None
-                        else _frequency_to_document(predefined_input.default_value)
+                        else _input_value_to_document(predefined_input.default_value)
                     ),
-                    "exampleValue": _frequency_to_document(predefined_input.example_value),
+                    "exampleValue": _input_value_to_document(predefined_input.example_value),
                     "id": str(predefined_input.id),
                     "label": predefined_input.label,
                     "requiredForCapabilityIds": [
@@ -445,6 +449,15 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
             "requirementsScope": str(catalogue.specification.requirements_scope),
             "version": catalogue.specification.version,
         },
+        "technicalSources": [
+            {
+                "digest": str(source.digest),
+                "id": str(source.id),
+                "title": source.title,
+                "uri": source.uri,
+            }
+            for source in catalogue.technical_sources
+        ],
     }
 
 
@@ -457,14 +470,7 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
         "schemaVersion": catalogue.schema_version,
         "testDefinitions": [
             {
-                "assertions": [
-                    {
-                        "expectedStatus": assertion.expected_status,
-                        "id": str(assertion.id),
-                        "type": assertion.type,
-                    }
-                    for assertion in test_definition.assertions
-                ],
+                "assertions": [_assertion_to_document(assertion) for assertion in test_definition.assertions],
                 "capabilityId": str(test_definition.capability_id),
                 "coveredRequirementIds": [
                     str(requirement_id) for requirement_id in test_definition.covered_requirement_ids
@@ -473,6 +479,7 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
                 "description": test_definition.description,
                 "id": str(test_definition.id),
                 "name": test_definition.name,
+                "purpose": test_definition.purpose,
                 "request": {
                     "endpointId": str(test_definition.request.endpoint_id),
                     "inputBindings": [
@@ -483,6 +490,10 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
                             "type": binding.type,
                         }
                         for binding in test_definition.request.input_bindings
+                    ],
+                    "modifications": [
+                        _request_modification_to_document(modification)
+                        for modification in test_definition.request.modifications
                     ],
                 },
             }
@@ -497,7 +508,7 @@ def participant_plan_to_document(plan: ParticipantPlan) -> JsonObject:
         "documentType": plan.document_type,
         "id": str(plan.id),
         "predefinedInputs": [
-            {"inputId": str(participant_input.input_id), "value": _frequency_to_document(participant_input.value)}
+            {"inputId": str(participant_input.input_id), "value": _input_value_to_document(participant_input.value)}
             for participant_input in plan.predefined_inputs
         ],
         "schemaVersion": plan.schema_version,
@@ -549,7 +560,7 @@ def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
                 "redacted": predefined_input.redacted,
                 "requirementIds": [str(requirement_id) for requirement_id in predefined_input.requirement_ids],
                 "source": predefined_input.source.value,
-                "value": (None if predefined_input.value is None else _frequency_to_document(predefined_input.value)),
+                "value": (None if predefined_input.value is None else _input_value_to_document(predefined_input.value)),
             }
             for predefined_input in plan.predefined_inputs
         ],
@@ -606,7 +617,7 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
             {
                 "id": str(manifest_input.id),
                 "source": manifest_input.source.value,
-                "value": _frequency_to_document(manifest_input.value),
+                "value": _input_value_to_document(manifest_input.value),
             }
             for manifest_input in manifest.inputs
         ],
@@ -628,14 +639,7 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
         "securityProfile": manifest.security_profile,
         "steps": [
             {
-                "assertions": [
-                    {
-                        "expectedStatus": assertion.expected_status,
-                        "id": str(assertion.id),
-                        "type": assertion.type,
-                    }
-                    for assertion in step.assertions
-                ],
+                "assertions": [_assertion_to_document(assertion) for assertion in step.assertions],
                 "coveredRequirementIds": [str(requirement_id) for requirement_id in step.covered_requirement_ids],
                 "dependencyIds": [str(dependency_id) for dependency_id in step.dependency_ids],
                 "evidence": {
@@ -655,6 +659,9 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
                         for binding in step.request.input_bindings
                     ],
                     "method": step.request.method.value,
+                    "modifications": [
+                        _request_modification_to_document(modification) for modification in step.request.modifications
+                    ],
                     "path": step.request.path,
                 },
                 "testDefinitionId": str(step.test_definition_id),
@@ -953,6 +960,7 @@ def _suite_release_from_schema_valid_document(document: dict[str, object]) -> Su
 def _requirements_catalogue_from_schema_valid_document(document: dict[str, object]) -> RequirementsCatalogue:
     specification = cast(dict[str, object], document["specification"])
     normative_references = cast(list[dict[str, object]], document["normativeReferences"])
+    technical_sources = cast(list[dict[str, object]], document["technicalSources"])
     capabilities = cast(list[dict[str, object]], document["capabilities"])
     endpoints = cast(list[dict[str, object]], document["endpoints"])
     predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
@@ -976,6 +984,15 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
             )
             for reference in normative_references
         ),
+        technical_sources=tuple(
+            TechnicalSource(
+                id=StableId(cast(str, source["id"])),
+                title=cast(str, source["title"]),
+                uri=cast(str, source["uri"]),
+                digest=Sha256Digest(cast(str, source["digest"])),
+            )
+            for source in technical_sources
+        ),
         capabilities=tuple(
             Capability(
                 id=StableId(cast(str, capability["id"])),
@@ -994,6 +1011,8 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
                 method=HttpMethod(cast(str, endpoint["method"])),
                 path=cast(str, endpoint["path"]),
                 operation_id=cast(str, endpoint["operationId"]),
+                source_id=StableId(cast(str, endpoint["sourceId"])),
+                source_pointer=cast(str, endpoint["sourcePointer"]),
             )
             for endpoint in endpoints
         ),
@@ -1005,8 +1024,8 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
 
 
 def _predefined_input_from_document(document: dict[str, object]) -> PredefinedInput:
-    example = cast(dict[str, object], document["exampleValue"])
-    default = cast(dict[str, object] | None, document.get("defaultValue"))
+    example = cast(str | dict[str, object], document["exampleValue"])
+    default = cast(str | dict[str, object] | None, document.get("defaultValue"))
     return PredefinedInput(
         id=StableId(cast(str, document["id"])),
         label=cast(str, document["label"]),
@@ -1016,12 +1035,8 @@ def _predefined_input_from_document(document: dict[str, object]) -> PredefinedIn
             StableId(capability_id) for capability_id in cast(list[str], document["requiredForCapabilityIds"])
         ),
         sensitivity=cast(str, document["sensitivity"]),
-        example_value=StandingOrderFrequency(
-            frequency_type=cast(str, example["frequencyType"]),
-            count_per_period=cast(int | None, example.get("countPerPeriod")),
-            point_in_time=cast(str | None, example.get("pointInTime")),
-        ),
-        default_value=None if default is None else _frequency_from_document(default),
+        example_value=_input_value_from_document(example),
+        default_value=None if default is None else _input_value_from_document(default),
     )
 
 
@@ -1056,11 +1071,13 @@ def _test_definition_catalogue_from_schema_valid_document(document: dict[str, ob
 def _test_definition_from_document(document: dict[str, object]) -> TestDefinition:
     request = cast(dict[str, object], document["request"])
     bindings = cast(list[dict[str, object]], request["inputBindings"])
+    modifications = cast(list[dict[str, object]], request["modifications"])
     assertions = cast(list[dict[str, object]], document["assertions"])
     return TestDefinition(
         id=StableId(cast(str, document["id"])),
         name=cast(str, document["name"]),
         description=cast(str, document["description"]),
+        purpose=cast(str, document["purpose"]),
         capability_id=StableId(cast(str, document["capabilityId"])),
         covered_requirement_ids=tuple(
             StableId(requirement_id) for requirement_id in cast(list[str], document["coveredRequirementIds"])
@@ -1077,15 +1094,9 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
                 )
                 for binding in bindings
             ),
+            modifications=tuple(_request_modification_from_document(modification) for modification in modifications),
         ),
-        assertions=tuple(
-            TestAssertion(
-                id=StableId(cast(str, assertion["id"])),
-                type=cast(str, assertion["type"]),
-                expected_status=cast(int, assertion["expectedStatus"]),
-            )
-            for assertion in assertions
-        ),
+        assertions=tuple(_test_assertion_from_document(assertion) for assertion in assertions),
     )
 
 
@@ -1106,7 +1117,7 @@ def _participant_plan_from_schema_valid_document(document: dict[str, object]) ->
         predefined_inputs=tuple(
             ParticipantInput(
                 input_id=StableId(cast(str, participant_input["inputId"])),
-                value=_frequency_from_document(cast(dict[str, object], participant_input["value"])),
+                value=_input_value_from_document(cast(str | dict[str, object], participant_input["value"])),
             )
             for participant_input in predefined_inputs
         ),
@@ -1226,7 +1237,7 @@ def _execution_manifest_from_schema_valid_document(document: dict[str, object]) 
             ExecutionManifestInput(
                 id=StableId(cast(str, manifest_input["id"])),
                 source=InputResolutionSource(cast(str, manifest_input["source"])),
-                value=_frequency_from_document(cast(dict[str, object], manifest_input["value"])),
+                value=_input_value_from_document(cast(str | dict[str, object], manifest_input["value"])),
             )
             for manifest_input in inputs
         ),
@@ -1254,6 +1265,7 @@ def _execution_manifest_from_schema_valid_document(document: dict[str, object]) 
 def _execution_manifest_step_from_document(document: dict[str, object]) -> ExecutionManifestStep:
     request = cast(dict[str, object], document["request"])
     bindings = cast(list[dict[str, object]], request["inputBindings"])
+    modifications = cast(list[dict[str, object]], request["modifications"])
     assertions = cast(list[dict[str, object]], document["assertions"])
     evidence = cast(dict[str, object], document["evidence"])
     return ExecutionManifestStep(
@@ -1277,15 +1289,9 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
                 )
                 for binding in bindings
             ),
+            modifications=tuple(_request_modification_from_document(modification) for modification in modifications),
         ),
-        assertions=tuple(
-            ExecutionManifestAssertion(
-                id=StableId(cast(str, assertion["id"])),
-                type=cast(str, assertion["type"]),
-                expected_status=cast(int, assertion["expectedStatus"]),
-            )
-            for assertion in assertions
-        ),
+        assertions=tuple(_execution_assertion_from_document(assertion) for assertion in assertions),
         evidence=ExecutionEvidencePolicy(
             request=EvidenceMode(cast(str, evidence["request"])),
             response=EvidenceMode(cast(str, evidence["response"])),
@@ -1294,11 +1300,11 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
 
 
 def _resolved_predefined_input_from_document(document: dict[str, object]) -> ResolvedPredefinedInput:
-    value = cast(dict[str, object] | None, document["value"])
+    value = cast(str | dict[str, object] | None, document["value"])
     return ResolvedPredefinedInput(
         id=StableId(cast(str, document["id"])),
         source=InputResolutionSource(cast(str, document["source"])),
-        value=None if value is None else _frequency_from_document(value),
+        value=None if value is None else _input_value_from_document(value),
         redacted=cast(bool, document["redacted"]),
         requirement_ids=tuple(
             StableId(requirement_id) for requirement_id in cast(list[str], document["requirementIds"])
@@ -1337,6 +1343,70 @@ def _artifact_from_document(document: dict[str, object]) -> ArtifactReference:
     )
 
 
+def _request_modification_to_document(modification: RequestModification) -> JsonObject:
+    return _without_none_values(
+        {
+            "generator": None if modification.generator is None else str(modification.generator),
+            "id": str(modification.id),
+            "location": modification.location,
+            "operation": modification.operation,
+            "target": modification.target,
+            "value": modification.value,
+        }
+    )
+
+
+def _request_modification_from_document(document: dict[str, object]) -> RequestModification:
+    generator = cast(str | None, document.get("generator"))
+    return RequestModification(
+        id=StableId(cast(str, document["id"])),
+        operation=cast(str, document["operation"]),
+        location=cast(str, document["location"]),
+        target=cast(str | None, document.get("target")),
+        value=cast(str | None, document.get("value")),
+        generator=None if generator is None else StableId(generator),
+    )
+
+
+def _assertion_to_document(assertion: TestAssertion | ExecutionManifestAssertion) -> JsonObject:
+    return _without_none_values(
+        {
+            "expectedStatus": assertion.expected_status,
+            "expectedValue": assertion.expected_value,
+            "headerName": assertion.header_name,
+            "id": str(assertion.id),
+            "jsonPointer": assertion.json_pointer,
+            "schemaRef": assertion.schema_ref,
+            "type": assertion.type,
+        }
+    )
+
+
+def _test_assertion_from_document(document: dict[str, object]) -> TestAssertion:
+    return TestAssertion(
+        id=StableId(cast(str, document["id"])),
+        type=cast(str, document["type"]),
+        expected_status=cast(int | None, document.get("expectedStatus")),
+        schema_ref=cast(str | None, document.get("schemaRef")),
+        header_name=cast(str | None, document.get("headerName")),
+        json_pointer=cast(str | None, document.get("jsonPointer")),
+        expected_value=cast(str | None, document.get("expectedValue")),
+    )
+
+
+def _execution_assertion_from_document(document: dict[str, object]) -> ExecutionManifestAssertion:
+    assertion = _test_assertion_from_document(document)
+    return ExecutionManifestAssertion(
+        id=assertion.id,
+        type=assertion.type,
+        expected_status=assertion.expected_status,
+        schema_ref=assertion.schema_ref,
+        header_name=assertion.header_name,
+        json_pointer=assertion.json_pointer,
+        expected_value=assertion.expected_value,
+    )
+
+
 def _frequency_to_document(frequency: StandingOrderFrequency) -> JsonObject:
     document: JsonObject = {"frequencyType": frequency.frequency_type}
     if frequency.count_per_period is not None:
@@ -1344,6 +1414,14 @@ def _frequency_to_document(frequency: StandingOrderFrequency) -> JsonObject:
     if frequency.point_in_time is not None:
         document["pointInTime"] = frequency.point_in_time
     return document
+
+
+def _input_value_to_document(value: str | StandingOrderFrequency) -> JsonValue:
+    return value if isinstance(value, str) else _frequency_to_document(value)
+
+
+def _input_value_from_document(value: str | dict[str, object]) -> str | StandingOrderFrequency:
+    return value if isinstance(value, str) else _frequency_from_document(value)
 
 
 def _frequency_from_document(document: dict[str, object]) -> StandingOrderFrequency:
@@ -1575,6 +1653,15 @@ def _validate_requirements_catalogue_semantics(
     diagnostics.extend(
         _duplicate_id_diagnostics(
             (
+                (str(source.id), f"/technicalSources/{index}/id")
+                for index, source in enumerate(catalogue.technical_sources)
+            ),
+            object_kind="technical source",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
                 (str(capability.id), f"/capabilities/{index}/id")
                 for index, capability in enumerate(catalogue.capabilities)
             ),
@@ -1607,9 +1694,19 @@ def _validate_requirements_catalogue_semantics(
     )
 
     reference_ids = {reference.id for reference in catalogue.normative_references}
+    technical_source_ids = {source.id for source in catalogue.technical_sources}
     capability_ids = {capability.id for capability in catalogue.capabilities}
     endpoint_ids = {endpoint.id for endpoint in catalogue.endpoints}
     input_ids = {predefined_input.id for predefined_input in catalogue.predefined_inputs}
+    for endpoint_index, endpoint in enumerate(catalogue.endpoints):
+        if endpoint.source_id not in technical_source_ids:
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    endpoint.source_id,
+                    instance_path=f"/endpoints/{endpoint_index}/sourceId",
+                    object_kind="technical source",
+                )
+            )
     for capability_index, capability in enumerate(catalogue.capabilities):
         for endpoint_index, endpoint_id in enumerate(capability.required_endpoint_ids):
             if endpoint_id not in endpoint_ids:
@@ -1621,6 +1718,22 @@ def _validate_requirements_catalogue_semantics(
                     )
                 )
     for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
+        values = (predefined_input.example_value, predefined_input.default_value)
+        if any(
+            value is not None
+            and (
+                (predefined_input.value_type == "string" and not isinstance(value, str))
+                or (predefined_input.value_type == "standing-order-frequency-v4" and isinstance(value, str))
+            )
+            for value in values
+        ):
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RULE_INCONSISTENT,
+                    f"Predefined input {predefined_input.id!s} values do not match {predefined_input.value_type!s}",
+                    instance_path=f"/predefinedInputs/{input_index}/valueType",
+                )
+            )
         for capability_index, capability_id in enumerate(predefined_input.required_for_capability_ids):
             if capability_id not in capability_ids:
                 diagnostics.append(
@@ -1686,6 +1799,19 @@ def _validate_test_definition_catalogue_semantics(
                 for assertion_index, assertion in enumerate(test_definition.assertions)
             ),
             object_kind="assertion",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (
+                    str(modification.id),
+                    f"/testDefinitions/{test_index}/request/modifications/{modification_index}/id",
+                )
+                for test_index, test_definition in enumerate(catalogue.test_definitions)
+                for modification_index, modification in enumerate(test_definition.request.modifications)
+            ),
+            object_kind="request modification",
         )
     )
     test_ids = {test_definition.id for test_definition in catalogue.test_definitions}

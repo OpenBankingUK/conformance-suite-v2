@@ -80,6 +80,16 @@ class NormativeReference:
 
 
 @dataclass(frozen=True, slots=True)
+class TechnicalSource:
+    """Content-addressed technical source used to define executable operations."""
+
+    id: StableId
+    title: str
+    uri: str
+    digest: Sha256Digest
+
+
+@dataclass(frozen=True, slots=True)
 class Capability:
     """Participant-selectable conditional capability and its required endpoints."""
 
@@ -98,6 +108,8 @@ class Endpoint:
     method: HttpMethod
     path: str
     operation_id: str
+    source_id: StableId
+    source_pointer: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -107,6 +119,10 @@ class StandingOrderFrequency:
     frequency_type: str
     count_per_period: int | None
     point_in_time: str | None
+
+
+type PredefinedInputValue = str | StandingOrderFrequency
+"""Immutable logical value types supported by predefined catalogue inputs."""
 
 
 @dataclass(frozen=True, slots=True)
@@ -119,8 +135,8 @@ class PredefinedInput:
     value_type: StableId
     required_for_capability_ids: tuple[StableId, ...]
     sensitivity: str
-    example_value: StandingOrderFrequency
-    default_value: StandingOrderFrequency | None = None
+    example_value: PredefinedInputValue
+    default_value: PredefinedInputValue | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -153,6 +169,7 @@ class RequirementsCatalogue:
     scheme: StableId
     specification: SpecificationReference
     normative_references: tuple[NormativeReference, ...]
+    technical_sources: tuple[TechnicalSource, ...]
     capabilities: tuple[Capability, ...]
     endpoints: tuple[Endpoint, ...]
     predefined_inputs: tuple[PredefinedInput, ...]
@@ -170,11 +187,24 @@ class RequestInputBinding:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestModification:
+    """Protocol-neutral modification applied to a generated test request."""
+
+    id: StableId
+    operation: str
+    location: str
+    target: str | None = None
+    value: str | None = None
+    generator: StableId | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class TestRequest:
     """Operation and logical-input bindings used by one test definition."""
 
     endpoint_id: StableId
     input_bindings: tuple[RequestInputBinding, ...]
+    modifications: tuple[RequestModification, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -183,7 +213,11 @@ class TestAssertion:
 
     id: StableId
     type: str
-    expected_status: int
+    expected_status: int | None = None
+    schema_ref: str | None = None
+    header_name: str | None = None
+    json_pointer: str | None = None
+    expected_value: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,6 +227,7 @@ class TestDefinition:
     id: StableId
     name: str
     description: str
+    purpose: str
     capability_id: StableId
     covered_requirement_ids: tuple[StableId, ...]
     dependencies: tuple[StableId, ...]
@@ -216,7 +251,7 @@ class ParticipantInput:
     """One participant-supplied value for a predefined logical input."""
 
     input_id: StableId
-    value: StandingOrderFrequency
+    value: PredefinedInputValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -296,7 +331,7 @@ class ResolvedPredefinedInput:
 
     id: StableId
     source: InputResolutionSource
-    value: StandingOrderFrequency | None
+    value: PredefinedInputValue | None
     redacted: bool
     requirement_ids: tuple[StableId, ...]
     reasons: tuple[ResolutionReason, ...]
@@ -383,7 +418,7 @@ class ExecutionManifestInput:
 
     id: StableId
     source: InputResolutionSource
-    value: StandingOrderFrequency
+    value: PredefinedInputValue
 
 
 @dataclass(frozen=True, slots=True)
@@ -393,6 +428,7 @@ class ExecutionManifestRequest:
     method: HttpMethod
     path: str
     input_bindings: tuple[RequestInputBinding, ...]
+    modifications: tuple[RequestModification, ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -401,7 +437,11 @@ class ExecutionManifestAssertion:
 
     id: StableId
     type: str
-    expected_status: int
+    expected_status: int | None = None
+    schema_ref: str | None = None
+    header_name: str | None = None
+    json_pointer: str | None = None
+    expected_value: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
