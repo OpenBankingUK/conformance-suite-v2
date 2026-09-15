@@ -1,0 +1,93 @@
+{
+  "$defs": {
+    "participantInput": {
+      "additionalProperties": false,
+      "properties": {
+        "inputId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "value": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/frequencyValue"
+        }
+      },
+      "required": [
+        "inputId",
+        "value"
+      ],
+      "type": "object"
+    },
+    "specification": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "const": "read-write-api"
+        },
+        "requirementsScope": {
+          "const": "pis"
+        },
+        "version": {
+          "const": "4.0"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "requirementsScope"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.openbanking.org.uk/conformance/v1/participant-plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/documentEnvelope"
+    },
+    {
+      "properties": {
+        "documentType": {
+          "const": "participant-plan"
+        },
+        "predefinedInputs": {
+          "items": {
+            "$ref": "#/$defs/participantInput"
+          },
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "scheme": {
+          "const": "open-banking-uk"
+        },
+        "securityProfile": {
+          "const": "fapi1-advanced"
+        },
+        "selectedCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array"
+        },
+        "specification": {
+          "$ref": "#/$defs/specification"
+        },
+        "suiteReleaseId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        }
+      },
+      "required": [
+        "suiteReleaseId",
+        "scheme",
+        "specification",
+        "securityProfile",
+        "selectedCapabilityIds",
+        "predefinedInputs"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Open Banking UK conformance participant plan",
+  "type": "object",
+  "unevaluatedProperties": false
+}

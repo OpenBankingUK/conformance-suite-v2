@@ -137,8 +137,20 @@ catalogue owns conditional endpoint obligations, normative citations, and the
 logical frequency input. The test catalogue owns explicit requirement
 coverage, request bindings, HTTP assertions, and the four-test dependency DAG.
 `validate_catalogue_references()` checks references across the documents, and
-the bundle's suite-release descriptor binds both catalogue schemas and both
-catalogues by exact-byte digest.
+the bundle's suite-release descriptor binds the shared, catalogue,
+participant-plan, and resolved-plan schemas plus both catalogues by exact-byte
+digest.
+
+`load_participant_plan()` accepts only the narrow `participant-plan` `1.0`
+walking-skeleton contract. `resolve_participant_plan()` returns deterministic
+scope, input, dependency, finding, and provenance evidence even for invalid
+intent; `compile_participant_plan()` enforces strict MVP policy by raising with
+that resolved plan when an error finding exists.
+`adapt_resolved_plan_to_compiled_execution()` is the temporary bridge to the
+existing v4 PIS `CompiledTestPlan` path. The caller supplies current
+security/environment runtime values separately; the adapter renders the
+resolved logical frequency through test-owned bindings and does not expose
+developer-mode selection or request overrides.
 
 Legacy parity contracts, manifests, assertions, and data files have a separate
 migration role. Independently authored replacement catalogues are compared
@@ -147,10 +159,11 @@ release-gate evidence. Production suite releases bind only the replacement
 configuration artefacts; validators, compilers, manifests, and results do not
 gain runtime dependencies on legacy comparison inputs.
 
-This foundation and walking skeleton are intentionally not wired into the
-current builder, canonical plan, compiler, executor, catalogue registry, result
-output, or approved-release policy. Those remain on their characterised
-contracts until their owning migration layers provide explicit adapters.
+The replacement plan is intentionally not wired into the current builder, CLI,
+REST API, catalogue registry, result output, or approved-release policy. Those
+remain on their characterised contracts until their owning migration layers
+cut over. The explicit PIS compatibility adapter is the only current execution
+bridge.
 
 Core modules:
 

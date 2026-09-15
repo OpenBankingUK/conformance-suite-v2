@@ -28,15 +28,26 @@ from conformance.configuration_contracts.diagnostics import (
 from conformance.configuration_contracts.models import (
     ArtifactReference,
     Capability,
+    CompilerFinding,
+    CompilerFindingSeverity,
     Endpoint,
     HttpMethod,
     NormativeReference,
+    ParticipantInput,
+    ParticipantPlan,
+    ParticipantSpecification,
     PredefinedInput,
     RequestInputBinding,
     Requirement,
     RequirementRule,
     RequirementsCatalogue,
     RequirementTargetType,
+    ResolutionSource,
+    ResolvedInput,
+    ResolvedPlan,
+    ResolvedPlanProvenance,
+    ResolvedSelection,
+    ResolvedTestInstance,
     Sha256Digest,
     SpecificationReference,
     StableId,
@@ -56,6 +67,12 @@ SUITE_RELEASE_SCHEMA_VERSION = "1.0"
 CATALOGUE_SCHEMA_VERSION = "1.0"
 """Requirements and test-definition document version supported by the skeleton."""
 
+PARTICIPANT_PLAN_SCHEMA_VERSION = "1.0"
+"""Participant-plan document version supported by the walking skeleton."""
+
+RESOLVED_PLAN_SCHEMA_VERSION = "1.0"
+"""Resolved-plan document version emitted by the walking-skeleton compiler."""
+
 _SCHEMA_ROOT = Path(__file__).resolve().parent / "schemas" / "v1"
 _COMMON_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json"
 _SUITE_RELEASE_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/suite-release.schema.json"
@@ -65,11 +82,15 @@ _REQUIREMENTS_CATALOGUE_SCHEMA_ID = (
 _TEST_DEFINITION_CATALOGUE_SCHEMA_ID = (
     "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json"
 )
+_PARTICIPANT_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/participant-plan.schema.json"
+_RESOLVED_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/resolved-plan.schema.json"
 _SCHEMA_PATHS = {
     _COMMON_SCHEMA_ID: _SCHEMA_ROOT / "common.schema.json",
     _SUITE_RELEASE_SCHEMA_ID: _SCHEMA_ROOT / "suite-release.schema.json",
     _REQUIREMENTS_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "requirements-catalogue.schema.json",
     _TEST_DEFINITION_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "test-definition-catalogue.schema.json",
+    _PARTICIPANT_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "participant-plan.schema.json",
+    _RESOLVED_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "resolved-plan.schema.json",
 }
 
 
@@ -91,6 +112,16 @@ def load_requirements_catalogue(path: Path) -> RequirementsCatalogue:
 def load_test_definition_catalogue(path: Path) -> TestDefinitionCatalogue:
     """Load a test-definition catalogue into immutable typed data."""
     return parse_test_definition_catalogue(_load_json_document(path))
+
+
+def load_participant_plan(path: Path) -> ParticipantPlan:
+    """Load participant intent into an immutable typed plan."""
+    return parse_participant_plan(_load_json_document(path))
+
+
+def load_resolved_plan(path: Path) -> ResolvedPlan:
+    """Load a generated resolved plan into immutable typed data."""
+    return parse_resolved_plan(_load_json_document(path))
 
 
 def parse_suite_release(raw_document: object) -> SuiteRelease:
@@ -152,6 +183,24 @@ def parse_test_definition_catalogue(raw_document: object) -> TestDefinitionCatal
     if semantic_diagnostics:
         raise ConfigurationContractError(semantic_diagnostics)
     return document
+
+
+def parse_participant_plan(raw_document: object) -> ParticipantPlan:
+    """Validate and map one walking-skeleton participant plan."""
+    _reject_unsupported_schema_version(raw_document, document_name="participant plan")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_PARTICIPANT_PLAN_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+    return _participant_plan_from_schema_valid_document(cast(dict[str, object], raw_document))
+
+
+def parse_resolved_plan(raw_document: object) -> ResolvedPlan:
+    """Validate and map one generated walking-skeleton resolved plan."""
+    _reject_unsupported_schema_version(raw_document, document_name="resolved plan")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_RESOLVED_PLAN_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+    return _resolved_plan_from_schema_valid_document(cast(dict[str, object], raw_document))
 
 
 def validate_catalogue_references(
@@ -392,6 +441,96 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
     }
 
 
+def participant_plan_to_document(plan: ParticipantPlan) -> JsonObject:
+    """Convert immutable participant intent to its schema-owned wire shape."""
+    return {
+        "documentType": plan.document_type,
+        "id": str(plan.id),
+        "predefinedInputs": [
+            {
+                "inputId": str(participant_input.input_id),
+                "value": _frequency_to_document(participant_input.value),
+            }
+            for participant_input in plan.predefined_inputs
+        ],
+        "schemaVersion": plan.schema_version,
+        "scheme": str(plan.scheme),
+        "securityProfile": str(plan.security_profile),
+        "selectedCapabilityIds": [str(capability_id) for capability_id in plan.selected_capability_ids],
+        "specification": {
+            "id": str(plan.specification.id),
+            "requirementsScope": str(plan.specification.requirements_scope),
+            "version": plan.specification.version,
+        },
+        "suiteReleaseId": str(plan.suite_release_id),
+    }
+
+
+def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
+    """Convert a generated resolved plan to its deterministic wire shape."""
+    return {
+        "applicableRequirements": [_resolved_selection_to_document(item) for item in plan.applicable_requirements],
+        "certificationEligible": plan.certification_eligible,
+        "compilationAllowed": plan.compilation_allowed,
+        "documentType": plan.document_type,
+        "findings": [
+            {
+                "code": str(finding.code),
+                "instancePath": finding.instance_path,
+                "message": finding.message,
+                "relatedIds": [str(related_id) for related_id in finding.related_ids],
+                "severity": finding.severity.value,
+            }
+            for finding in plan.findings
+        ],
+        "id": str(plan.id),
+        "provenance": {
+            "artifacts": [_artifact_reference_to_document(artifact) for artifact in plan.provenance.artifacts],
+            "participantPlanDigest": str(plan.provenance.participant_plan_digest),
+            "participantPlanId": str(plan.provenance.participant_plan_id),
+            "requirementsCatalogueId": str(plan.provenance.requirements_catalogue_id),
+            "suiteReleaseId": str(plan.provenance.suite_release_id),
+            "suiteReleaseDigest": str(plan.provenance.suite_release_digest),
+            "suiteReleasePublishedAt": plan.provenance.suite_release_published_at,
+            "suiteReleaseVersion": plan.provenance.suite_release_version,
+            "testDefinitionCatalogueId": str(plan.provenance.test_definition_catalogue_id),
+            "toolReleases": [
+                {"id": str(tool_release.id), "version": tool_release.version}
+                for tool_release in plan.provenance.tool_releases
+            ],
+        },
+        "resolvedInputs": [
+            {
+                "id": str(resolved_input.id),
+                "sensitivity": resolved_input.sensitivity,
+                "source": resolved_input.source.value,
+                "sourceIds": [str(source_id) for source_id in resolved_input.source_ids],
+                "value": (None if resolved_input.value is None else _frequency_to_document(resolved_input.value)),
+                "valueType": str(resolved_input.value_type),
+            }
+            for resolved_input in plan.resolved_inputs
+        ],
+        "schemaVersion": plan.schema_version,
+        "securityProfile": str(plan.security_profile),
+        "selectedCapabilities": [_resolved_selection_to_document(item) for item in plan.selected_capabilities],
+        "selectedEndpoints": [_resolved_selection_to_document(item) for item in plan.selected_endpoints],
+        "testInstances": [
+            {
+                "coveredRequirementIds": [str(requirement_id) for requirement_id in instance.covered_requirement_ids],
+                "dependencyInstanceIds": [
+                    str(dependency_instance_id) for dependency_instance_id in instance.dependency_instance_ids
+                ],
+                "id": str(instance.id),
+                "source": instance.source.value,
+                "sourceIds": [str(source_id) for source_id in instance.source_ids],
+                "testDefinitionId": str(instance.test_definition_id),
+            }
+            for instance in plan.test_instances
+        ],
+        "valid": plan.valid,
+    }
+
+
 def dump_suite_release(suite_release: SuiteRelease) -> str:
     """Serialize a suite release deterministically with a trailing newline."""
     return json.dumps(suite_release_to_document(suite_release), indent=2, sort_keys=True) + "\n"
@@ -405,6 +544,16 @@ def dump_requirements_catalogue(catalogue: RequirementsCatalogue) -> str:
 def dump_test_definition_catalogue(catalogue: TestDefinitionCatalogue) -> str:
     """Serialize a test-definition catalogue deterministically."""
     return json.dumps(test_definition_catalogue_to_document(catalogue), indent=2, sort_keys=True) + "\n"
+
+
+def dump_participant_plan(plan: ParticipantPlan) -> str:
+    """Serialize participant intent deterministically."""
+    return json.dumps(participant_plan_to_document(plan), indent=2, sort_keys=True) + "\n"
+
+
+def dump_resolved_plan(plan: ResolvedPlan) -> str:
+    """Serialize a resolved plan deterministically."""
+    return json.dumps(resolved_plan_to_document(plan), indent=2, sort_keys=True) + "\n"
 
 
 def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:
@@ -760,6 +909,172 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
             )
             for assertion in assertions
         ),
+    )
+
+
+def _participant_plan_from_schema_valid_document(document: dict[str, object]) -> ParticipantPlan:
+    specification = cast(dict[str, object], document["specification"])
+    predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
+    return ParticipantPlan(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        suite_release_id=StableId(cast(str, document["suiteReleaseId"])),
+        scheme=StableId(cast(str, document["scheme"])),
+        specification=ParticipantSpecification(
+            id=StableId(cast(str, specification["id"])),
+            version=cast(str, specification["version"]),
+            requirements_scope=StableId(cast(str, specification["requirementsScope"])),
+        ),
+        security_profile=StableId(cast(str, document["securityProfile"])),
+        selected_capability_ids=tuple(
+            StableId(capability_id) for capability_id in cast(list[str], document["selectedCapabilityIds"])
+        ),
+        predefined_inputs=tuple(
+            ParticipantInput(
+                input_id=StableId(cast(str, participant_input["inputId"])),
+                value=_frequency_from_document(cast(dict[str, object], participant_input["value"])),
+            )
+            for participant_input in predefined_inputs
+        ),
+    )
+
+
+def _resolved_plan_from_schema_valid_document(document: dict[str, object]) -> ResolvedPlan:
+    provenance = cast(dict[str, object], document["provenance"])
+    tool_releases = cast(list[dict[str, object]], provenance["toolReleases"])
+    artifacts = cast(list[dict[str, object]], provenance["artifacts"])
+    resolved_inputs = cast(list[dict[str, object]], document["resolvedInputs"])
+    test_instances = cast(list[dict[str, object]], document["testInstances"])
+    findings = cast(list[dict[str, object]], document["findings"])
+    return ResolvedPlan(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        valid=cast(bool, document["valid"]),
+        compilation_allowed=cast(bool, document["compilationAllowed"]),
+        certification_eligible=cast(bool, document["certificationEligible"]),
+        security_profile=StableId(cast(str, document["securityProfile"])),
+        selected_capabilities=tuple(
+            _resolved_selection_from_document(selection)
+            for selection in cast(list[dict[str, object]], document["selectedCapabilities"])
+        ),
+        selected_endpoints=tuple(
+            _resolved_selection_from_document(selection)
+            for selection in cast(list[dict[str, object]], document["selectedEndpoints"])
+        ),
+        applicable_requirements=tuple(
+            _resolved_selection_from_document(selection)
+            for selection in cast(list[dict[str, object]], document["applicableRequirements"])
+        ),
+        resolved_inputs=tuple(_resolved_input_from_document(resolved_input) for resolved_input in resolved_inputs),
+        test_instances=tuple(_resolved_test_instance_from_document(instance) for instance in test_instances),
+        findings=tuple(
+            CompilerFinding(
+                code=StableId(cast(str, finding["code"])),
+                severity=CompilerFindingSeverity(cast(str, finding["severity"])),
+                message=cast(str, finding["message"]),
+                instance_path=cast(str, finding["instancePath"]),
+                related_ids=tuple(StableId(value) for value in cast(list[str], finding["relatedIds"])),
+            )
+            for finding in findings
+        ),
+        provenance=ResolvedPlanProvenance(
+            suite_release_id=StableId(cast(str, provenance["suiteReleaseId"])),
+            suite_release_version=cast(str, provenance["suiteReleaseVersion"]),
+            suite_release_published_at=cast(str, provenance["suiteReleasePublishedAt"]),
+            tool_releases=tuple(
+                ToolRelease(
+                    id=StableId(cast(str, tool_release["id"])),
+                    version=cast(str, tool_release["version"]),
+                )
+                for tool_release in tool_releases
+            ),
+            artifacts=tuple(_artifact_reference_from_document(artifact) for artifact in artifacts),
+            participant_plan_id=StableId(cast(str, provenance["participantPlanId"])),
+            participant_plan_digest=Sha256Digest(cast(str, provenance["participantPlanDigest"])),
+            suite_release_digest=Sha256Digest(cast(str, provenance["suiteReleaseDigest"])),
+            requirements_catalogue_id=StableId(cast(str, provenance["requirementsCatalogueId"])),
+            test_definition_catalogue_id=StableId(cast(str, provenance["testDefinitionCatalogueId"])),
+        ),
+    )
+
+
+def _resolved_selection_from_document(document: dict[str, object]) -> ResolvedSelection:
+    return ResolvedSelection(
+        id=StableId(cast(str, document["id"])),
+        source=ResolutionSource(cast(str, document["source"])),
+        source_ids=tuple(StableId(value) for value in cast(list[str], document["sourceIds"])),
+    )
+
+
+def _resolved_input_from_document(document: dict[str, object]) -> ResolvedInput:
+    raw_value = document["value"]
+    value: StandingOrderFrequency | None
+    if raw_value is None:
+        value = None
+    else:
+        value = _frequency_from_document(cast(dict[str, object], raw_value))
+    return ResolvedInput(
+        id=StableId(cast(str, document["id"])),
+        value_type=StableId(cast(str, document["valueType"])),
+        sensitivity=cast(str, document["sensitivity"]),
+        source=ResolutionSource(cast(str, document["source"])),
+        source_ids=tuple(StableId(source_id) for source_id in cast(list[str], document["sourceIds"])),
+        value=value,
+    )
+
+
+def _resolved_test_instance_from_document(document: dict[str, object]) -> ResolvedTestInstance:
+    return ResolvedTestInstance(
+        id=StableId(cast(str, document["id"])),
+        test_definition_id=StableId(cast(str, document["testDefinitionId"])),
+        source=ResolutionSource(cast(str, document["source"])),
+        source_ids=tuple(StableId(source_id) for source_id in cast(list[str], document["sourceIds"])),
+        dependency_instance_ids=tuple(
+            StableId(instance_id) for instance_id in cast(list[str], document["dependencyInstanceIds"])
+        ),
+        covered_requirement_ids=tuple(
+            StableId(requirement_id) for requirement_id in cast(list[str], document["coveredRequirementIds"])
+        ),
+    )
+
+
+def _artifact_reference_from_document(document: dict[str, object]) -> ArtifactReference:
+    return ArtifactReference(
+        id=StableId(cast(str, document["id"])),
+        kind=StableId(cast(str, document["kind"])),
+        media_type=cast(str, document["mediaType"]),
+        schema_version=cast(str, document["schemaVersion"]),
+        uri=cast(str, document["uri"]),
+        digest=Sha256Digest(cast(str, document["digest"])),
+    )
+
+
+def _artifact_reference_to_document(artifact: ArtifactReference) -> JsonObject:
+    return {
+        "digest": str(artifact.digest),
+        "id": str(artifact.id),
+        "kind": str(artifact.kind),
+        "mediaType": artifact.media_type,
+        "schemaVersion": artifact.schema_version,
+        "uri": artifact.uri,
+    }
+
+
+def _resolved_selection_to_document(selection: ResolvedSelection) -> JsonObject:
+    return {
+        "id": str(selection.id),
+        "source": selection.source.value,
+        "sourceIds": [str(source_id) for source_id in selection.source_ids],
+    }
+
+
+def _frequency_from_document(document: dict[str, object]) -> StandingOrderFrequency:
+    return StandingOrderFrequency(
+        frequency_type=cast(str, document["frequencyType"]),
+        count_per_period=cast(int | None, document.get("countPerPeriod")),
+        point_in_time=cast(str | None, document.get("pointInTime")),
     )
 
 

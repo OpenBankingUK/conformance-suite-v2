@@ -168,16 +168,25 @@ contract boundary without replacing the current executable PIS catalogue:
 | `TPA-034` | Every test definition has at least one explicit covered requirement ID. The four-test consent-create, consent-read, order-create, order-read chain is a directed acyclic dependency graph; missing dependencies and cycles are invalid configuration. | Provides deterministic reusable test ordering and prevents requirement coverage from being inferred from names. |
 | `TPA-035` | The walking-skeleton suite descriptor binds the exact requirement schema, test-definition schema, requirements catalogue, and test-definition catalogue bytes. It is an illustrative contract bundle, not an approved product release, and is not registered with the current runtime. | Proves immutable release binding while preserving the characterised builder, compiler, executor, results, and assessment paths for later migration layers. |
 
+### PR 4 participant-plan and resolved-compiler decisions
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-036` | The walking-skeleton `participant-plan` `1.0` identifies its suite release, functional specification boundary, security profile, selected capability IDs, and predefined logical input values. It has no test-selection, endpoint-selection, request-override, assertion-override, execution-mode, or developer-override syntax. | Keeps participant intent smaller than generated scope and prevents participant input from weakening immutable requirements. |
+| `TPA-037` | A conditional capability is selected explicitly at most once. Compilation infers all capability-owned required endpoints and every `required-when-capability-selected` requirement. Required predefined inputs have exact-one cardinality; duplicate, missing, unknown, and non-applicable values are stable findings. | Evaluates the current typed conditionality and cardinality without introducing a general rule language. |
+| `TPA-038` | Resolution and strict enforcement are separate operations. `resolve_participant_plan()` always returns the inspectable resolution and findings; `compile_participant_plan()` raises `ParticipantPlanCompilationError` with that same resolved plan when any error finding exists. | Preserves diagnostics and provenance for invalid intent while ensuring MVP compilation cannot produce executable work from it. |
+| `TPA-039` | `resolved-plan` `1.0` records explicit and inferred selections, applicable requirements, resolved inputs, topologically ordered test instances, dependency instance IDs, stable findings, and exact suite artefact provenance. Its deterministic ID is derived from canonical participant intent and the canonical suite-release descriptor; provenance also hashes both input documents. | Makes equivalent inputs reproducible and every generated inclusion traceable without runtime-generated timestamps or values. |
+| `TPA-040` | The walking-skeleton compatibility adapter maps resolved test-definition and endpoint IDs explicitly to copied cases from the existing v4 PIS catalogue. Test-owned logical frequency bindings are rendered into copied request bodies, while current runtime-only security and environment inputs remain adapter arguments. | Proves the new compiler can reach the characterised execution path without making legacy catalogue shapes authoritative in the new compiler or prematurely implementing PR 5's execution manifest. |
+
 This slice deliberately leaves several model gaps visible. Broader capability
 dependencies, mutual exclusion and cardinality, condition types other than
 capability selection, reusable input types beyond v4 standing-order frequency,
 request-template composition, assertion vocabularies beyond HTTP status, and
-full normative PIS coverage require evidence from later slices. Participant
-values, defaults, compilation, execution-manifest rendering, and runtime
-adapters remain owned by PRs 4 and 5. The current frequency shape enforces the
-v4 code list and rejects simultaneous `countPerPeriod` and `pointInTime`; it
-does not claim to encode every type-dependent semantic rule not expressed by
-the source OpenAPI schema.
+full normative PIS coverage require evidence from later slices. Defaults,
+execution-manifest rendering, and general runtime adapters remain owned by
+later PRs. The current frequency shape enforces the v4 code list and rejects
+simultaneous `countPerPeriod` and `pointInTime`; it does not claim to encode
+every type-dependent semantic rule not expressed by the source OpenAPI schema.
 
 ## Target flow
 
@@ -265,8 +274,7 @@ must record the final decision before implementing the affected contract.
 | `TPD-001` | Final filenames and JSON property names not fixed by this record. | PR 2 for shared envelopes; PR 3-6 for their owned artefacts. |
 | `TPD-002` | Exact typed requirements-rule wire vocabulary beyond the accepted small explicit rule set. | PR 3, proven by the standing-order skeleton. |
 | `TPD-003` | Physical catalogue file partitioning. | PR 3, while preserving logical ownership and suite-release binding. |
-| `TPD-004` | Exact participant-plan representation of requirements scope. | PR 4. It must not overload `specification.profile`. |
-| `TPD-005` | Resolved-plan storage lifetime and participant-facing presentation. | PR 4 defines serialization; PR 8 owns participant surfaces. |
+| `TPD-005` | Resolved-plan storage lifetime and participant-facing presentation. | Serialization is accepted in PR 4; PR 8 owns persistence and participant surfaces. |
 | `TPD-006` | Exact execution-manifest schema and runtime-generated instruction vocabulary. | PR 5. |
 | `TPD-007` | Final public assessment terminology beyond the existing certification-ready assurance boundary. | PR 6 with Product, Standards, and Certification review. |
 | `TPD-008` | Backwards-compatibility duration and removal policy for current plans, results, and adapters. | The layer changing each public surface; final removals in PR 9. |

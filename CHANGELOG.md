@@ -11,6 +11,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Strict `participant-plan` and deterministic `resolved-plan` contracts for the
+  PIS domestic-standing-order walking skeleton, including inferred endpoint and
+  requirement scope, predefined-frequency resolution, dependency expansion,
+  stable compiler findings, content-addressed provenance, and an explicit
+  adapter to the existing compiled PIS execution path.
 - Strict, configuration-driven Read/Write v4.0 PIS domestic-standing-order
   requirements and test-definition catalogues, including conditional endpoint
   obligations, normative references, a predefined logical frequency input,

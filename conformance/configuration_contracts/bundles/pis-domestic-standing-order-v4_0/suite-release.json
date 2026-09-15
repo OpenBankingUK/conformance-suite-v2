@@ -1,7 +1,15 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:e33c58f289f99db3d5e4097252e2a3439b216586bba48cb29306b2ea7e405944",
+      "digest": "sha256:b8904ad858dbde578e7ab767e22aa450e69eccf0da4a665b49b6133d3e254f1c",
+      "id": "configuration-common-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/common.schema.json"
+    },
+    {
+      "digest": "sha256:30d9b1a8d998745cad865cf71324d9bf27559249364cfbe027c4d340c11722f9",
       "id": "requirements-catalogue-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",
@@ -15,6 +23,22 @@
       "mediaType": "application/schema+json",
       "schemaVersion": "1.0",
       "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:da33ef873b518543ebfbf1f1e95446f9db6de744071d4cc4b0aaee1be11912dc",
+      "id": "participant-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
+    },
+    {
+      "digest": "sha256:31ceef00feff91d22497fad87b5281a109257e66a27b28b3e08edf824e51264a",
+      "id": "resolved-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
       "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
@@ -36,7 +60,7 @@
   "documentType": "suite-release",
   "id": "obl.pis-dso-v4.walking-skeleton-suite",
   "publishedAt": "2026-09-15T08:57:48Z",
-  "releaseVersion": "walking-skeleton.1",
+  "releaseVersion": "walking-skeleton.2",
   "schemaVersion": "1.0",
   "toolReleases": [
     {

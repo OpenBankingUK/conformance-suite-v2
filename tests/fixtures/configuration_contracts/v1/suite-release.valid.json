@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:394a0960cbfa7263b02952aed677b534fda4f0ed4f9540ca201347a7ebede7dc",
+      "digest": "sha256:b8904ad858dbde578e7ab767e22aa450e69eccf0da4a665b49b6133d3e254f1c",
       "id": "configuration-common-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

@@ -54,6 +54,51 @@
       ],
       "type": "object"
     },
+    "frequencyValue": {
+      "additionalProperties": false,
+      "not": {
+        "required": [
+          "countPerPeriod",
+          "pointInTime"
+        ]
+      },
+      "properties": {
+        "countPerPeriod": {
+          "minimum": 1,
+          "type": "integer"
+        },
+        "frequencyType": {
+          "enum": [
+            "ADHO",
+            "ALMH",
+            "DAIL",
+            "FIMH",
+            "FOMH",
+            "FOWK",
+            "FRTN",
+            "INDA",
+            "MIAN",
+            "MNTH",
+            "NONE",
+            "QURT",
+            "TWMH",
+            "WEEK",
+            "WODL",
+            "YEAR"
+          ]
+        },
+        "pointInTime": {
+          "maxLength": 2,
+          "minLength": 2,
+          "pattern": "^[0-9]{2}$",
+          "type": "string"
+        }
+      },
+      "required": [
+        "frequencyType"
+      ],
+      "type": "object"
+    },
     "sha256Digest": {
       "pattern": "^sha256:[0-9a-f]{64}$",
       "type": "string"

@@ -208,3 +208,148 @@ class TestDefinitionCatalogue:
     id: StableId
     requirements_catalogue_id: StableId
     test_definitions: tuple[TestDefinition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantSpecification:
+    """Functional and protocol boundary selected by a participant."""
+
+    id: StableId
+    version: str
+    requirements_scope: StableId
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantInput:
+    """One participant-supplied value for a predefined logical input."""
+
+    input_id: StableId
+    value: StandingOrderFrequency
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantPlan:
+    """Participant-authored intent for the walking-skeleton compiler."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    suite_release_id: StableId
+    scheme: StableId
+    specification: ParticipantSpecification
+    security_profile: StableId
+    selected_capability_ids: tuple[StableId, ...]
+    predefined_inputs: tuple[ParticipantInput, ...]
+
+
+class ResolutionSource(StrEnum):
+    """How a resolved compiler object entered the effective plan."""
+
+    EXPLICIT = "explicit"
+    INFERRED = "inferred"
+    SUPPLIED = "supplied"
+    DEPENDENCY = "dependency"
+
+
+class CompilerFindingSeverity(StrEnum):
+    """Severity of one deterministic participant-plan compiler finding."""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class CompilerFindingCode(StrEnum):
+    """Stable machine-readable findings emitted by participant resolution."""
+
+    INPUT_DUPLICATE = "compiler.input.duplicate"
+    INPUT_MISSING = "compiler.input.missing"
+    INPUT_NOT_APPLICABLE = "compiler.input.not-applicable"
+    INPUT_UNKNOWN = "compiler.input.unknown"
+    SELECTION_DUPLICATE = "compiler.selection.duplicate"
+    SELECTION_EMPTY = "compiler.selection.empty"
+    SELECTION_UNKNOWN = "compiler.selection.unknown"
+    SCOPE_MISMATCH = "compiler.scope.mismatch"
+    SUITE_RELEASE_MISMATCH = "compiler.suite-release.mismatch"
+    REQUIREMENT_COVERAGE_MISSING = "compiler.requirement.coverage-missing"
+    RELEASE_ARTIFACT_CONTENT_MISMATCH = "compiler.release.artifact-content-mismatch"
+    RELEASE_ARTIFACT_MISSING = "compiler.release.artifact-missing"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedSelection:
+    """One selected capability, endpoint, or applicable requirement."""
+
+    id: StableId
+    source: ResolutionSource
+    source_ids: tuple[StableId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedInput:
+    """One logical input resolved for an applicable requirement."""
+
+    id: StableId
+    value_type: StableId
+    sensitivity: str
+    source: ResolutionSource
+    source_ids: tuple[StableId, ...]
+    value: StandingOrderFrequency | None
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedTestInstance:
+    """One deterministic test-definition instance selected for execution."""
+
+    id: StableId
+    test_definition_id: StableId
+    source: ResolutionSource
+    source_ids: tuple[StableId, ...]
+    dependency_instance_ids: tuple[StableId, ...]
+    covered_requirement_ids: tuple[StableId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompilerFinding:
+    """One stable validation or policy finding emitted during resolution."""
+
+    code: StableId
+    severity: CompilerFindingSeverity
+    message: str
+    instance_path: str
+    related_ids: tuple[StableId, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPlanProvenance:
+    """Immutable release and source-document provenance for a resolved plan."""
+
+    suite_release_id: StableId
+    suite_release_version: str
+    suite_release_published_at: str
+    tool_releases: tuple[ToolRelease, ...]
+    artifacts: tuple[ArtifactReference, ...]
+    participant_plan_id: StableId
+    participant_plan_digest: Sha256Digest
+    suite_release_digest: Sha256Digest
+    requirements_catalogue_id: StableId
+    test_definition_catalogue_id: StableId
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPlan:
+    """Deterministic, inspectable output of participant-plan resolution."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    valid: bool
+    compilation_allowed: bool
+    certification_eligible: bool
+    security_profile: StableId
+    selected_capabilities: tuple[ResolvedSelection, ...]
+    selected_endpoints: tuple[ResolvedSelection, ...]
+    applicable_requirements: tuple[ResolvedSelection, ...]
+    resolved_inputs: tuple[ResolvedInput, ...]
+    test_instances: tuple[ResolvedTestInstance, ...]
+    findings: tuple[CompilerFinding, ...]
+    provenance: ResolvedPlanProvenance
