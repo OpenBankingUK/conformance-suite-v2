@@ -1,0 +1,271 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:cdb04e5cdf6c13fb30b33426599c13a5dedb0c289d1da284ad0e0561758d0b0a",
+      "id": "requirements-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:2af3f3d92cbad3a52c487e49f95aad22b6656e4b71a750e70c6a6d4e0eb2cae8",
+      "id": "test-definition-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:7d42b3b5cfe9bb3eed645623791737b148f991d3c4fac49d2aef654f9a5a663f",
+      "id": "participant-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
+    },
+    {
+      "digest": "sha256:29ba820edec4f411a83970b73a99b4a61f966a5d1a2682100db4b6e27b7c0d11",
+      "id": "resolved-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
+    },
+    {
+      "digest": "sha256:e76a1c521efecdab3ccdc1cd8a6b991638174fc9f511a68dd3ee37bf3b6d5610",
+      "id": "execution-manifest-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+    },
+    {
+      "digest": "sha256:805fc0591caf46dd94899b15d5b692c7a7482fbb2495159328aaf0906d1c907c",
+      "id": "obl.pis-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:b1ef7e742b020489ddda0b6ac2774db2aa75c97f1b8515d59c60315ea973e777",
+      "id": "obl.pis-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v3_1_11/test-definitions.json"
+    },
+    {
+      "digest": "sha256:86540bf84d2a17fd24d1ca0aab84839dde33704cf66a63d7763d093e10ac3e58",
+      "id": "ob-rw-v311.payment-initiation-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "3.1.11",
+      "uri": "conformance/standards/ob_read_write/v3_1_11/payment-initiation-openapi.json"
+    },
+    {
+      "digest": "sha256:c7a3ca168e5dbc6520d789d9daa4def2d1670101f7a836faad17d34696052cb0",
+      "id": "obl.pis-v401.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/requirements.json"
+    },
+    {
+      "digest": "sha256:882b19c85ce05cb415049159afec14501dd3288eb08b2a64a4d0b24f44519daa",
+      "id": "obl.pis-v401.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/test-definitions.json"
+    },
+    {
+      "digest": "sha256:c02efa09f0ea1baaffd5ae0d4e68d7f3f996b94ac3ec66752e7bf5ec5cee3285",
+      "id": "ob-rw-v401.payment-initiation-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "4.0.1",
+      "uri": "conformance/standards/ob_read_write/v4_0_1/payment-initiation-openapi.json"
+    },
+    {
+      "digest": "sha256:483bac8de5c65b3f2b09e722a71ad9d3ad638ee7d76d16fb180869c532f2c370",
+      "id": "obl.ais-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:71ce5390f6193886496cb0364bdd627fb0b84c7c711cee2b334e3622d23483a3",
+      "id": "obl.ais-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/test-definitions.json"
+    },
+    {
+      "digest": "sha256:36afb5a9a76a79c74fe523e6a84ccfc002cf7f6b74f1c304ea22af27510c442f",
+      "id": "ob-rw-v311.account-info-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "3.1.11",
+      "uri": "conformance/standards/ob_read_write/v3_1_11/account-info-openapi.json"
+    },
+    {
+      "digest": "sha256:4538d35d3cd6046b1ca5c9b43b4bf2017dadbf910ad723f80f32db5523fb960a",
+      "id": "obl.ais-v401.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v4_0_1/requirements.json"
+    },
+    {
+      "digest": "sha256:2c5ac898d92b31895b5bd1c2273158ddf437c94848c41b70c1d266055cc899f7",
+      "id": "obl.ais-v401.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v4_0_1/test-definitions.json"
+    },
+    {
+      "digest": "sha256:85e871128c87af44baf611177ccf072126aeacd513ba9558da18342be1b4e42b",
+      "id": "ob-rw-v401.account-info-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "4.0.1",
+      "uri": "conformance/standards/ob_read_write/v4_0_1/account-info-openapi.json"
+    },
+    {
+      "digest": "sha256:095a438f4ef2053da5f979de6af502d3b2f1261ace6cc8987db30fc333438e37",
+      "id": "obl.cbpii-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:5cdb5031664abb9eb607546e447fd1ad5bc7a01b96415178ca1cd15acdbfd5f7",
+      "id": "obl.cbpii-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v3_1_11/test-definitions.json"
+    },
+    {
+      "digest": "sha256:4f61a2971b248d6a4199d1191ee39f60b0b92ddc7ffb05a753c3107dc9b3dce9",
+      "id": "ob-rw-v311.confirmation-funds-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "3.1.11",
+      "uri": "conformance/standards/ob_read_write/v3_1_11/confirmation-funds-openapi.json"
+    },
+    {
+      "digest": "sha256:d5c67372de6913104df978b07753f320797039f363338ccf6766488b3dc9ed10",
+      "id": "obl.cbpii-v401.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v4_0_1/requirements.json"
+    },
+    {
+      "digest": "sha256:0a411a81c69005560920e6bbc8df77068a142b4a851db6f37297535e077a852a",
+      "id": "obl.cbpii-v401.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v4_0_1/test-definitions.json"
+    },
+    {
+      "digest": "sha256:8e61928b2023436fd5bc34c801f43d2e97e541271dac034c89854cf140926555",
+      "id": "ob-rw-v401.confirmation-funds-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "4.0.1",
+      "uri": "conformance/standards/ob_read_write/v4_0_1/confirmation-funds-openapi.json"
+    },
+    {
+      "digest": "sha256:6342bed02b6abc673a70e643c8b6c7eb9c7b028b49cfbce8fb29c6b9bf53f607",
+      "id": "obl.vrp-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:716f155cc11361bcaa4a61075eae5b32f5d0ac6fad49f170b4c2bf6ee961bb3a",
+      "id": "obl.vrp-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v3_1_11/test-definitions.json"
+    },
+    {
+      "digest": "sha256:16a6231aacf10548ee8ba778295371d41ea02d26232867dd916eb3cafbc7db12",
+      "id": "ob-rw-v311.vrp-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "3.1.11",
+      "uri": "conformance/standards/ob_read_write/v3_1_11/vrp-openapi.json"
+    },
+    {
+      "digest": "sha256:07b215844a475e9e888cbe1bb8138de6645ad37d408648712b85551792308f21",
+      "id": "obl.vrp-v401.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v4_0_1/requirements.json"
+    },
+    {
+      "digest": "sha256:d3abc6279ec2f80e94eb878183cc516f730fe6b252c1d8118b9a8118579e5c1f",
+      "id": "obl.vrp-v401.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v4_0_1/test-definitions.json"
+    },
+    {
+      "digest": "sha256:aad3a137f671e2d0cef7c4a8925992da80347f51092129d08a95dd8e3fb0a4e6",
+      "id": "ob-rw-v401.vrp-openapi",
+      "kind": "technical-source",
+      "mediaType": "application/json",
+      "schemaVersion": "4.0.1",
+      "uri": "conformance/standards/ob_read_write/v4_0_1/vrp-openapi.json"
+    },
+    {
+      "digest": "sha256:940702317d3ea8b71c99cc28cae2128e3e46b66ff0b8d3aa43e5a8f5cbf11c93",
+      "id": "obl.dcr-v34.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/requirements.json"
+    },
+    {
+      "digest": "sha256:5568cd9b2cbf9f4911bd6e3bf4f43d9aa860b4d99e28c634b9e4e892747343e2",
+      "id": "obl.dcr-v34.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/dcr/v3_4/test-definitions.json"
+    },
+    {
+      "digest": "sha256:e40e48e8262701f979c93388f0f7598158cfc2ced6f2f330f8ecac51585ba04e",
+      "id": "ob-dcr-v34.openapi",
+      "kind": "technical-source",
+      "mediaType": "application/yaml",
+      "schemaVersion": "3.4",
+      "uri": "conformance/standards/ob_dcr/v3_4/client-registration-openapi.yaml"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.open-banking-mvp.catalogue-release",
+  "publishedAt": "2026-09-15T13:41:43Z",
+  "releaseVersion": "catalogue-migration.1",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

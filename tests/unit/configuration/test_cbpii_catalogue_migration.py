@@ -23,12 +23,19 @@ from conformance.configuration_contracts import (
 )
 from conformance.configuration_contracts.models import HttpMethod
 from conformance.json_types import JsonObject
+from tests.support.parity import assert_parity_report_matches_baseline
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
 _CATALOGUE_ROOT = REPO_ROOT / "conformance" / "configuration_contracts" / "catalogues" / "cbpii"
 _FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "cbpii"
+_BASELINE_PATHS = {
+    "v3_1_11": (
+        REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "v3_1_11" / "legacy" / "ob_3.1_cbpii_fca.json"
+    ),
+    "v4_0_1": _FIXTURE_ROOT / "v4_0_1" / "ob_4.0_cbpii_fca.json",
+}
 _VERSION_CASES = (
     (
         "v3_1_11",
@@ -129,6 +136,7 @@ def test_cbpii_parity_evidence_classifies_every_pinned_row(
     summary = cast(JsonObject, report["summary"])
     replacement_ids = {str(definition.id) for definition in tests.test_definitions}
 
+    assert_parity_report_matches_baseline(report, _BASELINE_PATHS[directory])
     assert baseline["purpose"] == "migration-cross-check-only"
     assert len(classifications) == 14
     assert len({item["sourceRow"] for item in classifications}) == 14

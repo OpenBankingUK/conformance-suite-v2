@@ -391,6 +391,11 @@ release registry. Each replacement catalogue is authored independently of the
 legacy manifests and parity contracts, then must pass a deterministic
 comparison against its pinned parity baseline before its release is accepted.
 The comparison report is release-gate evidence, not a production input.
+The coordinator-owned registry is the content-addressed
+`conformance/configuration_contracts/bundles/open-banking-mvp/suite-release.json`
+descriptor. It binds the complete accepted matrix and its schema and technical
+source artefacts without exposing participant-facing selection behaviour owned
+by PR 8.
 
 The PIS family migration accepts these additional decisions:
 
