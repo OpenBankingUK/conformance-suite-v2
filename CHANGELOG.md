@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Strict, configuration-driven Read/Write v4.0 PIS domestic-standing-order
+  requirements and test-definition catalogues, including conditional endpoint
+  obligations, normative references, a predefined logical frequency input,
+  test-owned request bindings, explicit requirement coverage, dependency-cycle
+  validation, and exact suite-release binding. The walking skeleton remains
+  isolated from the existing runtime path.
 - Versioned external schemas and immutable typed loading for the replacement
   configuration-contract foundation, including common document envelopes,
   lowercase opaque stable IDs, a document-specific provenance boundary,

@@ -27,9 +27,25 @@ from conformance.configuration_contracts.diagnostics import (
 )
 from conformance.configuration_contracts.models import (
     ArtifactReference,
+    Capability,
+    Endpoint,
+    HttpMethod,
+    NormativeReference,
+    PredefinedInput,
+    RequestInputBinding,
+    Requirement,
+    RequirementRule,
+    RequirementsCatalogue,
+    RequirementTargetType,
     Sha256Digest,
+    SpecificationReference,
     StableId,
+    StandingOrderFrequency,
     SuiteRelease,
+    TestAssertion,
+    TestDefinition,
+    TestDefinitionCatalogue,
+    TestRequest,
     ToolRelease,
 )
 from conformance.json_types import JsonObject, JsonValue
@@ -37,12 +53,23 @@ from conformance.json_types import JsonObject, JsonValue
 SUITE_RELEASE_SCHEMA_VERSION = "1.0"
 """Suite-release document version currently supported by this foundation."""
 
+CATALOGUE_SCHEMA_VERSION = "1.0"
+"""Requirements and test-definition document version supported by the skeleton."""
+
 _SCHEMA_ROOT = Path(__file__).resolve().parent / "schemas" / "v1"
 _COMMON_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json"
 _SUITE_RELEASE_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/suite-release.schema.json"
+_REQUIREMENTS_CATALOGUE_SCHEMA_ID = (
+    "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json"
+)
+_TEST_DEFINITION_CATALOGUE_SCHEMA_ID = (
+    "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json"
+)
 _SCHEMA_PATHS = {
     _COMMON_SCHEMA_ID: _SCHEMA_ROOT / "common.schema.json",
     _SUITE_RELEASE_SCHEMA_ID: _SCHEMA_ROOT / "suite-release.schema.json",
+    _REQUIREMENTS_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "requirements-catalogue.schema.json",
+    _TEST_DEFINITION_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "test-definition-catalogue.schema.json",
 }
 
 
@@ -53,32 +80,17 @@ def load_suite_release(path: Path) -> SuiteRelease:
         ConfigurationContractError: If the file cannot be read, decoded,
             schema-validated, or semantically validated.
     """
-    try:
-        raw_text = path.read_text(encoding="utf-8")
-    except (OSError, UnicodeError) as error:
-        raise ConfigurationContractError(
-            (
-                _diagnostic(
-                    DiagnosticCode.IO_READ_FAILED,
-                    f"Unable to read configuration document: {error}",
-                    instance_path="",
-                ),
-            )
-        ) from error
+    return parse_suite_release(_load_json_document(path))
 
-    try:
-        raw_document: object = json.loads(raw_text)
-    except json.JSONDecodeError as error:
-        raise ConfigurationContractError(
-            (
-                _diagnostic(
-                    DiagnosticCode.JSON_INVALID,
-                    f"Invalid JSON at line {error.lineno}, column {error.colno}: {error.msg}",
-                    instance_path="",
-                ),
-            )
-        ) from error
-    return parse_suite_release(raw_document)
+
+def load_requirements_catalogue(path: Path) -> RequirementsCatalogue:
+    """Load a requirements catalogue into immutable typed data."""
+    return parse_requirements_catalogue(_load_json_document(path))
+
+
+def load_test_definition_catalogue(path: Path) -> TestDefinitionCatalogue:
+    """Load a test-definition catalogue into immutable typed data."""
+    return parse_test_definition_catalogue(_load_json_document(path))
 
 
 def parse_suite_release(raw_document: object) -> SuiteRelease:
@@ -112,6 +124,95 @@ def parse_suite_release(raw_document: object) -> SuiteRelease:
     if semantic_diagnostics:
         raise ConfigurationContractError(semantic_diagnostics)
     return document
+
+
+def parse_requirements_catalogue(raw_document: object) -> RequirementsCatalogue:
+    """Validate and map one schema-versioned requirements catalogue."""
+    _reject_unsupported_schema_version(raw_document, document_name="requirements catalogue")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_REQUIREMENTS_CATALOGUE_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+
+    document = _requirements_catalogue_from_schema_valid_document(cast(dict[str, object], raw_document))
+    semantic_diagnostics = _validate_requirements_catalogue_semantics(document)
+    if semantic_diagnostics:
+        raise ConfigurationContractError(semantic_diagnostics)
+    return document
+
+
+def parse_test_definition_catalogue(raw_document: object) -> TestDefinitionCatalogue:
+    """Validate and map one schema-versioned test-definition catalogue."""
+    _reject_unsupported_schema_version(raw_document, document_name="test-definition catalogue")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_TEST_DEFINITION_CATALOGUE_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+
+    document = _test_definition_catalogue_from_schema_valid_document(cast(dict[str, object], raw_document))
+    semantic_diagnostics = _validate_test_definition_catalogue_semantics(document)
+    if semantic_diagnostics:
+        raise ConfigurationContractError(semantic_diagnostics)
+    return document
+
+
+def validate_catalogue_references(
+    requirements_catalogue: RequirementsCatalogue,
+    test_definition_catalogue: TestDefinitionCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    """Validate references across the separate requirements and test artefacts."""
+    diagnostics: list[ConfigurationDiagnostic] = []
+    if test_definition_catalogue.requirements_catalogue_id != requirements_catalogue.id:
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.REFERENCE_UNRESOLVED,
+                (
+                    f"Requirements catalogue {test_definition_catalogue.requirements_catalogue_id!s} "
+                    f"does not match supplied catalogue {requirements_catalogue.id!s}"
+                ),
+                instance_path="/requirementsCatalogueId",
+            )
+        )
+
+    capability_ids = {capability.id for capability in requirements_catalogue.capabilities}
+    endpoint_ids = {endpoint.id for endpoint in requirements_catalogue.endpoints}
+    input_ids = {predefined_input.id for predefined_input in requirements_catalogue.predefined_inputs}
+    requirement_ids = {requirement.id for requirement in requirements_catalogue.requirements}
+    for test_index, test_definition in enumerate(test_definition_catalogue.test_definitions):
+        base_path = f"/testDefinitions/{test_index}"
+        if test_definition.capability_id not in capability_ids:
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    test_definition.capability_id,
+                    instance_path=f"{base_path}/capabilityId",
+                    object_kind="capability",
+                )
+            )
+        if test_definition.request.endpoint_id not in endpoint_ids:
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    test_definition.request.endpoint_id,
+                    instance_path=f"{base_path}/request/endpointId",
+                    object_kind="endpoint",
+                )
+            )
+        for requirement_index, requirement_id in enumerate(test_definition.covered_requirement_ids):
+            if requirement_id not in requirement_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        requirement_id,
+                        instance_path=f"{base_path}/coveredRequirementIds/{requirement_index}",
+                        object_kind="requirement",
+                    )
+                )
+        for binding_index, binding in enumerate(test_definition.request.input_bindings):
+            if binding.input_id not in input_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        binding.input_id,
+                        instance_path=f"{base_path}/request/inputBindings/{binding_index}/inputId",
+                        object_kind="predefined input",
+                    )
+                )
+    return tuple(diagnostics)
 
 
 def verify_suite_release_artifacts(
@@ -177,9 +278,133 @@ def suite_release_to_document(suite_release: SuiteRelease) -> JsonObject:
     }
 
 
+def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> JsonObject:
+    """Convert an immutable requirements catalogue to its wire shape."""
+    return {
+        "capabilities": [
+            {
+                "description": capability.description,
+                "id": str(capability.id),
+                "name": capability.name,
+                "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
+                "selection": capability.selection,
+            }
+            for capability in catalogue.capabilities
+        ],
+        "documentType": catalogue.document_type,
+        "endpoints": [
+            {
+                "id": str(endpoint.id),
+                "method": endpoint.method.value,
+                "operationId": endpoint.operation_id,
+                "path": endpoint.path,
+            }
+            for endpoint in catalogue.endpoints
+        ],
+        "id": str(catalogue.id),
+        "normativeReferences": [
+            {
+                "id": str(reference.id),
+                "section": reference.section,
+                "title": reference.title,
+                "uri": reference.uri,
+            }
+            for reference in catalogue.normative_references
+        ],
+        "predefinedInputs": [
+            {
+                "description": predefined_input.description,
+                "exampleValue": _frequency_to_document(predefined_input.example_value),
+                "id": str(predefined_input.id),
+                "label": predefined_input.label,
+                "requiredForCapabilityIds": [
+                    str(capability_id) for capability_id in predefined_input.required_for_capability_ids
+                ],
+                "sensitivity": predefined_input.sensitivity,
+                "valueType": str(predefined_input.value_type),
+            }
+            for predefined_input in catalogue.predefined_inputs
+        ],
+        "requirements": [
+            {
+                "id": str(requirement.id),
+                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
+                "rule": {
+                    "capabilityId": str(requirement.rule.capability_id),
+                    "targetId": str(requirement.rule.target_id),
+                    "targetType": requirement.rule.target_type.value,
+                    "type": requirement.rule.type,
+                },
+                "statement": requirement.statement,
+            }
+            for requirement in catalogue.requirements
+        ],
+        "schemaVersion": catalogue.schema_version,
+        "scheme": str(catalogue.scheme),
+        "specification": {
+            "id": str(catalogue.specification.id),
+            "requirementsScope": str(catalogue.specification.requirements_scope),
+            "version": catalogue.specification.version,
+        },
+    }
+
+
+def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) -> JsonObject:
+    """Convert an immutable test-definition catalogue to its wire shape."""
+    return {
+        "documentType": catalogue.document_type,
+        "id": str(catalogue.id),
+        "requirementsCatalogueId": str(catalogue.requirements_catalogue_id),
+        "schemaVersion": catalogue.schema_version,
+        "testDefinitions": [
+            {
+                "assertions": [
+                    {
+                        "expectedStatus": assertion.expected_status,
+                        "id": str(assertion.id),
+                        "type": assertion.type,
+                    }
+                    for assertion in test_definition.assertions
+                ],
+                "capabilityId": str(test_definition.capability_id),
+                "coveredRequirementIds": [
+                    str(requirement_id) for requirement_id in test_definition.covered_requirement_ids
+                ],
+                "dependencies": [str(dependency_id) for dependency_id in test_definition.dependencies],
+                "description": test_definition.description,
+                "id": str(test_definition.id),
+                "name": test_definition.name,
+                "request": {
+                    "endpointId": str(test_definition.request.endpoint_id),
+                    "inputBindings": [
+                        {
+                            "inputId": str(binding.input_id),
+                            "target": binding.target,
+                            "transform": str(binding.transform),
+                            "type": binding.type,
+                        }
+                        for binding in test_definition.request.input_bindings
+                    ],
+                },
+            }
+            for test_definition in catalogue.test_definitions
+        ],
+    }
+
+
 def dump_suite_release(suite_release: SuiteRelease) -> str:
     """Serialize a suite release deterministically with a trailing newline."""
     return json.dumps(suite_release_to_document(suite_release), indent=2, sort_keys=True) + "\n"
+
+
+def dump_requirements_catalogue(catalogue: RequirementsCatalogue) -> str:
+    """Serialize a requirements catalogue deterministically."""
+    return json.dumps(requirements_catalogue_to_document(catalogue), indent=2, sort_keys=True) + "\n"
+
+
+def dump_test_definition_catalogue(catalogue: TestDefinitionCatalogue) -> str:
+    """Serialize a test-definition catalogue deterministically."""
+    return json.dumps(test_definition_catalogue_to_document(catalogue), indent=2, sort_keys=True) + "\n"
 
 
 def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:
@@ -204,6 +429,48 @@ def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:
             )
         diagnostics.extend(_validate_schema_references(schema_id, schema, registry))
     return tuple(diagnostics)
+
+
+def _load_json_document(path: Path) -> object:
+    try:
+        raw_text = path.read_text(encoding="utf-8")
+    except (OSError, UnicodeError) as error:
+        raise ConfigurationContractError(
+            (
+                _diagnostic(
+                    DiagnosticCode.IO_READ_FAILED,
+                    f"Unable to read configuration document: {error}",
+                    instance_path="",
+                ),
+            )
+        ) from error
+
+    try:
+        return json.loads(raw_text)
+    except json.JSONDecodeError as error:
+        raise ConfigurationContractError(
+            (
+                _diagnostic(
+                    DiagnosticCode.JSON_INVALID,
+                    f"Invalid JSON at line {error.lineno}, column {error.colno}: {error.msg}",
+                    instance_path="",
+                ),
+            )
+        ) from error
+
+
+def _reject_unsupported_schema_version(raw_document: object, *, document_name: str) -> None:
+    schema_version = _selected_suite_release_schema_version(raw_document)
+    if schema_version is not None and schema_version != CATALOGUE_SCHEMA_VERSION:
+        raise ConfigurationContractError(
+            (
+                _diagnostic(
+                    DiagnosticCode.SCHEMA_VERSION_UNSUPPORTED,
+                    f"Unsupported {document_name} schema version {schema_version!r}",
+                    instance_path="/schemaVersion",
+                ),
+            )
+        )
 
 
 def _selected_suite_release_schema_version(raw_document: object) -> str | None:
@@ -359,6 +626,328 @@ def _suite_release_from_schema_valid_document(document: dict[str, object]) -> Su
     )
 
 
+def _requirements_catalogue_from_schema_valid_document(document: dict[str, object]) -> RequirementsCatalogue:
+    specification = cast(dict[str, object], document["specification"])
+    normative_references = cast(list[dict[str, object]], document["normativeReferences"])
+    capabilities = cast(list[dict[str, object]], document["capabilities"])
+    endpoints = cast(list[dict[str, object]], document["endpoints"])
+    predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
+    requirements = cast(list[dict[str, object]], document["requirements"])
+    return RequirementsCatalogue(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        scheme=StableId(cast(str, document["scheme"])),
+        specification=SpecificationReference(
+            id=StableId(cast(str, specification["id"])),
+            version=cast(str, specification["version"]),
+            requirements_scope=StableId(cast(str, specification["requirementsScope"])),
+        ),
+        normative_references=tuple(
+            NormativeReference(
+                id=StableId(cast(str, reference["id"])),
+                title=cast(str, reference["title"]),
+                uri=cast(str, reference["uri"]),
+                section=cast(str, reference["section"]),
+            )
+            for reference in normative_references
+        ),
+        capabilities=tuple(
+            Capability(
+                id=StableId(cast(str, capability["id"])),
+                name=cast(str, capability["name"]),
+                description=cast(str, capability["description"]),
+                selection=cast(str, capability["selection"]),
+                required_endpoint_ids=tuple(
+                    StableId(endpoint_id) for endpoint_id in cast(list[str], capability["requiredEndpointIds"])
+                ),
+            )
+            for capability in capabilities
+        ),
+        endpoints=tuple(
+            Endpoint(
+                id=StableId(cast(str, endpoint["id"])),
+                method=HttpMethod(cast(str, endpoint["method"])),
+                path=cast(str, endpoint["path"]),
+                operation_id=cast(str, endpoint["operationId"]),
+            )
+            for endpoint in endpoints
+        ),
+        predefined_inputs=tuple(
+            _predefined_input_from_document(predefined_input) for predefined_input in predefined_inputs
+        ),
+        requirements=tuple(_requirement_from_document(requirement) for requirement in requirements),
+    )
+
+
+def _predefined_input_from_document(document: dict[str, object]) -> PredefinedInput:
+    example = cast(dict[str, object], document["exampleValue"])
+    return PredefinedInput(
+        id=StableId(cast(str, document["id"])),
+        label=cast(str, document["label"]),
+        description=cast(str, document["description"]),
+        value_type=StableId(cast(str, document["valueType"])),
+        required_for_capability_ids=tuple(
+            StableId(capability_id) for capability_id in cast(list[str], document["requiredForCapabilityIds"])
+        ),
+        sensitivity=cast(str, document["sensitivity"]),
+        example_value=StandingOrderFrequency(
+            frequency_type=cast(str, example["frequencyType"]),
+            count_per_period=cast(int | None, example.get("countPerPeriod")),
+            point_in_time=cast(str | None, example.get("pointInTime")),
+        ),
+    )
+
+
+def _requirement_from_document(document: dict[str, object]) -> Requirement:
+    rule = cast(dict[str, object], document["rule"])
+    return Requirement(
+        id=StableId(cast(str, document["id"])),
+        statement=cast(str, document["statement"]),
+        rule=RequirementRule(
+            type=cast(str, rule["type"]),
+            capability_id=StableId(cast(str, rule["capabilityId"])),
+            target_type=RequirementTargetType(cast(str, rule["targetType"])),
+            target_id=StableId(cast(str, rule["targetId"])),
+        ),
+        normative_reference_ids=tuple(
+            StableId(reference_id) for reference_id in cast(list[str], document["normativeReferenceIds"])
+        ),
+    )
+
+
+def _test_definition_catalogue_from_schema_valid_document(document: dict[str, object]) -> TestDefinitionCatalogue:
+    test_definitions = cast(list[dict[str, object]], document["testDefinitions"])
+    return TestDefinitionCatalogue(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        requirements_catalogue_id=StableId(cast(str, document["requirementsCatalogueId"])),
+        test_definitions=tuple(_test_definition_from_document(definition) for definition in test_definitions),
+    )
+
+
+def _test_definition_from_document(document: dict[str, object]) -> TestDefinition:
+    request = cast(dict[str, object], document["request"])
+    bindings = cast(list[dict[str, object]], request["inputBindings"])
+    assertions = cast(list[dict[str, object]], document["assertions"])
+    return TestDefinition(
+        id=StableId(cast(str, document["id"])),
+        name=cast(str, document["name"]),
+        description=cast(str, document["description"]),
+        capability_id=StableId(cast(str, document["capabilityId"])),
+        covered_requirement_ids=tuple(
+            StableId(requirement_id) for requirement_id in cast(list[str], document["coveredRequirementIds"])
+        ),
+        dependencies=tuple(StableId(dependency_id) for dependency_id in cast(list[str], document["dependencies"])),
+        request=TestRequest(
+            endpoint_id=StableId(cast(str, request["endpointId"])),
+            input_bindings=tuple(
+                RequestInputBinding(
+                    input_id=StableId(cast(str, binding["inputId"])),
+                    type=cast(str, binding["type"]),
+                    target=cast(str, binding["target"]),
+                    transform=StableId(cast(str, binding["transform"])),
+                )
+                for binding in bindings
+            ),
+        ),
+        assertions=tuple(
+            TestAssertion(
+                id=StableId(cast(str, assertion["id"])),
+                type=cast(str, assertion["type"]),
+                expected_status=cast(int, assertion["expectedStatus"]),
+            )
+            for assertion in assertions
+        ),
+    )
+
+
+def _frequency_to_document(frequency: StandingOrderFrequency) -> JsonObject:
+    document: JsonObject = {"frequencyType": frequency.frequency_type}
+    if frequency.count_per_period is not None:
+        document["countPerPeriod"] = frequency.count_per_period
+    if frequency.point_in_time is not None:
+        document["pointInTime"] = frequency.point_in_time
+    return document
+
+
+def _validate_requirements_catalogue_semantics(
+    catalogue: RequirementsCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    diagnostics: list[ConfigurationDiagnostic] = []
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(reference.id), f"/normativeReferences/{index}/id")
+                for index, reference in enumerate(catalogue.normative_references)
+            ),
+            object_kind="normative reference",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(capability.id), f"/capabilities/{index}/id")
+                for index, capability in enumerate(catalogue.capabilities)
+            ),
+            object_kind="capability",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            ((str(endpoint.id), f"/endpoints/{index}/id") for index, endpoint in enumerate(catalogue.endpoints)),
+            object_kind="endpoint",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(predefined_input.id), f"/predefinedInputs/{index}/id")
+                for index, predefined_input in enumerate(catalogue.predefined_inputs)
+            ),
+            object_kind="predefined input",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(requirement.id), f"/requirements/{index}/id")
+                for index, requirement in enumerate(catalogue.requirements)
+            ),
+            object_kind="requirement",
+        )
+    )
+
+    reference_ids = {reference.id for reference in catalogue.normative_references}
+    capability_ids = {capability.id for capability in catalogue.capabilities}
+    endpoint_ids = {endpoint.id for endpoint in catalogue.endpoints}
+    input_ids = {predefined_input.id for predefined_input in catalogue.predefined_inputs}
+    for capability_index, capability in enumerate(catalogue.capabilities):
+        for endpoint_index, endpoint_id in enumerate(capability.required_endpoint_ids):
+            if endpoint_id not in endpoint_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        endpoint_id,
+                        instance_path=f"/capabilities/{capability_index}/requiredEndpointIds/{endpoint_index}",
+                        object_kind="endpoint",
+                    )
+                )
+    for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
+        for capability_index, capability_id in enumerate(predefined_input.required_for_capability_ids):
+            if capability_id not in capability_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        capability_id,
+                        instance_path=f"/predefinedInputs/{input_index}/requiredForCapabilityIds/{capability_index}",
+                        object_kind="capability",
+                    )
+                )
+    target_ids = {
+        RequirementTargetType.ENDPOINT: endpoint_ids,
+        RequirementTargetType.PREDEFINED_INPUT: input_ids,
+    }
+    for requirement_index, requirement in enumerate(catalogue.requirements):
+        if requirement.rule.capability_id not in capability_ids:
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    requirement.rule.capability_id,
+                    instance_path=f"/requirements/{requirement_index}/rule/capabilityId",
+                    object_kind="capability",
+                )
+            )
+        if requirement.rule.target_id not in target_ids[requirement.rule.target_type]:
+            diagnostics.append(
+                _unresolved_reference_diagnostic(
+                    requirement.rule.target_id,
+                    instance_path=f"/requirements/{requirement_index}/rule/targetId",
+                    object_kind=requirement.rule.target_type.value,
+                )
+            )
+        for reference_index, reference_id in enumerate(requirement.normative_reference_ids):
+            if reference_id not in reference_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        reference_id,
+                        instance_path=f"/requirements/{requirement_index}/normativeReferenceIds/{reference_index}",
+                        object_kind="normative reference",
+                    )
+                )
+    return tuple(diagnostics)
+
+
+def _validate_test_definition_catalogue_semantics(
+    catalogue: TestDefinitionCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    diagnostics = list(
+        _duplicate_id_diagnostics(
+            (
+                (str(test_definition.id), f"/testDefinitions/{index}/id")
+                for index, test_definition in enumerate(catalogue.test_definitions)
+            ),
+            object_kind="test definition",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (
+                    str(assertion.id),
+                    f"/testDefinitions/{test_index}/assertions/{assertion_index}/id",
+                )
+                for test_index, test_definition in enumerate(catalogue.test_definitions)
+                for assertion_index, assertion in enumerate(test_definition.assertions)
+            ),
+            object_kind="assertion",
+        )
+    )
+    test_ids = {test_definition.id for test_definition in catalogue.test_definitions}
+    for test_index, test_definition in enumerate(catalogue.test_definitions):
+        for dependency_index, dependency_id in enumerate(test_definition.dependencies):
+            if dependency_id not in test_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        dependency_id,
+                        instance_path=f"/testDefinitions/{test_index}/dependencies/{dependency_index}",
+                        object_kind="test definition",
+                    )
+                )
+    diagnostics.extend(_dependency_cycle_diagnostics(catalogue))
+    return tuple(diagnostics)
+
+
+def _dependency_cycle_diagnostics(
+    catalogue: TestDefinitionCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    definitions = {definition.id: definition for definition in catalogue.test_definitions}
+    indexes = {definition.id: index for index, definition in enumerate(catalogue.test_definitions)}
+    state: dict[StableId, int] = {}
+    diagnostics: list[ConfigurationDiagnostic] = []
+
+    def visit(test_id: StableId) -> None:
+        state[test_id] = 1
+        definition = definitions[test_id]
+        for dependency_index, dependency_id in enumerate(definition.dependencies):
+            if dependency_id not in definitions:
+                continue
+            if state.get(dependency_id) == 1:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.DEPENDENCY_CYCLE,
+                        f"Test dependency {dependency_id!s} creates a cycle",
+                        instance_path=f"/testDefinitions/{indexes[test_id]}/dependencies/{dependency_index}",
+                    )
+                )
+            elif state.get(dependency_id, 0) == 0:
+                visit(dependency_id)
+        state[test_id] = 2
+
+    for definition in catalogue.test_definitions:
+        if state.get(definition.id, 0) == 0:
+            visit(definition.id)
+    return tuple(diagnostics)
+
+
 def _validate_suite_release_semantics(suite_release: SuiteRelease) -> tuple[ConfigurationDiagnostic, ...]:
     diagnostics: list[ConfigurationDiagnostic] = []
     diagnostics.extend(
@@ -411,6 +1000,19 @@ def _duplicate_id_diagnostics(
         else:
             seen.add(identifier)
     return tuple(diagnostics)
+
+
+def _unresolved_reference_diagnostic(
+    identifier: StableId,
+    *,
+    instance_path: str,
+    object_kind: str,
+) -> ConfigurationDiagnostic:
+    return _diagnostic(
+        DiagnosticCode.REFERENCE_UNRESOLVED,
+        f"Referenced {object_kind} {identifier!s} does not exist",
+        instance_path=instance_path,
+    )
 
 
 def _validation_error_diagnostics(error: ValidationError) -> tuple[ConfigurationDiagnostic, ...]:
