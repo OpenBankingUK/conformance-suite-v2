@@ -131,7 +131,13 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "location": {
-          "enum": ["header", "detached-jws-claim", "detached-jws-signature", "json-body"]
+          "enum": [
+            "header",
+            "detached-jws-claim",
+            "detached-jws-signature",
+            "json-body",
+            "path-parameter"
+          ]
         },
         "operation": {
           "enum": ["omit", "replace", "invalidate", "generate"]

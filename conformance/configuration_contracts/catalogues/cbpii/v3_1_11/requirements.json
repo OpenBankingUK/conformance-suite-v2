@@ -1,0 +1,249 @@
+{
+  "capabilities": [
+    {
+      "description": "Accepted MVP confirmation-of-funds flow for Open Banking Read/Write 3.1.11; all four resource operations are required for the journey.",
+      "id": "cbpii.v311.capability.confirmation-of-funds",
+      "name": "Confirmation of funds",
+      "requiredEndpointIds": [
+        "cbpii.v311.endpoint.funds_confirmation_consents.create",
+        "cbpii.v311.endpoint.funds_confirmation_consents.consentid.read",
+        "cbpii.v311.endpoint.funds_confirmation_consents.consentid.delete",
+        "cbpii.v311.endpoint.funds_confirmations.create"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "cbpii.v311.endpoint.funds_confirmation_consents.create",
+      "method": "POST",
+      "operationId": "CreateFundsConfirmationConsents",
+      "path": "/funds-confirmation-consents",
+      "sourceId": "ob-rw-v311.confirmation-funds-openapi",
+      "sourcePointer": "/paths/~1funds-confirmation-consents/post"
+    },
+    {
+      "id": "cbpii.v311.endpoint.funds_confirmation_consents.consentid.read",
+      "method": "GET",
+      "operationId": "GetFundsConfirmationConsentsConsentId",
+      "path": "/funds-confirmation-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.confirmation-funds-openapi",
+      "sourcePointer": "/paths/~1funds-confirmation-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "cbpii.v311.endpoint.funds_confirmation_consents.consentid.delete",
+      "method": "DELETE",
+      "operationId": "DeleteFundsConfirmationConsentsConsentId",
+      "path": "/funds-confirmation-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.confirmation-funds-openapi",
+      "sourcePointer": "/paths/~1funds-confirmation-consents~1{ConsentId}/delete"
+    },
+    {
+      "id": "cbpii.v311.endpoint.funds_confirmations.create",
+      "method": "POST",
+      "operationId": "CreateFundsConfirmations",
+      "path": "/funds-confirmations",
+      "sourceId": "ob-rw-v311.confirmation-funds-openapi",
+      "sourcePointer": "/paths/~1funds-confirmations/post"
+    }
+  ],
+  "id": "obl.cbpii-v311.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-rw-v311.cbpii-profile.flow",
+      "section": "Basics / Overview / Steps",
+      "title": "Open Banking Read/Write API 3.1.11 Confirmation of Funds API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.11/profiles/confirmation-of-funds-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v311.cbpii-profile.security",
+      "section": "Security & Access Control / Scopes and HTTP Headers",
+      "title": "Open Banking Read/Write API 3.1.11 Confirmation of Funds API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.11/profiles/confirmation-of-funds-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v311.cbpii-openapi.operations",
+      "section": "Operation paths and response contracts",
+      "title": "Open Banking Read/Write 3.1.11 Confirmation of Funds OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/confirmation-funds-openapi.json"
+    },
+    {
+      "id": "ob-rw-v311.cbpii-openapi.request-data",
+      "section": "OBFundsConfirmationConsent1 and OBFundsConfirmation1 request schemas",
+      "title": "Open Banking Read/Write 3.1.11 Confirmation of Funds OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/confirmation-funds-openapi.json"
+    }
+  ],
+  "predefinedInputs": [
+    {
+      "description": "Identification scheme for the debtor account used in the confirmation-of-funds consent.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "cbpii.v311.input.debtor-account-scheme",
+      "label": "Debtor account scheme",
+      "requiredForCapabilityIds": [
+        "cbpii.v311.capability.confirmation-of-funds"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Participant-supplied debtor account identifier used in the confirmation-of-funds consent.",
+      "exampleValue": "08080021325698",
+      "id": "cbpii.v311.input.debtor-account-identification",
+      "label": "Debtor account identification",
+      "requiredForCapabilityIds": [
+        "cbpii.v311.capability.confirmation-of-funds"
+      ],
+      "sensitivity": "sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Amount whose availability is checked by the confirmation-of-funds request.",
+      "exampleValue": "10.00",
+      "id": "cbpii.v311.input.instructed-amount",
+      "label": "Instructed amount",
+      "requiredForCapabilityIds": [
+        "cbpii.v311.capability.confirmation-of-funds"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 currency for the amount whose availability is checked.",
+      "exampleValue": "GBP",
+      "id": "cbpii.v311.input.instructed-currency",
+      "label": "Instructed amount currency",
+      "requiredForCapabilityIds": [
+        "cbpii.v311.capability.confirmation-of-funds"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "cbpii.v311.requirement.funds_confirmation_consents.create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-profile.flow",
+        "ob-rw-v311.cbpii-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.endpoint.funds_confirmation_consents.create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds capability requires the CreateFundsConfirmationConsents operation."
+    },
+    {
+      "id": "cbpii.v311.requirement.funds_confirmation_consents.consentid.read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-profile.flow",
+        "ob-rw-v311.cbpii-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.endpoint.funds_confirmation_consents.consentid.read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds capability requires the GetFundsConfirmationConsentsConsentId operation."
+    },
+    {
+      "id": "cbpii.v311.requirement.funds_confirmation_consents.consentid.delete",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-profile.flow",
+        "ob-rw-v311.cbpii-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.endpoint.funds_confirmation_consents.consentid.delete",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds capability requires the DeleteFundsConfirmationConsentsConsentId operation."
+    },
+    {
+      "id": "cbpii.v311.requirement.funds_confirmations.create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-profile.flow",
+        "ob-rw-v311.cbpii-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.endpoint.funds_confirmations.create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds capability requires the CreateFundsConfirmations operation."
+    },
+    {
+      "id": "cbpii.v311.requirement.input.debtor-account-scheme",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-openapi.request-data"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.input.debtor-account-scheme",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds test journey requires debtor account scheme."
+    },
+    {
+      "id": "cbpii.v311.requirement.input.debtor-account-identification",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-openapi.request-data"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.input.debtor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds test journey requires debtor account identification."
+    },
+    {
+      "id": "cbpii.v311.requirement.input.instructed-amount",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-openapi.request-data"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds test journey requires instructed amount."
+    },
+    {
+      "id": "cbpii.v311.requirement.input.instructed-currency",
+      "normativeReferenceIds": [
+        "ob-rw-v311.cbpii-openapi.request-data"
+      ],
+      "rule": {
+        "capabilityId": "cbpii.v311.capability.confirmation-of-funds",
+        "targetId": "cbpii.v311.input.instructed-currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The confirmation-of-funds test journey requires instructed amount currency."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "cbpii",
+    "version": "3.1.11"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:4f61a2971b248d6a4199d1191ee39f60b0b92ddc7ffb05a753c3107dc9b3dce9",
+      "id": "ob-rw-v311.confirmation-funds-openapi",
+      "title": "Open Banking Read/Write 3.1.11 Confirmation of Funds OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/confirmation-funds-openapi.json"
+    }
+  ]
+}

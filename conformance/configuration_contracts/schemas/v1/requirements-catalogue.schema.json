@@ -230,7 +230,10 @@
           "uniqueItems": true
         },
         "sensitivity": {
-          "const": "non-sensitive"
+          "enum": [
+            "non-sensitive",
+            "sensitive"
+          ]
         },
         "valueType": {
           "enum": [

@@ -78,7 +78,7 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:b0fa2270616392fc660b4799caa9361fb010f8fa7dc6b677d497a5add4bb04f9",
+  "id": "resolved-plan:fd4986c734bb9b61d3bda7065f1d69ae728f73ee331d032e040cd3fa30cbb543",
   "predefinedInputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -105,7 +105,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:36382febb74ad3f4e49f39ccf9735eaa2d41d1015c003b17d08b5a023914d31b",
+        "digest": "sha256:b22b502e77cbf1986e64648dbd308d1fee57f01664492ce776440664b29773d7",
         "id": "requirements-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -113,7 +113,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
       },
       {
-        "digest": "sha256:33ec1d80b17bfd5424a4e3c4debf26bf5e22118f93c370a2403f6c13cb5b6eed",
+        "digest": "sha256:c6089c5bd3399bca14693affac9cc7fe2e6af4ba360d8f5ad8c70f9a4d07c328",
         "id": "test-definition-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
