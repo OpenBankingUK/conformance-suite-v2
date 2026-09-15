@@ -130,6 +130,16 @@ The validator accepts caller-supplied bytes and does not resolve filesystem or
 remote resources. Provenance is document-specific rather than mandatory in the
 common envelope.
 
+The illustrative Read/Write v4.0 PIS domestic-standing-order bundle under
+`configuration_contracts/bundles/pis-domestic-standing-order-v4_0/` adds
+separate strict requirements and test-definition documents. The requirements
+catalogue owns conditional endpoint obligations, normative citations, and the
+logical frequency input. The test catalogue owns explicit requirement
+coverage, request bindings, HTTP assertions, and the four-test dependency DAG.
+`validate_catalogue_references()` checks references across the documents, and
+the bundle's suite-release descriptor binds both catalogue schemas and both
+catalogues by exact-byte digest.
+
 Legacy parity contracts, manifests, assertions, and data files have a separate
 migration role. Independently authored replacement catalogues are compared
 against those pinned baselines before release, and the comparison report is
@@ -137,10 +147,10 @@ release-gate evidence. Production suite releases bind only the replacement
 configuration artefacts; validators, compilers, manifests, and results do not
 gain runtime dependencies on legacy comparison inputs.
 
-This foundation is intentionally not wired into the current builder, canonical
-plan, compiler, executor, catalogue registry, result output, or approved-release
-policy. Those remain on their characterised contracts until their owning
-migration layers provide explicit adapters.
+This foundation and walking skeleton are intentionally not wired into the
+current builder, canonical plan, compiler, executor, catalogue registry, result
+output, or approved-release policy. Those remain on their characterised
+contracts until their owning migration layers provide explicit adapters.
 
 Core modules:
 

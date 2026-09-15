@@ -23,7 +23,9 @@ class DiagnosticCode(StrEnum):
     SCHEMA_REFERENCE_UNRESOLVED = "config.schema.reference-unresolved"
     SCHEMA_VALIDATION_FAILED = "config.schema.validation-failed"
     DUPLICATE_ID = "config.semantic.duplicate-id"
+    DEPENDENCY_CYCLE = "config.semantic.dependency-cycle"
     SUITE_RELEASE_SELF_REFERENCE = "config.semantic.suite-release-self-reference"
+    REFERENCE_UNRESOLVED = "config.reference.unresolved"
     ARTIFACT_UNRESOLVED = "config.reference.artifact-unresolved"
     ARTIFACT_DIGEST_MISMATCH = "config.integrity.artifact-digest-mismatch"
 

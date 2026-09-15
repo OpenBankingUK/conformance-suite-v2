@@ -1,0 +1,47 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:e33c58f289f99db3d5e4097252e2a3439b216586bba48cb29306b2ea7e405944",
+      "id": "requirements-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:4e5720d6e05497d709e9bd2f74eea5380b82e98fa4ce8aa8f4f94d1b7936035e",
+      "id": "test-definition-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
+      "id": "obl.pis-domestic-standing-order-v4.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/requirements.json"
+    },
+    {
+      "digest": "sha256:9ef19f111745cd0315f93f83d4c545b9ada63772073a4fdbf55aff838d8e11dc",
+      "id": "obl.pis-domestic-standing-order-v4.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/test-definitions.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.pis-dso-v4.walking-skeleton-suite",
+  "publishedAt": "2026-09-15T08:57:48Z",
+  "releaseVersion": "walking-skeleton.1",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

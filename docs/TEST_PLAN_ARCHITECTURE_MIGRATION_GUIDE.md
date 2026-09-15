@@ -153,6 +153,32 @@ approved-release policy remain unchanged. The foundation verifies caller-supplie
 bytes keyed by artefact kind and ID; a later packaging adapter may resolve
 bundle-relative paths, but the shared validator does not open filesystem paths.
 
+### PR 3 walking-skeleton decisions
+
+The first requirements and test-definition catalogues are an illustrative,
+strict Read/Write v4.0 PIS domestic-standing-order bundle. They prove the
+contract boundary without replacing the current executable PIS catalogue:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-030` | `requirements-catalogue` and `test-definition-catalogue` are separate `1.0` documents. The test catalogue names its requirements catalogue, and semantic validation resolves every capability, endpoint, predefined-input, requirement, normative-reference, and test-dependency ID. | Makes authorship and authority boundaries enforceable while retaining explicit cross-document traceability. |
+| `TPA-031` | The initial requirements-rule vocabulary has one rule, `required-when-capability-selected`, whose target is either an `endpoint` or `predefined-input`. The domestic-standing-order capability is `conditional`; selecting it requires its four OpenAPI operations and frequency input. | Proves conditional scope with an explicit typed rule and avoids inventing a general expression language or unsupported cardinality semantics. |
+| `TPA-032` | Endpoint entries record the exact OpenAPI method, relative path, and operation ID, while requirements separately cite stable normative-reference entries. Legacy FCS rows and parity artefacts are not normative references or production bundle inputs. | Preserves the distinction between technical operation inventory, normative obligation, and migration evidence. |
+| `TPA-033` | `pis.dso.input.frequency` is a non-sensitive logical input with a narrow `standing-order-frequency-v4` shape. Its logical camel-case fields are not request paths. Consent creation and payment submission test definitions independently bind it to the request body with the `pis-v4-standing-order-frequency` transform and an RFC 6901 target. | Demonstrates shared logical input ownership without exposing arbitrary participant request overrides or placing technical bindings in requirements. |
+| `TPA-034` | Every test definition has at least one explicit covered requirement ID. The four-test consent-create, consent-read, order-create, order-read chain is a directed acyclic dependency graph; missing dependencies and cycles are invalid configuration. | Provides deterministic reusable test ordering and prevents requirement coverage from being inferred from names. |
+| `TPA-035` | The walking-skeleton suite descriptor binds the exact requirement schema, test-definition schema, requirements catalogue, and test-definition catalogue bytes. It is an illustrative contract bundle, not an approved product release, and is not registered with the current runtime. | Proves immutable release binding while preserving the characterised builder, compiler, executor, results, and assessment paths for later migration layers. |
+
+This slice deliberately leaves several model gaps visible. Broader capability
+dependencies, mutual exclusion and cardinality, condition types other than
+capability selection, reusable input types beyond v4 standing-order frequency,
+request-template composition, assertion vocabularies beyond HTTP status, and
+full normative PIS coverage require evidence from later slices. Participant
+values, defaults, compilation, execution-manifest rendering, and runtime
+adapters remain owned by PRs 4 and 5. The current frequency shape enforces the
+v4 code list and rejects simultaneous `countPerPeriod` and `pointInTime`; it
+does not claim to encode every type-dependent semantic rule not expressed by
+the source OpenAPI schema.
+
 ## Target flow
 
 ```mermaid

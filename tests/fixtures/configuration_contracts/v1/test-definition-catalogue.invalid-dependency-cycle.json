@@ -1,0 +1,54 @@
+{
+  "documentType": "test-definition-catalogue",
+  "id": "fixture.pis-dso.tests",
+  "requirementsCatalogueId": "obl.pis-domestic-standing-order-v4.requirements",
+  "schemaVersion": "1.0",
+  "testDefinitions": [
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "fixture.status-201",
+          "type": "http-status"
+        }
+      ],
+      "capabilityId": "pis.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.dso.requirement.consent-create"
+      ],
+      "dependencies": [
+        "fixture.pis-dso.consent-read"
+      ],
+      "description": "First fixture node in a dependency cycle.",
+      "id": "fixture.pis-dso.consent-create",
+      "name": "Fixture consent creation",
+      "request": {
+        "endpointId": "pis.dso.endpoint.consent-create",
+        "inputBindings": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "fixture.status-200",
+          "type": "http-status"
+        }
+      ],
+      "capabilityId": "pis.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.dso.requirement.consent-read"
+      ],
+      "dependencies": [
+        "fixture.pis-dso.consent-create"
+      ],
+      "description": "Second fixture node in a dependency cycle.",
+      "id": "fixture.pis-dso.consent-read",
+      "name": "Fixture consent retrieval",
+      "request": {
+        "endpointId": "pis.dso.endpoint.consent-read",
+        "inputBindings": []
+      }
+    }
+  ]
+}
