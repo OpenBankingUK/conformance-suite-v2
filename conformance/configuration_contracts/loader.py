@@ -380,6 +380,15 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
                 "description": capability.description,
                 "id": str(capability.id),
                 "name": capability.name,
+                **(
+                    {
+                        "requiredCapabilityIds": [
+                            str(capability_id) for capability_id in capability.required_capability_ids
+                        ]
+                    }
+                    if capability.required_capability_ids
+                    else {}
+                ),
                 "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
                 "selection": capability.selection,
             }
@@ -1001,6 +1010,10 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
                 selection=cast(str, capability["selection"]),
                 required_endpoint_ids=tuple(
                     StableId(endpoint_id) for endpoint_id in cast(list[str], capability["requiredEndpointIds"])
+                ),
+                required_capability_ids=tuple(
+                    StableId(capability_id)
+                    for capability_id in cast(list[str], capability.get("requiredCapabilityIds", []))
                 ),
             )
             for capability in capabilities
@@ -1717,6 +1730,16 @@ def _validate_requirements_catalogue_semantics(
                         object_kind="endpoint",
                     )
                 )
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
+            if dependency_id not in capability_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        dependency_id,
+                        instance_path=f"/capabilities/{capability_index}/requiredCapabilityIds/{dependency_index}",
+                        object_kind="capability",
+                    )
+                )
+    diagnostics.extend(_capability_dependency_cycle_diagnostics(catalogue))
     for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
         values = (predefined_input.example_value, predefined_input.default_value)
         if any(
@@ -1773,6 +1796,40 @@ def _validate_requirements_catalogue_semantics(
                         object_kind="normative reference",
                     )
                 )
+    return tuple(diagnostics)
+
+
+def _capability_dependency_cycle_diagnostics(
+    catalogue: RequirementsCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    capabilities = {capability.id: capability for capability in catalogue.capabilities}
+    indexes = {capability.id: index for index, capability in enumerate(catalogue.capabilities)}
+    diagnostics: list[ConfigurationDiagnostic] = []
+    state: dict[StableId, int] = {}
+
+    def visit(capability_id: StableId) -> None:
+        state[capability_id] = 1
+        capability = capabilities[capability_id]
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
+            if dependency_id not in capabilities:
+                continue
+            if state.get(dependency_id) == 1:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.DEPENDENCY_CYCLE,
+                        f"Capability dependency {dependency_id!s} creates a cycle",
+                        instance_path=(
+                            f"/capabilities/{indexes[capability_id]}/requiredCapabilityIds/{dependency_index}"
+                        ),
+                    )
+                )
+            elif state.get(dependency_id, 0) == 0:
+                visit(dependency_id)
+        state[capability_id] = 2
+
+    for capability in catalogue.capabilities:
+        if state.get(capability.id, 0) == 0:
+            visit(capability.id)
     return tuple(diagnostics)
 
 

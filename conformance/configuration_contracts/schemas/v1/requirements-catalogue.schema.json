@@ -20,6 +20,13 @@
           "type": "array",
           "uniqueItems": true
         },
+        "requiredCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "selection": {
           "const": "conditional"
         }
@@ -41,8 +48,11 @@
         },
         "method": {
           "enum": [
+            "DELETE",
             "GET",
-            "POST"
+            "PATCH",
+            "POST",
+            "PUT"
           ]
         },
         "operationId": {
@@ -310,7 +320,7 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "requirementsScope": {
-          "const": "pis"
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "version": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
