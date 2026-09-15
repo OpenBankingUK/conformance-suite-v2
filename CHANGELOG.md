@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replacement VRP requirements and test-definition catalogue families for
+  Read/Write v3.1.11 and v4.0.1, authored from the normative VRP profiles and
+  content-addressed OpenAPI operations. Generic capability dependencies and
+  `DELETE`/`PUT`/`PATCH` operation support preserve optional funds confirmation
+  and v4 consent-migration scope, with pinned parity classifications,
+  referential-integrity checks, and deterministic compilation goldens. Central
+  release registry integration remains separate.
 - Replacement PIS requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from content-addressed OpenAPI
   operations and normative Payment Initiation profiles. The shared contracts
