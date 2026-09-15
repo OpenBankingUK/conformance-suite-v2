@@ -372,6 +372,16 @@ instances, manifest steps, safe participant-plan snapshot, and compiler
 findings. Keep independent certification assessment and do not implement
 certificate generation.
 
+Compatibility decision: reports produced through the stable execution-manifest
+boundary add a top-level `traceability` block. Existing smoke-check, legacy
+manifest, compiled-catalogue, and DCR report shapes remain unchanged until
+their participant surfaces migrate. Stable manifest steps identify their
+current result observations explicitly; observations emitted only by the
+legacy OAuth/PSU compatibility engine are listed separately as compatibility
+observations rather than misrepresented as normative test definitions.
+Participant input values are copied only when the trusted requirements
+catalogue classifies them as non-sensitive.
+
 ### PR 7: catalogue-family migration
 
 After the contracts and walking skeleton are accepted, migrate PIS, AIS,

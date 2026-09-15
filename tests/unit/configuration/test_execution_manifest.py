@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import json
 from dataclasses import FrozenInstanceError, replace
+from datetime import UTC, datetime
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
@@ -28,16 +30,21 @@ from conformance.configuration_contracts import (
     prepare_resolved_execution_manifest,
 )
 from conformance.configuration_contracts.models import (
+    CompilationFinding,
+    FindingSeverity,
+    FindingSourceDocument,
     ParticipantPlan,
     RequirementsCatalogue,
     ResolvedPlan,
+    StableId,
     SuiteRelease,
 )
 from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue as ConfigurationTestDefinitionCatalogue,
 )
 from conformance.executor import run_execution_manifest
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
+from conformance.results import StepResult, build_safe_participant_plan_snapshot, build_smoke_check_result
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
@@ -48,7 +55,7 @@ _EXECUTION_MANIFEST_PATH = _FIXTURE_ROOT / "execution-manifest.valid.json"
 
 
 def test_resolved_plan_generates_deterministic_immutable_execution_manifest() -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, _participant_plan, resolved = _resolved_inputs()
 
     first = generate_execution_manifest(resolved, requirements, test_definitions)
     second = generate_execution_manifest(resolved, requirements, test_definitions)
@@ -111,7 +118,7 @@ def test_execution_manifest_rejects_participant_override_syntax() -> None:
 
 
 def test_generation_rejects_redacted_runtime_input() -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, _participant_plan, resolved = _resolved_inputs()
     redacted_input = replace(resolved.predefined_inputs[0], value=None, redacted=True)
 
     with pytest.raises(ExecutionManifestGenerationError, match="is redacted"):
@@ -123,7 +130,7 @@ def test_generation_rejects_redacted_runtime_input() -> None:
 
 
 def test_generation_rejects_catalogue_bytes_not_bound_by_resolved_provenance() -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, _participant_plan, resolved = _resolved_inputs()
     changed_definition = replace(test_definitions.test_definitions[0], name="Changed after resolution")
 
     with pytest.raises(ExecutionManifestGenerationError, match="does not match resolved-plan provenance"):
@@ -138,7 +145,7 @@ def test_generation_rejects_catalogue_bytes_not_bound_by_resolved_provenance() -
 
 
 def test_generation_rejects_non_topological_resolved_work() -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, _participant_plan, resolved = _resolved_inputs()
     first, second, *remaining = resolved.test_instances
 
     with pytest.raises(ExecutionManifestGenerationError, match="appears before dependencies"):
@@ -152,13 +159,14 @@ def test_generation_rejects_non_topological_resolved_work() -> None:
 def test_resolved_execution_preparation_binds_manifest_to_legacy_read_write(
     tmp_path: Path,
 ) -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
 
     prepared = prepare_resolved_execution_manifest(
         resolved,
         requirements,
         test_definitions,
         PIS_PAYMENT_CATALOGUE,
+        participant_plan=participant_plan,
         runtime_inputs=_legacy_runtime_inputs(),
         runtime_input_base_dir=tmp_path,
     )
@@ -172,6 +180,8 @@ def test_resolved_execution_preparation_binds_manifest_to_legacy_read_write(
         "pis-v4-domestic-standing-order-read",
     )
     assert prepared.runtime_inputs["pisStandingOrderFrequencyType"] == "WEEK"
+    assert prepared.result_traceability is not None
+    assert prepared.result_traceability.participant_plan_snapshot["id"] == "participant.pis-dso.example"
 
     with pytest.raises(ExecutionManifestGenerationError):
         generate_execution_manifest(
@@ -182,12 +192,13 @@ def test_resolved_execution_preparation_binds_manifest_to_legacy_read_write(
 
 
 def test_compatibility_binding_rejects_compiled_execution_drift(tmp_path: Path) -> None:
-    _suite, requirements, test_definitions, resolved = _resolved_inputs()
+    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
     prepared = prepare_resolved_execution_manifest(
         resolved,
         requirements,
         test_definitions,
         PIS_PAYMENT_CATALOGUE,
+        participant_plan=participant_plan,
         runtime_inputs=_legacy_runtime_inputs(),
         runtime_input_base_dir=tmp_path,
     )
@@ -206,10 +217,183 @@ def test_compatibility_binding_rejects_compiled_execution_drift(tmp_path: Path) 
         run_execution_manifest(drifted, client=client)
 
 
+def test_preparation_rejects_mismatched_participant_snapshot(tmp_path: Path) -> None:
+    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
+    participant_input = participant_plan.predefined_inputs[0]
+    changed_plan = replace(
+        participant_plan,
+        predefined_inputs=(
+            replace(
+                participant_input,
+                value=replace(participant_input.value, point_in_time="04"),
+            ),
+        ),
+    )
+
+    with pytest.raises(ResolvedPlanAdapterError, match="differs from the resolved plan"):
+        prepare_resolved_execution_manifest(
+            resolved,
+            requirements,
+            test_definitions,
+            PIS_PAYMENT_CATALOGUE,
+            participant_plan=changed_plan,
+            runtime_inputs=_legacy_runtime_inputs(),
+            runtime_input_base_dir=tmp_path,
+        )
+
+
+@pytest.mark.parametrize(
+    ("failed_observation_id", "expected_status"),
+    [
+        (None, "passed"),
+        ("pis-v4-domestic-standing-order-create-request", "failed"),
+    ],
+)
+def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
+    tmp_path: Path,
+    failed_observation_id: str | None,
+    expected_status: str,
+) -> None:
+    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
+    prepared = prepare_resolved_execution_manifest(
+        resolved,
+        requirements,
+        test_definitions,
+        PIS_PAYMENT_CATALOGUE,
+        participant_plan=participant_plan,
+        runtime_inputs=_legacy_runtime_inputs(),
+        runtime_input_base_dir=tmp_path,
+    )
+    source = prepared.result_traceability
+    assert source is not None
+    assert prepared.manifest is not None
+    observations = [
+        StepResult(name="setup-token-pis-payment-access", status="passed", message="setup passed"),
+        *[
+            StepResult(
+                name=observation_id,
+                status="failed" if observation_id == failed_observation_id else "passed",
+                message="request completed",
+                mandatory=True,
+            )
+            for observation_id in source.result_observation_id_by_manifest_step_id.values()
+        ],
+    ]
+
+    first = build_smoke_check_result(
+        observations,
+        started_at=datetime.now(UTC),
+        compiled_plan=prepared.compiled_plan,
+        result_traceability=source,
+    ).to_json_object()
+    second_traceability = build_smoke_check_result(
+        observations,
+        started_at=datetime.now(UTC),
+        compiled_plan=prepared.compiled_plan,
+        result_traceability=source,
+    ).to_json_object()["traceability"]
+
+    assert first["status"] == expected_status
+    assert first["traceability"] == second_traceability
+    traceability = cast(JsonObject, first["traceability"])
+    assert traceability["suiteRelease"] == {
+        "id": "obl.pis-dso-v4.walking-skeleton-suite",
+        "version": "walking-skeleton.1",
+        "publishedAt": "2026-09-15T08:57:48Z",
+    }
+    participant_snapshot = cast(JsonObject, traceability["participantPlanSnapshot"])
+    assert participant_snapshot["id"] == "participant.pis-dso.example"
+    assert participant_snapshot["predefinedInputs"] == [
+        {
+            "inputId": "pis.dso.input.frequency",
+            "redacted": False,
+            "value": {"frequencyType": "WEEK", "pointInTime": "03"},
+        }
+    ]
+    assert [item["id"] for item in cast("list[JsonObject]", traceability["requirements"])] == [
+        requirement.id for requirement in resolved.requirements
+    ]
+    assert [item["id"] for item in cast("list[JsonObject]", traceability["testDefinitions"])] == [
+        test_instance.test_definition_id for test_instance in resolved.test_instances
+    ]
+    assert [item["id"] for item in cast("list[JsonObject]", traceability["compiledTestInstances"])] == [
+        test_instance.id for test_instance in resolved.test_instances
+    ]
+    execution_manifest = cast(JsonObject, traceability["executionManifest"])
+    manifest_steps = cast("list[JsonObject]", execution_manifest["steps"])
+    assert [step["id"] for step in manifest_steps] == [step.id for step in prepared.manifest.steps]
+    assert [step["resultObservationId"] for step in manifest_steps] == list(
+        source.result_observation_id_by_manifest_step_id.values()
+    )
+    assert [step["resultStatus"] for step in manifest_steps] == [
+        "failed" if step["resultObservationId"] == failed_observation_id else "passed" for step in manifest_steps
+    ]
+    assert traceability["compatibilityObservations"] == [
+        {"resultObservationId": "setup-token-pis-payment-access", "status": "passed"}
+    ]
+    assert traceability["compilerFindings"] == []
+
+
+def test_result_traceability_preserves_compiler_findings(tmp_path: Path) -> None:
+    _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
+    prepared = prepare_resolved_execution_manifest(
+        resolved,
+        requirements,
+        test_definitions,
+        PIS_PAYMENT_CATALOGUE,
+        participant_plan=participant_plan,
+        runtime_inputs=_legacy_runtime_inputs(),
+        runtime_input_base_dir=tmp_path,
+    )
+    source = prepared.result_traceability
+    assert source is not None
+    warning = CompilationFinding(
+        code=StableId("compiler.policy.warning"),
+        severity=FindingSeverity.WARNING,
+        message="Illustrative retained warning",
+        source_document=FindingSourceDocument.PARTICIPANT_PLAN,
+        instance_path="/selectedCapabilityIds/0",
+        related_ids=(StableId("pis.domestic-standing-order"),),
+    )
+    source = replace(source, resolved_plan=replace(resolved, findings=(warning,)))
+
+    rendered = build_smoke_check_result(
+        [],
+        started_at=datetime.now(UTC),
+        result_traceability=source,
+    ).to_json_object()
+    traceability = cast(JsonObject, rendered["traceability"])
+
+    assert traceability["compilerFindings"] == [
+        {
+            "code": "compiler.policy.warning",
+            "severity": "warning",
+            "message": "Illustrative retained warning",
+            "sourceDocument": "participant-plan",
+            "instancePath": "/selectedCapabilityIds/0",
+            "relatedIds": ["pis.domestic-standing-order"],
+        }
+    ]
+
+
+def test_participant_plan_snapshot_omits_sensitive_values() -> None:
+    _suite, requirements, _test_definitions, participant_plan, _resolved = _resolved_inputs()
+    input_definition = replace(requirements.predefined_inputs[0], sensitivity="sensitive")
+
+    snapshot = build_safe_participant_plan_snapshot(
+        participant_plan,
+        replace(requirements, predefined_inputs=(input_definition,)),
+    )
+
+    assert snapshot["predefinedInputs"] == [{"inputId": "pis.dso.input.frequency", "redacted": True}]
+    assert "03" not in json.dumps(snapshot)
+
+
 def _resolved_inputs() -> tuple[
     SuiteRelease,
     RequirementsCatalogue,
     ConfigurationTestDefinitionCatalogue,
+    ParticipantPlan,
     ResolvedPlan,
 ]:
     suite = load_suite_release(_BUNDLE_ROOT / "suite-release.json")
@@ -220,6 +404,7 @@ def _resolved_inputs() -> tuple[
         suite,
         requirements,
         test_definitions,
+        participant_plan,
         compile_participant_plan(suite, requirements, test_definitions, participant_plan),
     )
 

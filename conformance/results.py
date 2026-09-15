@@ -16,6 +16,12 @@ from conformance.version import REPORT_METADATA_VERSION, resolve_conformance_too
 if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
     from conformance.catalogue import CompiledTestPlan
+    from conformance.configuration_contracts.models import (
+        ExecutionManifest,
+        ParticipantPlan,
+        RequirementsCatalogue,
+        ResolvedPlan,
+    )
     from conformance.test_plan import TestPlan
 
 CheckStatus = Literal["passed", "failed", "warn", "skipped"]
@@ -79,6 +85,48 @@ class StepResult:
 
 
 @dataclass(frozen=True)
+class ResultTraceabilitySource:
+    """Immutable inputs used to render replacement-architecture traceability.
+
+    Attributes:
+        execution_manifest: Stable runner-facing manifest used for the run.
+        resolved_plan: Compiler output that selected and instantiated the work.
+        participant_plan_snapshot: Secret-safe snapshot of participant intent.
+        result_observation_id_by_manifest_step_id: Compatibility mapping from
+            stable manifest step IDs to current public result step names.
+    """
+
+    execution_manifest: ExecutionManifest
+    resolved_plan: ResolvedPlan
+    participant_plan_snapshot: Mapping[str, JsonValue]
+    result_observation_id_by_manifest_step_id: Mapping[str, str]
+
+    def __post_init__(self) -> None:
+        """Detach mutable mappings and require one observation ID per manifest step."""
+        provenance = self.execution_manifest.provenance
+        if provenance.resolved_plan_id != self.resolved_plan.id:
+            raise ValueError("Execution-manifest provenance must identify the supplied resolved plan")
+        if self.participant_plan_snapshot.get("id") != str(provenance.participant_plan_id):
+            raise ValueError("Participant-plan snapshot must match execution-manifest provenance")
+        manifest_step_ids = {str(step.id) for step in self.execution_manifest.steps}
+        observation_mapping = dict(self.result_observation_id_by_manifest_step_id)
+        if set(observation_mapping) != manifest_step_ids:
+            raise ValueError("Result observation mapping must cover every execution-manifest step exactly")
+        if len(set(observation_mapping.values())) != len(observation_mapping):
+            raise ValueError("Result observation IDs must be unique")
+        object.__setattr__(
+            self,
+            "participant_plan_snapshot",
+            MappingProxyType(deepcopy(dict(self.participant_plan_snapshot))),
+        )
+        object.__setattr__(
+            self,
+            "result_observation_id_by_manifest_step_id",
+            MappingProxyType(observation_mapping),
+        )
+
+
+@dataclass(frozen=True)
 class SmokeCheckResult:
     """Complete result for a model-bank smoke-check execution.
 
@@ -110,6 +158,8 @@ class SmokeCheckResult:
             metadata should be embedded in the generated report.
         non_certifying_reasons: Additional catalogue-plan reasons that block
             certification eligibility even when mandatory executed steps pass.
+        result_traceability: Optional replacement-architecture provenance for
+            stable execution-manifest runs. Legacy result shapes omit it.
     """
 
     status: CheckStatus
@@ -122,6 +172,7 @@ class SmokeCheckResult:
     certification_coverage: CertificationCoverage = "partial"
     compiled_plan: CompiledTestPlan | None = None
     non_certifying_reasons: tuple[str, ...] = ()
+    result_traceability: ResultTraceabilitySource | None = None
 
     def to_json_object(self) -> JsonObject:
         """Convert the smoke-check result into the public JSON report shape.
@@ -157,6 +208,11 @@ class SmokeCheckResult:
             body["plan"] = dict(self.plan_summary)
         if self.compiled_plan is not None:
             body["catalogue"] = _compiled_plan_to_json_object(self.compiled_plan, steps=self.steps)
+        if self.result_traceability is not None:
+            body["traceability"] = _result_traceability_to_json_object(
+                self.result_traceability,
+                steps=self.steps,
+            )
         return body
 
 
@@ -169,6 +225,7 @@ def build_smoke_check_result(
     certification_coverage: CertificationCoverage = "partial",
     compiled_plan: CompiledTestPlan | None = None,
     non_certifying_reasons: tuple[str, ...] = (),
+    result_traceability: ResultTraceabilitySource | None = None,
 ) -> SmokeCheckResult:
     """Build an aggregate smoke-check result from collected step outcomes.
 
@@ -194,6 +251,8 @@ def build_smoke_check_result(
             metadata should be embedded in the top-level ``catalogue`` block.
         non_certifying_reasons: Additional catalogue-plan reasons that should
             block certification eligibility.
+        result_traceability: Optional stable result provenance. Omit for legacy
+            manifest, compiled-catalogue, DCR, and smoke-check executions.
 
     Returns:
         Immutable smoke-check result with finished timestamp and aggregate status.
@@ -220,7 +279,67 @@ def build_smoke_check_result(
         certification_coverage=certification_coverage,
         compiled_plan=compiled_plan,
         non_certifying_reasons=non_certifying_reasons,
+        result_traceability=result_traceability,
     )
+
+
+def build_safe_participant_plan_snapshot(
+    participant_plan: ParticipantPlan,
+    requirements_catalogue: RequirementsCatalogue,
+) -> JsonObject:
+    """Build a participant-intent snapshot without persisting sensitive values.
+
+    Input sensitivity remains owned by the trusted requirements catalogue. An
+    unknown input is rejected rather than copied without a classification.
+
+    Args:
+        participant_plan: Participant-authored plan used for compilation.
+        requirements_catalogue: Trusted definitions classifying plan inputs.
+
+    Returns:
+        Detached JSON object safe to embed in generated result evidence.
+
+    Raises:
+        ValueError: If the participant plan references an unclassified input.
+    """
+    input_definitions = {
+        predefined_input.id: predefined_input for predefined_input in requirements_catalogue.predefined_inputs
+    }
+    snapshot_inputs: list[JsonValue] = []
+    for participant_input in participant_plan.predefined_inputs:
+        input_definition = input_definitions.get(participant_input.input_id)
+        if input_definition is None:
+            raise ValueError(
+                f"Participant-plan input {participant_input.input_id!s} has no trusted sensitivity classification"
+            )
+        redacted = input_definition.sensitivity != "non-sensitive"
+        snapshot_input: JsonObject = {
+            "inputId": str(participant_input.input_id),
+            "redacted": redacted,
+        }
+        if not redacted:
+            value = participant_input.value
+            snapshot_input["value"] = {
+                "frequencyType": value.frequency_type,
+                **({"countPerPeriod": value.count_per_period} if value.count_per_period is not None else {}),
+                **({"pointInTime": value.point_in_time} if value.point_in_time is not None else {}),
+            }
+        snapshot_inputs.append(snapshot_input)
+    return {
+        "documentType": participant_plan.document_type,
+        "id": str(participant_plan.id),
+        "predefinedInputs": snapshot_inputs,
+        "schemaVersion": participant_plan.schema_version,
+        "scheme": str(participant_plan.scheme),
+        "securityProfile": participant_plan.security_profile,
+        "selectedCapabilityIds": [str(capability_id) for capability_id in participant_plan.selected_capability_ids],
+        "specification": {
+            "id": str(participant_plan.specification.id),
+            "requirementsScope": str(participant_plan.specification.requirements_scope),
+            "version": participant_plan.specification.version,
+        },
+        "suiteReleaseId": str(participant_plan.suite_release_id),
+    }
 
 
 def mark_development_result_evidence(validation_result: JsonObject, result_object: JsonObject) -> None:
@@ -469,6 +588,103 @@ def _compiled_plan_to_json_object(
     if trace_groups:
         result["traceGroups"] = trace_groups
     return result
+
+
+def _result_traceability_to_json_object(
+    source: ResultTraceabilitySource,
+    *,
+    steps: tuple[StepResult, ...],
+) -> JsonObject:
+    """Render complete stable-ID relationships for one generated result."""
+    manifest = source.execution_manifest
+    resolved_plan = source.resolved_plan
+    result_by_observation_id = {step.name: step for step in steps}
+    mapped_observation_ids = set(source.result_observation_id_by_manifest_step_id.values())
+
+    test_definitions: list[JsonValue] = []
+    seen_test_definition_ids: set[str] = set()
+    for manifest_step in manifest.steps:
+        test_definition_id = str(manifest_step.test_definition_id)
+        if test_definition_id in seen_test_definition_ids:
+            continue
+        seen_test_definition_ids.add(test_definition_id)
+        test_definitions.append(
+            {
+                "id": test_definition_id,
+                "coveredRequirementIds": [
+                    str(requirement_id) for requirement_id in manifest_step.covered_requirement_ids
+                ],
+            }
+        )
+
+    manifest_steps: list[JsonValue] = []
+    for manifest_step in manifest.steps:
+        manifest_step_id = str(manifest_step.id)
+        observation_id = source.result_observation_id_by_manifest_step_id[manifest_step_id]
+        observation = result_by_observation_id.get(observation_id)
+        manifest_steps.append(
+            {
+                "id": manifest_step_id,
+                "testInstanceId": str(manifest_step.test_instance_id),
+                "testDefinitionId": str(manifest_step.test_definition_id),
+                "coveredRequirementIds": [
+                    str(requirement_id) for requirement_id in manifest_step.covered_requirement_ids
+                ],
+                "resultObservationId": observation_id,
+                "resultStatus": observation.status if observation is not None else "missing",
+            }
+        )
+
+    provenance = manifest.provenance
+    return {
+        "suiteRelease": {
+            "id": str(provenance.suite_release_id),
+            "version": provenance.suite_release_version,
+            "publishedAt": provenance.suite_published_at,
+        },
+        "participantPlanSnapshot": deepcopy(dict(source.participant_plan_snapshot)),
+        "requirements": [
+            {
+                "id": str(requirement.id),
+                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
+            }
+            for requirement in resolved_plan.requirements
+        ],
+        "testDefinitions": test_definitions,
+        "compiledTestInstances": [
+            {
+                "id": str(test_instance.id),
+                "testDefinitionId": str(test_instance.test_definition_id),
+                "dependencyIds": [str(dependency_id) for dependency_id in test_instance.dependency_ids],
+                "coveredRequirementIds": [
+                    str(requirement_id) for requirement_id in test_instance.covered_requirement_ids
+                ],
+            }
+            for test_instance in resolved_plan.test_instances
+        ],
+        "executionManifest": {
+            "id": str(manifest.id),
+            "schemaVersion": manifest.schema_version,
+            "resolvedPlanId": str(provenance.resolved_plan_id),
+            "steps": manifest_steps,
+        },
+        "compilerFindings": [
+            {
+                "code": str(finding.code),
+                "severity": finding.severity.value,
+                "message": finding.message,
+                "sourceDocument": finding.source_document.value,
+                "instancePath": finding.instance_path,
+                "relatedIds": [str(related_id) for related_id in finding.related_ids],
+            }
+            for finding in resolved_plan.findings
+        ],
+        "compatibilityObservations": [
+            {"resultObservationId": step.name, "status": step.status}
+            for step in steps
+            if step.name not in mapped_observation_ids
+        ],
+    }
 
 
 def _compiled_trace_groups_to_json_object(

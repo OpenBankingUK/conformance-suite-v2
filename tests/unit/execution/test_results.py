@@ -158,6 +158,7 @@ def test_catalogue_result_serializes_capability_traceability_and_safe_runtime_sn
     ]
     assert eligibility["eligible"] is False
     assert eligibility["reason"] == "Assertion override supplied for accounts-balances.status-200: diagnostic import"
+    assert "traceability" not in rendered
 
 
 def test_eligibility_block_eligible_when_all_mandatory_pass(monkeypatch: pytest.MonkeyPatch) -> None:

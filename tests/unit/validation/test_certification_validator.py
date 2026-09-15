@@ -132,6 +132,20 @@ def test_parse_submitted_report_rejects_invalid_step_status() -> None:
         parse_submitted_report(raw_report)
 
 
+def test_parse_submitted_report_remains_independent_of_result_traceability() -> None:
+    raw_report = _report_json(tool_version="1.2.3", steps=(("discovery", "passed"),))
+    raw_report["traceability"] = {
+        "suiteRelease": {"id": "suite.example", "version": "1.0"},
+        "executionManifest": {"id": "manifest.example"},
+    }
+
+    report = parse_submitted_report(raw_report)
+
+    assert report.report_version == "1.0"
+    assert report.tool_version == "1.2.3"
+    assert [(step.step_id, step.status) for step in report.steps] == [("discovery", "passed")]
+
+
 def test_parse_approved_release_policy_rejects_wrong_schema_version() -> None:
     with pytest.raises(CertificationValidationError, match="schemaVersion"):
         parse_approved_release_policy({"schemaVersion": "v2", "approvedToolVersions": ["1.2.3"]})
