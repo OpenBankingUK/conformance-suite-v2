@@ -11,6 +11,32 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Strict `participant-plan` and deterministic `resolved-plan` contracts for the
+  PIS domestic-standing-order walking skeleton, including inferred endpoint and
+  requirement scope, predefined-frequency resolution, dependency expansion,
+  stable compiler findings, content-addressed provenance, and an explicit
+  adapter to the existing compiled PIS execution path.
+- Strict, configuration-driven Read/Write v4.0 PIS domestic-standing-order
+  requirements and test-definition catalogues, including conditional endpoint
+  obligations, normative references, a predefined logical frequency input,
+  test-owned request bindings, explicit requirement coverage, dependency-cycle
+  validation, and exact suite-release binding. The walking skeleton remains
+  isolated from the existing runtime path.
+- Versioned external schemas and immutable typed loading for the replacement
+  configuration-contract foundation, including common document envelopes,
+  lowercase opaque stable IDs, a document-specific provenance boundary,
+  suite-release descriptors with exact-byte artefact binding, deterministic
+  serialization, and structured diagnostics with stable codes and RFC 6901
+  instance paths. Golden valid and invalid fixtures cover unknown properties,
+  invalid and duplicate IDs, unsupported versions, unsafe relative paths,
+  unresolved artefacts, and digest mismatches without changing current runtime
+  consumers.
+- Golden characterization fixtures for the current canonical-plan pipeline,
+  covering the complete AIS, PIS, CBPII, and VRP support matrix on Read/Write
+  v3.1.11 and v4.0.1, PIS standing-order journeys on both versions, AIS account
+  transactions, full DCR 3.4 registration management, compilation and
+  dependency traceability, synthetic manifests, result evidence, and
+  certification eligibility.
 - First-class Open Banking UK Read/Write v3.1.11 support for AIS, PIS, CBPII,
   and VRP, with dedicated v3.1 catalogue boundaries, pinned v3.1.11 OpenAPI
   schemas, explicit request-signing metadata, and a machine-checkable strict

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "1.0",
+  "specification": {
+    "family": "OBL_READ_WRITE",
+    "version": "4.0.1",
+    "profile": "FAPI1_ADVANCED"
+  },
+  "executionMode": "certification",
+  "securityEnvironment": {
+    "discoveryUrl": "https://auth.example.com/.well-known/openid-configuration",
+    "resourceBaseUrl": "https://resource.example.com"
+  },
+  "resourceGroups": [
+    {
+      "id": "AIS",
+      "label": "Account transactions",
+      "endpoints": [
+        {
+          "method": "GET",
+          "path": "/open-banking/v4.0/aisp/accounts/{AccountId}/transactions",
+          "capabilities": [
+            "ais.transactions.date-range-filtering"
+          ]
+        }
+      ]
+    }
+  ],
+  "businessTestData": {
+    "ais": {
+      "accountIds": [
+        "account-123"
+      ],
+      "transactionFromDate": "2026-08-01T00:00:00Z",
+      "transactionToDate": "2026-08-31T23:59:59Z"
+    }
+  },
+  "metadata": {
+    "aspspName": "Characterization Bank"
+  }
+}

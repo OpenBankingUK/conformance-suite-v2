@@ -1,0 +1,71 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:b8904ad858dbde578e7ab767e22aa450e69eccf0da4a665b49b6133d3e254f1c",
+      "id": "configuration-common-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/common.schema.json"
+    },
+    {
+      "digest": "sha256:30d9b1a8d998745cad865cf71324d9bf27559249364cfbe027c4d340c11722f9",
+      "id": "requirements-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:4e5720d6e05497d709e9bd2f74eea5380b82e98fa4ce8aa8f4f94d1b7936035e",
+      "id": "test-definition-catalogue-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+    },
+    {
+      "digest": "sha256:da33ef873b518543ebfbf1f1e95446f9db6de744071d4cc4b0aaee1be11912dc",
+      "id": "participant-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
+    },
+    {
+      "digest": "sha256:31ceef00feff91d22497fad87b5281a109257e66a27b28b3e08edf824e51264a",
+      "id": "resolved-plan-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
+    },
+    {
+      "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
+      "id": "obl.pis-domestic-standing-order-v4.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/requirements.json"
+    },
+    {
+      "digest": "sha256:9ef19f111745cd0315f93f83d4c545b9ada63772073a4fdbf55aff838d8e11dc",
+      "id": "obl.pis-domestic-standing-order-v4.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/test-definitions.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.pis-dso-v4.walking-skeleton-suite",
+  "publishedAt": "2026-09-15T08:57:48Z",
+  "releaseVersion": "walking-skeleton.2",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

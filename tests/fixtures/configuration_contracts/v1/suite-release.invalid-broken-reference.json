@@ -1,0 +1,23 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+      "id": "missing-schema-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/missing.schema.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl-suite-with-missing-reference",
+  "publishedAt": "2026-09-14T14:30:00Z",
+  "releaseVersion": "2026.09-broken",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

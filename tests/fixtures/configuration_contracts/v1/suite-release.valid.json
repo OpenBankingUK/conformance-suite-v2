@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:b8904ad858dbde578e7ab767e22aa450e69eccf0da4a665b49b6133d3e254f1c",
+      "id": "configuration-common-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/common.schema.json"
+    },
+    {
+      "digest": "sha256:9cdc3dcc4759a54dd3c0a93d6b95595fcbec04fb31401969a6898a1011513bfc",
+      "id": "suite-release-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/suite-release.schema.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl-suite-2026-09",
+  "publishedAt": "2026-09-14T14:30:00Z",
+  "releaseVersion": "2026.09",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

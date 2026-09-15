@@ -110,8 +110,60 @@ participant-supplied secret values until launch or explicit export.
 
 ## Catalogue architecture
 
+The accepted target boundaries and staged replacement sequence are recorded in
+the [Test Plan Architecture Migration Guide](TEST_PLAN_ARCHITECTURE_MIGRATION_GUIDE.md).
+The current modules below remain authoritative until their owning migration
+layers explicitly replace them.
+
 The participant-facing source of truth is now a canonical JSON-first test plan,
 not checked-in manifest examples or config-selected suites.
+
+The replacement architecture's shared configuration foundation lives in
+`conformance.configuration_contracts`. External JSON Schemas under
+`configuration_contracts/schemas/v1/` are the sole structural authority for
+new contract documents. Loaders schema-validate before constructing frozen,
+slotted models and report immutable diagnostics with stable codes and RFC 6901
+instance paths. The initial `suite-release` `1.0` descriptor binds compatible
+tool releases and referenced artefacts by logical ID, kind, media type, schema
+version, normalized release-bundle-relative path, and exact-byte SHA-256 digest.
+The validator accepts caller-supplied bytes and does not resolve filesystem or
+remote resources. Provenance is document-specific rather than mandatory in the
+common envelope.
+
+The illustrative Read/Write v4.0 PIS domestic-standing-order bundle under
+`configuration_contracts/bundles/pis-domestic-standing-order-v4_0/` adds
+separate strict requirements and test-definition documents. The requirements
+catalogue owns conditional endpoint obligations, normative citations, and the
+logical frequency input. The test catalogue owns explicit requirement
+coverage, request bindings, HTTP assertions, and the four-test dependency DAG.
+`validate_catalogue_references()` checks references across the documents, and
+the bundle's suite-release descriptor binds the shared, catalogue,
+participant-plan, and resolved-plan schemas plus both catalogues by exact-byte
+digest.
+
+`load_participant_plan()` accepts only the narrow `participant-plan` `1.0`
+walking-skeleton contract. `resolve_participant_plan()` returns deterministic
+scope, input, dependency, finding, and provenance evidence even for invalid
+intent; `compile_participant_plan()` enforces strict MVP policy by raising with
+that resolved plan when an error finding exists.
+`adapt_resolved_plan_to_compiled_execution()` is the temporary bridge to the
+existing v4 PIS `CompiledTestPlan` path. The caller supplies current
+security/environment runtime values separately; the adapter renders the
+resolved logical frequency through test-owned bindings and does not expose
+developer-mode selection or request overrides.
+
+Legacy parity contracts, manifests, assertions, and data files have a separate
+migration role. Independently authored replacement catalogues are compared
+against those pinned baselines before release, and the comparison report is
+release-gate evidence. Production suite releases bind only the replacement
+configuration artefacts; validators, compilers, manifests, and results do not
+gain runtime dependencies on legacy comparison inputs.
+
+The replacement plan is intentionally not wired into the current builder, CLI,
+REST API, catalogue registry, result output, or approved-release policy. Those
+remain on their characterised contracts until their owning migration layers
+cut over. The explicit PIS compatibility adapter is the only current execution
+bridge.
 
 Core modules:
 
