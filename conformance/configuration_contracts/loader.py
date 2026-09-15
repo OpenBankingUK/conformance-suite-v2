@@ -28,15 +28,30 @@ from conformance.configuration_contracts.diagnostics import (
 from conformance.configuration_contracts.models import (
     ArtifactReference,
     Capability,
+    CompilationFinding,
     Endpoint,
+    FindingSeverity,
+    FindingSourceDocument,
     HttpMethod,
+    InputResolutionSource,
     NormativeReference,
+    ParticipantInput,
+    ParticipantPlan,
     PredefinedInput,
     RequestInputBinding,
     Requirement,
     RequirementRule,
     RequirementsCatalogue,
     RequirementTargetType,
+    ResolutionReason,
+    ResolvedCapability,
+    ResolvedEndpoint,
+    ResolvedPlan,
+    ResolvedPlanProvenance,
+    ResolvedPredefinedInput,
+    ResolvedRequirement,
+    ResolvedTestInstance,
+    SelectionOrigin,
     Sha256Digest,
     SpecificationReference,
     StableId,
@@ -56,6 +71,9 @@ SUITE_RELEASE_SCHEMA_VERSION = "1.0"
 CATALOGUE_SCHEMA_VERSION = "1.0"
 """Requirements and test-definition document version supported by the skeleton."""
 
+PLAN_SCHEMA_VERSION = "1.0"
+"""Participant and resolved-plan document version supported by the skeleton."""
+
 _SCHEMA_ROOT = Path(__file__).resolve().parent / "schemas" / "v1"
 _COMMON_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json"
 _SUITE_RELEASE_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/suite-release.schema.json"
@@ -65,11 +83,15 @@ _REQUIREMENTS_CATALOGUE_SCHEMA_ID = (
 _TEST_DEFINITION_CATALOGUE_SCHEMA_ID = (
     "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json"
 )
+_PARTICIPANT_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/participant-plan.schema.json"
+_RESOLVED_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/resolved-plan.schema.json"
 _SCHEMA_PATHS = {
     _COMMON_SCHEMA_ID: _SCHEMA_ROOT / "common.schema.json",
     _SUITE_RELEASE_SCHEMA_ID: _SCHEMA_ROOT / "suite-release.schema.json",
     _REQUIREMENTS_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "requirements-catalogue.schema.json",
     _TEST_DEFINITION_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "test-definition-catalogue.schema.json",
+    _PARTICIPANT_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "participant-plan.schema.json",
+    _RESOLVED_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "resolved-plan.schema.json",
 }
 
 
@@ -91,6 +113,16 @@ def load_requirements_catalogue(path: Path) -> RequirementsCatalogue:
 def load_test_definition_catalogue(path: Path) -> TestDefinitionCatalogue:
     """Load a test-definition catalogue into immutable typed data."""
     return parse_test_definition_catalogue(_load_json_document(path))
+
+
+def load_participant_plan(path: Path) -> ParticipantPlan:
+    """Load a participant plan into immutable typed data."""
+    return parse_participant_plan(_load_json_document(path))
+
+
+def load_resolved_plan(path: Path) -> ResolvedPlan:
+    """Load a generated resolved plan into immutable typed data."""
+    return parse_resolved_plan(_load_json_document(path))
 
 
 def parse_suite_release(raw_document: object) -> SuiteRelease:
@@ -149,6 +181,34 @@ def parse_test_definition_catalogue(raw_document: object) -> TestDefinitionCatal
 
     document = _test_definition_catalogue_from_schema_valid_document(cast(dict[str, object], raw_document))
     semantic_diagnostics = _validate_test_definition_catalogue_semantics(document)
+    if semantic_diagnostics:
+        raise ConfigurationContractError(semantic_diagnostics)
+    return document
+
+
+def parse_participant_plan(raw_document: object) -> ParticipantPlan:
+    """Validate and map one schema-versioned participant plan."""
+    _reject_unsupported_plan_schema_version(raw_document, document_name="participant plan")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_PARTICIPANT_PLAN_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+
+    document = _participant_plan_from_schema_valid_document(cast(dict[str, object], raw_document))
+    semantic_diagnostics = _validate_participant_plan_semantics(document)
+    if semantic_diagnostics:
+        raise ConfigurationContractError(semantic_diagnostics)
+    return document
+
+
+def parse_resolved_plan(raw_document: object) -> ResolvedPlan:
+    """Validate and map one schema-versioned generated resolved plan."""
+    _reject_unsupported_plan_schema_version(raw_document, document_name="resolved plan")
+    validation_diagnostics = _validate_document(raw_document, schema_id=_RESOLVED_PLAN_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+
+    document = _resolved_plan_from_schema_valid_document(cast(dict[str, object], raw_document))
+    semantic_diagnostics = _validate_resolved_plan_semantics(document)
     if semantic_diagnostics:
         raise ConfigurationContractError(semantic_diagnostics)
     return document
@@ -312,17 +372,24 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
             for reference in catalogue.normative_references
         ],
         "predefinedInputs": [
-            {
-                "description": predefined_input.description,
-                "exampleValue": _frequency_to_document(predefined_input.example_value),
-                "id": str(predefined_input.id),
-                "label": predefined_input.label,
-                "requiredForCapabilityIds": [
-                    str(capability_id) for capability_id in predefined_input.required_for_capability_ids
-                ],
-                "sensitivity": predefined_input.sensitivity,
-                "valueType": str(predefined_input.value_type),
-            }
+            _without_none_values(
+                {
+                    "description": predefined_input.description,
+                    "defaultValue": (
+                        None
+                        if predefined_input.default_value is None
+                        else _frequency_to_document(predefined_input.default_value)
+                    ),
+                    "exampleValue": _frequency_to_document(predefined_input.example_value),
+                    "id": str(predefined_input.id),
+                    "label": predefined_input.label,
+                    "requiredForCapabilityIds": [
+                        str(capability_id) for capability_id in predefined_input.required_for_capability_ids
+                    ],
+                    "sensitivity": predefined_input.sensitivity,
+                    "valueType": str(predefined_input.value_type),
+                }
+            )
             for predefined_input in catalogue.predefined_inputs
         ],
         "requirements": [
@@ -392,6 +459,112 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
     }
 
 
+def participant_plan_to_document(plan: ParticipantPlan) -> JsonObject:
+    """Convert an immutable participant plan to its wire shape."""
+    return {
+        "documentType": plan.document_type,
+        "id": str(plan.id),
+        "predefinedInputs": [
+            {"inputId": str(participant_input.input_id), "value": _frequency_to_document(participant_input.value)}
+            for participant_input in plan.predefined_inputs
+        ],
+        "schemaVersion": plan.schema_version,
+        "scheme": str(plan.scheme),
+        "securityProfile": plan.security_profile,
+        "selectedCapabilityIds": [str(capability_id) for capability_id in plan.selected_capability_ids],
+        "specification": _specification_to_document(plan.specification),
+        "suiteReleaseId": str(plan.suite_release_id),
+    }
+
+
+def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
+    """Convert a generated resolved plan to its deterministic wire shape."""
+    return {
+        "capabilities": [
+            {
+                "id": str(capability.id),
+                "origin": capability.origin.value,
+                "reasons": [_resolution_reason_to_document(reason) for reason in capability.reasons],
+            }
+            for capability in plan.capabilities
+        ],
+        "documentType": plan.document_type,
+        "endpoints": [
+            {
+                "id": str(endpoint.id),
+                "origin": endpoint.origin.value,
+                "reasons": [_resolution_reason_to_document(reason) for reason in endpoint.reasons],
+                "requirementIds": [str(requirement_id) for requirement_id in endpoint.requirement_ids],
+            }
+            for endpoint in plan.endpoints
+        ],
+        "findings": [
+            {
+                "code": str(finding.code),
+                "instancePath": finding.instance_path,
+                "message": finding.message,
+                "relatedIds": [str(related_id) for related_id in finding.related_ids],
+                "severity": finding.severity.value,
+                "sourceDocument": finding.source_document.value,
+            }
+            for finding in plan.findings
+        ],
+        "id": str(plan.id),
+        "predefinedInputs": [
+            {
+                "id": str(predefined_input.id),
+                "reasons": [_resolution_reason_to_document(reason) for reason in predefined_input.reasons],
+                "redacted": predefined_input.redacted,
+                "requirementIds": [str(requirement_id) for requirement_id in predefined_input.requirement_ids],
+                "source": predefined_input.source.value,
+                "value": (None if predefined_input.value is None else _frequency_to_document(predefined_input.value)),
+            }
+            for predefined_input in plan.predefined_inputs
+        ],
+        "provenance": {
+            "artifacts": [_artifact_to_document(artifact) for artifact in plan.provenance.artifacts],
+            "participantPlanId": str(plan.provenance.participant_plan_id),
+            "requirementsCatalogueId": str(plan.provenance.requirements_catalogue_id),
+            "suitePublishedAt": plan.provenance.suite_published_at,
+            "suiteReleaseId": str(plan.provenance.suite_release_id),
+            "suiteReleaseVersion": plan.provenance.suite_release_version,
+            "testDefinitionCatalogueId": str(plan.provenance.test_definition_catalogue_id),
+            "toolReleases": [
+                {"id": str(tool_release.id), "version": tool_release.version}
+                for tool_release in plan.provenance.tool_releases
+            ],
+        },
+        "requirements": [
+            {
+                "capabilityId": str(requirement.capability_id),
+                "id": str(requirement.id),
+                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
+                "reasons": [_resolution_reason_to_document(reason) for reason in requirement.reasons],
+                "targetId": str(requirement.target_id),
+                "targetType": requirement.target_type.value,
+            }
+            for requirement in plan.requirements
+        ],
+        "schemaVersion": plan.schema_version,
+        "scheme": str(plan.scheme),
+        "securityProfile": plan.security_profile,
+        "selectionValid": plan.selection_valid,
+        "specification": _specification_to_document(plan.specification),
+        "testInstances": [
+            {
+                "coveredRequirementIds": [
+                    str(requirement_id) for requirement_id in test_instance.covered_requirement_ids
+                ],
+                "dependencyIds": [str(dependency_id) for dependency_id in test_instance.dependency_ids],
+                "id": str(test_instance.id),
+                "reasons": [_resolution_reason_to_document(reason) for reason in test_instance.reasons],
+                "testDefinitionId": str(test_instance.test_definition_id),
+            }
+            for test_instance in plan.test_instances
+        ],
+    }
+
+
 def dump_suite_release(suite_release: SuiteRelease) -> str:
     """Serialize a suite release deterministically with a trailing newline."""
     return json.dumps(suite_release_to_document(suite_release), indent=2, sort_keys=True) + "\n"
@@ -405,6 +578,16 @@ def dump_requirements_catalogue(catalogue: RequirementsCatalogue) -> str:
 def dump_test_definition_catalogue(catalogue: TestDefinitionCatalogue) -> str:
     """Serialize a test-definition catalogue deterministically."""
     return json.dumps(test_definition_catalogue_to_document(catalogue), indent=2, sort_keys=True) + "\n"
+
+
+def dump_participant_plan(plan: ParticipantPlan) -> str:
+    """Serialize a participant plan deterministically."""
+    return json.dumps(participant_plan_to_document(plan), indent=2, sort_keys=True) + "\n"
+
+
+def dump_resolved_plan(plan: ResolvedPlan) -> str:
+    """Serialize a resolved plan deterministically."""
+    return json.dumps(resolved_plan_to_document(plan), indent=2, sort_keys=True) + "\n"
 
 
 def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:
@@ -462,6 +645,20 @@ def _load_json_document(path: Path) -> object:
 def _reject_unsupported_schema_version(raw_document: object, *, document_name: str) -> None:
     schema_version = _selected_suite_release_schema_version(raw_document)
     if schema_version is not None and schema_version != CATALOGUE_SCHEMA_VERSION:
+        raise ConfigurationContractError(
+            (
+                _diagnostic(
+                    DiagnosticCode.SCHEMA_VERSION_UNSUPPORTED,
+                    f"Unsupported {document_name} schema version {schema_version!r}",
+                    instance_path="/schemaVersion",
+                ),
+            )
+        )
+
+
+def _reject_unsupported_plan_schema_version(raw_document: object, *, document_name: str) -> None:
+    schema_version = _selected_suite_release_schema_version(raw_document)
+    if schema_version is not None and schema_version != PLAN_SCHEMA_VERSION:
         raise ConfigurationContractError(
             (
                 _diagnostic(
@@ -682,6 +879,7 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
 
 def _predefined_input_from_document(document: dict[str, object]) -> PredefinedInput:
     example = cast(dict[str, object], document["exampleValue"])
+    default = cast(dict[str, object] | None, document.get("defaultValue"))
     return PredefinedInput(
         id=StableId(cast(str, document["id"])),
         label=cast(str, document["label"]),
@@ -696,6 +894,7 @@ def _predefined_input_from_document(document: dict[str, object]) -> PredefinedIn
             count_per_period=cast(int | None, example.get("countPerPeriod")),
             point_in_time=cast(str | None, example.get("pointInTime")),
         ),
+        default_value=None if default is None else _frequency_from_document(default),
     )
 
 
@@ -763,6 +962,172 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
     )
 
 
+def _participant_plan_from_schema_valid_document(document: dict[str, object]) -> ParticipantPlan:
+    specification = cast(dict[str, object], document["specification"])
+    predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
+    return ParticipantPlan(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        suite_release_id=StableId(cast(str, document["suiteReleaseId"])),
+        scheme=StableId(cast(str, document["scheme"])),
+        specification=_specification_from_document(specification),
+        security_profile=cast(str, document["securityProfile"]),
+        selected_capability_ids=tuple(
+            StableId(capability_id) for capability_id in cast(list[str], document["selectedCapabilityIds"])
+        ),
+        predefined_inputs=tuple(
+            ParticipantInput(
+                input_id=StableId(cast(str, participant_input["inputId"])),
+                value=_frequency_from_document(cast(dict[str, object], participant_input["value"])),
+            )
+            for participant_input in predefined_inputs
+        ),
+    )
+
+
+def _resolved_plan_from_schema_valid_document(document: dict[str, object]) -> ResolvedPlan:
+    provenance = cast(dict[str, object], document["provenance"])
+    tool_releases = cast(list[dict[str, object]], provenance["toolReleases"])
+    artifacts = cast(list[dict[str, object]], provenance["artifacts"])
+    capabilities = cast(list[dict[str, object]], document["capabilities"])
+    endpoints = cast(list[dict[str, object]], document["endpoints"])
+    requirements = cast(list[dict[str, object]], document["requirements"])
+    predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
+    test_instances = cast(list[dict[str, object]], document["testInstances"])
+    findings = cast(list[dict[str, object]], document["findings"])
+    return ResolvedPlan(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        selection_valid=cast(bool, document["selectionValid"]),
+        scheme=StableId(cast(str, document["scheme"])),
+        specification=_specification_from_document(cast(dict[str, object], document["specification"])),
+        security_profile=cast(str, document["securityProfile"]),
+        capabilities=tuple(
+            ResolvedCapability(
+                id=StableId(cast(str, capability["id"])),
+                origin=SelectionOrigin(cast(str, capability["origin"])),
+                reasons=_resolution_reasons_from_document(capability),
+            )
+            for capability in capabilities
+        ),
+        endpoints=tuple(
+            ResolvedEndpoint(
+                id=StableId(cast(str, endpoint["id"])),
+                origin=SelectionOrigin(cast(str, endpoint["origin"])),
+                requirement_ids=tuple(
+                    StableId(requirement_id) for requirement_id in cast(list[str], endpoint["requirementIds"])
+                ),
+                reasons=_resolution_reasons_from_document(endpoint),
+            )
+            for endpoint in endpoints
+        ),
+        requirements=tuple(
+            ResolvedRequirement(
+                id=StableId(cast(str, requirement["id"])),
+                capability_id=StableId(cast(str, requirement["capabilityId"])),
+                target_type=RequirementTargetType(cast(str, requirement["targetType"])),
+                target_id=StableId(cast(str, requirement["targetId"])),
+                normative_reference_ids=tuple(
+                    StableId(reference_id) for reference_id in cast(list[str], requirement["normativeReferenceIds"])
+                ),
+                reasons=_resolution_reasons_from_document(requirement),
+            )
+            for requirement in requirements
+        ),
+        predefined_inputs=tuple(
+            _resolved_predefined_input_from_document(predefined_input) for predefined_input in predefined_inputs
+        ),
+        test_instances=tuple(
+            ResolvedTestInstance(
+                id=StableId(cast(str, test_instance["id"])),
+                test_definition_id=StableId(cast(str, test_instance["testDefinitionId"])),
+                dependency_ids=tuple(
+                    StableId(dependency_id) for dependency_id in cast(list[str], test_instance["dependencyIds"])
+                ),
+                covered_requirement_ids=tuple(
+                    StableId(requirement_id)
+                    for requirement_id in cast(list[str], test_instance["coveredRequirementIds"])
+                ),
+                reasons=_resolution_reasons_from_document(test_instance),
+            )
+            for test_instance in test_instances
+        ),
+        findings=tuple(
+            CompilationFinding(
+                code=StableId(cast(str, finding["code"])),
+                severity=FindingSeverity(cast(str, finding["severity"])),
+                message=cast(str, finding["message"]),
+                source_document=FindingSourceDocument(cast(str, finding["sourceDocument"])),
+                instance_path=cast(str, finding["instancePath"]),
+                related_ids=tuple(StableId(related_id) for related_id in cast(list[str], finding["relatedIds"])),
+            )
+            for finding in findings
+        ),
+        provenance=ResolvedPlanProvenance(
+            participant_plan_id=StableId(cast(str, provenance["participantPlanId"])),
+            suite_release_id=StableId(cast(str, provenance["suiteReleaseId"])),
+            suite_release_version=cast(str, provenance["suiteReleaseVersion"]),
+            suite_published_at=cast(str, provenance["suitePublishedAt"]),
+            requirements_catalogue_id=StableId(cast(str, provenance["requirementsCatalogueId"])),
+            test_definition_catalogue_id=StableId(cast(str, provenance["testDefinitionCatalogueId"])),
+            tool_releases=tuple(
+                ToolRelease(
+                    id=StableId(cast(str, tool_release["id"])),
+                    version=cast(str, tool_release["version"]),
+                )
+                for tool_release in tool_releases
+            ),
+            artifacts=tuple(_artifact_from_document(artifact) for artifact in artifacts),
+        ),
+    )
+
+
+def _resolved_predefined_input_from_document(document: dict[str, object]) -> ResolvedPredefinedInput:
+    value = cast(dict[str, object] | None, document["value"])
+    return ResolvedPredefinedInput(
+        id=StableId(cast(str, document["id"])),
+        source=InputResolutionSource(cast(str, document["source"])),
+        value=None if value is None else _frequency_from_document(value),
+        redacted=cast(bool, document["redacted"]),
+        requirement_ids=tuple(
+            StableId(requirement_id) for requirement_id in cast(list[str], document["requirementIds"])
+        ),
+        reasons=_resolution_reasons_from_document(document),
+    )
+
+
+def _resolution_reasons_from_document(document: dict[str, object]) -> tuple[ResolutionReason, ...]:
+    reasons = cast(list[dict[str, object]], document["reasons"])
+    return tuple(
+        ResolutionReason(
+            code=StableId(cast(str, reason["code"])),
+            source_ids=tuple(StableId(source_id) for source_id in cast(list[str], reason["sourceIds"])),
+        )
+        for reason in reasons
+    )
+
+
+def _specification_from_document(document: dict[str, object]) -> SpecificationReference:
+    return SpecificationReference(
+        id=StableId(cast(str, document["id"])),
+        version=cast(str, document["version"]),
+        requirements_scope=StableId(cast(str, document["requirementsScope"])),
+    )
+
+
+def _artifact_from_document(document: dict[str, object]) -> ArtifactReference:
+    return ArtifactReference(
+        id=StableId(cast(str, document["id"])),
+        kind=StableId(cast(str, document["kind"])),
+        media_type=cast(str, document["mediaType"]),
+        schema_version=cast(str, document["schemaVersion"]),
+        uri=cast(str, document["uri"]),
+        digest=Sha256Digest(cast(str, document["digest"])),
+    )
+
+
 def _frequency_to_document(frequency: StandingOrderFrequency) -> JsonObject:
     document: JsonObject = {"frequencyType": frequency.frequency_type}
     if frequency.count_per_period is not None:
@@ -770,6 +1135,142 @@ def _frequency_to_document(frequency: StandingOrderFrequency) -> JsonObject:
     if frequency.point_in_time is not None:
         document["pointInTime"] = frequency.point_in_time
     return document
+
+
+def _frequency_from_document(document: dict[str, object]) -> StandingOrderFrequency:
+    return StandingOrderFrequency(
+        frequency_type=cast(str, document["frequencyType"]),
+        count_per_period=cast(int | None, document.get("countPerPeriod")),
+        point_in_time=cast(str | None, document.get("pointInTime")),
+    )
+
+
+def _specification_to_document(specification: SpecificationReference) -> JsonObject:
+    return {
+        "id": str(specification.id),
+        "requirementsScope": str(specification.requirements_scope),
+        "version": specification.version,
+    }
+
+
+def _artifact_to_document(artifact: ArtifactReference) -> JsonObject:
+    return {
+        "digest": str(artifact.digest),
+        "id": str(artifact.id),
+        "kind": str(artifact.kind),
+        "mediaType": artifact.media_type,
+        "schemaVersion": artifact.schema_version,
+        "uri": artifact.uri,
+    }
+
+
+def _resolution_reason_to_document(reason: ResolutionReason) -> JsonObject:
+    return {
+        "code": str(reason.code),
+        "sourceIds": [str(source_id) for source_id in reason.source_ids],
+    }
+
+
+def _without_none_values(document: dict[str, JsonValue | None]) -> JsonObject:
+    return {key: value for key, value in document.items() if value is not None}
+
+
+def _validate_participant_plan_semantics(plan: ParticipantPlan) -> tuple[ConfigurationDiagnostic, ...]:
+    return _duplicate_id_diagnostics(
+        (
+            (str(participant_input.input_id), f"/predefinedInputs/{index}/inputId")
+            for index, participant_input in enumerate(plan.predefined_inputs)
+        ),
+        object_kind="participant input",
+    )
+
+
+def _validate_resolved_plan_semantics(plan: ResolvedPlan) -> tuple[ConfigurationDiagnostic, ...]:
+    diagnostics: list[ConfigurationDiagnostic] = []
+    resolved_collections: tuple[tuple[str, Iterable[tuple[str, str]]], ...] = (
+        (
+            "resolved capability",
+            ((str(item.id), f"/capabilities/{index}/id") for index, item in enumerate(plan.capabilities)),
+        ),
+        (
+            "resolved endpoint",
+            ((str(item.id), f"/endpoints/{index}/id") for index, item in enumerate(plan.endpoints)),
+        ),
+        (
+            "resolved requirement",
+            ((str(item.id), f"/requirements/{index}/id") for index, item in enumerate(plan.requirements)),
+        ),
+        (
+            "resolved predefined input",
+            ((str(item.id), f"/predefinedInputs/{index}/id") for index, item in enumerate(plan.predefined_inputs)),
+        ),
+        (
+            "resolved test instance",
+            ((str(item.id), f"/testInstances/{index}/id") for index, item in enumerate(plan.test_instances)),
+        ),
+    )
+    for object_kind, identifiers in resolved_collections:
+        diagnostics.extend(_duplicate_id_diagnostics(identifiers, object_kind=object_kind))
+
+    requirement_ids = {requirement.id for requirement in plan.requirements}
+    test_instance_ids = {test_instance.id for test_instance in plan.test_instances}
+    for endpoint_index, endpoint in enumerate(plan.endpoints):
+        diagnostics.extend(
+            _unresolved_reference_diagnostic(
+                requirement_id,
+                instance_path=f"/endpoints/{endpoint_index}/requirementIds/{requirement_index}",
+                object_kind="resolved requirement",
+            )
+            for requirement_index, requirement_id in enumerate(endpoint.requirement_ids)
+            if requirement_id not in requirement_ids
+        )
+    for input_index, predefined_input in enumerate(plan.predefined_inputs):
+        diagnostics.extend(
+            _unresolved_reference_diagnostic(
+                requirement_id,
+                instance_path=f"/predefinedInputs/{input_index}/requirementIds/{requirement_index}",
+                object_kind="resolved requirement",
+            )
+            for requirement_index, requirement_id in enumerate(predefined_input.requirement_ids)
+            if requirement_id not in requirement_ids
+        )
+        if predefined_input.redacted != (predefined_input.value is None):
+            diagnostics.append(
+                _diagnostic(
+                    DiagnosticCode.RESOLVED_PLAN_INCONSISTENT,
+                    "A redacted input must omit its value and a non-redacted input must retain it",
+                    instance_path=f"/predefinedInputs/{input_index}",
+                )
+            )
+    for test_index, test_instance in enumerate(plan.test_instances):
+        diagnostics.extend(
+            _unresolved_reference_diagnostic(
+                dependency_id,
+                instance_path=f"/testInstances/{test_index}/dependencyIds/{dependency_index}",
+                object_kind="resolved test instance",
+            )
+            for dependency_index, dependency_id in enumerate(test_instance.dependency_ids)
+            if dependency_id not in test_instance_ids
+        )
+        diagnostics.extend(
+            _unresolved_reference_diagnostic(
+                requirement_id,
+                instance_path=f"/testInstances/{test_index}/coveredRequirementIds/{requirement_index}",
+                object_kind="resolved requirement",
+            )
+            for requirement_index, requirement_id in enumerate(test_instance.covered_requirement_ids)
+            if requirement_id not in requirement_ids
+        )
+    has_error = any(finding.severity is FindingSeverity.ERROR for finding in plan.findings)
+    if plan.selection_valid == has_error:
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.RESOLVED_PLAN_INCONSISTENT,
+                "selectionValid must be false exactly when error findings are present",
+                instance_path="/selectionValid",
+            )
+        )
+    return tuple(diagnostics)
 
 
 def _validate_requirements_catalogue_semantics(

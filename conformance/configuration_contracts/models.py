@@ -120,6 +120,7 @@ class PredefinedInput:
     required_for_capability_ids: tuple[StableId, ...]
     sensitivity: str
     example_value: StandingOrderFrequency
+    default_value: StandingOrderFrequency | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -208,3 +209,163 @@ class TestDefinitionCatalogue:
     id: StableId
     requirements_catalogue_id: StableId
     test_definitions: tuple[TestDefinition, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantInput:
+    """One participant-supplied value for a predefined logical input."""
+
+    input_id: StableId
+    value: StandingOrderFrequency
+
+
+@dataclass(frozen=True, slots=True)
+class ParticipantPlan:
+    """Participant intent for the configuration-driven walking skeleton."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    suite_release_id: StableId
+    scheme: StableId
+    specification: SpecificationReference
+    security_profile: str
+    selected_capability_ids: tuple[StableId, ...]
+    predefined_inputs: tuple[ParticipantInput, ...]
+
+
+class SelectionOrigin(StrEnum):
+    """How a resolved object entered the selected scope."""
+
+    EXPLICIT = "explicit"
+    INFERRED = "inferred"
+
+
+class InputResolutionSource(StrEnum):
+    """Where a resolved logical input value came from."""
+
+    PARTICIPANT = "participant"
+    DEFAULT = "default"
+
+
+class FindingSeverity(StrEnum):
+    """Severity of a participant-plan compilation finding."""
+
+    ERROR = "error"
+    WARNING = "warning"
+
+
+class FindingSourceDocument(StrEnum):
+    """Configuration document addressed by a compilation finding pointer."""
+
+    PARTICIPANT_PLAN = "participant-plan"
+    REQUIREMENTS_CATALOGUE = "requirements-catalogue"
+    RESOLVED_PLAN = "resolved-plan"
+
+
+@dataclass(frozen=True, slots=True)
+class ResolutionReason:
+    """Stable explanation and source IDs for one compiler decision."""
+
+    code: StableId
+    source_ids: tuple[StableId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedCapability:
+    """Capability included in resolved participant scope."""
+
+    id: StableId
+    origin: SelectionOrigin
+    reasons: tuple[ResolutionReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedEndpoint:
+    """Endpoint inferred by applying immutable catalogue requirements."""
+
+    id: StableId
+    origin: SelectionOrigin
+    requirement_ids: tuple[StableId, ...]
+    reasons: tuple[ResolutionReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPredefinedInput:
+    """Trace-safe logical input selected and resolved for execution."""
+
+    id: StableId
+    source: InputResolutionSource
+    value: StandingOrderFrequency | None
+    redacted: bool
+    requirement_ids: tuple[StableId, ...]
+    reasons: tuple[ResolutionReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedRequirement:
+    """Applicable immutable requirement and its normative references."""
+
+    id: StableId
+    capability_id: StableId
+    target_type: RequirementTargetType
+    target_id: StableId
+    normative_reference_ids: tuple[StableId, ...]
+    reasons: tuple[ResolutionReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedTestInstance:
+    """Deterministic compiled instance of one reusable test definition."""
+
+    id: StableId
+    test_definition_id: StableId
+    dependency_ids: tuple[StableId, ...]
+    covered_requirement_ids: tuple[StableId, ...]
+    reasons: tuple[ResolutionReason, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class CompilationFinding:
+    """Stable validation or policy finding retained in resolved output."""
+
+    code: StableId
+    severity: FindingSeverity
+    message: str
+    source_document: FindingSourceDocument
+    instance_path: str
+    related_ids: tuple[StableId, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPlanProvenance:
+    """Exact release and configuration sources used for compilation."""
+
+    participant_plan_id: StableId
+    suite_release_id: StableId
+    suite_release_version: str
+    suite_published_at: str
+    requirements_catalogue_id: StableId
+    test_definition_catalogue_id: StableId
+    tool_releases: tuple[ToolRelease, ...]
+    artifacts: tuple[ArtifactReference, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ResolvedPlan:
+    """Generated, inspectable result of participant-plan compilation."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    selection_valid: bool
+    scheme: StableId
+    specification: SpecificationReference
+    security_profile: str
+    capabilities: tuple[ResolvedCapability, ...]
+    endpoints: tuple[ResolvedEndpoint, ...]
+    requirements: tuple[ResolvedRequirement, ...]
+    predefined_inputs: tuple[ResolvedPredefinedInput, ...]
+    test_instances: tuple[ResolvedTestInstance, ...]
+    findings: tuple[CompilationFinding, ...]
+    provenance: ResolvedPlanProvenance

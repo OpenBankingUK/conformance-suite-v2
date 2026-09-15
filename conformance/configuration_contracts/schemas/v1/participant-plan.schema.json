@@ -1,0 +1,95 @@
+{
+  "$defs": {
+    "participantInput": {
+      "additionalProperties": false,
+      "properties": {
+        "inputId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "value": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/frequencyValue"
+        }
+      },
+      "required": [
+        "inputId",
+        "value"
+      ],
+      "type": "object"
+    },
+    "specification": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "requirementsScope": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "version": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "requirementsScope"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.openbanking.org.uk/conformance/v1/participant-plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/documentEnvelope"
+    },
+    {
+      "properties": {
+        "documentType": {
+          "const": "participant-plan"
+        },
+        "predefinedInputs": {
+          "items": {
+            "$ref": "#/$defs/participantInput"
+          },
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "scheme": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "securityProfile": {
+          "const": "fapi1-advanced"
+        },
+        "selectedCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "specification": {
+          "$ref": "#/$defs/specification"
+        },
+        "suiteReleaseId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        }
+      },
+      "required": [
+        "suiteReleaseId",
+        "scheme",
+        "specification",
+        "securityProfile",
+        "selectedCapabilityIds",
+        "predefinedInputs"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Open Banking UK participant test plan",
+  "type": "object",
+  "unevaluatedProperties": false
+}
