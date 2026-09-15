@@ -19,25 +19,33 @@
       "id": "pis.dso.endpoint.consent-create",
       "method": "POST",
       "operationId": "CreateDomesticStandingOrderConsents",
-      "path": "/domestic-standing-order-consents"
+      "path": "/domestic-standing-order-consents",
+      "sourceId": "ob-rw-v4.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-order-consents/post"
     },
     {
       "id": "pis.dso.endpoint.consent-read",
       "method": "GET",
       "operationId": "GetDomesticStandingOrderConsentsConsentId",
-      "path": "/domestic-standing-order-consents/{ConsentId}"
+      "path": "/domestic-standing-order-consents/{ConsentId}",
+      "sourceId": "ob-rw-v4.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-order-consents~1{ConsentId}/get"
     },
     {
       "id": "pis.dso.endpoint.order-create",
       "method": "POST",
       "operationId": "CreateDomesticStandingOrders",
-      "path": "/domestic-standing-orders"
+      "path": "/domestic-standing-orders",
+      "sourceId": "ob-rw-v4.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-orders/post"
     },
     {
       "id": "pis.dso.endpoint.order-read",
       "method": "GET",
       "operationId": "GetDomesticStandingOrdersDomesticStandingOrderId",
-      "path": "/domestic-standing-orders/{DomesticStandingOrderId}"
+      "path": "/domestic-standing-orders/{DomesticStandingOrderId}",
+      "sourceId": "ob-rw-v4.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-orders~1{DomesticStandingOrderId}/get"
     }
   ],
   "id": "obl.pis-domestic-standing-order-v4.requirements",
@@ -145,5 +153,13 @@
     "id": "read-write-api",
     "requirementsScope": "pis",
     "version": "4.0"
-  }
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:0c24d4227e6ff6dfd6400b81aeb66238239fb33605a75290b7c334bc06ee7d13",
+      "id": "ob-rw-v4.payment-initiation-openapi",
+      "title": "Open Banking Read/Write v4.0 Payment Initiation OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/payment-initiation-openapi.json"
+    }
+  ]
 }

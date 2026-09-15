@@ -1,0 +1,610 @@
+{
+  "capabilities": [
+    {
+      "description": "Accepted MVP domestic payments flow for Open Banking Read/Write 4.0.1; only the listed operations are asserted by this release.",
+      "id": "pis.v401.capability.domestic-payment",
+      "name": "Domestic payments",
+      "requiredEndpointIds": [
+        "pis.v401.endpoint.domestic_payment_consents",
+        "pis.v401.endpoint.domestic_payment_consents.consentid",
+        "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+        "pis.v401.endpoint.domestic_payments",
+        "pis.v401.endpoint.domestic_payments.domesticpaymentid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Accepted MVP domestic scheduled payments flow for Open Banking Read/Write 4.0.1; only the listed operations are asserted by this release.",
+      "id": "pis.v401.capability.domestic-scheduled-payment",
+      "name": "Domestic scheduled payments",
+      "requiredEndpointIds": [
+        "pis.v401.endpoint.domestic_scheduled_payment_consents",
+        "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+        "pis.v401.endpoint.domestic_scheduled_payments",
+        "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Accepted MVP domestic standing orders flow for Open Banking Read/Write 4.0.1; only the listed operations are asserted by this release.",
+      "id": "pis.v401.capability.domestic-standing-order",
+      "name": "Domestic standing orders",
+      "requiredEndpointIds": [
+        "pis.v401.endpoint.domestic_standing_order_consents",
+        "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+        "pis.v401.endpoint.domestic_standing_orders",
+        "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Accepted MVP international payments flow for Open Banking Read/Write 4.0.1; only the listed operations are asserted by this release.",
+      "id": "pis.v401.capability.international-payment",
+      "name": "International payments",
+      "requiredEndpointIds": [
+        "pis.v401.endpoint.international_payment_consents",
+        "pis.v401.endpoint.international_payment_consents.consentid",
+        "pis.v401.endpoint.international_payments",
+        "pis.v401.endpoint.international_payments.internationalpaymentid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Accepted MVP international scheduled payments flow for Open Banking Read/Write 4.0.1; only the listed operations are asserted by this release.",
+      "id": "pis.v401.capability.international-scheduled-payment",
+      "name": "International scheduled payments",
+      "requiredEndpointIds": [
+        "pis.v401.endpoint.international_scheduled_payment_consents",
+        "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+        "pis.v401.endpoint.international_scheduled_payments",
+        "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents",
+      "method": "POST",
+      "operationId": "CreateDomesticPaymentConsents",
+      "path": "/domestic-payment-consents",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-payment-consents/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents.consentid",
+      "method": "GET",
+      "operationId": "GetDomesticPaymentConsentsConsentId",
+      "path": "/domestic-payment-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-payment-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+      "method": "GET",
+      "operationId": "GetDomesticPaymentConsentsConsentIdFundsConfirmation",
+      "path": "/domestic-payment-consents/{ConsentId}/funds-confirmation",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-payment-consents~1{ConsentId}~1funds-confirmation/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payments",
+      "method": "POST",
+      "operationId": "CreateDomesticPayments",
+      "path": "/domestic-payments",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-payments/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payments.domesticpaymentid",
+      "method": "GET",
+      "operationId": "GetDomesticPaymentsDomesticPaymentId",
+      "path": "/domestic-payments/{DomesticPaymentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-payments~1{DomesticPaymentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+      "method": "POST",
+      "operationId": "CreateDomesticScheduledPaymentConsents",
+      "path": "/domestic-scheduled-payment-consents",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-scheduled-payment-consents/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+      "method": "GET",
+      "operationId": "GetDomesticScheduledPaymentConsentsConsentId",
+      "path": "/domestic-scheduled-payment-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-scheduled-payment-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payments",
+      "method": "POST",
+      "operationId": "CreateDomesticScheduledPayments",
+      "path": "/domestic-scheduled-payments",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-scheduled-payments/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid",
+      "method": "GET",
+      "operationId": "GetDomesticScheduledPaymentsDomesticScheduledPaymentId",
+      "path": "/domestic-scheduled-payments/{DomesticScheduledPaymentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-scheduled-payments~1{DomesticScheduledPaymentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_order_consents",
+      "method": "POST",
+      "operationId": "CreateDomesticStandingOrderConsents",
+      "path": "/domestic-standing-order-consents",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-order-consents/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+      "method": "GET",
+      "operationId": "GetDomesticStandingOrderConsentsConsentId",
+      "path": "/domestic-standing-order-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-order-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_orders",
+      "method": "POST",
+      "operationId": "CreateDomesticStandingOrders",
+      "path": "/domestic-standing-orders",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-orders/post"
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid",
+      "method": "GET",
+      "operationId": "GetDomesticStandingOrdersDomesticStandingOrderId",
+      "path": "/domestic-standing-orders/{DomesticStandingOrderId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-orders~1{DomesticStandingOrderId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.international_payment_consents",
+      "method": "POST",
+      "operationId": "CreateInternationalPaymentConsents",
+      "path": "/international-payment-consents",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-payment-consents/post"
+    },
+    {
+      "id": "pis.v401.endpoint.international_payment_consents.consentid",
+      "method": "GET",
+      "operationId": "GetInternationalPaymentConsentsConsentId",
+      "path": "/international-payment-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-payment-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.international_payments",
+      "method": "POST",
+      "operationId": "CreateInternationalPayments",
+      "path": "/international-payments",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-payments/post"
+    },
+    {
+      "id": "pis.v401.endpoint.international_payments.internationalpaymentid",
+      "method": "GET",
+      "operationId": "GetInternationalPaymentsInternationalPaymentId",
+      "path": "/international-payments/{InternationalPaymentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-payments~1{InternationalPaymentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payment_consents",
+      "method": "POST",
+      "operationId": "CreateInternationalScheduledPaymentConsents",
+      "path": "/international-scheduled-payment-consents",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-scheduled-payment-consents/post"
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+      "method": "GET",
+      "operationId": "GetInternationalScheduledPaymentConsentsConsentId",
+      "path": "/international-scheduled-payment-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-scheduled-payment-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payments",
+      "method": "POST",
+      "operationId": "CreateInternationalScheduledPayments",
+      "path": "/international-scheduled-payments",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-scheduled-payments/post"
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid",
+      "method": "GET",
+      "operationId": "GetInternationalScheduledPaymentsInternationalScheduledPaymentId",
+      "path": "/international-scheduled-payments/{InternationalScheduledPaymentId}",
+      "sourceId": "ob-rw-v401.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1international-scheduled-payments~1{InternationalScheduledPaymentId}/get"
+    }
+  ],
+  "id": "obl.pis-v401.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-rw-v401.pis-profile.payment-flow",
+      "section": "Basics / Overview / Steps",
+      "title": "Open Banking Read/Write API 4.0.1 Payment Initiation API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/payment-initiation-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.pis-profile.payment-restrictions",
+      "section": "Basics / Payment Restrictions",
+      "title": "Open Banking Read/Write API 4.0.1 Payment Initiation API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/payment-initiation-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.pis-profile.security",
+      "section": "Security & Access Control / Grant Types and HTTP Headers",
+      "title": "Open Banking Read/Write API 4.0.1 Payment Initiation API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/payment-initiation-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.pis-openapi.operations",
+      "section": "MVP operation paths and success responses",
+      "title": "Open Banking Read/Write API 4.0.1 Payment Initiation OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/payment-initiation-openapi.json"
+    },
+    {
+      "id": "ob-rw-v401.pis-openapi.frequency",
+      "section": "Domestic standing-order frequency schema",
+      "title": "Open Banking Read/Write API 4.0.1 Payment Initiation OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/payment-initiation-openapi.json"
+    }
+  ],
+  "predefinedInputs": [
+    {
+      "description": "Logical frequency represented according to the Read/Write 4.0.1 payment schema.",
+      "exampleValue": {
+        "frequencyType": "WEEK",
+        "pointInTime": "03"
+      },
+      "id": "pis.v401.input.standing-order-frequency",
+      "label": "Domestic standing-order frequency",
+      "requiredForCapabilityIds": [
+        "pis.v401.capability.domestic-standing-order"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "standing-order-frequency-v4"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "pis.v401.requirement.domestic_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-payment",
+        "targetId": "pis.v401.endpoint.domestic_payment_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to register an intent to initiate a Domestic Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-payment",
+        "targetId": "pis.v401.endpoint.domestic_payment_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-payment",
+        "targetId": "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to check whether a PSU has sufficient available funds for a Domestic Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-payment",
+        "targetId": "pis.v401.endpoint.domestic_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to initiate an already PSU-approved Domestic Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_payments.domesticpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-payment",
+        "targetId": "pis.v401.endpoint.domestic_payments.domesticpaymentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of a Domestic Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_scheduled_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+        "targetId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to register an intent to initiate a Domestic Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_scheduled_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+        "targetId": "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+        "targetId": "pis.v401.endpoint.domestic_scheduled_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to initiate an already PSU-approved Domestic Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+        "targetId": "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of a Domestic Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_standing_order_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-standing-order",
+        "targetId": "pis.v401.endpoint.domestic_standing_order_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to register an intent to initiate a Domestic Standing Order arrangement."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_standing_order_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-standing-order",
+        "targetId": "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Standing Order arrangement."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-standing-order",
+        "targetId": "pis.v401.endpoint.domestic_standing_orders",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to submit a Domestic Standing Order payment under an already PSU-approved Domestic Standing Order arrangement."
+    },
+    {
+      "id": "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-standing-order",
+        "targetId": "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of a Domestic Standing Order payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-payment",
+        "targetId": "pis.v401.endpoint.international_payment_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to register an intent to initiate an International Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-payment",
+        "targetId": "pis.v401.endpoint.international_payment_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an intent to initiate an International Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-payment",
+        "targetId": "pis.v401.endpoint.international_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to initiate an already PSU-approved International Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_payments.internationalpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-payment",
+        "targetId": "pis.v401.endpoint.international_payments.internationalpaymentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an International Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_scheduled_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-scheduled-payment",
+        "targetId": "pis.v401.endpoint.international_scheduled_payment_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to register an intent to initiate an International Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_scheduled_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-scheduled-payment",
+        "targetId": "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an intent to initiate an International Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-scheduled-payment",
+        "targetId": "pis.v401.endpoint.international_scheduled_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to initiate an already PSU-approved International Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.international-scheduled-payment",
+        "targetId": "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of an International Scheduled Payment."
+    },
+    {
+      "id": "pis.v401.requirement.domestic-standing-order-frequency",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.frequency"
+      ],
+      "rule": {
+        "capabilityId": "pis.v401.capability.domestic-standing-order",
+        "targetId": "pis.v401.input.standing-order-frequency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "A domestic standing-order initiation must use a frequency value allowed by the selected specification version."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "4.0.1"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:c02efa09f0ea1baaffd5ae0d4e68d7f3f996b94ac3ec66752e7bf5ec5cee3285",
+      "id": "ob-rw-v401.payment-initiation-openapi",
+      "title": "Open Banking Read/Write 4.0.1 Payment Initiation OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/payment-initiation-openapi.json"
+    }
+  ]
+}

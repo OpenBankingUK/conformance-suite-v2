@@ -21,6 +21,7 @@
       "description": "Create a domestic standing-order consent using the participant's logical frequency input.",
       "id": "pis.dso.test.consent-create",
       "name": "Create domestic standing-order consent",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.consent-create",
         "inputBindings": [
@@ -30,7 +31,8 @@
             "transform": "pis-v4-standing-order-frequency",
             "type": "json-body"
           }
-        ]
+        ],
+        "modifications": []
       }
     },
     {
@@ -51,9 +53,11 @@
       "description": "Retrieve the authorised domestic standing-order consent created by the dependency.",
       "id": "pis.dso.test.consent-read",
       "name": "Read domestic standing-order consent",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.consent-read",
-        "inputBindings": []
+        "inputBindings": [],
+        "modifications": []
       }
     },
     {
@@ -75,6 +79,7 @@
       "description": "Submit the domestic standing order after consent authorisation using the same logical frequency input.",
       "id": "pis.dso.test.order-create",
       "name": "Submit domestic standing order",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.order-create",
         "inputBindings": [
@@ -84,7 +89,8 @@
             "transform": "pis-v4-standing-order-frequency",
             "type": "json-body"
           }
-        ]
+        ],
+        "modifications": []
       }
     },
     {
@@ -105,9 +111,11 @@
       "description": "Retrieve the domestic standing order submitted by the dependency.",
       "id": "pis.dso.test.order-read",
       "name": "Read domestic standing order",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.order-read",
-        "inputBindings": []
+        "inputBindings": [],
+        "modifications": []
       }
     }
   ]

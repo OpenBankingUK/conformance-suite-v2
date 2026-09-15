@@ -142,12 +142,17 @@ def generate_execution_manifest(
                     method=endpoint.method,
                     path=endpoint.path,
                     input_bindings=test_definition.request.input_bindings,
+                    modifications=test_definition.request.modifications,
                 ),
                 assertions=tuple(
                     ExecutionManifestAssertion(
                         id=assertion.id,
                         type=assertion.type,
                         expected_status=assertion.expected_status,
+                        schema_ref=assertion.schema_ref,
+                        header_name=assertion.header_name,
+                        json_pointer=assertion.json_pointer,
+                        expected_value=assertion.expected_value,
                     )
                     for assertion in test_definition.assertions
                 ),

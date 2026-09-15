@@ -282,6 +282,8 @@ def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifes
         None,
     )
     if frequency_input is not None:
+        if isinstance(frequency_input.value, str):
+            raise ResolvedPlanAdapterError("Legacy runtime frequency requires the structured v4 frequency shape")
         if (
             prepared.runtime_inputs.get("pisStandingOrderFrequencyType") != frequency_input.value.frequency_type
             or prepared.runtime_inputs.get("pisStandingOrderFrequencyPointInTime")
@@ -454,6 +456,8 @@ def _apply_resolved_frequency(resolved_plan: ResolvedPlan, runtime_inputs: dict[
     frequency = frequency_input.value
     if frequency is None:
         raise ResolvedPlanAdapterError("The current execution adapter cannot consume a redacted frequency")
+    if isinstance(frequency, str):
+        raise ResolvedPlanAdapterError("The current execution adapter requires the structured v4 frequency shape")
     if frequency.point_in_time is None:
         raise ResolvedPlanAdapterError(
             "The current execution path supports pointInTime standing-order frequencies only"

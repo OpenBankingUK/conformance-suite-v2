@@ -1,26 +1,7 @@
 {
   "$defs": {
     "assertion": {
-      "additionalProperties": false,
-      "properties": {
-        "expectedStatus": {
-          "maximum": 599,
-          "minimum": 100,
-          "type": "integer"
-        },
-        "id": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
-        },
-        "type": {
-          "const": "http-status"
-        }
-      },
-      "required": [
-        "id",
-        "type",
-        "expectedStatus"
-      ],
-      "type": "object"
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/assertion"
     },
     "evidencePolicy": {
       "additionalProperties": false,
@@ -39,7 +20,7 @@
       "type": "object"
     },
     "frequencyValue": {
-      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/frequencyValue"
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/predefinedInputValue"
     },
     "input": {
       "additionalProperties": false,
@@ -151,6 +132,12 @@
           },
           "type": "array"
         },
+        "modifications": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/requestModification"
+          },
+          "type": "array"
+        },
         "method": {
           "enum": [
             "GET",
@@ -165,7 +152,8 @@
       "required": [
         "method",
         "path",
-        "inputBindings"
+        "inputBindings",
+        "modifications"
       ],
       "type": "object"
     },

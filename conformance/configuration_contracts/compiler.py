@@ -30,6 +30,7 @@ from conformance.configuration_contracts.models import (
     InputResolutionSource,
     ParticipantPlan,
     PredefinedInput,
+    PredefinedInputValue,
     RequirementsCatalogue,
     RequirementTargetType,
     ResolutionReason,
@@ -42,7 +43,6 @@ from conformance.configuration_contracts.models import (
     ResolvedTestInstance,
     SelectionOrigin,
     StableId,
-    StandingOrderFrequency,
     SuiteRelease,
     TestDefinition,
     TestDefinitionCatalogue,
@@ -59,6 +59,7 @@ class CompilationFindingCode(StrEnum):
     SCOPE_EMPTY = "plan.selection.scope-empty"
     INPUT_UNKNOWN = "plan.selection.input-unknown"
     INPUT_NOT_APPLICABLE = "plan.selection.input-not-applicable"
+    INPUT_INVALID = "plan.selection.input-invalid"
     INPUT_REQUIRED = "plan.selection.input-required"
     RULE_UNSUPPORTED = "plan.requirement.rule-unsupported"
     REQUIREMENT_UNCOVERED = "plan.test.requirement-uncovered"
@@ -517,6 +518,22 @@ def _resolve_predefined_inputs(
             continue
         participant_input = participant_inputs.get(predefined_input.id)
         if participant_input is not None:
+            if (
+                predefined_input.value_type == "string"
+                and not isinstance(participant_input.value, str)
+                or predefined_input.value_type == "standing-order-frequency-v4"
+                and isinstance(participant_input.value, str)
+            ):
+                findings.append(
+                    _finding(
+                        CompilationFindingCode.INPUT_INVALID,
+                        (f"Participant input {predefined_input.id!s} does not match {predefined_input.value_type!s}"),
+                        source_document=FindingSourceDocument.PARTICIPANT_PLAN,
+                        instance_path=f"/predefinedInputs/{participant_indexes[predefined_input.id]}/value",
+                        related_ids=(predefined_input.id,),
+                    )
+                )
+                continue
             resolved.append(
                 _resolved_input(
                     predefined_input,
@@ -552,7 +569,7 @@ def _resolve_predefined_inputs(
 
 def _resolved_input(
     predefined_input: PredefinedInput,
-    value: StandingOrderFrequency,
+    value: PredefinedInputValue,
     *,
     source: InputResolutionSource,
     requirement_ids: tuple[StableId, ...],

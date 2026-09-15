@@ -20,6 +20,7 @@
       "description": "Fixture with a broken requirement reference.",
       "id": "fixture.pis-dso.consent-create",
       "name": "Fixture consent creation",
+      "purpose": "positive",
       "request": {
         "endpointId": "pis.dso.endpoint.consent-create",
         "inputBindings": [
@@ -29,7 +30,8 @@
             "transform": "pis-v4-standing-order-frequency",
             "type": "json-body"
           }
-        ]
+        ],
+        "modifications": []
       }
     }
   ]

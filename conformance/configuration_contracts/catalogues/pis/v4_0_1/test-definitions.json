@@ -1,0 +1,1022 @@
+{
+  "documentType": "test-definition-catalogue",
+  "id": "obl.pis-v401.tests",
+  "requirementsCatalogueId": "obl.pis-v401.requirements",
+  "schemaVersion": "1.0",
+  "testDefinitions": [
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_payment_consents.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_payment_consents.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_payment_consents.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticConsentResponse5",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "pis.v401.assertion.domestic_payment_consents.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Enables a PISP to register an intent to initiate a Domestic Payment.",
+      "id": "pis.v401.test.domestic_payment_consents.positive",
+      "name": "Create a Domestic Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticConsentResponse5",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_payment_consents.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Payment.",
+      "id": "pis.v401.test.domestic_payment_consents.consentid.positive",
+      "name": "Get a Domestic Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents.consentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.funds_confirmation.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.funds_confirmation.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_payment_consents.consentid.funds_confirmation.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteFundsConfirmationResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_payment_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to check whether a PSU has sufficient available funds for a Domestic Payment.",
+      "id": "pis.v401.test.domestic_payment_consents.consentid.funds_confirmation.positive",
+      "name": "Confirm availability of funds for a Domestic Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_payments.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_payments.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_payments.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payments"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_payment_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to initiate an already PSU-approved Domestic Payment.",
+      "id": "pis.v401.test.domestic_payments.positive",
+      "name": "Initiate a Domestic Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payments",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_payments.domesticpaymentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_payments.domesticpaymentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_payments.domesticpaymentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payments.domesticpaymentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_payments.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of a Domestic Payment.",
+      "id": "pis.v401.test.domestic_payments.domesticpaymentid.positive",
+      "name": "Get a Domestic Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payments.domesticpaymentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticScheduledConsentResponse5",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Enables a PISP to register an intent to initiate a Domestic Scheduled Payment.",
+      "id": "pis.v401.test.domestic_scheduled_payment_consents.positive",
+      "name": "Create a Domestic Scheduled Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.consentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.consentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.consentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticScheduledConsentResponse5",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "pis.v401.assertion.domestic_scheduled_payment_consents.consentid.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents.consentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_scheduled_payment_consents.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Scheduled Payment.",
+      "id": "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive",
+      "name": "Get a Domestic Scheduled Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_scheduled_payments.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_scheduled_payments.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_scheduled_payments.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticScheduledResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to initiate an already PSU-approved Domestic Scheduled Payment.",
+      "id": "pis.v401.test.domestic_scheduled_payments.positive",
+      "name": "Initiate a Domestic Scheduled Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payments",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_scheduled_payments.domesticscheduledpaymentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_scheduled_payments.domesticscheduledpaymentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_scheduled_payments.domesticscheduledpaymentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticScheduledResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_scheduled_payments.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of a Domestic Scheduled Payment.",
+      "id": "pis.v401.test.domestic_scheduled_payments.domesticscheduledpaymentid.positive",
+      "name": "Get a Domestic Scheduled Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_standing_order_consents.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_standing_order_consents.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_standing_order_consents.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "pis.v401.assertion.domestic_standing_order_consents.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencies": [],
+      "description": "Enables a PISP to register an intent to initiate a Domestic Standing Order arrangement.",
+      "id": "pis.v401.test.domestic_standing_order_consents.positive",
+      "name": "Create a Domestic Standing Order Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_standing_order_consents",
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.standing-order-frequency",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
+            "transform": "standing-order-frequency-object",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_standing_order_consents.consentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_standing_order_consents.consentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_standing_order_consents.consentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "pis.v401.assertion.domestic_standing_order_consents.consentid.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents.consentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_standing_order_consents.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an intent to initiate a Domestic Standing Order arrangement.",
+      "id": "pis.v401.test.domestic_standing_order_consents.consentid.positive",
+      "name": "Get a Domestic Standing Order Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.domestic_standing_orders.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_standing_orders.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_standing_orders.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_orders",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_standing_order_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to submit a Domestic Standing Order payment under an already PSU-approved Domestic Standing Order arrangement.",
+      "id": "pis.v401.test.domestic_standing_orders.positive",
+      "name": "Submit a Domestic Standing Order",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_standing_orders",
+        "inputBindings": [
+          {
+            "inputId": "pis.v401.input.standing-order-frequency",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
+            "transform": "standing-order-frequency-object",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.domestic_standing_orders.domesticstandingorderid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.domestic_standing_orders.domesticstandingorderid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.domestic_standing_orders.domesticstandingorderid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteDomesticStandingOrderResponse6",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid"
+      ],
+      "dependencies": [
+        "pis.v401.test.domestic_standing_orders.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of a Domestic Standing Order payment.",
+      "id": "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive",
+      "name": "Get a Domestic Standing Order",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.international_payment_consents.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_payment_consents.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_payment_consents.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "pis.v401.assertion.international_payment_consents.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Enables a PISP to register an intent to initiate an International Payment.",
+      "id": "pis.v401.test.international_payment_consents.positive",
+      "name": "Create an International Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_payment_consents",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.international_payment_consents.consentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_payment_consents.consentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_payment_consents.consentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "pis.v401.assertion.international_payment_consents.consentid.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payment_consents.consentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_payment_consents.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an intent to initiate an International Payment.",
+      "id": "pis.v401.test.international_payment_consents.consentid.positive",
+      "name": "Get an International Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_payment_consents.consentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.international_payments.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_payments.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_payments.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payments"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_payment_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to initiate an already PSU-approved International Payment.",
+      "id": "pis.v401.test.international_payments.positive",
+      "name": "Initiate an International Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_payments",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.international_payments.internationalpaymentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_payments.internationalpaymentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_payments.internationalpaymentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalResponse5",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payments.internationalpaymentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_payments.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an International Payment.",
+      "id": "pis.v401.test.international_payments.internationalpaymentid.positive",
+      "name": "Get an International Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_payments.internationalpaymentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalScheduledConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Enables a PISP to register an intent to initiate an International Scheduled Payment.",
+      "id": "pis.v401.test.international_scheduled_payment_consents.positive",
+      "name": "Create an International Scheduled Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_scheduled_payment_consents",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.consentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.consentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.consentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalScheduledConsentResponse6",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "pis.v401.assertion.international_scheduled_payment_consents.consentid.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents.consentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_scheduled_payment_consents.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an intent to initiate an International Scheduled Payment.",
+      "id": "pis.v401.test.international_scheduled_payment_consents.consentid.positive",
+      "name": "Get an International Scheduled Payment Consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.international_scheduled_payments.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_scheduled_payments.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_scheduled_payments.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalScheduledResponse6",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payments"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_scheduled_payment_consents.consentid.positive"
+      ],
+      "description": "Enables a PISP to initiate an already PSU-approved International Scheduled Payment.",
+      "id": "pis.v401.test.international_scheduled_payments.positive",
+      "name": "Initiate an International Scheduled Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_scheduled_payments",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.v401.assertion.international_scheduled_payments.internationalscheduledpaymentid.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.international_scheduled_payments.internationalscheduledpaymentid.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "pis.v401.assertion.international_scheduled_payments.internationalscheduledpaymentid.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBWriteInternationalScheduledResponse6",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid"
+      ],
+      "dependencies": [
+        "pis.v401.test.international_scheduled_payments.positive"
+      ],
+      "description": "Enables a PISP to retrieve the status of an International Scheduled Payment.",
+      "id": "pis.v401.test.international_scheduled_payments.internationalscheduledpaymentid.positive",
+      "name": "Get an International Scheduled Payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "pis.v401.assertion.missing-authorisation.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.missing-authorisation.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
+      "id": "pis.v401.test.domestic-payment-consent.missing-authorisation",
+      "name": "Missing authorisation",
+      "purpose": "security",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "id": "pis.v401.modification.domestic-payment-consent.missing-authorisation",
+            "location": "header",
+            "operation": "omit",
+            "target": "Authorization"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "pis.v401.assertion.missing-jws-issuer.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.missing-jws-issuer.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
+      "id": "pis.v401.test.domestic-payment-consent.missing-jws-issuer",
+      "name": "Missing jws issuer",
+      "purpose": "security",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "id": "pis.v401.modification.domestic-payment-consent.missing-jws-issuer",
+            "location": "detached-jws-claim",
+            "operation": "omit",
+            "target": "iss"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "pis.v401.assertion.invalid-jws-signature.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.invalid-jws-signature.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Verify the consent endpoint rejects a request that violates its authentication or detached-JWS contract.",
+      "id": "pis.v401.test.domestic-payment-consent.invalid-jws-signature",
+      "name": "Invalid jws signature",
+      "purpose": "security",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_payment_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "id": "pis.v401.modification.domestic-payment-consent.invalid-jws-signature",
+            "location": "detached-jws-signature",
+            "operation": "invalidate"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.scheduled-offset-datetime.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.scheduled-offset-datetime.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Verify the OpenAPI date-time format accepts a generated OFFSET representation.",
+      "id": "pis.v401.test.domestic-scheduled-payment-consent.offset-datetime",
+      "name": "Create scheduled consent with OFFSET date-time",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "generator": "rfc3339-date-time-offset",
+            "id": "pis.v401.modification.domestic-scheduled-payment-consent.offset-datetime",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Initiation/RequestedExecutionDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.v401.assertion.scheduled-utc-datetime.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.scheduled-utc-datetime.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencies": [],
+      "description": "Verify the OpenAPI date-time format accepts a generated UTC representation.",
+      "id": "pis.v401.test.domestic-scheduled-payment-consent.utc-datetime",
+      "name": "Create scheduled consent with UTC date-time",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "generator": "rfc3339-date-time-utc",
+            "id": "pis.v401.modification.domestic-scheduled-payment-consent.utc-datetime",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Initiation/RequestedExecutionDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "pis.v401.assertion.standing-order-invalid-frequency.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "pis.v401.assertion.standing-order-invalid-frequency.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencies": [],
+      "description": "Verify malformed or internally conflicting standing-order frequency data is rejected at consent staging.",
+      "id": "pis.v401.test.domestic-standing-order-consent.invalid-frequency",
+      "name": "Reject invalid standing-order frequency",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "pis.v401.endpoint.domestic_standing_order_consents",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "generator": "standing-order-frequency-count-and-point",
+            "id": "pis.v401.modification.domestic-standing-order-consent.invalid-frequency",
+            "location": "json-body",
+            "operation": "invalidate",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency"
+          }
+        ]
+      }
+    }
+  ]
+}

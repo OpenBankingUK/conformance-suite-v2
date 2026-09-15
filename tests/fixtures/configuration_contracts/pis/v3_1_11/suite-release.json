@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:805fc0591caf46dd94899b15d5b692c7a7482fbb2495159328aaf0906d1c907c",
+      "id": "obl.pis-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:b1ef7e742b020489ddda0b6ac2774db2aa75c97f1b8515d59c60315ea973e777",
+      "id": "obl.pis-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/pis/v3_1_11/test-definitions.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.pis-v311.catalogue-fixture",
+  "publishedAt": "2026-09-15T00:00:00Z",
+  "releaseVersion": "0.0.0-pis-v311-fixture",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

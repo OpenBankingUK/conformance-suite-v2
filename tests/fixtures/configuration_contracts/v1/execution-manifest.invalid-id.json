@@ -116,6 +116,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-order-consents"
       },
       "testDefinitionId": "pis.dso.test.consent-create",
@@ -144,6 +145,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-order-consents/{ConsentId}"
       },
       "testDefinitionId": "pis.dso.test.consent-read",
@@ -180,6 +182,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-orders"
       },
       "testDefinitionId": "pis.dso.test.order-create",
@@ -208,6 +211,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-orders/{DomesticStandingOrderId}"
       },
       "testDefinitionId": "pis.dso.test.order-read",

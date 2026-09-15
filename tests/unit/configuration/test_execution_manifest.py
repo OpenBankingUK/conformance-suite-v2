@@ -68,6 +68,7 @@ def test_resolved_plan_generates_deterministic_immutable_execution_manifest() ->
         test_instance.id for test_instance in resolved.test_instances
     ]
     assert first.steps[-1].dependency_ids == ("pis.dso.test.order-create.instance.request",)
+    assert not isinstance(first.inputs[0].value, str)
     assert first.inputs[0].value.point_in_time == "03"
     with pytest.raises(FrozenInstanceError):
         _set_attribute(first.steps[0], "name", "changed")
@@ -220,6 +221,7 @@ def test_compatibility_binding_rejects_compiled_execution_drift(tmp_path: Path) 
 def test_preparation_rejects_mismatched_participant_snapshot(tmp_path: Path) -> None:
     _suite, requirements, test_definitions, participant_plan, resolved = _resolved_inputs()
     participant_input = participant_plan.predefined_inputs[0]
+    assert not isinstance(participant_input.value, str)
     changed_plan = replace(
         participant_plan,
         predefined_inputs=(

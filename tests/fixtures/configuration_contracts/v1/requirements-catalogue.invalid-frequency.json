@@ -16,7 +16,9 @@
       "id": "pis.dso.endpoint.consent-create",
       "method": "POST",
       "operationId": "CreateDomesticStandingOrderConsents",
-      "path": "/domestic-standing-order-consents"
+      "path": "/domestic-standing-order-consents",
+      "sourceId": "ob-rw-v4.payment-initiation-openapi",
+      "sourcePointer": "/paths/~1domestic-standing-order-consents/post"
     }
   ],
   "id": "fixture.pis-dso.requirements",
@@ -66,5 +68,13 @@
     "id": "read-write-api",
     "requirementsScope": "pis",
     "version": "4.0"
-  }
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:0c24d4227e6ff6dfd6400b81aeb66238239fb33605a75290b7c334bc06ee7d13",
+      "id": "ob-rw-v4.payment-initiation-openapi",
+      "title": "Open Banking Read/Write v4.0 Payment Initiation OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0-Update-5/dist/openapi/payment-initiation-openapi.json"
+    }
+  ]
 }

@@ -1,0 +1,1487 @@
+{
+  "capabilities": [
+    {
+      "id": "pis.v401.capability.domestic-payment",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pis.v401.capability.domestic-scheduled-payment",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pis.v401.capability.domestic-standing-order",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pis.v401.capability.international-payment",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "pis.v401.capability.international-scheduled-payment",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ]
+    }
+  ],
+  "documentType": "resolved-plan",
+  "endpoints": [
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_payments"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_payments.domesticpaymentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payments.domesticpaymentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_payments.domesticpaymentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payment_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payment_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents.consentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_order_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_order_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_order_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents.consentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_orders",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_orders"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_standing_orders"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_payment_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_payment_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_payment_consents"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_payment_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_payment_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_payment_consents.consentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_payments"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_payments.internationalpaymentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_payments.internationalpaymentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_payments.internationalpaymentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payment_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payment_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payment_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents.consentid"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_scheduled_payments"
+      ]
+    },
+    {
+      "id": "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid"
+      ]
+    }
+  ],
+  "findings": [],
+  "id": "resolved-plan:16e4f16c5f7cdc45eba31a193d1f90d73ee1ff0696b539d6a29520cc35504183",
+  "predefinedInputs": [
+    {
+      "id": "pis.v401.input.standing-order-frequency",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.standing-order-frequency"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "source": "participant",
+      "value": {
+        "frequencyType": "WEEK",
+        "pointInTime": "03"
+      }
+    }
+  ],
+  "provenance": {
+    "artifacts": [
+      {
+        "digest": "sha256:c7a3ca168e5dbc6520d789d9daa4def2d1670101f7a836faad17d34696052cb0",
+        "id": "obl.pis-v401.requirements",
+        "kind": "requirements-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/requirements.json"
+      },
+      {
+        "digest": "sha256:882b19c85ce05cb415049159afec14501dd3288eb08b2a64a4d0b24f44519daa",
+        "id": "obl.pis-v401.tests",
+        "kind": "test-definition-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/test-definitions.json"
+      }
+    ],
+    "participantPlanId": "pis-v401-golden-plan",
+    "requirementsCatalogueId": "obl.pis-v401.requirements",
+    "suitePublishedAt": "2026-09-15T00:00:00Z",
+    "suiteReleaseId": "obl.pis-v401.catalogue-fixture",
+    "suiteReleaseVersion": "0.0.0-pis-v401-fixture",
+    "testDefinitionCatalogueId": "obl.pis-v401.tests",
+    "toolReleases": [
+      {
+        "id": "conformance-suite-v2",
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.domestic_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_payment_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.domestic_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents.consentid",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_payment_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.domestic_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payments",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.domestic_payments.domesticpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_payments.domesticpaymentid",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_payments.domesticpaymentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.domestic_scheduled_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payment_consents",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_scheduled_payment_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.domestic_scheduled_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payment_consents.consentid",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.domestic_scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payments",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_scheduled_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.domestic_standing_order_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_order_consents",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_standing_order_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.domestic_standing_order_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_order_consents.consentid",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_standing_order_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.domestic_standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_orders",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_standing_orders",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.international_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_payment_consents",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_payment_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.international_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_payment_consents.consentid",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_payment_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.international_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_payments",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.international_payments.internationalpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_payments.internationalpaymentid",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_payments.internationalpaymentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.international_scheduled_payment_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payment_consents",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_scheduled_payment_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.international_scheduled_payment_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payment_consents.consentid",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_scheduled_payment_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.international_scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payments",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_scheduled_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-flow",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.domestic-standing-order-frequency",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.frequency"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.domestic-standing-order-frequency",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.standing-order-frequency",
+      "targetType": "predefined-input"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectionValid": true,
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "4.0.1"
+  },
+  "testInstances": [
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic_payment_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_payment_consents.positive",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_payment_consents.consentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_payment_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_payment_consents.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_payment_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_payment_consents.consentid.positive",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_payment_consents.consentid.funds_confirmation.positive",
+            "pis.v401.test.domestic_payments.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_payment_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents.consentid.funds_confirmation"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_payment_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_payment_consents.consentid.funds_confirmation.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_payment_consents.consentid.funds_confirmation.positive",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents.consentid.funds_confirmation"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_payment_consents.consentid.funds_confirmation.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payments"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_payment_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_payments.positive",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_payments.domesticpaymentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payments.domesticpaymentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_payments.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_payments.domesticpaymentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_payments.domesticpaymentid.positive",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payments.domesticpaymentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_payments.domesticpaymentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic_scheduled_payment_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payment_consents.positive",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payment_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_scheduled_payment_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents.consentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_scheduled_payment_consents.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payment_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payments.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_scheduled_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payments.positive",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payments.domesticscheduledpaymentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_scheduled_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payments.domesticscheduledpaymentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_scheduled_payments.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_scheduled_payments.domesticscheduledpaymentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_scheduled_payments.domesticscheduledpaymentid.positive",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payments.domesticscheduledpaymentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_scheduled_payments.domesticscheduledpaymentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic_standing_order_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_order_consents.positive",
+            "pis.v401.capability.domestic-standing-order",
+            "pis.v401.endpoint.domestic_standing_order_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_order_consents.consentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_standing_order_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents.consentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_standing_order_consents.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_standing_order_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_order_consents.consentid.positive",
+            "pis.v401.capability.domestic-standing-order",
+            "pis.v401.endpoint.domestic_standing_order_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_orders.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_standing_order_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_orders",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_standing_order_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_standing_orders.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_orders.positive",
+            "pis.v401.capability.domestic-standing-order",
+            "pis.v401.endpoint.domestic_standing_orders"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_standing_orders.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_orders.domesticstandingorderid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.domestic_standing_orders.positive.instance"
+      ],
+      "id": "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive",
+            "pis.v401.capability.domestic-standing-order",
+            "pis.v401.endpoint.domestic_standing_orders.domesticstandingorderid"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.international_payment_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_payment_consents.positive",
+            "pis.v401.capability.international-payment",
+            "pis.v401.endpoint.international_payment_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_payment_consents.consentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_payment_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payment_consents.consentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_payment_consents.positive.instance"
+      ],
+      "id": "pis.v401.test.international_payment_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_payment_consents.consentid.positive",
+            "pis.v401.capability.international-payment",
+            "pis.v401.endpoint.international_payment_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_payments.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_payment_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payments"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_payment_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.international_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_payments.positive",
+            "pis.v401.capability.international-payment",
+            "pis.v401.endpoint.international_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_payments.internationalpaymentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_payments.internationalpaymentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_payments.positive.instance"
+      ],
+      "id": "pis.v401.test.international_payments.internationalpaymentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_payments.internationalpaymentid.positive",
+            "pis.v401.capability.international-payment",
+            "pis.v401.endpoint.international_payments.internationalpaymentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_payments.internationalpaymentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.international_scheduled_payment_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payment_consents.positive",
+            "pis.v401.capability.international-scheduled-payment",
+            "pis.v401.endpoint.international_scheduled_payment_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payment_consents.consentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_scheduled_payment_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payment_consents.consentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_scheduled_payment_consents.positive.instance"
+      ],
+      "id": "pis.v401.test.international_scheduled_payment_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payment_consents.consentid.positive",
+            "pis.v401.capability.international-scheduled-payment",
+            "pis.v401.endpoint.international_scheduled_payment_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payments.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_scheduled_payment_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payments"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_scheduled_payment_consents.consentid.positive.instance"
+      ],
+      "id": "pis.v401.test.international_scheduled_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payments.positive",
+            "pis.v401.capability.international-scheduled-payment",
+            "pis.v401.endpoint.international_scheduled_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payments.internationalscheduledpaymentid.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_scheduled_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.international_scheduled_payments.internationalscheduledpaymentid"
+      ],
+      "dependencyIds": [
+        "pis.v401.test.international_scheduled_payments.positive.instance"
+      ],
+      "id": "pis.v401.test.international_scheduled_payments.internationalscheduledpaymentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.international_scheduled_payments.internationalscheduledpaymentid.positive",
+            "pis.v401.capability.international-scheduled-payment",
+            "pis.v401.endpoint.international_scheduled_payments.internationalscheduledpaymentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.international_scheduled_payments.internationalscheduledpaymentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-payment-consent.missing-authorisation.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-payment-consent.missing-authorisation",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-payment-consent.missing-authorisation"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-payment-consent.missing-jws-issuer.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-payment-consent.missing-jws-issuer",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-payment-consent.missing-jws-issuer"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-payment-consent.invalid-jws-signature.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-payment-consent.invalid-jws-signature",
+            "pis.v401.capability.domestic-payment",
+            "pis.v401.endpoint.domestic_payment_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-payment-consent.invalid-jws-signature"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-scheduled-payment-consent.offset-datetime.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-scheduled-payment-consent.offset-datetime",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payment_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-scheduled-payment-consent.offset-datetime"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_scheduled_payment_consents"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-scheduled-payment-consent.utc-datetime.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-scheduled-payment-consent.utc-datetime",
+            "pis.v401.capability.domestic-scheduled-payment",
+            "pis.v401.endpoint.domestic_scheduled_payment_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-scheduled-payment-consent.utc-datetime"
+    },
+    {
+      "coveredRequirementIds": [
+        "pis.v401.requirement.domestic_standing_order_consents",
+        "pis.v401.requirement.domestic-standing-order-frequency"
+      ],
+      "dependencyIds": [],
+      "id": "pis.v401.test.domestic-standing-order-consent.invalid-frequency.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "pis.v401.test.domestic-standing-order-consent.invalid-frequency",
+            "pis.v401.capability.domestic-standing-order",
+            "pis.v401.endpoint.domestic_standing_order_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "pis.v401.test.domestic-standing-order-consent.invalid-frequency"
+    }
+  ]
+}

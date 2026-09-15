@@ -51,13 +51,22 @@
         "path": {
           "pattern": "^/[^\\s]*$",
           "type": "string"
+        },
+        "sourceId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "sourcePointer": {
+          "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+          "type": "string"
         }
       },
       "required": [
         "id",
         "method",
         "path",
-        "operationId"
+        "operationId",
+        "sourceId",
+        "sourcePointer"
       ],
       "type": "object"
     },
@@ -138,15 +147,63 @@
     },
     "predefinedInput": {
       "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "valueType": {
+                "const": "string"
+              }
+            },
+            "required": ["valueType"]
+          },
+          "then": {
+            "properties": {
+              "defaultValue": {
+                "$ref": "#/$defs/nonEmptyString"
+              },
+              "exampleValue": {
+                "$ref": "#/$defs/nonEmptyString"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valueType": {
+                "const": "standing-order-frequency-v4"
+              }
+            },
+            "required": ["valueType"]
+          },
+          "then": {
+            "properties": {
+              "defaultValue": {
+                "$ref": "#/$defs/frequencyValue"
+              },
+              "exampleValue": {
+                "$ref": "#/$defs/frequencyValue"
+              }
+            }
+          }
+        }
+      ],
       "properties": {
         "description": {
           "$ref": "#/$defs/nonEmptyString"
         },
         "defaultValue": {
-          "$ref": "#/$defs/frequencyValue"
+          "type": [
+            "object",
+            "string"
+          ]
         },
         "exampleValue": {
-          "$ref": "#/$defs/frequencyValue"
+          "type": [
+            "object",
+            "string"
+          ]
         },
         "id": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
@@ -166,7 +223,10 @@
           "const": "non-sensitive"
         },
         "valueType": {
-          "const": "standing-order-frequency-v4"
+          "enum": [
+            "string",
+            "standing-order-frequency-v4"
+          ]
         }
       },
       "required": [
@@ -179,6 +239,16 @@
         "exampleValue"
       ],
       "type": "object"
+    },
+    "predefinedInputValue": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        {
+          "$ref": "#/$defs/frequencyValue"
+        }
+      ]
     },
     "requirement": {
       "additionalProperties": false,
@@ -243,13 +313,39 @@
           "const": "pis"
         },
         "version": {
-          "const": "4.0"
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
         }
       },
       "required": [
         "id",
         "version",
         "requirementsScope"
+      ],
+      "type": "object"
+    },
+    "technicalSource": {
+      "additionalProperties": false,
+      "properties": {
+        "digest": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/sha256Digest"
+        },
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "title": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "uri": {
+          "format": "uri",
+          "pattern": "^https://",
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "uri",
+        "digest"
       ],
       "type": "object"
     }
@@ -308,12 +404,20 @@
         },
         "specification": {
           "$ref": "#/$defs/specification"
+        },
+        "technicalSources": {
+          "items": {
+            "$ref": "#/$defs/technicalSource"
+          },
+          "minItems": 1,
+          "type": "array"
         }
       },
       "required": [
         "scheme",
         "specification",
         "normativeReferences",
+        "technicalSources",
         "capabilities",
         "endpoints",
         "predefinedInputs",

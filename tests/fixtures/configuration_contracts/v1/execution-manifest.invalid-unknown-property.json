@@ -1,6 +1,6 @@
 {
   "documentType": "execution-manifest",
-  "id": "execution-manifest:6af08c9df4427440f80b1dd974bf79409cbe203a1cc8ba23b7ea7f035a7bb1f1",
+  "id": "execution-manifest:8872fb08dcdbcf9c639901a9c69581e4990c5bc5ef9087cb55e66799e176186b",
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -117,6 +117,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-order-consents"
       },
       "testDefinitionId": "pis.dso.test.consent-create",
@@ -145,6 +146,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-order-consents/{ConsentId}"
       },
       "testDefinitionId": "pis.dso.test.consent-read",
@@ -181,6 +183,7 @@
           }
         ],
         "method": "POST",
+        "modifications": [],
         "path": "/domestic-standing-orders"
       },
       "testDefinitionId": "pis.dso.test.order-create",
@@ -209,6 +212,7 @@
       "request": {
         "inputBindings": [],
         "method": "GET",
+        "modifications": [],
         "path": "/domestic-standing-orders/{DomesticStandingOrderId}"
       },
       "testDefinitionId": "pis.dso.test.order-read",

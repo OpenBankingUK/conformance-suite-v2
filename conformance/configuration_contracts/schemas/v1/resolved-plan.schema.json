@@ -162,7 +162,7 @@
         "value": {
           "oneOf": [
             {
-              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/frequencyValue"
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/predefinedInputValue"
             },
             {
               "type": "null"

@@ -1,26 +1,96 @@
 {
   "$defs": {
     "assertion": {
-      "additionalProperties": false,
-      "properties": {
-        "expectedStatus": {
-          "maximum": 599,
-          "minimum": 100,
-          "type": "integer"
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expectedStatus": {
+              "maximum": 599,
+              "minimum": 100,
+              "type": "integer"
+            },
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "http-status"
+            }
+          },
+          "required": ["id", "type", "expectedStatus"],
+          "type": "object"
         },
-        "id": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "schemaRef": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "type": {
+              "const": "response-schema"
+            }
+          },
+          "required": ["id", "type", "schemaRef"],
+          "type": "object"
         },
-        "type": {
-          "const": "http-status"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "headerName": {
+              "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
+              "type": "string"
+            },
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "header-present"
+            }
+          },
+          "required": ["id", "type", "headerName"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "expectedValue": {
+              "$ref": "#/$defs/nonEmptyString"
+            },
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "jsonPointer": {
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "type": "string"
+            },
+            "type": {
+              "const": "json-value"
+            }
+          },
+          "required": ["id", "type", "jsonPointer", "expectedValue"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "jsonPointer": {
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "type": "string"
+            },
+            "type": {
+              "const": "json-absent"
+            }
+          },
+          "required": ["id", "type", "jsonPointer"],
+          "type": "object"
         }
-      },
-      "required": [
-        "id",
-        "type",
-        "expectedStatus"
-      ],
-      "type": "object"
+      ]
     },
     "inputBinding": {
       "additionalProperties": false,
@@ -33,7 +103,7 @@
           "type": "string"
         },
         "transform": {
-          "const": "pis-v4-standing-order-frequency"
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "type": {
           "const": "json-body"
@@ -51,6 +121,31 @@
       "minLength": 1,
       "type": "string"
     },
+    "requestModification": {
+      "additionalProperties": false,
+      "properties": {
+        "generator": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "location": {
+          "enum": ["header", "detached-jws-claim", "detached-jws-signature", "json-body"]
+        },
+        "operation": {
+          "enum": ["omit", "replace", "invalidate", "generate"]
+        },
+        "target": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "value": {
+          "type": "string"
+        }
+      },
+      "required": ["id", "operation", "location"],
+      "type": "object"
+    },
     "request": {
       "additionalProperties": false,
       "properties": {
@@ -62,11 +157,18 @@
             "$ref": "#/$defs/inputBinding"
           },
           "type": "array"
+        },
+        "modifications": {
+          "items": {
+            "$ref": "#/$defs/requestModification"
+          },
+          "type": "array"
         }
       },
       "required": [
         "endpointId",
-        "inputBindings"
+        "inputBindings",
+        "modifications"
       ],
       "type": "object"
     },
@@ -107,6 +209,9 @@
         "name": {
           "$ref": "#/$defs/nonEmptyString"
         },
+        "purpose": {
+          "enum": ["positive", "negative", "security"]
+        },
         "request": {
           "$ref": "#/$defs/request"
         }
@@ -115,6 +220,7 @@
         "id",
         "name",
         "description",
+        "purpose",
         "capabilityId",
         "coveredRequirementIds",
         "dependencies",
