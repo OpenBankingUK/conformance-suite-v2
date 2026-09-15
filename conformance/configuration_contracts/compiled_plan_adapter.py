@@ -222,11 +222,33 @@ def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifes
         parse_execution_manifest(execution_manifest_to_document(manifest))
     except ConfigurationContractError as error:
         raise ResolvedPlanAdapterError("Prepared execution manifest is invalid") from error
-    if prepared.engine is not LegacyExecutionEngine.READ_WRITE:
-        raise ResolvedPlanAdapterError("Stable walking-skeleton manifests require the Read/Write engine")
     compiled_plan = prepared.compiled_plan
     if manifest.security_profile != compiled_plan.security_profile:
         raise ResolvedPlanAdapterError("Execution manifest security profile differs from the compiled plan")
+    if prepared.engine is LegacyExecutionEngine.DCR:
+        if compiled_plan.catalogue_key.api not in {"dcr", "dynamic-client-registration"}:
+            raise ResolvedPlanAdapterError("DCR manifests require a DCR compiled plan")
+        if prepared.result_traceability is None:
+            raise ResolvedPlanAdapterError("DCR manifests require result observation traceability")
+        available_observation_ids = {
+            step.step_id for test_case in compiled_plan.test_cases for step in test_case.execution_steps
+        }
+        mapped_observation_ids = set(prepared.result_traceability.result_observation_id_by_manifest_step_id.values())
+        if not mapped_observation_ids.issubset(available_observation_ids):
+            raise ResolvedPlanAdapterError("DCR manifest references unavailable result observations")
+        return
+    if prepared.engine is not LegacyExecutionEngine.READ_WRITE:
+        raise ResolvedPlanAdapterError("Unsupported execution-manifest compatibility engine")
+    if any(step.test_definition_id not in _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID for step in manifest.steps):
+        if prepared.result_traceability is None:
+            raise ResolvedPlanAdapterError("Migrated execution manifests require result observation traceability")
+        available_observation_ids = {
+            request.step_id for test_case in compiled_plan.test_cases for request in test_case.request_steps
+        }
+        mapped_observation_ids = set(prepared.result_traceability.result_observation_id_by_manifest_step_id.values())
+        if not mapped_observation_ids.issubset(available_observation_ids):
+            raise ResolvedPlanAdapterError("Manifest references unavailable result observations")
+        return
 
     expected_case_ids: list[str] = []
     step_by_id = {step.id: step for step in manifest.steps}
@@ -290,7 +312,7 @@ def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifes
         None,
     )
     if frequency_input is not None:
-        if isinstance(frequency_input.value, str):
+        if frequency_input.value is None or isinstance(frequency_input.value, str):
             raise ResolvedPlanAdapterError("Legacy runtime frequency requires the structured v4 frequency shape")
         if (
             prepared.runtime_inputs.get("pisStandingOrderFrequencyType") != frequency_input.value.frequency_type

@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from enum import StrEnum
 from typing import NewType
+
+from conformance.json_types import JsonValue
 
 StableId = NewType("StableId", str)
 """Opaque stable identifier whose wire constraints are owned by JSON Schema."""
@@ -286,8 +289,23 @@ class ParticipantInput:
 
 
 @dataclass(frozen=True, slots=True)
+class ParticipantExecutionConfiguration:
+    """Participant environment values used after scope compilation.
+
+    The compiler deliberately ignores this configuration. Trusted catalogues
+    remain authoritative for requirements, test selection, and logical input
+    bindings; these values only configure the compatibility execution engine.
+    """
+
+    security_environment: Mapping[str, JsonValue]
+    compatibility_runtime_inputs: Mapping[str, JsonValue]
+    dynamic_client_registration: Mapping[str, JsonValue]
+    metadata: Mapping[str, JsonValue]
+
+
+@dataclass(frozen=True, slots=True)
 class ParticipantPlan:
-    """Participant intent for the configuration-driven walking skeleton."""
+    """Participant intent and execution environment for one trusted scope."""
 
     schema_version: str
     document_type: str
@@ -298,6 +316,7 @@ class ParticipantPlan:
     security_profile: str
     selected_capability_ids: tuple[StableId, ...]
     predefined_inputs: tuple[ParticipantInput, ...]
+    execution_configuration: ParticipantExecutionConfiguration | None = None
 
 
 class SelectionOrigin(StrEnum):
@@ -446,11 +465,12 @@ class EvidenceMode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class ExecutionManifestInput:
-    """Resolved non-sensitive logical input available to executable steps."""
+    """Resolved logical input reference available to executable steps."""
 
     id: StableId
     source: InputResolutionSource
-    value: PredefinedInputValue
+    value: PredefinedInputValue | None
+    redacted: bool
 
 
 @dataclass(frozen=True, slots=True)

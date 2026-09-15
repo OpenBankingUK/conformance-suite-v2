@@ -87,6 +87,35 @@ def _canonical_dcr_plan(service: DcrProtocolService, root: Path, *, full_scope: 
     }
 
 
+def _participant_dcr_registration_plan(service: DcrProtocolService, root: Path) -> JsonObject:
+    """Build the participant-plan form of the DCR registration scope."""
+    legacy = _canonical_dcr_plan(service, root)
+    security_environment = cast(JsonObject, legacy["securityEnvironment"])
+    dynamic_registration = cast(JsonObject, legacy["dynamicClientRegistration"])
+    metadata = cast(JsonObject, legacy["metadata"])
+    return {
+        "documentType": "participant-plan",
+        "executionConfiguration": {
+            "compatibilityRuntimeInputs": {},
+            "dynamicClientRegistration": dynamic_registration,
+            "metadata": metadata,
+            "securityEnvironment": security_environment,
+        },
+        "id": "participant.dcr-registration-product-flow",
+        "predefinedInputs": [],
+        "schemaVersion": "1.0",
+        "scheme": "open-banking-uk",
+        "securityProfile": "all",
+        "selectedCapabilityIds": ["dcr.v34.capability.registration"],
+        "specification": {
+            "id": "dynamic-client-registration",
+            "requirementsScope": "dcr",
+            "version": "3.4",
+        },
+        "suiteReleaseId": "obl.open-banking-mvp.catalogue-release",
+    }
+
+
 def _wait_for_terminal_run(*, timeout_seconds: float = 20.0) -> JsonObject | None:
     """Wait for the active singleton run to complete.
 
@@ -118,18 +147,21 @@ def _wait_for_terminal_run(*, timeout_seconds: float = 20.0) -> JsonObject | Non
 
 
 @pytest.mark.usefixtures("api_singleton_stores")
-def test_cli_plan_load_prepare_run_and_safe_result(
+def test_cli_participant_plan_runs_dcr_with_stable_traceability(
     dcr_test_service: DcrTestService,
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """CLI executes canonical POST coverage and persists only safe evidence.
+    """CLI executes participant-plan POST coverage with safe stable evidence.
 
     Kept on the loopback listener because the CLI builds its own mTLS client
     from the participant's configured certificate, key, and CA bundle.
     """
     plan_path = tmp_path / "dcr-plan.json"
-    plan_path.write_text(json.dumps(_canonical_dcr_plan(dcr_test_service, tmp_path)), encoding="utf-8")
+    plan_path.write_text(
+        json.dumps(_participant_dcr_registration_plan(dcr_test_service, tmp_path)),
+        encoding="utf-8",
+    )
     monkeypatch.setattr(dcr_test_service_module, "_FIXED_NOW", int(time.time()))
     monkeypatch.chdir(tmp_path)
 
@@ -145,6 +177,10 @@ def test_cli_plan_load_prepare_run_and_safe_result(
         "warn": 0,
         "skipped": 0,
     }
+    traceability = cast(JsonObject, result["traceability"])
+    manifest = cast(JsonObject, traceability["executionManifest"])
+    assert len(cast(list[JsonObject], manifest["steps"])) == 6
+    assert all(step["resultStatus"] != "missing" for step in cast(list[JsonObject], manifest["steps"]))
     trace_groups = cast(list[JsonObject], cast(JsonObject, result["catalogue"])["traceGroups"])
     assert {group["status"] for group in trace_groups} == {"passed", "skipped"}
     persisted = json.dumps(result) + (tmp_path / "out" / "execution-log.ndjson").read_text(encoding="utf-8")

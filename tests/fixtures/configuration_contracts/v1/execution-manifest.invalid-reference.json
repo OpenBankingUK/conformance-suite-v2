@@ -1,9 +1,10 @@
 {
   "documentType": "execution-manifest",
-  "id": "execution-manifest:bbe2dd2bc4f6c033edd11bb531e09ecd575ec4873b3aa99f9a91c833993aebbb",
+  "id": "execution-manifest:ccca402ea3c4e06090248b52ef73dcf8d92263d3a1c28c8185372bc9fbf93fa0",
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
+      "redacted": false,
       "source": "participant",
       "value": {
         "frequencyType": "WEEK",

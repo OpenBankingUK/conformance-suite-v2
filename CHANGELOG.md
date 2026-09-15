@@ -11,6 +11,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A single `participant-plan` 1.0 surface now drives browser construction and
+  review, JSON import/export, CLI execution, and REST run creation. Browser
+  scope choices come from the trusted suite-release requirements catalogues;
+  resolved reviews show inferred endpoints, generated tests, reasons, and
+  findings. A strict execution-configuration section carries environment and
+  credential references without affecting resolved-plan identity, and safe
+  snapshots redact compatibility runtime values. Legacy canonical CLI/REST
+  plans remain an explicit compatibility path until the legacy-removal layer.
 - A coordinator-owned, content-addressed Open Banking MVP suite release now
   registers all nine migrated PIS, AIS, CBPII, VRP, and DCR catalogue variants,
   their contract schemas, and pinned technical sources. Registry tests verify

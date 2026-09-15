@@ -36,6 +36,7 @@ from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
 from conformance.catalogue import CompiledTestPlan
 from conformance.json_types import JsonObject, JsonValue
+from conformance.participant_surface import ParticipantSurfaceError, prepare_participant_plan_for_run
 from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 logger = logging.getLogger(__name__)
@@ -219,9 +220,9 @@ def _require_loopback[**P](
 def create_run(request: HttpRequest) -> JsonResponse:
     """Start a new conformance run from a JSON request body.
 
-    The request body must be a canonical ``schemaVersion: "1.0"`` test plan, or
-    a JSON object with a canonical test plan under the ``testPlan`` key. The plan
-    is compiled against the bundled catalogues before the asynchronous run
+    The request body must be a ``participant-plan`` version ``1.0`` document, or
+    a JSON object with that plan under the ``testPlan`` key. The plan is
+    compiled against the trusted suite-release catalogues before the asynchronous run
     starts, so participants receive immediate feedback for unsupported
     combinations, unknown endpoints, missing runtime inputs, or invalid setup.
     The run executes asynchronously in a background thread; the response
@@ -308,28 +309,51 @@ def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonRespo
         Run status JSON on success or a validation/conflict error response.
     """
     try:
-        prepared = prepare_test_plan_for_run(raw_test_plan, base_dir=Path.cwd())
-        api_file_reference_error = _api_file_reference_error(prepared.compiled_plan, prepared.runtime_inputs)
+        is_participant_plan = raw_test_plan.get("documentType") == "participant-plan"
+        if is_participant_plan:
+            participant_prepared = prepare_participant_plan_for_run(raw_test_plan, base_dir=Path.cwd())
+            config = participant_prepared.config
+            compiled_plan = participant_prepared.compiled_plan
+            runtime_inputs = participant_prepared.runtime_inputs
+            plan_snapshot = participant_prepared.safe_snapshot
+            validation_result = participant_prepared.validation.to_json_object()
+            prepared_execution_manifest = participant_prepared.prepared_execution
+        else:
+            legacy_prepared = prepare_test_plan_for_run(raw_test_plan, base_dir=Path.cwd())
+            config = legacy_prepared.config
+            compiled_plan = legacy_prepared.compiled_plan
+            runtime_inputs = legacy_prepared.runtime_inputs
+            plan_snapshot = legacy_prepared.snapshot
+            validation_result = legacy_prepared.validation.to_json_object()
+            prepared_execution_manifest = None
+        api_file_reference_error = _api_file_reference_error(compiled_plan, runtime_inputs)
         if api_file_reference_error is not None:
             return api_file_reference_error
-    except TestPlanValidationError as error:
+    except (ParticipantSurfaceError, TestPlanValidationError) as error:
         return JsonResponse(
             {
                 "error": f"Test plan validation failed: {error}",
-                "validation": error.result.to_json_object(),
             },
             status=400,
         )
 
     try:
-        response_body = start_run(
-            config=prepared.config,
-            compiled_plan=prepared.compiled_plan,
-            runtime_inputs=prepared.runtime_inputs,
-            runtime_input_base_dir=Path.cwd(),
-            plan_snapshot=prepared.snapshot,
-            validation_result=prepared.validation.to_json_object(),
-        )
+        if prepared_execution_manifest is not None:
+            response_body = start_run(
+                config=config,
+                prepared_execution_manifest=prepared_execution_manifest,
+                plan_snapshot=plan_snapshot,
+                validation_result=validation_result,
+            )
+        else:
+            response_body = start_run(
+                config=config,
+                compiled_plan=compiled_plan,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=Path.cwd(),
+                plan_snapshot=plan_snapshot,
+                validation_result=validation_result,
+            )
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},

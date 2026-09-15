@@ -1,9 +1,10 @@
 {
   "documentType": "execution-manifest",
-  "id": "execution-manifest:25f4fd08ddd5a1f079162c6c87ded516762df00ace18c7c1069f862baa502b31",
+  "id": "execution-manifest:1b141ca6813d2dc77b157b84e93c4bbc796d4805ab792b26a41fae91a53c7e8b",
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
+      "redacted": false,
       "source": "participant",
       "value": {
         "frequencyType": "WEEK",
@@ -30,7 +31,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
       },
       {
-        "digest": "sha256:7d42b3b5cfe9bb3eed645623791737b148f991d3c4fac49d2aef654f9a5a663f",
+        "digest": "sha256:b9d5df889002450abdc0c8dd7264311d930d7977ca41023e98dd7e045c142432",
         "id": "participant-plan-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -46,7 +47,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
       },
       {
-        "digest": "sha256:e76a1c521efecdab3ccdc1cd8a6b991638174fc9f511a68dd3ee37bf3b6d5610",
+        "digest": "sha256:d33c439589621fc644944e973e06b972a340cf449416f221e18a30531b8b167e",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -72,7 +73,7 @@
     ],
     "participantPlanId": "participant.pis-dso.example",
     "requirementsCatalogueId": "obl.pis-domestic-standing-order-v4.requirements",
-    "resolvedPlanId": "resolved-plan:b922240ff825ebdbc0e8a505ca11d1641b1f4b7da2860d7a1dc84ff044437200",
+    "resolvedPlanId": "resolved-plan:43e9ada5bf16bade53822ba2d4626fa3c3e702c1df4b5c0df733cfeb180c5381",
     "suitePublishedAt": "2026-09-15T08:57:48Z",
     "suiteReleaseId": "obl.pis-dso-v4.walking-skeleton-suite",
     "suiteReleaseVersion": "walking-skeleton.1",

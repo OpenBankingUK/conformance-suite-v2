@@ -6,6 +6,11 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from conformance.catalogue import ApplicabilityDecision, CatalogueTestCase, CompiledTestPlan
+from conformance.configuration_contracts import (
+    RequirementsCatalogue,
+    ResolvedPlan,
+    TestDefinitionCatalogue,
+)
 
 
 @dataclass(frozen=True)
@@ -105,6 +110,48 @@ def compiled_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow
                 request_step_ids=tuple(request_step.step_id for request_step in test_case.request_steps),
                 assertion_summaries=tuple(assertion.description for assertion in test_case.assertions),
                 compliance_scope=test_case.compliance_scope,
+            )
+        )
+    return tuple(rows)
+
+
+def resolved_plan_rows(
+    resolved_plan: ResolvedPlan,
+    requirements: RequirementsCatalogue,
+    test_definitions: TestDefinitionCatalogue,
+) -> tuple[PlanTestCaseRow, ...]:
+    """Build review rows from generated resolved-plan test instances."""
+    definitions_by_id = {definition.id: definition for definition in test_definitions.test_definitions}
+    input_definitions = {item.id: item for item in requirements.predefined_inputs}
+    capability_origins = {item.id: item.origin.value for item in resolved_plan.capabilities}
+    rows: list[PlanTestCaseRow] = []
+    for instance in resolved_plan.test_instances:
+        definition = definitions_by_id[instance.test_definition_id]
+        origin = capability_origins.get(definition.capability_id, "inferred")
+        rows.append(
+            PlanTestCaseRow(
+                id=str(instance.id),
+                name=definition.name,
+                role=definition.purpose,
+                phase="execution",
+                source=f"{origin.title()} capability",
+                source_detail=str(definition.capability_id),
+                mandatory=bool(instance.covered_requirement_ids),
+                dependencies=tuple(str(dependency_id) for dependency_id in instance.dependency_ids),
+                request_count=1,
+                assertion_count=len(definition.assertions),
+                runtime_requirements=tuple(
+                    PlanRuntimeRequirement(
+                        input_id=str(binding.input_id),
+                        label=input_definitions[binding.input_id].label,
+                        required=True,
+                        sensitive=input_definitions[binding.input_id].sensitivity != "non-sensitive",
+                    )
+                    for binding in definition.request.input_bindings
+                ),
+                request_step_ids=(f"{instance.id!s}.request",),
+                assertion_summaries=tuple(str(assertion.id) for assertion in definition.assertions),
+                compliance_scope=tuple(str(item) for item in instance.covered_requirement_ids),
             )
         )
     return tuple(rows)

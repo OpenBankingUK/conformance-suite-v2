@@ -18,6 +18,7 @@ from pathlib import Path
 from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_store import RunPlanStep, RunRecord, RunStore, run_store
 from conformance.catalogue import CatalogueRequestStep, CompiledTestPlan
+from conformance.configuration_contracts import PreparedExecutionManifest
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
     BufferedExecutionLogger,
@@ -30,6 +31,7 @@ from conformance.executor import (
     compiled_plan_synthetic_inline_steps,
     compiled_plan_synthetic_setup_steps,
     run_compiled_test_plan,
+    run_execution_manifest,
     run_manifest,
 )
 from conformance.http import build_json_http_client
@@ -137,6 +139,7 @@ def start_run(
     browser_psu_prompts: bool = False,
     plan_snapshot: JsonObject | None = None,
     validation_result: JsonObject | None = None,
+    prepared_execution_manifest: PreparedExecutionManifest | None = None,
 ) -> JsonObject:
     """Reserve a run slot and start asynchronous conformance execution.
 
@@ -167,6 +170,12 @@ def start_run(
     Raises:
         RunConflictError: If another run is already pending or running.
     """
+    if prepared_execution_manifest is not None:
+        if compiled_plan is not None:
+            raise ValueError("Supply either compiled_plan or prepared_execution_manifest, not both")
+        compiled_plan = prepared_execution_manifest.compiled_plan
+        runtime_inputs = prepared_execution_manifest.runtime_inputs
+        runtime_input_base_dir = prepared_execution_manifest.runtime_input_base_dir
     if compiled_plan is not None and (runtime_inputs is None or runtime_input_base_dir is None):
         raise ValueError("compiled_plan launches require runtime_inputs and runtime_input_base_dir")
     effective_plan = _effective_plan_for_launch(manifest=manifest, plan=plan)
@@ -181,6 +190,9 @@ def start_run(
         validation_result=validation_result,
     )
     warn_if_developer_mode()
+    thread_kwargs: dict[str, object] = {"browser_psu_prompts": browser_psu_prompts}
+    if prepared_execution_manifest is not None:
+        thread_kwargs["prepared_execution_manifest"] = prepared_execution_manifest
     thread = threading.Thread(
         target=_execute_run,
         args=(
@@ -192,7 +204,7 @@ def start_run(
             manifest,
             effective_plan,
         ),
-        kwargs={"browser_psu_prompts": browser_psu_prompts},
+        kwargs=thread_kwargs,
         daemon=True,
     )
     initial_status = record.to_status_json()
@@ -478,6 +490,7 @@ def _execute_run(
     plan: TestPlan | None = None,
     *,
     browser_psu_prompts: bool = False,
+    prepared_execution_manifest: PreparedExecutionManifest | None = None,
 ) -> None:
     """Execute a conformance run in a background thread.
 
@@ -545,7 +558,19 @@ def _execute_run(
                 mtls_configured = (
                     config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
                 )
-                if compiled_plan is not None:
+                if prepared_execution_manifest is not None:
+                    result = run_execution_manifest(
+                        prepared_execution_manifest,
+                        client=http_client,
+                        execution_logger=logger_sink,
+                        run_id=run_id,
+                        auth_session_store=auth_session_store,
+                        runtime_config=runtime_config,
+                        fapi_signing_config=config.fapi_signing,
+                        mtls_client_configured=mtls_configured,
+                        approved_release_policy=config.approved_release_policy,
+                    )
+                elif compiled_plan is not None:
                     if runtime_inputs is None or runtime_input_base_dir is None:
                         raise ValueError("compiled plan execution requires runtime inputs")
                     result = run_compiled_test_plan(

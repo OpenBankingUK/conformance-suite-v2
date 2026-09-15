@@ -65,15 +65,14 @@ def generate_execution_manifest(
 
     inputs: list[ExecutionManifestInput] = []
     for predefined_input in resolved_plan.predefined_inputs:
-        if predefined_input.redacted or predefined_input.value is None:
-            raise ExecutionManifestGenerationError(
-                f"Resolved input {predefined_input.id!s} is redacted and cannot be placed in an execution manifest"
-            )
+        if not predefined_input.redacted and predefined_input.value is None:
+            raise ExecutionManifestGenerationError(f"Resolved input {predefined_input.id!s} has no executable value")
         inputs.append(
             ExecutionManifestInput(
                 id=predefined_input.id,
                 source=predefined_input.source,
                 value=predefined_input.value,
+                redacted=predefined_input.redacted,
             )
         )
 

@@ -853,6 +853,7 @@ def _resolved_plan_id(
     participant_plan: ParticipantPlan,
 ) -> StableId:
     participant_document = participant_plan_to_document(participant_plan)
+    participant_document.pop("executionConfiguration", None)
     selected_capability_ids: list[JsonValue] = []
     selected_capability_ids.extend(
         sorted(str(capability_id) for capability_id in participant_plan.selected_capability_ids)

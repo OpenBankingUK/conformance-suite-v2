@@ -135,17 +135,15 @@
         {% for blocker in review.blockers %}
             <div class="message warning">{{ blocker }}</div>
         {% endfor %}
-        {% if review.compiled_plan and not review.compiled_plan.certifying %}
-            <div class="message warning">Certification plan ineligible.</div>
-        {% endif %}
-
+        {% for finding in review.findings %}
+            <div class="message warning">{{ finding }}</div>
+        {% endfor %}
         <div class="actions">
             <a class="button secondary" href="{% url 'builder-catalogue-boundary' draft.draft_id %}">Edit specification</a>
             <a class="button secondary" href="{% url 'builder-discovery-config' draft.draft_id %}">Edit discovery</a>
             <a class="button secondary" href="{% url 'builder-security-config' draft.draft_id %}">Edit security</a>
             <a class="button secondary" href="{% url 'builder-scope' draft.draft_id %}">Edit scope</a>
             {% if draft.specification != "dynamic-client-registration" %}
-                <a class="button secondary" href="{% url 'builder-config' draft.draft_id %}">Edit business data</a>
                 <a class="button secondary" href="{% url 'builder-runtime-config' draft.draft_id %}">Edit runtime inputs</a>
             {% endif %}
             <a class="button secondary" href="{% url 'builder-export' draft.draft_id %}">Export safe JSON</a>
@@ -222,7 +220,7 @@
                             <td>{% if row.mandatory %}<span class="badge">Mandatory</span>{% else %}<span class="badge">Optional</span>{% endif %}</td>
                         </tr>
                     {% empty %}
-                        <tr><td colspan="7">No generated tests. Select endpoints before launch.</td></tr>
+                        <tr><td colspan="7">No generated tests. Select a supported capability before launch.</td></tr>
                     {% endfor %}
                     </tbody>
                 </table>

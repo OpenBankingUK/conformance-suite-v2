@@ -27,7 +27,13 @@ from conformance.http import JsonHttpClientError, JsonHttpResponse, send_json
 from conformance.json_types import JsonObject, JsonValue
 from conformance.masking import MASKED_VALUE, mask_form_fields, mask_headers, mask_json_value
 from conformance.plan_configuration import ClientAuthMethod, DcrPlanConfiguration
-from conformance.results import CheckStatus, SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.results import (
+    CheckStatus,
+    ResultTraceabilitySource,
+    SmokeCheckResult,
+    StepResult,
+    build_smoke_check_result,
+)
 from conformance.url_validation import HttpsUrlValidationError, validate_https_url, validate_oauth_redirect_uri
 
 _ASSERTION_TYPE = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
@@ -123,6 +129,7 @@ class DcrCatalogueExecutionAdapter:
     clock: Callable[[], datetime] = lambda: datetime.now(UTC)
     jwt_id_factory: Callable[[], str] = lambda: uuid4().hex
     approved_release_policy: ApprovedReleasePolicy | None = None
+    result_traceability: ResultTraceabilitySource | None = None
     _discovery: DcrDiscoveryMetadata | None = field(default=None, init=False)
     _signing_key: jwk.Key | None = field(default=None, init=False)
 
@@ -155,6 +162,7 @@ class DcrCatalogueExecutionAdapter:
             compiled_plan=self.compiled_plan,
             non_certifying_reasons=self.compiled_plan.traceability.non_certifying_reasons,
             approved_release_policy=self.approved_release_policy,
+            result_traceability=self.result_traceability,
         )
 
     def build_registration_jose(
