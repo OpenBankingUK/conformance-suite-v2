@@ -94,7 +94,12 @@ from conformance.psu_authorization import (
     synthesize_psu_response,
 )
 from conformance.response_signature import ResponseSignatureValidationError, validate_ob_response_signature
-from conformance.results import SmokeCheckResult, StepResult, build_smoke_check_result
+from conformance.results import (
+    ResultTraceabilitySource,
+    SmokeCheckResult,
+    StepResult,
+    build_smoke_check_result,
+)
 from conformance.signing_credentials import SigningCredentialError, load_signing_credentials
 from conformance.signing_service import (
     ClientAssertionSigningInput,
@@ -625,6 +630,7 @@ def run_execution_manifest(
                 mtls_client_configured=mtls_client_configured,
                 approved_release_policy=approved_release_policy,
                 compiled_plan=compiled_plan,
+                result_traceability=prepared_manifest.result_traceability,
             )
     except Exception as error:
         logger_sink.emit("application-error", payload={"message": str(error)})
@@ -2626,6 +2632,7 @@ def _run_manifest_v1(
     mtls_client_configured: bool,
     approved_release_policy: ApprovedReleasePolicy | None,
     compiled_plan: CompiledTestPlan | None = None,
+    result_traceability: ResultTraceabilitySource | None = None,
 ) -> SmokeCheckResult:
     """Execute a v1 manifest with setup first and grouped execution after.
 
@@ -2665,6 +2672,7 @@ def _run_manifest_v1(
             generated report's certification self-assessment.
         compiled_plan: Optional compiled catalogue plan whose traceability
             should be embedded in the result.
+        result_traceability: Optional stable execution-manifest provenance.
 
     Returns:
         Smoke-check result with one entry per executed (selected) step.
@@ -2727,6 +2735,7 @@ def _run_manifest_v1(
         certification_coverage=manifest.certification_coverage,
         compiled_plan=compiled_plan,
         non_certifying_reasons=(compiled_plan.traceability.non_certifying_reasons if compiled_plan is not None else ()),
+        result_traceability=result_traceability,
     )
 
 

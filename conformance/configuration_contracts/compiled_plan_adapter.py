@@ -30,6 +30,7 @@ from conformance.configuration_contracts.loader import (
 )
 from conformance.configuration_contracts.models import (
     ExecutionManifest,
+    ParticipantPlan,
     RequirementsCatalogue,
     ResolvedPlan,
     ResolvedTestInstance,
@@ -37,6 +38,7 @@ from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue,
 )
 from conformance.json_types import JsonValue
+from conformance.results import ResultTraceabilitySource, build_safe_participant_plan_snapshot
 
 _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID: Mapping[StableId, str] = MappingProxyType(
     {
@@ -77,6 +79,7 @@ class PreparedExecutionManifest:
     compiled_plan: CompiledTestPlan
     runtime_inputs: Mapping[str, JsonValue]
     runtime_input_base_dir: Path
+    result_traceability: ResultTraceabilitySource | None = None
 
 
 def prepare_resolved_execution_manifest(
@@ -85,10 +88,12 @@ def prepare_resolved_execution_manifest(
     test_definition_catalogue: TestDefinitionCatalogue,
     catalogue: TestCatalogue,
     *,
+    participant_plan: ParticipantPlan,
     runtime_inputs: Mapping[str, JsonValue],
     runtime_input_base_dir: Path,
 ) -> PreparedExecutionManifest:
     """Generate a stable manifest and bind it to the current Read/Write engine."""
+    _validate_participant_plan_snapshot(participant_plan, resolved_plan, requirements_catalogue)
     manifest = generate_execution_manifest(
         resolved_plan,
         requirements_catalogue,
@@ -105,6 +110,18 @@ def prepare_resolved_execution_manifest(
         compiled_plan=adapted.compiled_plan,
         runtime_inputs=adapted.runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
+        result_traceability=ResultTraceabilitySource(
+            execution_manifest=manifest,
+            resolved_plan=resolved_plan,
+            participant_plan_snapshot=build_safe_participant_plan_snapshot(
+                participant_plan,
+                requirements_catalogue,
+            ),
+            result_observation_id_by_manifest_step_id=_result_observation_ids_by_manifest_step(
+                manifest,
+                adapted.compiled_plan,
+            ),
+        ),
     )
     validate_execution_manifest_compatibility(prepared)
     return prepared
@@ -129,6 +146,71 @@ def adapt_compiled_plan_to_execution_manifest(
         runtime_inputs=MappingProxyType(dict(runtime_inputs)),
         runtime_input_base_dir=runtime_input_base_dir,
     )
+
+
+def _validate_participant_plan_snapshot(
+    participant_plan: ParticipantPlan,
+    resolved_plan: ResolvedPlan,
+    requirements_catalogue: RequirementsCatalogue,
+) -> None:
+    provenance = resolved_plan.provenance
+    if participant_plan.id != provenance.participant_plan_id:
+        raise ResolvedPlanAdapterError("Participant plan differs from resolved-plan provenance")
+    if participant_plan.suite_release_id != provenance.suite_release_id:
+        raise ResolvedPlanAdapterError("Participant plan suite release differs from resolved-plan provenance")
+    if (
+        participant_plan.scheme != resolved_plan.scheme
+        or participant_plan.specification != resolved_plan.specification
+        or participant_plan.security_profile != resolved_plan.security_profile
+    ):
+        raise ResolvedPlanAdapterError("Participant plan scope differs from the resolved plan")
+    explicit_capability_ids = {
+        capability.id for capability in resolved_plan.capabilities if capability.origin.value == "explicit"
+    }
+    if set(participant_plan.selected_capability_ids) != explicit_capability_ids:
+        raise ResolvedPlanAdapterError("Participant capability selections differ from the resolved plan")
+    resolved_participant_inputs = {
+        predefined_input.id: predefined_input
+        for predefined_input in resolved_plan.predefined_inputs
+        if predefined_input.source.value == "participant"
+    }
+    participant_inputs = {
+        participant_input.input_id: participant_input for participant_input in participant_plan.predefined_inputs
+    }
+    if participant_inputs.keys() != resolved_participant_inputs.keys():
+        raise ResolvedPlanAdapterError("Participant predefined inputs differ from the resolved plan")
+    input_definitions = {
+        predefined_input.id: predefined_input for predefined_input in requirements_catalogue.predefined_inputs
+    }
+    for input_id, participant_input in participant_inputs.items():
+        input_definition = input_definitions.get(input_id)
+        if input_definition is None:
+            raise ResolvedPlanAdapterError(
+                f"Participant-plan input {input_id!s} has no trusted sensitivity classification"
+            )
+        resolved_input = resolved_participant_inputs[input_id]
+        if input_definition.sensitivity == "non-sensitive":
+            if resolved_input.redacted or resolved_input.value != participant_input.value:
+                raise ResolvedPlanAdapterError(f"Participant-plan input {input_id!s} differs from the resolved plan")
+        elif not resolved_input.redacted or resolved_input.value is not None:
+            raise ResolvedPlanAdapterError(f"Sensitive participant-plan input {input_id!s} was not redacted")
+
+
+def _result_observation_ids_by_manifest_step(
+    manifest: ExecutionManifest,
+    compiled_plan: CompiledTestPlan,
+) -> Mapping[str, str]:
+    compiled_cases_by_id = {test_case.test_case_id: test_case for test_case in compiled_plan.test_cases}
+    observation_ids: dict[str, str] = {}
+    for manifest_step in manifest.steps:
+        legacy_case_id = _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID.get(manifest_step.test_definition_id)
+        legacy_case = compiled_cases_by_id.get(legacy_case_id) if legacy_case_id is not None else None
+        if legacy_case is None or len(legacy_case.request_steps) != 1:
+            raise ResolvedPlanAdapterError(
+                f"Cannot identify one result observation for manifest step {manifest_step.id!s}"
+            )
+        observation_ids[str(manifest_step.id)] = legacy_case.request_steps[0].step_id
+    return MappingProxyType(observation_ids)
 
 
 def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifest) -> None:

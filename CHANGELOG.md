@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Stable execution-manifest result traceability linking suite releases,
+  requirement and test-definition IDs, compiled test instances, manifest
+  steps, result observations, safe participant-plan snapshots, and retained
+  compiler findings. Legacy compatibility-only setup observations remain
+  explicitly separate, sensitive input values are excluded, and existing
+  report shapes are unchanged outside the stable manifest path.
 - Immutable, schema-versioned execution manifests generated deterministically
   from resolved plans, with resolved inputs, operation templates, dependency
   ordering, assertions, masked-evidence instructions, and copied provenance.
