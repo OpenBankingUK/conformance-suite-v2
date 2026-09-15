@@ -1,0 +1,19 @@
+{
+  "documentType": "participant-plan",
+  "id": "participant.dcr-v34.full-management",
+  "predefinedInputs": [],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "all",
+  "selectedCapabilityIds": [
+    "dcr.v34.capability.retrieval",
+    "dcr.v34.capability.update",
+    "dcr.v34.capability.deletion"
+  ],
+  "specification": {
+    "id": "dynamic-client-registration",
+    "requirementsScope": "dcr",
+    "version": "3.4"
+  },
+  "suiteReleaseId": "obl.dcr-v34.catalogue-fixture"
+}

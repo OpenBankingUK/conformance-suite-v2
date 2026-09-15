@@ -41,8 +41,10 @@
         },
         "method": {
           "enum": [
+            "DELETE",
             "GET",
-            "POST"
+            "POST",
+            "PUT"
           ]
         },
         "operationId": {
@@ -64,7 +66,6 @@
         "id",
         "method",
         "path",
-        "operationId",
         "sourceId",
         "sourcePointer"
       ],
@@ -253,6 +254,12 @@
     "requirement": {
       "additionalProperties": false,
       "properties": {
+        "assessment": {
+          "enum": [
+            "documented-only",
+            "tested"
+          ]
+        },
         "id": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
@@ -310,7 +317,7 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "requirementsScope": {
-          "const": "pis"
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "version": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
@@ -386,7 +393,6 @@
           "items": {
             "$ref": "#/$defs/predefinedInput"
           },
-          "minItems": 1,
           "type": "array"
         },
         "requirements": {

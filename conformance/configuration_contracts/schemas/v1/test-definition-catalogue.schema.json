@@ -29,6 +29,9 @@
             "schemaRef": {
               "$ref": "#/$defs/nonEmptyString"
             },
+            "schemaSourceId": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
             "type": {
               "const": "response-schema"
             }
@@ -71,6 +74,23 @@
             }
           },
           "required": ["id", "type", "jsonPointer", "expectedValue"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "jsonPointer": {
+              "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+              "type": "string"
+            },
+            "type": {
+              "const": "json-present"
+            }
+          },
+          "required": ["id", "type", "jsonPointer"],
           "type": "object"
         },
         {
@@ -131,7 +151,15 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "location": {
-          "enum": ["header", "detached-jws-claim", "detached-jws-signature", "json-body"]
+          "enum": [
+            "header",
+            "detached-jws-claim",
+            "detached-jws-signature",
+            "json-body",
+            "jws-claim",
+            "path-parameter",
+            "request-body"
+          ]
         },
         "operation": {
           "enum": ["omit", "replace", "invalidate", "generate"]
@@ -149,6 +177,13 @@
     "request": {
       "additionalProperties": false,
       "properties": {
+        "authorizationProfile": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "contentType": {
+          "pattern": "^[^\\s/]+/[^\\s/]+$",
+          "type": "string"
+        },
         "endpointId": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
@@ -163,6 +198,15 @@
             "$ref": "#/$defs/requestModification"
           },
           "type": "array"
+        },
+        "stateBindings": {
+          "items": {
+            "$ref": "#/$defs/stateBinding"
+          },
+          "type": "array"
+        },
+        "transportProfile": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         }
       },
       "required": [
@@ -170,6 +214,64 @@
         "inputBindings",
         "modifications"
       ],
+      "type": "object"
+    },
+    "stateBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "outputId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "target": {
+          "$ref": "#/$defs/nonEmptyString"
+        },
+        "type": {
+          "enum": [
+            "authorization-access-token",
+            "authorization-client-id",
+            "path-parameter"
+          ]
+        }
+      },
+      "required": ["outputId", "type", "target"],
+      "type": "object"
+    },
+    "testOutput": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "source": {
+                "const": "response-json"
+              }
+            },
+            "required": ["source"]
+          },
+          "then": {
+            "required": ["jsonPointer"]
+          }
+        }
+      ],
+      "properties": {
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "jsonPointer": {
+          "pattern": "^(?:/(?:[^~/]|~[01])*)+$",
+          "type": "string"
+        },
+        "sensitive": {
+          "type": "boolean"
+        },
+        "source": {
+          "enum": [
+            "authorization-access-token",
+            "response-json"
+          ]
+        }
+      },
+      "required": ["id", "source", "sensitive"],
       "type": "object"
     },
     "testDefinition": {
@@ -208,6 +310,12 @@
         },
         "name": {
           "$ref": "#/$defs/nonEmptyString"
+        },
+        "outputs": {
+          "items": {
+            "$ref": "#/$defs/testOutput"
+          },
+          "type": "array"
         },
         "purpose": {
           "enum": ["positive", "negative", "security"]

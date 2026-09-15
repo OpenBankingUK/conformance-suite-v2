@@ -48,6 +48,7 @@ from conformance.configuration_contracts.models import (
     PredefinedInput,
     RequestInputBinding,
     RequestModification,
+    RequestStateBinding,
     Requirement,
     RequirementRule,
     RequirementsCatalogue,
@@ -70,6 +71,7 @@ from conformance.configuration_contracts.models import (
     TestAssertion,
     TestDefinition,
     TestDefinitionCatalogue,
+    TestOutput,
     TestRequest,
     ToolRelease,
 )
@@ -270,6 +272,27 @@ def validate_catalogue_references(
     endpoint_ids = {endpoint.id for endpoint in requirements_catalogue.endpoints}
     input_ids = {predefined_input.id for predefined_input in requirements_catalogue.predefined_inputs}
     requirement_ids = {requirement.id for requirement in requirements_catalogue.requirements}
+    technical_source_ids = {source.id for source in requirements_catalogue.technical_sources}
+    definitions_by_id = {
+        test_definition.id: test_definition for test_definition in test_definition_catalogue.test_definitions
+    }
+    output_producers = {
+        output.id: test_definition.id
+        for test_definition in test_definition_catalogue.test_definitions
+        for output in test_definition.outputs
+    }
+
+    def dependency_closure(test_id: StableId) -> set[StableId]:
+        closure: set[StableId] = set()
+        pending = list(definitions_by_id[test_id].dependencies)
+        while pending:
+            dependency_id = pending.pop()
+            if dependency_id in closure or dependency_id not in definitions_by_id:
+                continue
+            closure.add(dependency_id)
+            pending.extend(definitions_by_id[dependency_id].dependencies)
+        return closure
+
     for test_index, test_definition in enumerate(test_definition_catalogue.test_definitions):
         base_path = f"/testDefinitions/{test_index}"
         if test_definition.capability_id not in capability_ids:
@@ -304,6 +327,37 @@ def validate_catalogue_references(
                         binding.input_id,
                         instance_path=f"{base_path}/request/inputBindings/{binding_index}/inputId",
                         object_kind="predefined input",
+                    )
+                )
+        dependencies = dependency_closure(test_definition.id)
+        for binding_index, state_binding in enumerate(test_definition.request.state_bindings):
+            producer_id = output_producers.get(state_binding.output_id)
+            if producer_id is None:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        state_binding.output_id,
+                        instance_path=f"{base_path}/request/stateBindings/{binding_index}/outputId",
+                        object_kind="test output",
+                    )
+                )
+            elif producer_id not in dependencies:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.RULE_INCONSISTENT,
+                        (
+                            f"Test output {state_binding.output_id!s} is produced by {producer_id!s}, "
+                            f"which is not a dependency of {test_definition.id!s}"
+                        ),
+                        instance_path=f"{base_path}/request/stateBindings/{binding_index}/outputId",
+                    )
+                )
+        for assertion_index, assertion in enumerate(test_definition.assertions):
+            if assertion.schema_source_id is not None and assertion.schema_source_id not in technical_source_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        assertion.schema_source_id,
+                        instance_path=f"{base_path}/assertions/{assertion_index}/schemaSourceId",
+                        object_kind="technical source",
                     )
                 )
     return tuple(diagnostics)
@@ -387,14 +441,16 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
         ],
         "documentType": catalogue.document_type,
         "endpoints": [
-            {
-                "id": str(endpoint.id),
-                "method": endpoint.method.value,
-                "operationId": endpoint.operation_id,
-                "path": endpoint.path,
-                "sourceId": str(endpoint.source_id),
-                "sourcePointer": endpoint.source_pointer,
-            }
+            _without_none_values(
+                {
+                    "id": str(endpoint.id),
+                    "method": endpoint.method.value,
+                    "operationId": endpoint.operation_id,
+                    "path": endpoint.path,
+                    "sourceId": str(endpoint.source_id),
+                    "sourcePointer": endpoint.source_pointer,
+                }
+            )
             for endpoint in catalogue.endpoints
         ],
         "id": str(catalogue.id),
@@ -429,17 +485,22 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
             for predefined_input in catalogue.predefined_inputs
         ],
         "requirements": [
-            {
-                "id": str(requirement.id),
-                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
-                "rule": {
-                    "capabilityId": str(requirement.rule.capability_id),
-                    "targetId": str(requirement.rule.target_id),
-                    "targetType": requirement.rule.target_type.value,
-                    "type": requirement.rule.type,
-                },
-                "statement": requirement.statement,
-            }
+            _without_none_values(
+                {
+                    "assessment": requirement.assessment if requirement.assessment != "tested" else None,
+                    "id": str(requirement.id),
+                    "normativeReferenceIds": [
+                        str(reference_id) for reference_id in requirement.normative_reference_ids
+                    ],
+                    "rule": {
+                        "capabilityId": str(requirement.rule.capability_id),
+                        "targetId": str(requirement.rule.target_id),
+                        "targetType": requirement.rule.target_type.value,
+                        "type": requirement.rule.type,
+                    },
+                    "statement": requirement.statement,
+                }
+            )
             for requirement in catalogue.requirements
         ],
         "schemaVersion": catalogue.schema_version,
@@ -479,8 +540,23 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
                 "description": test_definition.description,
                 "id": str(test_definition.id),
                 "name": test_definition.name,
+                **(
+                    {"outputs": [_test_output_to_document(output) for output in test_definition.outputs]}
+                    if test_definition.outputs
+                    else {}
+                ),
                 "purpose": test_definition.purpose,
                 "request": {
+                    **(
+                        {"authorizationProfile": str(test_definition.request.authorization_profile)}
+                        if test_definition.request.authorization_profile is not None
+                        else {}
+                    ),
+                    **(
+                        {"contentType": test_definition.request.content_type}
+                        if test_definition.request.content_type is not None
+                        else {}
+                    ),
                     "endpointId": str(test_definition.request.endpoint_id),
                     "inputBindings": [
                         {
@@ -495,6 +571,21 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
                         _request_modification_to_document(modification)
                         for modification in test_definition.request.modifications
                     ],
+                    **(
+                        {
+                            "stateBindings": [
+                                _state_binding_to_document(binding)
+                                for binding in test_definition.request.state_bindings
+                            ]
+                        }
+                        if test_definition.request.state_bindings
+                        else {}
+                    ),
+                    **(
+                        {"transportProfile": str(test_definition.request.transport_profile)}
+                        if test_definition.request.transport_profile is not None
+                        else {}
+                    ),
                 },
             }
             for test_definition in catalogue.test_definitions
@@ -578,14 +669,19 @@ def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
             ],
         },
         "requirements": [
-            {
-                "capabilityId": str(requirement.capability_id),
-                "id": str(requirement.id),
-                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
-                "reasons": [_resolution_reason_to_document(reason) for reason in requirement.reasons],
-                "targetId": str(requirement.target_id),
-                "targetType": requirement.target_type.value,
-            }
+            _without_none_values(
+                {
+                    "assessment": requirement.assessment if requirement.assessment != "tested" else None,
+                    "capabilityId": str(requirement.capability_id),
+                    "id": str(requirement.id),
+                    "normativeReferenceIds": [
+                        str(reference_id) for reference_id in requirement.normative_reference_ids
+                    ],
+                    "reasons": [_resolution_reason_to_document(reason) for reason in requirement.reasons],
+                    "targetId": str(requirement.target_id),
+                    "targetType": requirement.target_type.value,
+                }
+            )
             for requirement in plan.requirements
         ],
         "schemaVersion": plan.schema_version,
@@ -648,7 +744,14 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
                 },
                 "id": str(step.id),
                 "name": step.name,
+                **({"outputs": [_test_output_to_document(output) for output in step.outputs]} if step.outputs else {}),
                 "request": {
+                    **(
+                        {"authorizationProfile": str(step.request.authorization_profile)}
+                        if step.request.authorization_profile is not None
+                        else {}
+                    ),
+                    **({"contentType": step.request.content_type} if step.request.content_type is not None else {}),
                     "inputBindings": [
                         {
                             "inputId": str(binding.input_id),
@@ -663,6 +766,20 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
                         _request_modification_to_document(modification) for modification in step.request.modifications
                     ],
                     "path": step.request.path,
+                    **(
+                        {
+                            "stateBindings": [
+                                _state_binding_to_document(binding) for binding in step.request.state_bindings
+                            ]
+                        }
+                        if step.request.state_bindings
+                        else {}
+                    ),
+                    **(
+                        {"transportProfile": str(step.request.transport_profile)}
+                        if step.request.transport_profile is not None
+                        else {}
+                    ),
                 },
                 "testDefinitionId": str(step.test_definition_id),
                 "testInstanceId": str(step.test_instance_id),
@@ -1010,7 +1127,7 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
                 id=StableId(cast(str, endpoint["id"])),
                 method=HttpMethod(cast(str, endpoint["method"])),
                 path=cast(str, endpoint["path"]),
-                operation_id=cast(str, endpoint["operationId"]),
+                operation_id=cast(str | None, endpoint.get("operationId")),
                 source_id=StableId(cast(str, endpoint["sourceId"])),
                 source_pointer=cast(str, endpoint["sourcePointer"]),
             )
@@ -1054,6 +1171,7 @@ def _requirement_from_document(document: dict[str, object]) -> Requirement:
         normative_reference_ids=tuple(
             StableId(reference_id) for reference_id in cast(list[str], document["normativeReferenceIds"])
         ),
+        assessment=cast(str, document.get("assessment", "tested")),
     )
 
 
@@ -1072,7 +1190,9 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
     request = cast(dict[str, object], document["request"])
     bindings = cast(list[dict[str, object]], request["inputBindings"])
     modifications = cast(list[dict[str, object]], request["modifications"])
+    state_bindings = cast(list[dict[str, object]], request.get("stateBindings", []))
     assertions = cast(list[dict[str, object]], document["assertions"])
+    outputs = cast(list[dict[str, object]], document.get("outputs", []))
     return TestDefinition(
         id=StableId(cast(str, document["id"])),
         name=cast(str, document["name"]),
@@ -1095,8 +1215,21 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
                 for binding in bindings
             ),
             modifications=tuple(_request_modification_from_document(modification) for modification in modifications),
+            state_bindings=tuple(_state_binding_from_document(binding) for binding in state_bindings),
+            content_type=cast(str | None, request.get("contentType")),
+            transport_profile=(
+                None
+                if (transport_profile := cast(str | None, request.get("transportProfile"))) is None
+                else StableId(transport_profile)
+            ),
+            authorization_profile=(
+                None
+                if (authorization_profile := cast(str | None, request.get("authorizationProfile"))) is None
+                else StableId(authorization_profile)
+            ),
         ),
         assertions=tuple(_test_assertion_from_document(assertion) for assertion in assertions),
+        outputs=tuple(_test_output_from_document(output) for output in outputs),
     )
 
 
@@ -1171,6 +1304,7 @@ def _resolved_plan_from_schema_valid_document(document: dict[str, object]) -> Re
                     StableId(reference_id) for reference_id in cast(list[str], requirement["normativeReferenceIds"])
                 ),
                 reasons=_resolution_reasons_from_document(requirement),
+                assessment=cast(str, requirement.get("assessment", "tested")),
             )
             for requirement in requirements
         ),
@@ -1266,7 +1400,9 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
     request = cast(dict[str, object], document["request"])
     bindings = cast(list[dict[str, object]], request["inputBindings"])
     modifications = cast(list[dict[str, object]], request["modifications"])
+    state_bindings = cast(list[dict[str, object]], request.get("stateBindings", []))
     assertions = cast(list[dict[str, object]], document["assertions"])
+    outputs = cast(list[dict[str, object]], document.get("outputs", []))
     evidence = cast(dict[str, object], document["evidence"])
     return ExecutionManifestStep(
         id=StableId(cast(str, document["id"])),
@@ -1290,8 +1426,21 @@ def _execution_manifest_step_from_document(document: dict[str, object]) -> Execu
                 for binding in bindings
             ),
             modifications=tuple(_request_modification_from_document(modification) for modification in modifications),
+            state_bindings=tuple(_state_binding_from_document(binding) for binding in state_bindings),
+            content_type=cast(str | None, request.get("contentType")),
+            transport_profile=(
+                None
+                if (transport_profile := cast(str | None, request.get("transportProfile"))) is None
+                else StableId(transport_profile)
+            ),
+            authorization_profile=(
+                None
+                if (authorization_profile := cast(str | None, request.get("authorizationProfile"))) is None
+                else StableId(authorization_profile)
+            ),
         ),
         assertions=tuple(_execution_assertion_from_document(assertion) for assertion in assertions),
+        outputs=tuple(_test_output_from_document(output) for output in outputs),
         evidence=ExecutionEvidencePolicy(
             request=EvidenceMode(cast(str, evidence["request"])),
             response=EvidenceMode(cast(str, evidence["response"])),
@@ -1368,6 +1517,42 @@ def _request_modification_from_document(document: dict[str, object]) -> RequestM
     )
 
 
+def _state_binding_to_document(binding: RequestStateBinding) -> JsonObject:
+    return {
+        "outputId": str(binding.output_id),
+        "target": binding.target,
+        "type": binding.type,
+    }
+
+
+def _state_binding_from_document(document: dict[str, object]) -> RequestStateBinding:
+    return RequestStateBinding(
+        output_id=StableId(cast(str, document["outputId"])),
+        type=cast(str, document["type"]),
+        target=cast(str, document["target"]),
+    )
+
+
+def _test_output_to_document(output: TestOutput) -> JsonObject:
+    return _without_none_values(
+        {
+            "id": str(output.id),
+            "jsonPointer": output.json_pointer,
+            "sensitive": output.sensitive,
+            "source": output.source,
+        }
+    )
+
+
+def _test_output_from_document(document: dict[str, object]) -> TestOutput:
+    return TestOutput(
+        id=StableId(cast(str, document["id"])),
+        source=cast(str, document["source"]),
+        json_pointer=cast(str | None, document.get("jsonPointer")),
+        sensitive=cast(bool, document["sensitive"]),
+    )
+
+
 def _assertion_to_document(assertion: TestAssertion | ExecutionManifestAssertion) -> JsonObject:
     return _without_none_values(
         {
@@ -1377,6 +1562,7 @@ def _assertion_to_document(assertion: TestAssertion | ExecutionManifestAssertion
             "id": str(assertion.id),
             "jsonPointer": assertion.json_pointer,
             "schemaRef": assertion.schema_ref,
+            "schemaSourceId": (None if assertion.schema_source_id is None else str(assertion.schema_source_id)),
             "type": assertion.type,
         }
     )
@@ -1388,6 +1574,11 @@ def _test_assertion_from_document(document: dict[str, object]) -> TestAssertion:
         type=cast(str, document["type"]),
         expected_status=cast(int | None, document.get("expectedStatus")),
         schema_ref=cast(str | None, document.get("schemaRef")),
+        schema_source_id=(
+            None
+            if (schema_source_id := cast(str | None, document.get("schemaSourceId"))) is None
+            else StableId(schema_source_id)
+        ),
         header_name=cast(str | None, document.get("headerName")),
         json_pointer=cast(str | None, document.get("jsonPointer")),
         expected_value=cast(str | None, document.get("expectedValue")),
@@ -1401,6 +1592,7 @@ def _execution_assertion_from_document(document: dict[str, object]) -> Execution
         type=assertion.type,
         expected_status=assertion.expected_status,
         schema_ref=assertion.schema_ref,
+        schema_source_id=assertion.schema_source_id,
         header_name=assertion.header_name,
         json_pointer=assertion.json_pointer,
         expected_value=assertion.expected_value,
@@ -1596,7 +1788,19 @@ def _validate_execution_manifest_semantics(
     )
     input_ids = {manifest_input.id for manifest_input in manifest.inputs}
     step_ids = {step.id for step in manifest.steps}
+    artifact_ids = {artifact.id for artifact in manifest.provenance.artifacts}
     previous_step_ids: set[StableId] = set()
+    previous_output_ids: set[StableId] = set()
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(output.id), f"/steps/{step_index}/outputs/{output_index}/id")
+                for step_index, step in enumerate(manifest.steps)
+                for output_index, output in enumerate(step.outputs)
+            ),
+            object_kind="execution output",
+        )
+    )
     for step_index, step in enumerate(manifest.steps):
         for dependency_index, dependency_id in enumerate(step.dependency_ids):
             if dependency_id not in step_ids:
@@ -1624,6 +1828,24 @@ def _validate_execution_manifest_semantics(
                         object_kind="execution input",
                     )
                 )
+        for binding_index, state_binding in enumerate(step.request.state_bindings):
+            if state_binding.output_id not in previous_output_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        state_binding.output_id,
+                        instance_path=f"/steps/{step_index}/request/stateBindings/{binding_index}/outputId",
+                        object_kind="preceding execution output",
+                    )
+                )
+        for assertion_index, assertion in enumerate(step.assertions):
+            if assertion.schema_source_id is not None and assertion.schema_source_id not in artifact_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        assertion.schema_source_id,
+                        instance_path=f"/steps/{step_index}/assertions/{assertion_index}/schemaSourceId",
+                        object_kind="manifest artifact",
+                    )
+                )
         diagnostics.extend(
             _duplicate_id_diagnostics(
                 (
@@ -1634,6 +1856,7 @@ def _validate_execution_manifest_semantics(
             )
         )
         previous_step_ids.add(step.id)
+        previous_output_ids.update(output.id for output in step.outputs)
     return tuple(diagnostics)
 
 
@@ -1799,6 +2022,16 @@ def _validate_test_definition_catalogue_semantics(
                 for assertion_index, assertion in enumerate(test_definition.assertions)
             ),
             object_kind="assertion",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(output.id), f"/testDefinitions/{test_index}/outputs/{output_index}/id")
+                for test_index, test_definition in enumerate(catalogue.test_definitions)
+                for output_index, output in enumerate(test_definition.outputs)
+            ),
+            object_kind="test output",
         )
     )
     diagnostics.extend(

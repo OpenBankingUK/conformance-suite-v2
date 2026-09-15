@@ -78,7 +78,7 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:f951bf82d426b613820f1fb2a3ac4c91f70620adaf3478343db631ca115e202d",
+  "id": "resolved-plan:af4587e3cdd3acca7149e291a455fe8ae8b3916419799f601876dea4e667b74d",
   "predefinedInputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -105,7 +105,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:fc13a169600c8d0f08591c976e8dddcc2369cb402ace1df65a93320a1956f450",
+        "digest": "sha256:8e8a70a81341154d4076287553f4f36c7a64191fd2362683d2c522b3176fd4a3",
         "id": "requirements-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -113,7 +113,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
       },
       {
-        "digest": "sha256:33ec1d80b17bfd5424a4e3c4debf26bf5e22118f93c370a2403f6c13cb5b6eed",
+        "digest": "sha256:56cceff086897a68100576abe973dc0c3ec15de37a4f57fc5915712d2d356f64",
         "id": "test-definition-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -121,7 +121,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
       },
       {
-        "digest": "sha256:e17ff4d714ff6ce4af80e1982eee6b82df296dbef8d863837b9c6056d29c9d32",
+        "digest": "sha256:7d42b3b5cfe9bb3eed645623791737b148f991d3c4fac49d2aef654f9a5a663f",
         "id": "participant-plan-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -129,7 +129,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
       },
       {
-        "digest": "sha256:260600d33e1fd3cf57932e63b71a6e26b64ccdf11d72b1f435addc946753e54d",
+        "digest": "sha256:29ba820edec4f411a83970b73a99b4a61f966a5d1a2682100db4b6e27b7c0d11",
         "id": "resolved-plan-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -137,7 +137,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
       },
       {
-        "digest": "sha256:64cd47aa90de14d52bcc90aceb0ed5c2f04274d5ef36b41d99f5d3167118485d",
+        "digest": "sha256:c0f644234b955b9d4fe9af62d5903e61210894ad6263c22af82d0755406b845b",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",

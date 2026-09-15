@@ -91,7 +91,13 @@ def generate_execution_manifest(
                 f"{test_definition.request.endpoint_id!s}"
             )
         endpoint = endpoints_by_id[test_definition.request.endpoint_id]
-        if test_instance.covered_requirement_ids != test_definition.covered_requirement_ids:
+        applicable_requirement_ids = {requirement.id for requirement in resolved_plan.requirements}
+        expected_coverage = tuple(
+            requirement_id
+            for requirement_id in test_definition.covered_requirement_ids
+            if requirement_id in applicable_requirement_ids
+        )
+        if test_instance.covered_requirement_ids != expected_coverage:
             raise ExecutionManifestGenerationError(
                 f"Resolved requirement coverage for {test_instance.id!s} differs from its test definition"
             )
@@ -143,6 +149,10 @@ def generate_execution_manifest(
                     path=endpoint.path,
                     input_bindings=test_definition.request.input_bindings,
                     modifications=test_definition.request.modifications,
+                    state_bindings=test_definition.request.state_bindings,
+                    content_type=test_definition.request.content_type,
+                    transport_profile=test_definition.request.transport_profile,
+                    authorization_profile=test_definition.request.authorization_profile,
                 ),
                 assertions=tuple(
                     ExecutionManifestAssertion(
@@ -150,12 +160,14 @@ def generate_execution_manifest(
                         type=assertion.type,
                         expected_status=assertion.expected_status,
                         schema_ref=assertion.schema_ref,
+                        schema_source_id=assertion.schema_source_id,
                         header_name=assertion.header_name,
                         json_pointer=assertion.json_pointer,
                         expected_value=assertion.expected_value,
                     )
                     for assertion in test_definition.assertions
                 ),
+                outputs=test_definition.outputs,
                 evidence=ExecutionEvidencePolicy(
                     request=EvidenceMode.MASKED,
                     response=EvidenceMode.MASKED,
@@ -218,6 +230,27 @@ def _validate_generation_inputs(
         identifier=test_definition_catalogue.id,
         content=dump_test_definition_catalogue(test_definition_catalogue).encode("utf-8"),
     )
+    referenced_source_ids = {
+        assertion.schema_source_id
+        for definition in test_definition_catalogue.test_definitions
+        for assertion in definition.assertions
+        if assertion.schema_source_id is not None
+    }
+    for source in requirements_catalogue.technical_sources:
+        if source.id not in referenced_source_ids:
+            continue
+        artifact = next(
+            (
+                item
+                for item in resolved_plan.provenance.artifacts
+                if item.kind == "technical-source" and item.id == source.id
+            ),
+            None,
+        )
+        if artifact is None or artifact.digest != source.digest:
+            raise ExecutionManifestGenerationError(
+                f"Resolved-plan provenance does not bind technical source {source.id!s}"
+            )
     if not any(
         artifact.kind == "json-schema"
         and artifact.id == _EXECUTION_MANIFEST_SCHEMA_ARTIFACT_ID

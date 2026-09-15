@@ -47,10 +47,12 @@ class SuiteRelease:
 
 
 class HttpMethod(StrEnum):
-    """HTTP methods supported by the walking-skeleton operation inventory."""
+    """HTTP methods supported by configuration-driven operation inventories."""
 
+    DELETE = "DELETE"
     GET = "GET"
     POST = "POST"
+    PUT = "PUT"
 
 
 class RequirementTargetType(StrEnum):
@@ -107,7 +109,7 @@ class Endpoint:
     id: StableId
     method: HttpMethod
     path: str
-    operation_id: str
+    operation_id: str | None
     source_id: StableId
     source_pointer: str
 
@@ -157,6 +159,7 @@ class Requirement:
     statement: str
     rule: RequirementRule
     normative_reference_ids: tuple[StableId, ...]
+    assessment: str = "tested"
 
 
 @dataclass(frozen=True, slots=True)
@@ -199,12 +202,35 @@ class RequestModification:
 
 
 @dataclass(frozen=True, slots=True)
+class RequestStateBinding:
+    """Binding from a preceding test output into a dependent request."""
+
+    output_id: StableId
+    type: str
+    target: str
+
+
+@dataclass(frozen=True, slots=True)
+class TestOutput:
+    """Named runtime value produced by a test for dependent definitions."""
+
+    id: StableId
+    source: str
+    json_pointer: str | None
+    sensitive: bool
+
+
+@dataclass(frozen=True, slots=True)
 class TestRequest:
     """Operation and logical-input bindings used by one test definition."""
 
     endpoint_id: StableId
     input_bindings: tuple[RequestInputBinding, ...]
     modifications: tuple[RequestModification, ...]
+    state_bindings: tuple[RequestStateBinding, ...] = ()
+    content_type: str | None = None
+    transport_profile: StableId | None = None
+    authorization_profile: StableId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,6 +241,7 @@ class TestAssertion:
     type: str
     expected_status: int | None = None
     schema_ref: str | None = None
+    schema_source_id: StableId | None = None
     header_name: str | None = None
     json_pointer: str | None = None
     expected_value: str | None = None
@@ -233,6 +260,7 @@ class TestDefinition:
     dependencies: tuple[StableId, ...]
     request: TestRequest
     assertions: tuple[TestAssertion, ...]
+    outputs: tuple[TestOutput, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -347,6 +375,7 @@ class ResolvedRequirement:
     target_id: StableId
     normative_reference_ids: tuple[StableId, ...]
     reasons: tuple[ResolutionReason, ...]
+    assessment: str = "tested"
 
 
 @dataclass(frozen=True, slots=True)
@@ -429,6 +458,10 @@ class ExecutionManifestRequest:
     path: str
     input_bindings: tuple[RequestInputBinding, ...]
     modifications: tuple[RequestModification, ...]
+    state_bindings: tuple[RequestStateBinding, ...] = ()
+    content_type: str | None = None
+    transport_profile: StableId | None = None
+    authorization_profile: StableId | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -439,6 +472,7 @@ class ExecutionManifestAssertion:
     type: str
     expected_status: int | None = None
     schema_ref: str | None = None
+    schema_source_id: StableId | None = None
     header_name: str | None = None
     json_pointer: str | None = None
     expected_value: str | None = None
@@ -464,6 +498,7 @@ class ExecutionManifestStep:
     covered_requirement_ids: tuple[StableId, ...]
     request: ExecutionManifestRequest
     assertions: tuple[ExecutionManifestAssertion, ...]
+    outputs: tuple[TestOutput, ...]
     evidence: ExecutionEvidencePolicy
 
 

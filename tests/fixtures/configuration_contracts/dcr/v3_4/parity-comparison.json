@@ -1,0 +1,358 @@
+{
+  "allowedClassifications": [
+    "retained-coverage",
+    "intentional-correction",
+    "obsolete-behavior",
+    "genuine-omission"
+  ],
+  "baseline": {
+    "digest": "sha256:37670d772c3b70f10c305ac274dcadd423ab279f7312054de472c6d221a69366",
+    "file": "parity-contract.json",
+    "purpose": "migration-cross-check-only"
+  },
+  "documentedGaps": [
+    {
+      "classification": "genuine-omission",
+      "id": "dcr.v34.requirement.deletion-token-invalidation",
+      "rationale": "The DCR operation inventory has no independent protected resource that can distinguish token invalidation from the deleted ClientId becoming unknown. The requirement remains in the requirements catalogue as documented-only and is surfaced as not assessed."
+    }
+  ],
+  "intentionalChanges": [
+    {
+      "authority": "Open Banking DCR 3.4 Endpoints",
+      "classification": "intentional-correction",
+      "id": "dcr-v34-migration-001",
+      "legacyBehavior": "POST registration is mandatory and locked in participant scope.",
+      "replacementDecision": "Registration is a participant-selected conditional capability; management selections infer it only as required test setup."
+    },
+    {
+      "authority": "Open Banking DCR 3.4 OpenAPI paths",
+      "classification": "intentional-correction",
+      "id": "dcr-v34-migration-002",
+      "legacyBehavior": "RegisterClient, GetClient, UpdateClient, and DeleteClient are treated as source operation identifiers.",
+      "replacementDecision": "Endpoints have no operationId because the authoritative OpenAPI defines none."
+    },
+    {
+      "authority": "Open Banking DCR 3.4 OpenAPI ClientRegistration request body",
+      "classification": "intentional-correction",
+      "id": "dcr-v34-migration-003",
+      "legacyBehavior": "Registration and update send application/jose because that is how the legacy runner constructs requests.",
+      "replacementDecision": "Test definitions declare the authoritative OpenAPI application/json media type and separately identify JWS request generation."
+    },
+    {
+      "authority": "Open Banking DCR 3.4 OBRegistrationProperties1",
+      "classification": "intentional-correction",
+      "id": "dcr-v34-migration-004",
+      "legacyBehavior": "client_secret_post is rejected as a metadata value because the current runner cannot execute it.",
+      "replacementDecision": "The requirements catalogue retains every source-defined token_endpoint_auth_method; runtime support policy remains outside normative requirements."
+    },
+    {
+      "authority": "Open Banking DCR 3.4 OBClientRegistrationRequest1 processing rules",
+      "classification": "intentional-correction",
+      "id": "dcr-v34-migration-005",
+      "legacyBehavior": "Unsupported response_types must produce HTTP 400.",
+      "replacementDecision": "No fixed-status test is emitted because the specification permits rejection or substitution with a supported value."
+    }
+  ],
+  "classifications": [
+    {
+      "classification": "intentional-correction",
+      "legacyCaseId": "DCR-001-C01",
+      "rationale": "Discovery advertises registration_endpoint as a SHOULD, so the replacement catalogue does not convert URL-shape validation into an ASPSP conformance requirement.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/0/cases/0"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-002-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/1/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-002-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/1/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-002-C03",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/1/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-003-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/2/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-003-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/2/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-003-C03",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/2/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-003-C04",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.retrieval.unknown-client"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/2/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-004-C01",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.expired"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/3/cases/0"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-004-C02",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.invalid-issuer"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/3/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-004-C03",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.empty-issuer"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/3/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-004-C04",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.overlong-issuer"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/3/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-004-C05",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.invalid-auth-method"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/3/cases/4"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-005-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/4/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-005-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/4/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-005-C03",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.retrieval.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/4/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-005-C04",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/4/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-007-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/5/cases/0"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-007-C02",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.retrieval.missing-authorization"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/5/cases/1"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-007-C03",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/5/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-007-C04",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/5/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-008-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/6/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-008-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/6/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-008-C03",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.update.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/6/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-008-C04",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/6/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-009-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/7/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-009-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/7/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-009-C03",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/7/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-009-C04",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.update.unknown-client"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/7/cases/3"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-010-C01",
+      "rationale": "Repeated legacy scenario setup is represented once by the source-authored positive registration definition and explicit test dependencies.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/8/cases/0"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyCaseId": "DCR-010-C02",
+      "rationale": "Client-credentials token acquisition is generated execution setup for management requests, not an independently assessable DCR requirement or test definition.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/8/cases/1"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-010-C03",
+      "rationale": "The standards-derived deletion outcome is retained without preserving cleanup as a distinct legacy case shape.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.deletion.positive"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/8/cases/2"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyCaseId": "DCR-010-C04",
+      "rationale": "The standards-derived behavior is retained by the named replacement test definition without preserving the legacy scenario structure or identifier as a runtime contract.",
+      "replacementTestDefinitionIds": [
+        "dcr.v34.test.retrieval.unknown-client"
+      ],
+      "sourceCase": "parity-contract.json#/scenarios/8/cases/3"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyCaseId": "DCR-011-C01",
+      "rationale": "DCR 3.4 permits rejection or supported-value substitution for unsupported response_types, so a fixed HTTP 400 verdict is not retained.",
+      "replacementTestDefinitionIds": [],
+      "sourceCase": "parity-contract.json#/scenarios/9/cases/0"
+    }
+  ],
+  "documentType": "dcr-parity-comparison",
+  "requirementsCatalogueId": "obl.dcr-v34.requirements",
+  "schemaVersion": "1.0",
+  "summary": {
+    "genuine-omission": 0,
+    "intentional-correction": 2,
+    "obsolete-behavior": 7,
+    "retained-coverage": 25
+  },
+  "targetSpecificationVersion": "3.4",
+  "testDefinitionCatalogueId": "obl.dcr-v34.tests"
+}

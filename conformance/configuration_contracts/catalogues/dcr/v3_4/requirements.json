@@ -1,0 +1,329 @@
+{
+  "capabilities": [
+    {
+      "description": "Conditional Dynamic Client Registration operation defined by Open Banking DCR 3.4.",
+      "id": "dcr.v34.capability.registration",
+      "name": "Dynamic client registration",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.registration"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional retrieval of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.retrieval",
+      "name": "Dynamic client retrieval",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-retrieval"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional update of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.update",
+      "name": "Dynamic client update",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-update"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional deletion of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.deletion",
+      "name": "Dynamic client deletion",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-deletion"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "dcr.v34.endpoint.registration",
+      "method": "POST",
+      "path": "/register",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register/post"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-retrieval",
+      "method": "GET",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/get"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-update",
+      "method": "PUT",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/put"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-deletion",
+      "method": "DELETE",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/delete"
+    }
+  ],
+  "id": "obl.dcr-v34.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-dcr-v34.endpoints",
+      "section": "Endpoints",
+      "title": "Open Banking Dynamic Client Registration 3.4 endpoint catalogue",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#endpoints"
+    },
+    {
+      "id": "ob-dcr-v34.registration",
+      "section": "Endpoints / POST /register",
+      "title": "Open Banking Dynamic Client Registration 3.4 client registration",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#post-register"
+    },
+    {
+      "id": "ob-dcr-v34.retrieval",
+      "section": "Endpoints / GET /register/{ClientId}",
+      "title": "Open Banking Dynamic Client Registration 3.4 client retrieval",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#get-registerclientid"
+    },
+    {
+      "id": "ob-dcr-v34.update",
+      "section": "Endpoints / PUT /register/{ClientId}",
+      "title": "Open Banking Dynamic Client Registration 3.4 client update",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#put-registerclientid"
+    },
+    {
+      "id": "ob-dcr-v34.deletion",
+      "section": "Endpoints / DELETE /register/{ClientId}",
+      "title": "Open Banking Dynamic Client Registration 3.4 client deletion",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#delete-registerclientid"
+    },
+    {
+      "id": "ob-dcr-v34.authentication",
+      "section": "Authentication",
+      "title": "Open Banking Dynamic Client Registration 3.4 authentication",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#authentication"
+    },
+    {
+      "id": "ob-dcr-v34.data-model",
+      "section": "Data Model / OBClientRegistrationRequest1",
+      "title": "Open Banking Dynamic Client Registration 3.4 registration data model",
+      "uri": "https://openbankinguk.github.io/dcr-docs-pub/v3.4/dynamic-client-registration.html#obclientregistrationrequest1"
+    },
+    {
+      "id": "rfc7591.registration-error",
+      "section": "3.2.2 Client Registration Error Response",
+      "title": "OAuth 2.0 Dynamic Client Registration Protocol",
+      "uri": "https://www.rfc-editor.org/rfc/rfc7591#section-3.2.2"
+    }
+  ],
+  "predefinedInputs": [],
+  "requirements": [
+    {
+      "id": "dcr.v34.requirement.registration-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.endpoints",
+        "ob-dcr-v34.registration",
+        "ob-dcr-v34.authentication"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.registration",
+        "targetId": "dcr.v34.endpoint.registration",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Dynamic Client Registration is implemented, the ASPSP supports mTLS POST registration using a JWS request and returns the specified success or registration-error response."
+    },
+    {
+      "id": "dcr.v34.requirement.expired-registration",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.data-model"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.registration",
+        "targetId": "dcr.v34.endpoint.registration",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The ASPSP rejects a registration request when the current time is later than its exp claim."
+    },
+    {
+      "id": "dcr.v34.requirement.registration-metadata",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.data-model",
+        "rfc7591.registration-error"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.registration",
+        "targetId": "dcr.v34.endpoint.registration",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Registration requests and responses conform to the DCR 3.4 metadata and error schemas, including Base62 issuer constraints and enumerated token endpoint authentication methods."
+    },
+    {
+      "id": "dcr.v34.requirement.retrieval-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval",
+        "ob-dcr-v34.authentication"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.retrieval",
+        "targetId": "dcr.v34.endpoint.client-retrieval",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When client retrieval is implemented, the ASPSP requires client-credentials authorization and mTLS and returns the registered client for the matching ClientId."
+    },
+    {
+      "id": "dcr.v34.requirement.retrieval-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.retrieval",
+        "targetId": "dcr.v34.endpoint.client-retrieval",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Retrieval of an unknown ClientId returns 401 Unauthorized."
+    },
+    {
+      "id": "dcr.v34.requirement.retrieval-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.retrieval"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.retrieval",
+        "targetId": "dcr.v34.endpoint.client-retrieval",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "After retrieval of an unknown ClientId, the ASPSP immediately revokes the presented access token."
+    },
+    {
+      "id": "dcr.v34.requirement.update-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update",
+        "ob-dcr-v34.authentication"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.update",
+        "targetId": "dcr.v34.endpoint.client-update",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When client update is implemented, the ASPSP requires client-credentials authorization and mTLS, accepts a JWS containing the complete claim set, and returns the updated registration."
+    },
+    {
+      "id": "dcr.v34.requirement.update-token-continuity",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.update",
+        "targetId": "dcr.v34.endpoint.client-update",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "A successful client update does not invalidate existing long-lived access tokens."
+    },
+    {
+      "id": "dcr.v34.requirement.update-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.update",
+        "targetId": "dcr.v34.endpoint.client-update",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Update of an unknown ClientId returns 401 Unauthorized."
+    },
+    {
+      "id": "dcr.v34.requirement.update-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.update"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.update",
+        "targetId": "dcr.v34.endpoint.client-update",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "After update of an unknown ClientId, the ASPSP immediately revokes the presented access token."
+    },
+    {
+      "id": "dcr.v34.requirement.deletion-operation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion",
+        "ob-dcr-v34.authentication"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.deletion",
+        "targetId": "dcr.v34.endpoint.client-deletion",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When client deletion is implemented, the ASPSP requires client-credentials authorization and mTLS, deletes the matching client, and returns 204."
+    },
+    {
+      "assessment": "documented-only",
+      "id": "dcr.v34.requirement.deletion-token-invalidation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.deletion",
+        "targetId": "dcr.v34.endpoint.client-deletion",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Successful client deletion invalidates the client's long-lived access tokens."
+    },
+    {
+      "id": "dcr.v34.requirement.deletion-unknown-client",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.deletion",
+        "targetId": "dcr.v34.endpoint.client-deletion",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Deletion of an unknown ClientId returns 401 Unauthorized."
+    },
+    {
+      "id": "dcr.v34.requirement.deletion-unknown-token-revocation",
+      "normativeReferenceIds": [
+        "ob-dcr-v34.deletion"
+      ],
+      "rule": {
+        "capabilityId": "dcr.v34.capability.deletion",
+        "targetId": "dcr.v34.endpoint.client-deletion",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "After deletion of an unknown ClientId, the ASPSP immediately revokes the presented access token."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "dynamic-client-registration",
+    "requirementsScope": "dcr",
+    "version": "3.4"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:e40e48e8262701f979c93388f0f7598158cfc2ced6f2f330f8ecac51585ba04e",
+      "id": "ob-dcr-v34.openapi",
+      "title": "Open Banking Dynamic Client Registration API 3.4 OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/client-registration-api-specs/v3.4/dist/client-registration-openapi.yaml"
+    }
+  ]
+}
