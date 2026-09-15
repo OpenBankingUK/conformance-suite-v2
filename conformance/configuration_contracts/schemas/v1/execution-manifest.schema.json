@@ -1,0 +1,276 @@
+{
+  "$defs": {
+    "assertion": {
+      "additionalProperties": false,
+      "properties": {
+        "expectedStatus": {
+          "maximum": 599,
+          "minimum": 100,
+          "type": "integer"
+        },
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "type": {
+          "const": "http-status"
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "expectedStatus"
+      ],
+      "type": "object"
+    },
+    "evidencePolicy": {
+      "additionalProperties": false,
+      "properties": {
+        "request": {
+          "const": "masked"
+        },
+        "response": {
+          "const": "masked"
+        }
+      },
+      "required": [
+        "request",
+        "response"
+      ],
+      "type": "object"
+    },
+    "frequencyValue": {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/requirements-catalogue.schema.json#/$defs/frequencyValue"
+    },
+    "input": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "source": {
+          "enum": [
+            "participant",
+            "default"
+          ]
+        },
+        "value": {
+          "$ref": "#/$defs/frequencyValue"
+        }
+      },
+      "required": [
+        "id",
+        "source",
+        "value"
+      ],
+      "type": "object"
+    },
+    "inputBinding": {
+      "additionalProperties": false,
+      "properties": {
+        "inputId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "target": {
+          "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])*)*$",
+          "type": "string"
+        },
+        "transform": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "type": {
+          "const": "json-body"
+        }
+      },
+      "required": [
+        "inputId",
+        "type",
+        "target",
+        "transform"
+      ],
+      "type": "object"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "artifacts": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/artifactReference"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "participantPlanId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "requirementsCatalogueId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "resolvedPlanId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "suitePublishedAt": {
+          "format": "date-time",
+          "type": "string"
+        },
+        "suiteReleaseId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "suiteReleaseVersion": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"
+        },
+        "testDefinitionCatalogueId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "toolReleases": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/toolRelease"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "resolvedPlanId",
+        "participantPlanId",
+        "suiteReleaseId",
+        "suiteReleaseVersion",
+        "suitePublishedAt",
+        "requirementsCatalogueId",
+        "testDefinitionCatalogueId",
+        "toolReleases",
+        "artifacts"
+      ],
+      "type": "object"
+    },
+    "request": {
+      "additionalProperties": false,
+      "properties": {
+        "inputBindings": {
+          "items": {
+            "$ref": "#/$defs/inputBinding"
+          },
+          "type": "array"
+        },
+        "method": {
+          "enum": [
+            "GET",
+            "POST"
+          ]
+        },
+        "path": {
+          "pattern": "^/",
+          "type": "string"
+        }
+      },
+      "required": [
+        "method",
+        "path",
+        "inputBindings"
+      ],
+      "type": "object"
+    },
+    "step": {
+      "additionalProperties": false,
+      "properties": {
+        "assertions": {
+          "items": {
+            "$ref": "#/$defs/assertion"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "coveredRequirementIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "dependencyIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
+        "evidence": {
+          "$ref": "#/$defs/evidencePolicy"
+        },
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "name": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "request": {
+          "$ref": "#/$defs/request"
+        },
+        "testDefinitionId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        },
+        "testInstanceId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+        }
+      },
+      "required": [
+        "id",
+        "testInstanceId",
+        "testDefinitionId",
+        "name",
+        "dependencyIds",
+        "coveredRequirementIds",
+        "request",
+        "assertions",
+        "evidence"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.openbanking.org.uk/conformance/v1/execution-manifest.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/documentEnvelope"
+    },
+    {
+      "properties": {
+        "documentType": {
+          "const": "execution-manifest"
+        },
+        "inputs": {
+          "items": {
+            "$ref": "#/$defs/input"
+          },
+          "type": "array"
+        },
+        "provenance": {
+          "$ref": "#/$defs/provenance"
+        },
+        "schemaVersion": {
+          "const": "1.0"
+        },
+        "securityProfile": {
+          "const": "fapi1-advanced"
+        },
+        "steps": {
+          "items": {
+            "$ref": "#/$defs/step"
+          },
+          "minItems": 1,
+          "type": "array"
+        }
+      },
+      "required": [
+        "securityProfile",
+        "inputs",
+        "steps",
+        "provenance"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Open Banking UK execution manifest",
+  "type": "object",
+  "unevaluatedProperties": false
+}

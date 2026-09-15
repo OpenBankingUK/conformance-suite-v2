@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from collections.abc import Mapping
 from dataclasses import dataclass
+from enum import StrEnum
+from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
@@ -19,7 +22,20 @@ from conformance.catalogue import (
     TestPlanSpec,
     compile_test_plan,
 )
-from conformance.configuration_contracts.models import ResolvedPlan, ResolvedTestInstance, StableId
+from conformance.configuration_contracts.diagnostics import ConfigurationContractError
+from conformance.configuration_contracts.execution_manifest import generate_execution_manifest
+from conformance.configuration_contracts.loader import (
+    execution_manifest_to_document,
+    parse_execution_manifest,
+)
+from conformance.configuration_contracts.models import (
+    ExecutionManifest,
+    RequirementsCatalogue,
+    ResolvedPlan,
+    ResolvedTestInstance,
+    StableId,
+    TestDefinitionCatalogue,
+)
 from conformance.json_types import JsonValue
 
 _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID: Mapping[StableId, str] = MappingProxyType(
@@ -43,6 +59,182 @@ class AdaptedCompiledExecution:
 
     compiled_plan: CompiledTestPlan
     runtime_inputs: Mapping[str, JsonValue]
+
+
+class LegacyExecutionEngine(StrEnum):
+    """Existing runtime selected behind the execution-manifest boundary."""
+
+    READ_WRITE = "read-write"
+    DCR = "dcr"
+
+
+@dataclass(frozen=True, slots=True)
+class PreparedExecutionManifest:
+    """Immutable manifest plus temporary binding to existing execution data."""
+
+    manifest: ExecutionManifest | None
+    engine: LegacyExecutionEngine
+    compiled_plan: CompiledTestPlan
+    runtime_inputs: Mapping[str, JsonValue]
+    runtime_input_base_dir: Path
+
+
+def prepare_resolved_execution_manifest(
+    resolved_plan: ResolvedPlan,
+    requirements_catalogue: RequirementsCatalogue,
+    test_definition_catalogue: TestDefinitionCatalogue,
+    catalogue: TestCatalogue,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+) -> PreparedExecutionManifest:
+    """Generate a stable manifest and bind it to the current Read/Write engine."""
+    manifest = generate_execution_manifest(
+        resolved_plan,
+        requirements_catalogue,
+        test_definition_catalogue,
+    )
+    adapted = adapt_resolved_plan_to_compiled_execution(
+        resolved_plan,
+        catalogue,
+        runtime_inputs=runtime_inputs,
+    )
+    prepared = PreparedExecutionManifest(
+        manifest=manifest,
+        engine=LegacyExecutionEngine.READ_WRITE,
+        compiled_plan=adapted.compiled_plan,
+        runtime_inputs=adapted.runtime_inputs,
+        runtime_input_base_dir=runtime_input_base_dir,
+    )
+    validate_execution_manifest_compatibility(prepared)
+    return prepared
+
+
+def adapt_compiled_plan_to_execution_manifest(
+    compiled_plan: CompiledTestPlan,
+    *,
+    runtime_inputs: Mapping[str, JsonValue],
+    runtime_input_base_dir: Path,
+) -> PreparedExecutionManifest:
+    """Wrap current catalogue execution behind the new runner boundary.
+
+    Existing participant surfaces do not yet produce resolved plans, so their
+    compatibility wrapper intentionally has no stable manifest document.
+    """
+    is_dcr = compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}
+    return PreparedExecutionManifest(
+        manifest=None,
+        engine=LegacyExecutionEngine.DCR if is_dcr else LegacyExecutionEngine.READ_WRITE,
+        compiled_plan=compiled_plan,
+        runtime_inputs=MappingProxyType(dict(runtime_inputs)),
+        runtime_input_base_dir=runtime_input_base_dir,
+    )
+
+
+def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifest) -> None:
+    """Reject drift between a stable manifest and its legacy runtime binding."""
+    manifest = prepared.manifest
+    if manifest is None:
+        return
+    try:
+        parse_execution_manifest(execution_manifest_to_document(manifest))
+    except ConfigurationContractError as error:
+        raise ResolvedPlanAdapterError("Prepared execution manifest is invalid") from error
+    if prepared.engine is not LegacyExecutionEngine.READ_WRITE:
+        raise ResolvedPlanAdapterError("Stable walking-skeleton manifests require the Read/Write engine")
+    compiled_plan = prepared.compiled_plan
+    if manifest.security_profile != compiled_plan.security_profile:
+        raise ResolvedPlanAdapterError("Execution manifest security profile differs from the compiled plan")
+
+    expected_case_ids: list[str] = []
+    step_by_id = {step.id: step for step in manifest.steps}
+    compiled_cases_by_id = {test_case.test_case_id: test_case for test_case in compiled_plan.test_cases}
+    for step in manifest.steps:
+        legacy_case_id = _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID.get(step.test_definition_id)
+        if legacy_case_id is None:
+            raise ResolvedPlanAdapterError(
+                f"No legacy execution mapping for manifest test definition {step.test_definition_id!s}"
+            )
+        expected_case_ids.append(legacy_case_id)
+        legacy_case = compiled_cases_by_id.get(legacy_case_id)
+        if legacy_case is None:
+            raise ResolvedPlanAdapterError(f"Compiled plan does not contain manifest work {legacy_case_id}")
+        if len(legacy_case.request_steps) != 1:
+            raise ResolvedPlanAdapterError(f"Legacy case {legacy_case_id} must contain exactly one request step")
+        request_step = legacy_case.request_steps[0]
+        if request_step.method != step.request.method.value or not _paths_describe_same_operation(
+            step.request.path,
+            request_step.path,
+        ):
+            raise ResolvedPlanAdapterError(f"Legacy request for {legacy_case_id} differs from the execution manifest")
+        legacy_statuses = _legacy_expected_statuses(legacy_case)
+        manifest_statuses = tuple(assertion.expected_status for assertion in step.assertions)
+        if legacy_statuses != manifest_statuses:
+            raise ResolvedPlanAdapterError(f"Legacy assertions for {legacy_case_id} differ from the execution manifest")
+        expected_dependencies_list: list[str] = []
+        for dependency_id in step.dependency_ids:
+            dependency_step = step_by_id.get(dependency_id)
+            if dependency_step is None:
+                raise ResolvedPlanAdapterError(
+                    f"Manifest dependency {dependency_id!s} does not identify a test instance"
+                )
+            dependency_case_id = _LEGACY_CASE_ID_BY_TEST_DEFINITION_ID.get(dependency_step.test_definition_id)
+            if dependency_case_id is None:
+                raise ResolvedPlanAdapterError(
+                    f"No legacy execution mapping for dependency {dependency_step.test_definition_id!s}"
+                )
+            expected_dependencies_list.append(dependency_case_id)
+        expected_dependencies = tuple(expected_dependencies_list)
+        if legacy_case.dependencies != expected_dependencies:
+            raise ResolvedPlanAdapterError(
+                f"Legacy dependencies for {legacy_case_id} differ from the execution manifest"
+            )
+
+    actual_case_ids = tuple(test_case.test_case_id for test_case in compiled_plan.test_cases)
+    if actual_case_ids != tuple(expected_case_ids) or compiled_plan.traceability.generated_test_case_ids != tuple(
+        expected_case_ids
+    ):
+        raise ResolvedPlanAdapterError("Compiled plan selection differs from the execution manifest")
+    frequency_input = next(
+        (manifest_input for manifest_input in manifest.inputs if manifest_input.id == "pis.dso.input.frequency"),
+        None,
+    )
+    if frequency_input is not None:
+        if (
+            prepared.runtime_inputs.get("pisStandingOrderFrequencyType") != frequency_input.value.frequency_type
+            or prepared.runtime_inputs.get("pisStandingOrderFrequencyPointInTime")
+            != frequency_input.value.point_in_time
+        ):
+            raise ResolvedPlanAdapterError("Legacy runtime frequency differs from the execution manifest")
+
+
+def _paths_describe_same_operation(manifest_path: str, legacy_path: str) -> bool:
+    placeholder_pattern = r"\$\{[^}]+\}|\{[^}]+\}"
+    normalized_manifest = re.sub(placeholder_pattern, "{}", manifest_path)
+    normalized_legacy = re.sub(placeholder_pattern, "{}", legacy_path)
+    return normalized_legacy.endswith(normalized_manifest)
+
+
+def _legacy_expected_statuses(test_case: CatalogueTestCase) -> tuple[int, ...]:
+    statuses: list[int] = list(test_case.expected_http_statuses)
+    for assertion in test_case.assertions:
+        if assertion.kind == "http_status":
+            expected = assertion.rule.get("expected")
+            if isinstance(expected, int) and not isinstance(expected, bool) and expected not in statuses:
+                statuses.append(expected)
+            continue
+        if assertion.kind != "legacy_fcs":
+            continue
+        all_of = assertion.rule.get("allOf")
+        if not isinstance(all_of, list):
+            continue
+        for rule in all_of:
+            if not isinstance(rule, Mapping):
+                continue
+            expected = rule.get("status-code")
+            if isinstance(expected, int) and not isinstance(expected, bool) and expected not in statuses:
+                statuses.append(expected)
+    return tuple(statuses)
 
 
 def adapt_resolved_plan_to_compiled_execution(

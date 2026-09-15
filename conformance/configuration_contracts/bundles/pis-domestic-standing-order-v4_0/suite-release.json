@@ -33,6 +33,14 @@
       "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
+      "digest": "sha256:eaa4ee9f8eb59c5874a582bd3f691e873bf39b2eee1db38650a667d59f0f4780",
+      "id": "execution-manifest-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+    },
+    {
       "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
       "id": "obl.pis-domestic-standing-order-v4.requirements",
       "kind": "requirements-catalogue",

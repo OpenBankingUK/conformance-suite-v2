@@ -1,0 +1,217 @@
+{
+  "documentType": "execution-manifest",
+  "id": "execution-manifest:0000000000000000000000000000000000000000000000000000000000000000",
+  "inputs": [
+    {
+      "id": "pis.dso.input.frequency",
+      "source": "participant",
+      "value": {
+        "frequencyType": "WEEK",
+        "pointInTime": "03"
+      }
+    }
+  ],
+  "provenance": {
+    "artifacts": [
+      {
+        "digest": "sha256:135470d5daf58f162e29b0324c985e78151d7df5335c7e03b257a3bdd25eb8d4",
+        "id": "requirements-catalogue-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
+      },
+      {
+        "digest": "sha256:4e5720d6e05497d709e9bd2f74eea5380b82e98fa4ce8aa8f4f94d1b7936035e",
+        "id": "test-definition-catalogue-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/test-definition-catalogue.schema.json"
+      },
+      {
+        "digest": "sha256:ce6d3223602a32adda4b204fcd641ad8372976b29f34b4995d3046b67be4f925",
+        "id": "participant-plan-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/participant-plan.schema.json"
+      },
+      {
+        "digest": "sha256:a59b39e7c5079b36bf093ad8d145fce614fda5dc6782b81e512e945a6f269be4",
+        "id": "resolved-plan-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
+      },
+      {
+        "digest": "sha256:eaa4ee9f8eb59c5874a582bd3f691e873bf39b2eee1db38650a667d59f0f4780",
+        "id": "execution-manifest-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+      },
+      {
+        "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",
+        "id": "obl.pis-domestic-standing-order-v4.requirements",
+        "kind": "requirements-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/requirements.json"
+      },
+      {
+        "digest": "sha256:9ef19f111745cd0315f93f83d4c545b9ada63772073a4fdbf55aff838d8e11dc",
+        "id": "obl.pis-domestic-standing-order-v4.tests",
+        "kind": "test-definition-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/bundles/pis-domestic-standing-order-v4_0/test-definitions.json"
+      }
+    ],
+    "participantPlanId": "participant.pis-dso.example",
+    "requirementsCatalogueId": "obl.pis-domestic-standing-order-v4.requirements",
+    "resolvedPlanId": "resolved-plan:fe087212d1b5776dd5b296a054c6a9471b903c450ba892082e9b75e29d52886a",
+    "suitePublishedAt": "2026-09-15T08:57:48Z",
+    "suiteReleaseId": "obl.pis-dso-v4.walking-skeleton-suite",
+    "suiteReleaseVersion": "walking-skeleton.1",
+    "testDefinitionCatalogueId": "obl.pis-domestic-standing-order-v4.tests",
+    "toolReleases": [
+      {
+        "id": "conformance-suite-v2",
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "schemaVersion": "1.0",
+  "securityProfile": "fapi1-advanced",
+  "steps": [
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.dso.assertion.consent-create.status-201",
+          "type": "http-status"
+        }
+      ],
+      "coveredRequirementIds": [
+        "pis.dso.requirement.consent-create",
+        "pis.dso.requirement.frequency"
+      ],
+      "dependencyIds": [],
+      "evidence": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "pis.dso.test.consent-create.instance.request",
+      "name": "Create domestic standing-order consent",
+      "request": {
+        "inputBindings": [
+          {
+            "inputId": "pis.dso.input.frequency",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
+            "transform": "pis-v4-standing-order-frequency",
+            "type": "json-body"
+          }
+        ],
+        "method": "POST",
+        "path": "/domestic-standing-order-consents"
+      },
+      "testDefinitionId": "pis.dso.test.consent-create",
+      "testInstanceId": "pis.dso.test.consent-create.instance"
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.dso.assertion.consent-read.status-200",
+          "type": "http-status"
+        }
+      ],
+      "coveredRequirementIds": [
+        "pis.dso.requirement.consent-read"
+      ],
+      "dependencyIds": [
+        "pis.dso.test.consent-create.instance.request"
+      ],
+      "evidence": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "pis.dso.test.consent-read.instance.request",
+      "name": "Read domestic standing-order consent",
+      "request": {
+        "inputBindings": [],
+        "method": "GET",
+        "path": "/domestic-standing-order-consents/{ConsentId}"
+      },
+      "testDefinitionId": "pis.dso.test.consent-read",
+      "testInstanceId": "pis.dso.test.consent-read.instance"
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "pis.dso.assertion.order-create.status-201",
+          "type": "http-status"
+        }
+      ],
+      "coveredRequirementIds": [
+        "pis.dso.requirement.order-create",
+        "pis.dso.requirement.frequency"
+      ],
+      "dependencyIds": [
+        "pis.dso.test.consent-read.instance.request"
+      ],
+      "evidence": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "pis.dso.test.order-create.instance.request",
+      "name": "Submit domestic standing order",
+      "request": {
+        "inputBindings": [
+          {
+            "inputId": "pis.dso.input.frequency",
+            "target": "/Data/Initiation/MandateRelatedInformation/Frequency",
+            "transform": "pis-v4-standing-order-frequency",
+            "type": "json-body"
+          }
+        ],
+        "method": "POST",
+        "path": "/domestic-standing-orders"
+      },
+      "testDefinitionId": "pis.dso.test.order-create",
+      "testInstanceId": "pis.dso.test.order-create.instance"
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "pis.dso.assertion.order-read.status-200",
+          "type": "http-status"
+        }
+      ],
+      "coveredRequirementIds": [
+        "pis.dso.requirement.order-read"
+      ],
+      "dependencyIds": [
+        "pis.dso.test.order-create.instance.request"
+      ],
+      "evidence": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "pis.dso.test.order-read.instance.request",
+      "name": "Read domestic standing order",
+      "request": {
+        "inputBindings": [],
+        "method": "GET",
+        "path": "/domestic-standing-orders/{DomesticStandingOrderId}"
+      },
+      "testDefinitionId": "pis.dso.test.order-read",
+      "testInstanceId": "pis.dso.test.order-read.instance"
+    }
+  ]
+}

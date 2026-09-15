@@ -369,3 +369,87 @@ class ResolvedPlan:
     test_instances: tuple[ResolvedTestInstance, ...]
     findings: tuple[CompilationFinding, ...]
     provenance: ResolvedPlanProvenance
+
+
+class EvidenceMode(StrEnum):
+    """Evidence handling modes supported by the initial runner boundary."""
+
+    MASKED = "masked"
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifestInput:
+    """Resolved non-sensitive logical input available to executable steps."""
+
+    id: StableId
+    source: InputResolutionSource
+    value: StandingOrderFrequency
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifestRequest:
+    """Exact operation and logical bindings for one executable HTTP step."""
+
+    method: HttpMethod
+    path: str
+    input_bindings: tuple[RequestInputBinding, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifestAssertion:
+    """Resolved assertion evaluated for one executable step."""
+
+    id: StableId
+    type: str
+    expected_status: int
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionEvidencePolicy:
+    """Runner instructions for retaining safe request and response evidence."""
+
+    request: EvidenceMode
+    response: EvidenceMode
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifestStep:
+    """One ordered runner-facing test instance and its executable request."""
+
+    id: StableId
+    test_instance_id: StableId
+    test_definition_id: StableId
+    name: str
+    dependency_ids: tuple[StableId, ...]
+    covered_requirement_ids: tuple[StableId, ...]
+    request: ExecutionManifestRequest
+    assertions: tuple[ExecutionManifestAssertion, ...]
+    evidence: ExecutionEvidencePolicy
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifestProvenance:
+    """Immutable source provenance copied from the resolved plan."""
+
+    resolved_plan_id: StableId
+    participant_plan_id: StableId
+    suite_release_id: StableId
+    suite_release_version: str
+    suite_published_at: str
+    requirements_catalogue_id: StableId
+    test_definition_catalogue_id: StableId
+    tool_releases: tuple[ToolRelease, ...]
+    artifacts: tuple[ArtifactReference, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ExecutionManifest:
+    """Generated immutable instructions consumed by the runner boundary."""
+
+    schema_version: str
+    document_type: str
+    id: StableId
+    security_profile: str
+    inputs: tuple[ExecutionManifestInput, ...]
+    steps: tuple[ExecutionManifestStep, ...]
+    provenance: ExecutionManifestProvenance

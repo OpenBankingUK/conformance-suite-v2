@@ -30,6 +30,14 @@ from conformance.configuration_contracts.models import (
     Capability,
     CompilationFinding,
     Endpoint,
+    EvidenceMode,
+    ExecutionEvidencePolicy,
+    ExecutionManifest,
+    ExecutionManifestAssertion,
+    ExecutionManifestInput,
+    ExecutionManifestProvenance,
+    ExecutionManifestRequest,
+    ExecutionManifestStep,
     FindingSeverity,
     FindingSourceDocument,
     HttpMethod,
@@ -74,6 +82,9 @@ CATALOGUE_SCHEMA_VERSION = "1.0"
 PLAN_SCHEMA_VERSION = "1.0"
 """Participant and resolved-plan document version supported by the skeleton."""
 
+EXECUTION_MANIFEST_SCHEMA_VERSION = "1.0"
+"""Execution-manifest document version supported by the runner boundary."""
+
 _SCHEMA_ROOT = Path(__file__).resolve().parent / "schemas" / "v1"
 _COMMON_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json"
 _SUITE_RELEASE_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/suite-release.schema.json"
@@ -85,6 +96,7 @@ _TEST_DEFINITION_CATALOGUE_SCHEMA_ID = (
 )
 _PARTICIPANT_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/participant-plan.schema.json"
 _RESOLVED_PLAN_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/resolved-plan.schema.json"
+_EXECUTION_MANIFEST_SCHEMA_ID = "https://schemas.openbanking.org.uk/conformance/v1/execution-manifest.schema.json"
 _SCHEMA_PATHS = {
     _COMMON_SCHEMA_ID: _SCHEMA_ROOT / "common.schema.json",
     _SUITE_RELEASE_SCHEMA_ID: _SCHEMA_ROOT / "suite-release.schema.json",
@@ -92,6 +104,7 @@ _SCHEMA_PATHS = {
     _TEST_DEFINITION_CATALOGUE_SCHEMA_ID: _SCHEMA_ROOT / "test-definition-catalogue.schema.json",
     _PARTICIPANT_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "participant-plan.schema.json",
     _RESOLVED_PLAN_SCHEMA_ID: _SCHEMA_ROOT / "resolved-plan.schema.json",
+    _EXECUTION_MANIFEST_SCHEMA_ID: _SCHEMA_ROOT / "execution-manifest.schema.json",
 }
 
 
@@ -123,6 +136,11 @@ def load_participant_plan(path: Path) -> ParticipantPlan:
 def load_resolved_plan(path: Path) -> ResolvedPlan:
     """Load a generated resolved plan into immutable typed data."""
     return parse_resolved_plan(_load_json_document(path))
+
+
+def load_execution_manifest(path: Path) -> ExecutionManifest:
+    """Load a generated execution manifest into immutable typed data."""
+    return parse_execution_manifest(_load_json_document(path))
 
 
 def parse_suite_release(raw_document: object) -> SuiteRelease:
@@ -209,6 +227,20 @@ def parse_resolved_plan(raw_document: object) -> ResolvedPlan:
 
     document = _resolved_plan_from_schema_valid_document(cast(dict[str, object], raw_document))
     semantic_diagnostics = _validate_resolved_plan_semantics(document)
+    if semantic_diagnostics:
+        raise ConfigurationContractError(semantic_diagnostics)
+    return document
+
+
+def parse_execution_manifest(raw_document: object) -> ExecutionManifest:
+    """Validate and map one schema-versioned generated execution manifest."""
+    _reject_unsupported_execution_manifest_schema_version(raw_document)
+    validation_diagnostics = _validate_document(raw_document, schema_id=_EXECUTION_MANIFEST_SCHEMA_ID)
+    if validation_diagnostics:
+        raise ConfigurationContractError(validation_diagnostics)
+
+    document = _execution_manifest_from_schema_valid_document(cast(dict[str, object], raw_document))
+    semantic_diagnostics = _validate_execution_manifest_semantics(document)
     if semantic_diagnostics:
         raise ConfigurationContractError(semantic_diagnostics)
     return document
@@ -565,6 +597,82 @@ def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
     }
 
 
+def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
+    """Convert an immutable execution manifest to its deterministic wire shape."""
+    return {
+        "documentType": manifest.document_type,
+        "id": str(manifest.id),
+        "inputs": [
+            {
+                "id": str(manifest_input.id),
+                "source": manifest_input.source.value,
+                "value": _frequency_to_document(manifest_input.value),
+            }
+            for manifest_input in manifest.inputs
+        ],
+        "provenance": {
+            "artifacts": [_artifact_to_document(artifact) for artifact in manifest.provenance.artifacts],
+            "participantPlanId": str(manifest.provenance.participant_plan_id),
+            "requirementsCatalogueId": str(manifest.provenance.requirements_catalogue_id),
+            "resolvedPlanId": str(manifest.provenance.resolved_plan_id),
+            "suitePublishedAt": manifest.provenance.suite_published_at,
+            "suiteReleaseId": str(manifest.provenance.suite_release_id),
+            "suiteReleaseVersion": manifest.provenance.suite_release_version,
+            "testDefinitionCatalogueId": str(manifest.provenance.test_definition_catalogue_id),
+            "toolReleases": [
+                {"id": str(tool_release.id), "version": tool_release.version}
+                for tool_release in manifest.provenance.tool_releases
+            ],
+        },
+        "schemaVersion": manifest.schema_version,
+        "securityProfile": manifest.security_profile,
+        "steps": [
+            {
+                "assertions": [
+                    {
+                        "expectedStatus": assertion.expected_status,
+                        "id": str(assertion.id),
+                        "type": assertion.type,
+                    }
+                    for assertion in step.assertions
+                ],
+                "coveredRequirementIds": [str(requirement_id) for requirement_id in step.covered_requirement_ids],
+                "dependencyIds": [str(dependency_id) for dependency_id in step.dependency_ids],
+                "evidence": {
+                    "request": step.evidence.request.value,
+                    "response": step.evidence.response.value,
+                },
+                "id": str(step.id),
+                "name": step.name,
+                "request": {
+                    "inputBindings": [
+                        {
+                            "inputId": str(binding.input_id),
+                            "target": binding.target,
+                            "transform": str(binding.transform),
+                            "type": binding.type,
+                        }
+                        for binding in step.request.input_bindings
+                    ],
+                    "method": step.request.method.value,
+                    "path": step.request.path,
+                },
+                "testDefinitionId": str(step.test_definition_id),
+                "testInstanceId": str(step.test_instance_id),
+            }
+            for step in manifest.steps
+        ],
+    }
+
+
+def execution_manifest_id(manifest: ExecutionManifest) -> StableId:
+    """Return the content-addressed ID for an execution manifest."""
+    document = execution_manifest_to_document(manifest)
+    del document["id"]
+    canonical = json.dumps(document, separators=(",", ":"), sort_keys=True)
+    return StableId(f"execution-manifest:{hashlib.sha256(canonical.encode('utf-8')).hexdigest()}")
+
+
 def dump_suite_release(suite_release: SuiteRelease) -> str:
     """Serialize a suite release deterministically with a trailing newline."""
     return json.dumps(suite_release_to_document(suite_release), indent=2, sort_keys=True) + "\n"
@@ -588,6 +696,11 @@ def dump_participant_plan(plan: ParticipantPlan) -> str:
 def dump_resolved_plan(plan: ResolvedPlan) -> str:
     """Serialize a resolved plan deterministically."""
     return json.dumps(resolved_plan_to_document(plan), indent=2, sort_keys=True) + "\n"
+
+
+def dump_execution_manifest(manifest: ExecutionManifest) -> str:
+    """Serialize an execution manifest deterministically."""
+    return json.dumps(execution_manifest_to_document(manifest), indent=2, sort_keys=True) + "\n"
 
 
 def validate_bundled_schemas() -> tuple[ConfigurationDiagnostic, ...]:
@@ -664,6 +777,20 @@ def _reject_unsupported_plan_schema_version(raw_document: object, *, document_na
                 _diagnostic(
                     DiagnosticCode.SCHEMA_VERSION_UNSUPPORTED,
                     f"Unsupported {document_name} schema version {schema_version!r}",
+                    instance_path="/schemaVersion",
+                ),
+            )
+        )
+
+
+def _reject_unsupported_execution_manifest_schema_version(raw_document: object) -> None:
+    schema_version = _selected_suite_release_schema_version(raw_document)
+    if schema_version is not None and schema_version != EXECUTION_MANIFEST_SCHEMA_VERSION:
+        raise ConfigurationContractError(
+            (
+                _diagnostic(
+                    DiagnosticCode.SCHEMA_VERSION_UNSUPPORTED,
+                    f"Unsupported execution manifest schema version {schema_version!r}",
                     instance_path="/schemaVersion",
                 ),
             )
@@ -1084,6 +1211,88 @@ def _resolved_plan_from_schema_valid_document(document: dict[str, object]) -> Re
     )
 
 
+def _execution_manifest_from_schema_valid_document(document: dict[str, object]) -> ExecutionManifest:
+    provenance = cast(dict[str, object], document["provenance"])
+    tool_releases = cast(list[dict[str, object]], provenance["toolReleases"])
+    artifacts = cast(list[dict[str, object]], provenance["artifacts"])
+    inputs = cast(list[dict[str, object]], document["inputs"])
+    steps = cast(list[dict[str, object]], document["steps"])
+    return ExecutionManifest(
+        schema_version=cast(str, document["schemaVersion"]),
+        document_type=cast(str, document["documentType"]),
+        id=StableId(cast(str, document["id"])),
+        security_profile=cast(str, document["securityProfile"]),
+        inputs=tuple(
+            ExecutionManifestInput(
+                id=StableId(cast(str, manifest_input["id"])),
+                source=InputResolutionSource(cast(str, manifest_input["source"])),
+                value=_frequency_from_document(cast(dict[str, object], manifest_input["value"])),
+            )
+            for manifest_input in inputs
+        ),
+        steps=tuple(_execution_manifest_step_from_document(step) for step in steps),
+        provenance=ExecutionManifestProvenance(
+            resolved_plan_id=StableId(cast(str, provenance["resolvedPlanId"])),
+            participant_plan_id=StableId(cast(str, provenance["participantPlanId"])),
+            suite_release_id=StableId(cast(str, provenance["suiteReleaseId"])),
+            suite_release_version=cast(str, provenance["suiteReleaseVersion"]),
+            suite_published_at=cast(str, provenance["suitePublishedAt"]),
+            requirements_catalogue_id=StableId(cast(str, provenance["requirementsCatalogueId"])),
+            test_definition_catalogue_id=StableId(cast(str, provenance["testDefinitionCatalogueId"])),
+            tool_releases=tuple(
+                ToolRelease(
+                    id=StableId(cast(str, tool_release["id"])),
+                    version=cast(str, tool_release["version"]),
+                )
+                for tool_release in tool_releases
+            ),
+            artifacts=tuple(_artifact_from_document(artifact) for artifact in artifacts),
+        ),
+    )
+
+
+def _execution_manifest_step_from_document(document: dict[str, object]) -> ExecutionManifestStep:
+    request = cast(dict[str, object], document["request"])
+    bindings = cast(list[dict[str, object]], request["inputBindings"])
+    assertions = cast(list[dict[str, object]], document["assertions"])
+    evidence = cast(dict[str, object], document["evidence"])
+    return ExecutionManifestStep(
+        id=StableId(cast(str, document["id"])),
+        test_instance_id=StableId(cast(str, document["testInstanceId"])),
+        test_definition_id=StableId(cast(str, document["testDefinitionId"])),
+        name=cast(str, document["name"]),
+        dependency_ids=tuple(StableId(dependency_id) for dependency_id in cast(list[str], document["dependencyIds"])),
+        covered_requirement_ids=tuple(
+            StableId(requirement_id) for requirement_id in cast(list[str], document["coveredRequirementIds"])
+        ),
+        request=ExecutionManifestRequest(
+            method=HttpMethod(cast(str, request["method"])),
+            path=cast(str, request["path"]),
+            input_bindings=tuple(
+                RequestInputBinding(
+                    input_id=StableId(cast(str, binding["inputId"])),
+                    type=cast(str, binding["type"]),
+                    target=cast(str, binding["target"]),
+                    transform=StableId(cast(str, binding["transform"])),
+                )
+                for binding in bindings
+            ),
+        ),
+        assertions=tuple(
+            ExecutionManifestAssertion(
+                id=StableId(cast(str, assertion["id"])),
+                type=cast(str, assertion["type"]),
+                expected_status=cast(int, assertion["expectedStatus"]),
+            )
+            for assertion in assertions
+        ),
+        evidence=ExecutionEvidencePolicy(
+            request=EvidenceMode(cast(str, evidence["request"])),
+            response=EvidenceMode(cast(str, evidence["response"])),
+        ),
+    )
+
+
 def _resolved_predefined_input_from_document(document: dict[str, object]) -> ResolvedPredefinedInput:
     value = cast(dict[str, object] | None, document["value"])
     return ResolvedPredefinedInput(
@@ -1270,6 +1479,83 @@ def _validate_resolved_plan_semantics(plan: ResolvedPlan) -> tuple[Configuration
                 instance_path="/selectionValid",
             )
         )
+    return tuple(diagnostics)
+
+
+def _validate_execution_manifest_semantics(
+    manifest: ExecutionManifest,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    diagnostics: list[ConfigurationDiagnostic] = []
+    expected_id = execution_manifest_id(manifest)
+    if manifest.id != expected_id:
+        diagnostics.append(
+            _diagnostic(
+                DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                f"Execution manifest content requires id {expected_id!s}",
+                instance_path="/id",
+            )
+        )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            ((str(item.id), f"/inputs/{index}/id") for index, item in enumerate(manifest.inputs)),
+            object_kind="execution input",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            ((str(item.id), f"/steps/{index}/id") for index, item in enumerate(manifest.steps)),
+            object_kind="execution step",
+        )
+    )
+    diagnostics.extend(
+        _duplicate_id_diagnostics(
+            (
+                (str(item.test_instance_id), f"/steps/{index}/testInstanceId")
+                for index, item in enumerate(manifest.steps)
+            ),
+            object_kind="execution test instance",
+        )
+    )
+    input_ids = {manifest_input.id for manifest_input in manifest.inputs}
+    step_ids = {step.id for step in manifest.steps}
+    previous_step_ids: set[StableId] = set()
+    for step_index, step in enumerate(manifest.steps):
+        for dependency_index, dependency_id in enumerate(step.dependency_ids):
+            if dependency_id not in step_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        dependency_id,
+                        instance_path=f"/steps/{step_index}/dependencyIds/{dependency_index}",
+                        object_kind="execution step",
+                    )
+                )
+            elif dependency_id not in previous_step_ids:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.EXECUTION_MANIFEST_INCONSISTENT,
+                        f"Execution dependency {dependency_id!s} must precede {step.id!s}",
+                        instance_path=f"/steps/{step_index}/dependencyIds/{dependency_index}",
+                    )
+                )
+        for binding_index, binding in enumerate(step.request.input_bindings):
+            if binding.input_id not in input_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        binding.input_id,
+                        instance_path=f"/steps/{step_index}/request/inputBindings/{binding_index}/inputId",
+                        object_kind="execution input",
+                    )
+                )
+        diagnostics.extend(
+            _duplicate_id_diagnostics(
+                (
+                    (str(assertion.id), f"/steps/{step_index}/assertions/{assertion_index}/id")
+                    for assertion_index, assertion in enumerate(step.assertions)
+                ),
+                object_kind="execution assertion",
+            )
+        )
+        previous_step_ids.add(step.id)
     return tuple(diagnostics)
 
 

@@ -36,6 +36,12 @@ from conformance.catalogue import (
     CompiledTestPlan,
     RuntimeInputRequirement,
 )
+from conformance.configuration_contracts import (
+    LegacyExecutionEngine,
+    PreparedExecutionManifest,
+    adapt_compiled_plan_to_execution_manifest,
+    validate_execution_manifest_compatibility,
+)
 from conformance.context import (
     ExecutionContext,
     MissingPredecessorResponseError,
@@ -502,7 +508,7 @@ def run_compiled_test_plan(
     dcr_clock: Callable[[], datetime] | None = None,
     dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
-    """Run a compiled catalogue plan and return structured result evidence.
+    """Adapt a compiled catalogue plan to the execution-manifest boundary.
 
     Args:
         compiled_plan: Deterministic catalogue graph produced by the compiler.
@@ -526,15 +532,54 @@ def run_compiled_test_plan(
     Returns:
         Smoke-check result populated with catalogue traceability metadata.
     """
-    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
-    effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
-    effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
-    synthetic_manifest = _compiled_plan_to_manifest(
+    prepared_manifest = adapt_compiled_plan_to_execution_manifest(
         compiled_plan,
         runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
-        runtime_config=runtime_config,
     )
+    return run_execution_manifest(
+        prepared_manifest,
+        client=client,
+        execution_logger=execution_logger,
+        run_id=run_id,
+        auth_session_store=auth_session_store,
+        runtime_config=runtime_config,
+        fapi_signing_config=fapi_signing_config,
+        mtls_client_configured=mtls_client_configured,
+        approved_release_policy=approved_release_policy,
+        dcr_clock=dcr_clock,
+        dcr_jwt_id_factory=dcr_jwt_id_factory,
+    )
+
+
+def run_execution_manifest(
+    prepared_manifest: PreparedExecutionManifest,
+    *,
+    client: httpx.Client,
+    execution_logger: ExecutionLogger | None = None,
+    run_id: str | None = None,
+    auth_session_store: AuthSessionStore | None = None,
+    runtime_config: RuntimeConfig | None = None,
+    fapi_signing_config: FapiSigningConfig | None = None,
+    mtls_client_configured: bool = False,
+    approved_release_policy: ApprovedReleasePolicy | None = None,
+    dcr_clock: Callable[[], datetime] | None = None,
+    dcr_jwt_id_factory: Callable[[], str] | None = None,
+) -> SmokeCheckResult:
+    """Execute resolved work through an explicit compatibility engine.
+
+    The runner consumes only the immutable execution-manifest boundary. The
+    temporary prepared binding keeps the existing compiled catalogue graph and
+    runtime inputs available to the legacy Read/Write and DCR implementations
+    without exposing participant-plan types to runner code.
+    """
+    compiled_plan = prepared_manifest.compiled_plan
+    runtime_inputs = prepared_manifest.runtime_inputs
+    runtime_input_base_dir = prepared_manifest.runtime_input_base_dir
+    validate_execution_manifest_compatibility(prepared_manifest)
+    logger_sink: ExecutionLogger = execution_logger or NullExecutionLogger()
+    effective_run_id = run_id if run_id is not None else _logger_run_id(logger_sink) or new_run_id()
+    effective_store = auth_session_store if auth_session_store is not None else AuthSessionStore()
     logger_sink.emit(
         "run-started",
         payload={
@@ -547,7 +592,7 @@ def run_compiled_test_plan(
         },
     )
     try:
-        if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+        if prepared_manifest.engine is LegacyExecutionEngine.DCR:
             dcr_adapter = DcrCatalogueExecutionAdapter(
                 compiled_plan=compiled_plan,
                 config=parse_dcr_execution_runtime_inputs(runtime_inputs),
@@ -560,6 +605,14 @@ def run_compiled_test_plan(
                 dcr_adapter.jwt_id_factory = dcr_jwt_id_factory
             result = dcr_adapter.run()
         else:
+            if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
+                raise ValueError("DCR compiled plans require the DCR compatibility engine")
+            synthetic_manifest = _compiled_plan_to_manifest(
+                compiled_plan,
+                runtime_inputs=runtime_inputs,
+                runtime_input_base_dir=runtime_input_base_dir,
+                runtime_config=runtime_config,
+            )
             result = _run_manifest_v1(
                 synthetic_manifest,
                 client=client,
