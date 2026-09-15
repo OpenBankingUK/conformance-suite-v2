@@ -1,0 +1,897 @@
+{
+  "capabilities": [
+    {
+      "description": "Standards-derived account access consent scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.account-access-consent",
+      "name": "Account access consent",
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.post.account_access_consents",
+        "ais.v401.endpoint.delete.account_access_consents.consentid",
+        "ais.v401.endpoint.get.account_access_consents.consentid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived accounts scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.accounts",
+      "name": "Accounts",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts",
+        "ais.v401.endpoint.get.accounts.accountid"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived balances scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.balances",
+      "name": "Balances",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.balances",
+        "ais.v401.endpoint.get.balances"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived beneficiaries scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.beneficiaries",
+      "name": "Beneficiaries",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.beneficiaries",
+        "ais.v401.endpoint.get.beneficiaries"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived direct debits scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.direct-debits",
+      "name": "Direct debits",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.direct_debits",
+        "ais.v401.endpoint.get.direct_debits"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived offers scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.offers",
+      "name": "Offers",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.offers",
+        "ais.v401.endpoint.get.offers"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived parties scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.parties",
+      "name": "Parties",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.parties",
+        "ais.v401.endpoint.get.accounts.accountid.party",
+        "ais.v401.endpoint.get.party"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived products scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.products",
+      "name": "Products",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.product",
+        "ais.v401.endpoint.get.products"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived scheduled payments scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.scheduled-payments",
+      "name": "Scheduled payments",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.scheduled_payments",
+        "ais.v401.endpoint.get.scheduled_payments"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived standing orders scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.standing-orders",
+      "name": "Standing orders",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.standing_orders",
+        "ais.v401.endpoint.get.standing_orders"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived statements scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.statements",
+      "name": "Statements",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.statements",
+        "ais.v401.endpoint.get.accounts.accountid.statements.statementid",
+        "ais.v401.endpoint.get.accounts.accountid.statements.statementid.file",
+        "ais.v401.endpoint.get.accounts.accountid.statements.statementid.transactions",
+        "ais.v401.endpoint.get.statements"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Standards-derived transactions scope for Open Banking Read/Write 4.0.1.",
+      "id": "ais.v401.capability.transactions",
+      "name": "Transactions",
+      "requiredCapabilityIds": [
+        "ais.v401.capability.account-access-consent",
+        "ais.v401.capability.accounts"
+      ],
+      "requiredEndpointIds": [
+        "ais.v401.endpoint.get.accounts.accountid.transactions",
+        "ais.v401.endpoint.get.transactions"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "ais.v401.endpoint.post.account_access_consents",
+      "method": "POST",
+      "operationId": "CreateAccountAccessConsents",
+      "path": "/account-access-consents",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1account-access-consents/post"
+    },
+    {
+      "id": "ais.v401.endpoint.delete.account_access_consents.consentid",
+      "method": "DELETE",
+      "operationId": "DeleteAccountAccessConsentsConsentId",
+      "path": "/account-access-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1account-access-consents~1{ConsentId}/delete"
+    },
+    {
+      "id": "ais.v401.endpoint.get.account_access_consents.consentid",
+      "method": "GET",
+      "operationId": "GetAccountAccessConsentsConsentId",
+      "path": "/account-access-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1account-access-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts",
+      "method": "GET",
+      "operationId": "GetAccounts",
+      "path": "/accounts",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid",
+      "method": "GET",
+      "operationId": "GetAccountsAccountId",
+      "path": "/accounts/{AccountId}",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.balances",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdBalances",
+      "path": "/accounts/{AccountId}/balances",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1balances/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.balances",
+      "method": "GET",
+      "operationId": "GetBalances",
+      "path": "/balances",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1balances/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.beneficiaries",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdBeneficiaries",
+      "path": "/accounts/{AccountId}/beneficiaries",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1beneficiaries/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.beneficiaries",
+      "method": "GET",
+      "operationId": "GetBeneficiaries",
+      "path": "/beneficiaries",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1beneficiaries/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.direct_debits",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdDirectDebits",
+      "path": "/accounts/{AccountId}/direct-debits",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1direct-debits/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.direct_debits",
+      "method": "GET",
+      "operationId": "GetDirectDebits",
+      "path": "/direct-debits",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1direct-debits/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.offers",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdOffers",
+      "path": "/accounts/{AccountId}/offers",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1offers/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.offers",
+      "method": "GET",
+      "operationId": "GetOffers",
+      "path": "/offers",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1offers/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.parties",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdParties",
+      "path": "/accounts/{AccountId}/parties",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1parties/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.party",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdParty",
+      "path": "/accounts/{AccountId}/party",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1party/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.party",
+      "method": "GET",
+      "operationId": "GetParty",
+      "path": "/party",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1party/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.product",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdProduct",
+      "path": "/accounts/{AccountId}/product",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1product/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.products",
+      "method": "GET",
+      "operationId": "GetProducts",
+      "path": "/products",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1products/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.scheduled_payments",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdScheduledPayments",
+      "path": "/accounts/{AccountId}/scheduled-payments",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1scheduled-payments/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.scheduled_payments",
+      "method": "GET",
+      "operationId": "GetScheduledPayments",
+      "path": "/scheduled-payments",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1scheduled-payments/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.standing_orders",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdStandingOrders",
+      "path": "/accounts/{AccountId}/standing-orders",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1standing-orders/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.standing_orders",
+      "method": "GET",
+      "operationId": "GetStandingOrders",
+      "path": "/standing-orders",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1standing-orders/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.statements",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdStatements",
+      "path": "/accounts/{AccountId}/statements",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1statements/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.statements.statementid",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdStatementsStatementId",
+      "path": "/accounts/{AccountId}/statements/{StatementId}",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1statements~1{StatementId}/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.statements.statementid.file",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdStatementsStatementIdFile",
+      "path": "/accounts/{AccountId}/statements/{StatementId}/file",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1statements~1{StatementId}~1file/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.statements.statementid.transactions",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdStatementsStatementIdTransactions",
+      "path": "/accounts/{AccountId}/statements/{StatementId}/transactions",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1statements~1{StatementId}~1transactions/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.statements",
+      "method": "GET",
+      "operationId": "GetStatements",
+      "path": "/statements",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1statements/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.accounts.accountid.transactions",
+      "method": "GET",
+      "operationId": "GetAccountsAccountIdTransactions",
+      "path": "/accounts/{AccountId}/transactions",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1accounts~1{AccountId}~1transactions/get"
+    },
+    {
+      "id": "ais.v401.endpoint.get.transactions",
+      "method": "GET",
+      "operationId": "GetTransactions",
+      "path": "/transactions",
+      "sourceId": "ob-rw-v401.account-info-openapi",
+      "sourcePointer": "/paths/~1transactions/get"
+    }
+  ],
+  "id": "obl.ais-v401.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-rw-v401.ais-profile",
+      "section": "Basics; Security & Access Control; Consent Elements / Permissions",
+      "title": "Open Banking Read/Write API 4.0.1 Account and Transaction API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/account-and-transaction-api-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.ais-openapi.operations",
+      "section": "Operation paths, parameters, responses, and schemas",
+      "title": "Open Banking Read/Write API 4.0.1 Account Information OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/account-info-openapi.json"
+    }
+  ],
+  "predefinedInputs": [
+    {
+      "description": "ISO 8601 lower bound applied to transaction retrieval requests.",
+      "exampleValue": "2026-01-01T00:00:00",
+      "id": "ais.v401.input.from-booking-date-time",
+      "label": "Transaction from booking date-time",
+      "requiredForCapabilityIds": [
+        "ais.v401.capability.transactions"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "local-date-time"
+    },
+    {
+      "description": "ISO 8601 upper bound applied to transaction retrieval requests.",
+      "exampleValue": "2026-01-31T23:59:59",
+      "id": "ais.v401.input.to-booking-date-time",
+      "label": "Transaction to booking date-time",
+      "requiredForCapabilityIds": [
+        "ais.v401.capability.transactions"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "local-date-time"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "ais.v401.requirement.post.account_access_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.account-access-consent",
+        "targetId": "ais.v401.endpoint.post.account_access_consents",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Account access consent is selected, the ASPSP supports POST /account-access-consents with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.delete.account_access_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.account-access-consent",
+        "targetId": "ais.v401.endpoint.delete.account_access_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Account access consent is selected, the ASPSP supports DELETE /account-access-consents/{ConsentId} with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.account_access_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.account-access-consent",
+        "targetId": "ais.v401.endpoint.get.account_access_consents.consentid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Account access consent is selected, the ASPSP supports GET /account-access-consents/{ConsentId} with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.accounts",
+        "targetId": "ais.v401.endpoint.get.accounts",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Accounts is selected, the ASPSP supports GET /accounts with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.accounts",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Accounts is selected, the ASPSP supports GET /accounts/{AccountId} with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.balances",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.balances",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.balances",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Balances is selected, the ASPSP supports GET /accounts/{AccountId}/balances with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.balances",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.balances",
+        "targetId": "ais.v401.endpoint.get.balances",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Balances is selected, the ASPSP supports GET /balances with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.beneficiaries",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.beneficiaries",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.beneficiaries",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Beneficiaries is selected, the ASPSP supports GET /accounts/{AccountId}/beneficiaries with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.beneficiaries",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.beneficiaries",
+        "targetId": "ais.v401.endpoint.get.beneficiaries",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Beneficiaries is selected, the ASPSP supports GET /beneficiaries with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.direct_debits",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.direct-debits",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.direct_debits",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Direct debits is selected, the ASPSP supports GET /accounts/{AccountId}/direct-debits with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.direct_debits",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.direct-debits",
+        "targetId": "ais.v401.endpoint.get.direct_debits",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Direct debits is selected, the ASPSP supports GET /direct-debits with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.offers",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.offers",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.offers",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Offers is selected, the ASPSP supports GET /accounts/{AccountId}/offers with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.offers",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.offers",
+        "targetId": "ais.v401.endpoint.get.offers",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Offers is selected, the ASPSP supports GET /offers with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.parties",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.parties",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.parties",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Parties is selected, the ASPSP supports GET /accounts/{AccountId}/parties with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.party",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.parties",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.party",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Parties is selected, the ASPSP supports GET /accounts/{AccountId}/party with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.party",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.parties",
+        "targetId": "ais.v401.endpoint.get.party",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Parties is selected, the ASPSP supports GET /party with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.product",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.products",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.product",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Products is selected, the ASPSP supports GET /accounts/{AccountId}/product with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.products",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.products",
+        "targetId": "ais.v401.endpoint.get.products",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Products is selected, the ASPSP supports GET /products with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.scheduled-payments",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.scheduled_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Scheduled payments is selected, the ASPSP supports GET /accounts/{AccountId}/scheduled-payments with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.scheduled-payments",
+        "targetId": "ais.v401.endpoint.get.scheduled_payments",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Scheduled payments is selected, the ASPSP supports GET /scheduled-payments with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.standing-orders",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.standing_orders",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Standing orders is selected, the ASPSP supports GET /accounts/{AccountId}/standing-orders with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.standing-orders",
+        "targetId": "ais.v401.endpoint.get.standing_orders",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Standing orders is selected, the ASPSP supports GET /standing-orders with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.statements",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.statements",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.statements",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Statements is selected, the ASPSP supports GET /accounts/{AccountId}/statements with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.statements.statementid",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.statements",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.statements.statementid",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Statements is selected, the ASPSP supports GET /accounts/{AccountId}/statements/{StatementId} with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.statements.statementid.file",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.statements",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.statements.statementid.file",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Statements is selected, the ASPSP supports GET /accounts/{AccountId}/statements/{StatementId}/file with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.statements.statementid.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.statements",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.statements.statementid.transactions",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Statements is selected, the ASPSP supports GET /accounts/{AccountId}/statements/{StatementId}/transactions with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.statements",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.statements",
+        "targetId": "ais.v401.endpoint.get.statements",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Statements is selected, the ASPSP supports GET /statements with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.accounts.accountid.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.transactions",
+        "targetId": "ais.v401.endpoint.get.accounts.accountid.transactions",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Transactions is selected, the ASPSP supports GET /accounts/{AccountId}/transactions with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.get.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.transactions",
+        "targetId": "ais.v401.endpoint.get.transactions",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "When Transactions is selected, the ASPSP supports GET /transactions with the profile's authorization and response contract."
+    },
+    {
+      "id": "ais.v401.requirement.from-booking-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.transactions",
+        "targetId": "ais.v401.input.from-booking-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Transaction retrieval conformance requests use a participant-declared from booking date-time within the consented transaction period."
+    },
+    {
+      "id": "ais.v401.requirement.to-booking-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v401.ais-profile",
+        "ob-rw-v401.ais-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "ais.v401.capability.transactions",
+        "targetId": "ais.v401.input.to-booking-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Transaction retrieval conformance requests use a participant-declared to booking date-time within the consented transaction period."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "ais",
+    "version": "4.0.1"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:85e871128c87af44baf611177ccf072126aeacd513ba9558da18342be1b4e42b",
+      "id": "ob-rw-v401.account-info-openapi",
+      "title": "Open Banking Read/Write API 4.0.1 Account Information OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/account-info-openapi.json"
+    }
+  ]
+}

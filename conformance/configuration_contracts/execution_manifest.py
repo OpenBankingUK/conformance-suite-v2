@@ -159,6 +159,7 @@ def generate_execution_manifest(
                         id=assertion.id,
                         type=assertion.type,
                         expected_status=assertion.expected_status,
+                        expected_statuses=assertion.expected_statuses,
                         schema_ref=assertion.schema_ref,
                         schema_source_id=assertion.schema_source_id,
                         header_name=assertion.header_name,

@@ -242,6 +242,7 @@ class TestAssertion:
     id: StableId
     type: str
     expected_status: int | None = None
+    expected_statuses: tuple[int, ...] | None = None
     schema_ref: str | None = None
     schema_source_id: StableId | None = None
     header_name: str | None = None
@@ -473,6 +474,7 @@ class ExecutionManifestAssertion:
     id: StableId
     type: str
     expected_status: int | None = None
+    expected_statuses: tuple[int, ...] | None = None
     schema_ref: str | None = None
     schema_source_id: StableId | None = None
     header_name: str | None = None
