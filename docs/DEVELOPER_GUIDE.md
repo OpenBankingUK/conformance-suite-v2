@@ -118,6 +118,30 @@ layers explicitly replace them.
 The participant-facing source of truth is now a canonical JSON-first test plan,
 not checked-in manifest examples or config-selected suites.
 
+The replacement architecture's shared configuration foundation lives in
+`conformance.configuration_contracts`. External JSON Schemas under
+`configuration_contracts/schemas/v1/` are the sole structural authority for
+new contract documents. Loaders schema-validate before constructing frozen,
+slotted models and report immutable diagnostics with stable codes and RFC 6901
+instance paths. The initial `suite-release` `1.0` descriptor binds compatible
+tool releases and referenced artefacts by logical ID, kind, media type, schema
+version, normalized release-bundle-relative path, and exact-byte SHA-256 digest.
+The validator accepts caller-supplied bytes and does not resolve filesystem or
+remote resources. Provenance is document-specific rather than mandatory in the
+common envelope.
+
+Legacy parity contracts, manifests, assertions, and data files have a separate
+migration role. Independently authored replacement catalogues are compared
+against those pinned baselines before release, and the comparison report is
+release-gate evidence. Production suite releases bind only the replacement
+configuration artefacts; validators, compilers, manifests, and results do not
+gain runtime dependencies on legacy comparison inputs.
+
+This foundation is intentionally not wired into the current builder, canonical
+plan, compiler, executor, catalogue registry, result output, or approved-release
+policy. Those remain on their characterised contracts until their owning
+migration layers provide explicit adapters.
+
 Core modules:
 
 | Module | Role |
