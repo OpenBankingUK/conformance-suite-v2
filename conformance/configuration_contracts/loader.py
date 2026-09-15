@@ -46,6 +46,7 @@ from conformance.configuration_contracts.models import (
     ParticipantInput,
     ParticipantPlan,
     PredefinedInput,
+    PredefinedInputValue,
     RequestInputBinding,
     RequestModification,
     Requirement,
@@ -1385,6 +1386,7 @@ def _assertion_to_document(assertion: TestAssertion | ExecutionManifestAssertion
     return _without_none_values(
         {
             "expectedStatus": assertion.expected_status,
+            "expectedStatuses": (None if assertion.expected_statuses is None else list(assertion.expected_statuses)),
             "expectedValue": assertion.expected_value,
             "headerName": assertion.header_name,
             "id": str(assertion.id),
@@ -1400,6 +1402,9 @@ def _test_assertion_from_document(document: dict[str, object]) -> TestAssertion:
         id=StableId(cast(str, document["id"])),
         type=cast(str, document["type"]),
         expected_status=cast(int | None, document.get("expectedStatus")),
+        expected_statuses=(
+            None if "expectedStatuses" not in document else tuple(cast(list[int], document["expectedStatuses"]))
+        ),
         schema_ref=cast(str | None, document.get("schemaRef")),
         header_name=cast(str | None, document.get("headerName")),
         json_pointer=cast(str | None, document.get("jsonPointer")),
@@ -1413,6 +1418,7 @@ def _execution_assertion_from_document(document: dict[str, object]) -> Execution
         id=assertion.id,
         type=assertion.type,
         expected_status=assertion.expected_status,
+        expected_statuses=assertion.expected_statuses,
         schema_ref=assertion.schema_ref,
         header_name=assertion.header_name,
         json_pointer=assertion.json_pointer,
@@ -1743,11 +1749,7 @@ def _validate_requirements_catalogue_semantics(
     for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
         values = (predefined_input.example_value, predefined_input.default_value)
         if any(
-            value is not None
-            and (
-                (predefined_input.value_type == "string" and not isinstance(value, str))
-                or (predefined_input.value_type == "standing-order-frequency-v4" and isinstance(value, str))
-            )
+            value is not None and not _predefined_input_value_matches_type(predefined_input.value_type, value)
             for value in values
         ):
             diagnostics.append(
@@ -1797,6 +1799,14 @@ def _validate_requirements_catalogue_semantics(
                     )
                 )
     return tuple(diagnostics)
+
+
+def _predefined_input_value_matches_type(value_type: StableId, value: PredefinedInputValue) -> bool:
+    if value_type in {"date-time", "local-date-time", "string"}:
+        return isinstance(value, str)
+    if value_type == "standing-order-frequency-v4":
+        return not isinstance(value, str)
+    return False
 
 
 def _capability_dependency_cycle_diagnostics(

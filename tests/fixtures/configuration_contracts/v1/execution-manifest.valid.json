@@ -1,6 +1,6 @@
 {
   "documentType": "execution-manifest",
-  "id": "execution-manifest:deeb1da3ad6495c0af14040f524361da12e5ae2c2298fdab0bd137280d1b9c3f",
+  "id": "execution-manifest:ed7d65db2cf042fe88c63378c36fdc8c73e2c7b71b5f35af719f2c02537863cc",
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -14,7 +14,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:b22b502e77cbf1986e64648dbd308d1fee57f01664492ce776440664b29773d7",
+        "digest": "sha256:80c69c078365255acf1ef4416cd8ca665c02e9b2dfb7c86f2ecc88307b0cdc5f",
         "id": "requirements-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -22,7 +22,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
       },
       {
-        "digest": "sha256:c6089c5bd3399bca14693affac9cc7fe2e6af4ba360d8f5ad8c70f9a4d07c328",
+        "digest": "sha256:5c13656caaab3d01c8fe6d1b67b2531411ed316d5cf46202de13d384be295e8c",
         "id": "test-definition-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -46,7 +46,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
       },
       {
-        "digest": "sha256:0019b18a2777adfce3dbeeaebd77eaab9cae39970ed6ca363b509e7df274d562",
+        "digest": "sha256:5e0cfab731ead173f0fa2562fa34e2a08bdf56469bf8f1dc8f5df811195bd75a",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -72,7 +72,7 @@
     ],
     "participantPlanId": "participant.pis-dso.example",
     "requirementsCatalogueId": "obl.pis-domestic-standing-order-v4.requirements",
-    "resolvedPlanId": "resolved-plan:fd4986c734bb9b61d3bda7065f1d69ae728f73ee331d032e040cd3fa30cbb543",
+    "resolvedPlanId": "resolved-plan:096de812a4e6bd8aa7588401a2c430290433c1a48573d4c0924a42f9a937e3ab",
     "suitePublishedAt": "2026-09-15T08:57:48Z",
     "suiteReleaseId": "obl.pis-dso-v4.walking-skeleton-suite",
     "suiteReleaseVersion": "walking-skeleton.1",

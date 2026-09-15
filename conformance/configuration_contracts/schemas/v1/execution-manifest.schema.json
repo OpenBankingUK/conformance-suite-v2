@@ -46,29 +46,7 @@
       "type": "object"
     },
     "inputBinding": {
-      "additionalProperties": false,
-      "properties": {
-        "inputId": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
-        },
-        "target": {
-          "pattern": "^/(?:[^~/]|~[01])+(?:/(?:[^~/]|~[01])*)*$",
-          "type": "string"
-        },
-        "transform": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
-        },
-        "type": {
-          "const": "json-body"
-        }
-      },
-      "required": [
-        "inputId",
-        "type",
-        "target",
-        "transform"
-      ],
-      "type": "object"
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v1/test-definition-catalogue.schema.json#/$defs/inputBinding"
     },
     "provenance": {
       "additionalProperties": false,

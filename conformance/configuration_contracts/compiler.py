@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from enum import StrEnum
 
 from conformance.configuration_contracts.diagnostics import (
@@ -48,6 +50,9 @@ from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue,
 )
 from conformance.json_types import JsonValue
+
+_RFC3339_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$")
+_LOCAL_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
 
 
 class CompilationFindingCode(StrEnum):
@@ -426,6 +431,7 @@ def _resolve_capabilities(
 
     for capability_id in tuple(explicit_ids):
         include_dependencies(capability_id)
+        include_dependencies(capability_id)
 
     indexes = {capability_id: index for index, capability_id in enumerate(participant_plan.selected_capability_ids)}
     for capability_id in sorted(set(participant_plan.selected_capability_ids).difference(catalogue_ids)):
@@ -583,12 +589,7 @@ def _resolve_predefined_inputs(
             continue
         participant_input = participant_inputs.get(predefined_input.id)
         if participant_input is not None:
-            if (
-                predefined_input.value_type == "string"
-                and not isinstance(participant_input.value, str)
-                or predefined_input.value_type == "standing-order-frequency-v4"
-                and isinstance(participant_input.value, str)
-            ):
+            if not _input_value_matches_type(predefined_input.value_type, participant_input.value):
                 findings.append(
                     _finding(
                         CompilationFindingCode.INPUT_INVALID,
@@ -630,6 +631,30 @@ def _resolve_predefined_inputs(
             )
         )
     return tuple(resolved)
+
+
+def _input_value_matches_type(value_type: StableId, value: PredefinedInputValue) -> bool:
+    if value_type == "string":
+        return isinstance(value, str)
+    if value_type == "date-time":
+        if not isinstance(value, str) or _RFC3339_DATE_TIME.fullmatch(value) is None:
+            return False
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return parsed.tzinfo is not None
+    if value_type == "local-date-time":
+        if not isinstance(value, str) or _LOCAL_DATE_TIME.fullmatch(value) is None:
+            return False
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return False
+        return parsed.tzinfo is None
+    if value_type == "standing-order-frequency-v4":
+        return not isinstance(value, str)
+    return False
 
 
 def _resolved_input(

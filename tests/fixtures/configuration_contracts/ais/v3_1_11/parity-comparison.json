@@ -1,0 +1,896 @@
+{
+  "allowedClassifications": [
+    "retained-coverage",
+    "intentional-correction",
+    "obsolete-behavior",
+    "genuine-omission"
+  ],
+  "baseline": {
+    "digest": "sha256:2b90a1c7091ab4f8adb5713d962e475e915c4c3f1fa096ec2851e036ee6b3420",
+    "file": "ob_3.1_accounts_transactions_fca.json",
+    "purpose": "migration-cross-check-only"
+  },
+  "classifications": [
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.positive",
+        "ais.v311.test.get.accounts.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#3:OB-301-ACC-100300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-313-ACC-000100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.positive",
+        "ais.v311.test.get.accounts.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#95:OB-313-ACC-000100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100400",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#4:OB-301-ACC-100400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.positive",
+        "ais.v311.test.get.accounts.accountid.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#1:OB-301-ACC-100000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#2:OB-301-ACC-100200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100700",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#7:OB-301-ACC-100700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100800",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#8:OB-301-ACC-100800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-101101",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#11:OB-301-ACC-101101"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.balances.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#12:OB-301-BAL-101200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101702",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.balances.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#19:OB-301-BAL-101702"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101701",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.balances.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#18:OB-301-BAL-101701"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.positive",
+        "ais.v311.test.get.accounts.accountid.transactions.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#79:OB-301-TRA-105000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#80:OB-301-TRA-105100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105110",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#81:OB-301-TRA-105110"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105120",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#82:OB-301-TRA-105120"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#85:OB-301-TRA-105300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105500",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#87:OB-301-TRA-105500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.transactions.positive",
+        "ais.v311.test.get.transactions.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#83:OB-301-TRA-105200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-101200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.transactions.positive",
+        "ais.v311.test.get.transactions.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#84:OB-301-TRA-101200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105400",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.transactions.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#86:OB-301-TRA-105400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105600",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.transactions.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#88:OB-301-TRA-105600"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyScriptId": "OB-301-ACC-001000",
+      "rationale": "The legacy row targets /foobar rather than an OpenAPI operation; invalid-resource handling remains covered on standards-defined endpoints.",
+      "replacementTestDefinitionIds": [],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#0:OB-301-ACC-001000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100500",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#5:OB-301-ACC-100500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-100600",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#6:OB-301-ACC-100600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-101000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#9:OB-301-ACC-101000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-ACC-101100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#10:OB-301-ACC-101100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.balances.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#13:OB-301-BAL-101300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101400",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.balances.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#14:OB-301-BAL-101400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101500",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.balances.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#15:OB-301-BAL-101500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101600",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.balances.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#16:OB-301-BAL-101600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101700",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.balances.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#17:OB-301-BAL-101700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BAL-101703",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.balances.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#20:OB-301-BAL-101703"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-101800",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.positive",
+        "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#21:OB-301-BEN-101800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-101900",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.beneficiaries.positive",
+        "ais.v311.test.get.beneficiaries.basic-permission"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#22:OB-301-BEN-101900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.beneficiaries.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#23:OB-301-BEN-102000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#24:OB-301-BEN-102100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#25:OB-301-BEN-102200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102201",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#26:OB-301-BEN-102201"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102203",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.beneficiaries.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#27:OB-301-BEN-102203"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102204",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#28:OB-301-BEN-102204"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-BEN-102205",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.beneficiaries.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#29:OB-301-BEN-102205"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.direct_debits.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#30:OB-301-DIR-102300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102400",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.direct_debits.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#31:OB-301-DIR-102400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102500",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#32:OB-301-DIR-102500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102501",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#33:OB-301-DIR-102501"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102502",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.direct_debits.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#34:OB-301-DIR-102502"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102503",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.direct_debits.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#35:OB-301-DIR-102503"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-DIR-102504",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.direct_debits.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#36:OB-301-DIR-102504"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102600",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.offers.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#37:OB-301-OFF-102600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102700",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.offers.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#38:OB-301-OFF-102700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102800",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.offers.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#39:OB-301-OFF-102800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102801",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.offers.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#40:OB-301-OFF-102801"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102802",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.offers.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#41:OB-301-OFF-102802"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102803",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.offers.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#42:OB-301-OFF-102803"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-OFF-102804",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.offers.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#43:OB-301-OFF-102804"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-102900",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.party.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#44:OB-301-PAR-102900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-102901",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.party.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#45:OB-301-PAR-102901"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-102902",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.parties.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#46:OB-301-PAR-102902"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.party.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#47:OB-301-PAR-103000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.party.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#48:OB-301-PAR-103100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103101",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.party.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#49:OB-301-PAR-103101"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103102",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.party.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#50:OB-301-PAR-103102"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103103",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.beneficiaries.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#51:OB-301-PAR-103103"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103104",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.party.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#52:OB-301-PAR-103104"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103105",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.party.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#53:OB-301-PAR-103105"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103106",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.parties.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#54:OB-301-PAR-103106"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103107",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.parties.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#55:OB-301-PAR-103107"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PAR-103108",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.parties.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#56:OB-301-PAR-103108"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-103200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.product.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#57:OB-301-PRO-103200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-103300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.products.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#58:OB-301-PRO-103300"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-103400",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.product.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#59:OB-301-PRO-103400"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-103401",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.product.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#60:OB-301-PRO-103401"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-102802",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.products.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#61:OB-301-PRO-102802"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-PRO-103402",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.product.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#62:OB-301-PRO-103402"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-301-PRO-103403",
+      "rationale": "The replacement uses the authoritative plural /products OpenAPI operation instead of the legacy singular /product path.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.products.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#63:OB-301-PRO-103403"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103500",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.scheduled_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#64:OB-301-SCP-103500"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103600",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.scheduled_payments.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#65:OB-301-SCP-103600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103700",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#66:OB-301-SCP-103700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103701",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#67:OB-301-SCP-103701"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103702",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.scheduled_payments.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#68:OB-301-SCP-103702"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103703",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.scheduled_payments.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#69:OB-301-SCP-103703"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-SCP-103704",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.scheduled_payments.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#70:OB-301-SCP-103704"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-103800",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.standing_orders.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#71:OB-301-STO-103800"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-103900",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.standing_orders.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#72:OB-301-STO-103900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-103901",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.standing_orders.positive"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#73:OB-301-STO-103901"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-104000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#74:OB-301-STO-104000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-104100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#75:OB-301-STO-104100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-104101",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.standing_orders.unauthorized"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#76:OB-301-STO-104101"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-104102",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.standing_orders.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#77:OB-301-STO-104102"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STO-104103",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.standing_orders.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#78:OB-301-STO-104103"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-TRA-105700",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.invalid-resource"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#89:OB-301-TRA-105700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STA-105900",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.statements.positive",
+        "ais.v311.test.get.statements.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#90:OB-301-STA-105900"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STA-106000",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.statements.positive",
+        "ais.v311.test.get.statements.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#91:OB-301-STA-106000"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STA-106100",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.statements.positive",
+        "ais.v311.test.get.statements.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#92:OB-301-STA-106100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STA-106200",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.statements.positive",
+        "ais.v311.test.get.statements.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#93:OB-301-STA-106200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-STA-106300",
+      "rationale": "The replacement definition retains the standards-derived operation and observable status, schema, permission, or interaction-header contract without retaining legacy request construction.",
+      "replacementTestDefinitionIds": [
+        "ais.v311.test.get.statements.positive",
+        "ais.v311.test.get.statements.interaction-id-playback"
+      ],
+      "sourceRow": "ob_3.1_accounts_transactions_fca.json#94:OB-301-STA-106300"
+    }
+  ],
+  "summary": {
+    "genuine-omission": 0,
+    "intentional-correction": 1,
+    "obsolete-behavior": 1,
+    "retained-coverage": 94
+  }
+}

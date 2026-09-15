@@ -11,6 +11,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replacement AIS requirements and test-definition catalogue families for
+  Read/Write v3.1.11 and v4.0.1, covering all 29 Account Information OpenAPI
+  operations with explicit consent, permission, dependency, query-input,
+  negative, security, schema, and interaction-header contracts. Shared
+  configuration contracts now support capability dependencies, DELETE
+  operations, version-correct ISO 8601 date-time inputs, query-parameter
+  bindings, generated
+  authorization and path mutations, multi-status assertions, and response
+  header playback. Pinned parity ledgers classify every legacy AIS row, and
+  deterministic resolved-plan fixtures keep central release registration
+  separate.
 - Replacement CBPII requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from the normative Confirmation of
   Funds profiles and content-addressed OpenAPI operations. Shared contracts now

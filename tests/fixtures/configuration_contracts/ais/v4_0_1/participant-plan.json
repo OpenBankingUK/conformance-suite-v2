@@ -1,0 +1,36 @@
+{
+  "documentType": "participant-plan",
+  "id": "ais-v401-golden-plan",
+  "predefinedInputs": [
+    {
+      "inputId": "ais.v401.input.from-booking-date-time",
+      "value": "2026-01-01T00:00:00"
+    },
+    {
+      "inputId": "ais.v401.input.to-booking-date-time",
+      "value": "2026-01-31T23:59:59"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "ais.v401.capability.accounts",
+    "ais.v401.capability.balances",
+    "ais.v401.capability.beneficiaries",
+    "ais.v401.capability.direct-debits",
+    "ais.v401.capability.offers",
+    "ais.v401.capability.parties",
+    "ais.v401.capability.products",
+    "ais.v401.capability.scheduled-payments",
+    "ais.v401.capability.standing-orders",
+    "ais.v401.capability.statements",
+    "ais.v401.capability.transactions"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "ais",
+    "version": "4.0.1"
+  },
+  "suiteReleaseId": "obl.ais-v401.catalogue-fixture"
+}
