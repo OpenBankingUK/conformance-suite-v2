@@ -51,7 +51,9 @@ class HttpMethod(StrEnum):
 
     DELETE = "DELETE"
     GET = "GET"
+    PATCH = "PATCH"
     POST = "POST"
+    PUT = "PUT"
 
 
 class RequirementTargetType(StrEnum):

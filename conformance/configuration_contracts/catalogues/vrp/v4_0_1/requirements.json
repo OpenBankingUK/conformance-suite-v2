@@ -1,0 +1,482 @@
+{
+  "capabilities": [
+    {
+      "description": "Accepted MVP domestic VRP consent and payment lifecycle for Open Banking Read/Write 4.0.1.",
+      "id": "vrp.v401.capability.domestic-vrp",
+      "name": "Domestic variable recurring payments",
+      "requiredEndpointIds": [
+        "vrp.v401.endpoint.consent-create",
+        "vrp.v401.endpoint.consent-read",
+        "vrp.v401.endpoint.consent-delete",
+        "vrp.v401.endpoint.payment-create",
+        "vrp.v401.endpoint.payment-read",
+        "vrp.v401.endpoint.payment-details-read"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional funds-confirmation operation for an authorised domestic VRP consent in Read/Write 4.0.1.",
+      "id": "vrp.v401.capability.funds-confirmation",
+      "name": "Domestic VRP funds confirmation",
+      "requiredCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "requiredEndpointIds": [
+        "vrp.v401.endpoint.funds-confirmation"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Conditional PUT operation used only to migrate a domestic VRP consent across Standards versions.",
+      "id": "vrp.v401.capability.consent-version-replacement",
+      "name": "Domestic VRP consent version replacement",
+      "requiredCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "requiredEndpointIds": [
+        "vrp.v401.endpoint.consent-replace"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Conditional JSON Patch operation used only to migrate a domestic VRP consent across Standards versions.",
+      "id": "vrp.v401.capability.consent-version-patch",
+      "name": "Domestic VRP consent version patch",
+      "requiredCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "requiredEndpointIds": [
+        "vrp.v401.endpoint.consent-patch"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "vrp.v401.endpoint.consent-create",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsPost",
+      "path": "/domestic-vrp-consents",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents/post"
+    },
+    {
+      "id": "vrp.v401.endpoint.consent-read",
+      "method": "GET",
+      "operationId": "domesticVrpConsentsGet",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "vrp.v401.endpoint.consent-delete",
+      "method": "DELETE",
+      "operationId": "domesticVrpConsentsDelete",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/delete"
+    },
+    {
+      "id": "vrp.v401.endpoint.funds-confirmation",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsFundsConfirmation",
+      "path": "/domestic-vrp-consents/{ConsentId}/funds-confirmation",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}~1funds-confirmation/post"
+    },
+    {
+      "id": "vrp.v401.endpoint.payment-create",
+      "method": "POST",
+      "operationId": "domesticVrpPost",
+      "path": "/domestic-vrps",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps/post"
+    },
+    {
+      "id": "vrp.v401.endpoint.payment-read",
+      "method": "GET",
+      "operationId": "domesticVrpGet",
+      "path": "/domestic-vrps/{DomesticVRPId}",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}/get"
+    },
+    {
+      "id": "vrp.v401.endpoint.payment-details-read",
+      "method": "GET",
+      "operationId": "domesticVrpPaymentDetailsGet",
+      "path": "/domestic-vrps/{DomesticVRPId}/payment-details",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}~1payment-details/get"
+    },
+    {
+      "id": "vrp.v401.endpoint.consent-replace",
+      "method": "PUT",
+      "operationId": "domesticVrpConsentsPut",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/put"
+    },
+    {
+      "id": "vrp.v401.endpoint.consent-patch",
+      "method": "PATCH",
+      "operationId": "domesticVrpConsentsPatch",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v401.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/patch"
+    }
+  ],
+  "id": "obl.vrp-v401.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-rw-v401.vrp-profile.flow",
+      "section": "Basics / Overview / Steps",
+      "title": "Open Banking Read/Write API 4.0.1 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.vrp-profile.restrictions",
+      "section": "Basics / Payment Restrictions",
+      "title": "Open Banking Read/Write API 4.0.1 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.vrp-profile.revocation",
+      "section": "Security & Access Control / Consent Revocation",
+      "title": "Open Banking Read/Write API 4.0.1 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v401.vrp-openapi.operations",
+      "section": "Domestic VRP operation paths, request schemas, and responses",
+      "title": "Open Banking Read/Write API 4.0.1 VRP OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/vrp-openapi.json"
+    },
+    {
+      "id": "ob-rw-v401.vrp-profile.version-migration",
+      "section": "Security & Access Control / Migration of a consent to a new version",
+      "title": "Open Banking Read/Write API 4.0.1 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v4.0.1/profiles/vrp-profile.html"
+    }
+  ],
+  "predefinedInputs": [
+    {
+      "description": "Account identification scheme used for the VRP creditor account.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "vrp.v401.input.creditor-account-scheme-name",
+      "label": "Creditor account scheme name",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account identification used for the VRP creditor account.",
+      "exampleValue": "70000170000005",
+      "id": "vrp.v401.input.creditor-account-identification",
+      "label": "Creditor account identification",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account name used for the VRP creditor account.",
+      "exampleValue": "VRP creditor",
+      "id": "vrp.v401.input.creditor-account-name",
+      "label": "Creditor account name",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Decimal amount used for consent limits, funds confirmation, and VRP payment instructions.",
+      "exampleValue": "1.00",
+      "id": "vrp.v401.input.instructed-amount",
+      "label": "Instructed amount",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 currency used for consent limits and VRP payments.",
+      "exampleValue": "GBP",
+      "id": "vrp.v401.input.currency",
+      "label": "Currency",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 start date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-09-15T00:00:00Z",
+      "id": "vrp.v401.input.valid-from-date-time",
+      "label": "Consent valid-from date time",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 end date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-10-15T00:00:00Z",
+      "id": "vrp.v401.input.valid-to-date-time",
+      "label": "Consent valid-to date time",
+      "requiredForCapabilityIds": [
+        "vrp.v401.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "vrp.v401.requirement.consent-create",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.consent-create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to ask an ASPSP to create a new domestic-vrp-consent resource, by sending a copy of the consent to the ASPSP."
+    },
+    {
+      "id": "vrp.v401.requirement.consent-read",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.consent-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of a Domestic VRP Consent."
+    },
+    {
+      "id": "vrp.v401.requirement.consent-delete",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.revocation",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.consent-delete",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to ask an ASPSP to delete a previously consented Domestic VRP Consent resource."
+    },
+    {
+      "id": "vrp.v401.requirement.funds-confirmation",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.funds-confirmation",
+        "targetId": "vrp.v401.endpoint.funds-confirmation",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to check whether a PSU has sufficient available funds for a Domestic VRP Payment."
+    },
+    {
+      "id": "vrp.v401.requirement.payment-create",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.payment-create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to initiate a Domestic VRP transaction under an already PSU-approved Domestic VRP Consent."
+    },
+    {
+      "id": "vrp.v401.requirement.payment-read",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.payment-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve the status of a Domestic VRP transaction."
+    },
+    {
+      "id": "vrp.v401.requirement.payment-details-read",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.flow",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.endpoint.payment-details-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to retrieve detailed information on the status of a Domestic VRP transaction."
+    },
+    {
+      "id": "vrp.v401.requirement.consent-replace",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.version-migration",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.consent-version-replacement",
+        "targetId": "vrp.v401.endpoint.consent-replace",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to replace an existing Domestic VRP Consent resource.  \n\nThis endpoint **must** only be used for the migration of Domestic VRP Consent resource data across API Standard versions where the ASPSP supports this PUT function.\n"
+    },
+    {
+      "id": "vrp.v401.requirement.consent-patch",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.version-migration",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.consent-version-patch",
+        "targetId": "vrp.v401.endpoint.consent-patch",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Enables a PISP to update an existing Domestic VRP Consent resource by submitting a JSON Patch payload.\n\nThis endpoint **must** only be used for the migration of Domestic VRP Consent resource data across API Standard versions where the ASPSP supports this PATCH function.\n"
+    },
+    {
+      "id": "vrp.v401.requirement.input.creditor-account-scheme-name",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account scheme name for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.creditor-account-identification",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account identification for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.creditor-account-name",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account name for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.instructed-amount",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.currency",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies currency for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.valid-from-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.valid-from-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies valid from date time for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v401.requirement.input.valid-to-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v401.vrp-profile.restrictions",
+        "ob-rw-v401.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v401.capability.domestic-vrp",
+        "targetId": "vrp.v401.input.valid-to-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies valid to date time for standards-conformant domestic VRP request construction."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "vrp",
+    "version": "4.0.1"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:aad3a137f671e2d0cef7c4a8925992da80347f51092129d08a95dd8e3fb0a4e6",
+      "id": "ob-rw-v401.vrp-openapi",
+      "title": "Open Banking Read/Write 4.0.1 VRP OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v4.0.1/dist/openapi/vrp-openapi.json"
+    }
+  ]
+}

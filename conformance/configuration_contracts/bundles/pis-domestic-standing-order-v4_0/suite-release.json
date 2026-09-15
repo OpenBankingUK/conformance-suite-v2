@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:729f7971fcddb3f84bc64befc8a09e15aa14b387341685f0d8333f4af0c979b0",
+      "digest": "sha256:80c69c078365255acf1ef4416cd8ca665c02e9b2dfb7c86f2ecc88307b0cdc5f",
       "id": "requirements-catalogue-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",
@@ -33,7 +33,7 @@
       "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
-      "digest": "sha256:67d473a4005fde6d170341e612f14b7e74a191b64933364120211c17953f5a27",
+      "digest": "sha256:5e0cfab731ead173f0fa2562fa34e2a08bdf56469bf8f1dc8f5df811195bd75a",
       "id": "execution-manifest-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

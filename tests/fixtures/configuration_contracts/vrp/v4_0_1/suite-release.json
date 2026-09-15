@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:07b215844a475e9e888cbe1bb8138de6645ad37d408648712b85551792308f21",
+      "id": "obl.vrp-v401.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v4_0_1/requirements.json"
+    },
+    {
+      "digest": "sha256:d3abc6279ec2f80e94eb878183cc516f730fe6b252c1d8118b9a8118579e5c1f",
+      "id": "obl.vrp-v401.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/vrp/v4_0_1/test-definitions.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.vrp-v401.catalogue-fixture",
+  "publishedAt": "2026-09-15T00:00:00Z",
+  "releaseVersion": "0.0.0-vrp-v401-fixture",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

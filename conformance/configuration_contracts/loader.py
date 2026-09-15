@@ -377,20 +377,22 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
     """Convert an immutable requirements catalogue to its wire shape."""
     return {
         "capabilities": [
-            _without_none_values(
-                {
-                    "description": capability.description,
-                    "id": str(capability.id),
-                    "name": capability.name,
-                    "requiredCapabilityIds": (
-                        [str(capability_id) for capability_id in capability.required_capability_ids]
-                        if capability.required_capability_ids
-                        else None
-                    ),
-                    "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
-                    "selection": capability.selection,
-                }
-            )
+            {
+                "description": capability.description,
+                "id": str(capability.id),
+                "name": capability.name,
+                **(
+                    {
+                        "requiredCapabilityIds": [
+                            str(capability_id) for capability_id in capability.required_capability_ids
+                        ]
+                    }
+                    if capability.required_capability_ids
+                    else {}
+                ),
+                "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
+                "selection": capability.selection,
+            }
             for capability in catalogue.capabilities
         ],
         "documentType": catalogue.document_type,
@@ -1739,11 +1741,11 @@ def _validate_requirements_catalogue_semantics(
                 diagnostics.append(
                     _unresolved_reference_diagnostic(
                         dependency_id,
-                        instance_path=(f"/capabilities/{capability_index}/requiredCapabilityIds/{dependency_index}"),
+                        instance_path=f"/capabilities/{capability_index}/requiredCapabilityIds/{dependency_index}",
                         object_kind="capability",
                     )
                 )
-    diagnostics.extend(_capability_dependency_diagnostics(catalogue))
+    diagnostics.extend(_capability_dependency_cycle_diagnostics(catalogue))
     for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
         values = (predefined_input.example_value, predefined_input.default_value)
         if any(
@@ -1807,7 +1809,7 @@ def _predefined_input_value_matches_type(value_type: StableId, value: Predefined
     return False
 
 
-def _capability_dependency_diagnostics(
+def _capability_dependency_cycle_diagnostics(
     catalogue: RequirementsCatalogue,
 ) -> tuple[ConfigurationDiagnostic, ...]:
     capabilities = {capability.id: capability for capability in catalogue.capabilities}
@@ -1817,7 +1819,8 @@ def _capability_dependency_diagnostics(
 
     def visit(capability_id: StableId) -> None:
         state[capability_id] = 1
-        for dependency_index, dependency_id in enumerate(capabilities[capability_id].required_capability_ids):
+        capability = capabilities[capability_id]
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
             if dependency_id not in capabilities:
                 continue
             if state.get(dependency_id) == 1:

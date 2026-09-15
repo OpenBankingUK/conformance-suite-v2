@@ -1,0 +1,828 @@
+{
+  "capabilities": [
+    {
+      "id": "vrp.v311.capability.domestic-vrp",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "vrp.v311.capability.funds-confirmation",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.capability.funds-confirmation"
+          ]
+        }
+      ]
+    }
+  ],
+  "documentType": "resolved-plan",
+  "endpoints": [
+    {
+      "id": "vrp.v311.endpoint.consent-create",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-create"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.consent-create"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-read",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-read"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.consent-read"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-delete",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-delete"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.consent-delete"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.funds-confirmation",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.funds-confirmation"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.funds-confirmation"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-create",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-create"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.payment-create"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-read",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-read"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.payment-read"
+      ]
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-details-read",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-details-read"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "vrp.v311.requirement.payment-details-read"
+      ]
+    }
+  ],
+  "findings": [],
+  "id": "resolved-plan:583d83210106ab756fbe2b46c550eafa726a6e0ff3df69a485280b139d3a4dfc",
+  "predefinedInputs": [
+    {
+      "id": "vrp.v311.input.creditor-account-scheme-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.creditor-account-scheme-name"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.creditor-account-scheme-name"
+      ],
+      "source": "participant",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "id": "vrp.v311.input.creditor-account-identification",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.creditor-account-identification"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.creditor-account-identification"
+      ],
+      "source": "participant",
+      "value": "70000170000005"
+    },
+    {
+      "id": "vrp.v311.input.creditor-account-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.creditor-account-name"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.creditor-account-name"
+      ],
+      "source": "participant",
+      "value": "VRP creditor"
+    },
+    {
+      "id": "vrp.v311.input.instructed-amount",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.instructed-amount"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.instructed-amount"
+      ],
+      "source": "participant",
+      "value": "1.00"
+    },
+    {
+      "id": "vrp.v311.input.currency",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.currency"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.currency"
+      ],
+      "source": "participant",
+      "value": "GBP"
+    },
+    {
+      "id": "vrp.v311.input.valid-from-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.valid-from-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.valid-from-date-time"
+      ],
+      "source": "participant",
+      "value": "2026-09-15T00:00:00Z"
+    },
+    {
+      "id": "vrp.v311.input.valid-to-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "vrp-v311-golden-plan",
+            "vrp.v311.input.valid-to-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "vrp.v311.requirement.input.valid-to-date-time"
+      ],
+      "source": "participant",
+      "value": "2026-10-15T00:00:00Z"
+    }
+  ],
+  "provenance": {
+    "artifacts": [
+      {
+        "digest": "sha256:6342bed02b6abc673a70e643c8b6c7eb9c7b028b49cfbce8fb29c6b9bf53f607",
+        "id": "obl.vrp-v311.requirements",
+        "kind": "requirements-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/vrp/v3_1_11/requirements.json"
+      },
+      {
+        "digest": "sha256:716f155cc11361bcaa4a61075eae5b32f5d0ac6fad49f170b4c2bf6ee961bb3a",
+        "id": "obl.vrp-v311.tests",
+        "kind": "test-definition-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/vrp/v3_1_11/test-definitions.json"
+      }
+    ],
+    "participantPlanId": "vrp-v311-golden-plan",
+    "requirementsCatalogueId": "obl.vrp-v311.requirements",
+    "suitePublishedAt": "2026-09-15T00:00:00Z",
+    "suiteReleaseId": "obl.vrp-v311.catalogue-fixture",
+    "suiteReleaseVersion": "0.0.0-vrp-v311-fixture",
+    "testDefinitionCatalogueId": "obl.vrp-v311.tests",
+    "toolReleases": [
+      {
+        "id": "conformance-suite-v2",
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.consent-create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-create",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.consent-create",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.consent-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-read",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.consent-read",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.consent-delete",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.revocation",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.consent-delete",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.consent-delete",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.funds-confirmation",
+      "id": "vrp.v311.requirement.funds-confirmation",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.funds-confirmation",
+            "vrp.v311.capability.funds-confirmation"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.funds-confirmation",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.payment-create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-create",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.payment-create",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.payment-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-read",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.payment-read",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.payment-details-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.payment-details-read",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.endpoint.payment-details-read",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.creditor-account-scheme-name",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.creditor-account-scheme-name",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.creditor-account-identification",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.creditor-account-identification",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.creditor-account-name",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.creditor-account-name",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.instructed-amount",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.instructed-amount",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.currency",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.currency",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.valid-from-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.valid-from-date-time",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.valid-from-date-time",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "vrp.v311.capability.domestic-vrp",
+      "id": "vrp.v311.requirement.input.valid-to-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "vrp.v311.requirement.input.valid-to-date-time",
+            "vrp.v311.capability.domestic-vrp"
+          ]
+        }
+      ],
+      "targetId": "vrp.v311.input.valid-to-date-time",
+      "targetType": "predefined-input"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectionValid": true,
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "vrp",
+    "version": "3.1.11"
+  },
+  "testInstances": [
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.consent-create",
+        "vrp.v311.requirement.input.creditor-account-scheme-name",
+        "vrp.v311.requirement.input.creditor-account-identification",
+        "vrp.v311.requirement.input.creditor-account-name",
+        "vrp.v311.requirement.input.instructed-amount",
+        "vrp.v311.requirement.input.currency",
+        "vrp.v311.requirement.input.valid-from-date-time",
+        "vrp.v311.requirement.input.valid-to-date-time"
+      ],
+      "dependencyIds": [],
+      "id": "vrp.v311.test.consent-create.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.consent-create.positive",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.consent-create"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.consent-read.authorised"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.consent-create.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.consent-read"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.consent-create.positive.instance"
+      ],
+      "id": "vrp.v311.test.consent-read.authorised.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.consent-read.authorised",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.consent-read"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.funds-confirmation.positive",
+            "vrp.v311.test.payment-create.initial"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.consent-read.authorised"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.funds-confirmation"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.consent-read.authorised.instance"
+      ],
+      "id": "vrp.v311.test.funds-confirmation.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.funds-confirmation.positive",
+            "vrp.v311.capability.funds-confirmation",
+            "vrp.v311.endpoint.funds-confirmation"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.funds-confirmation.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.payment-create"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.consent-read.authorised.instance"
+      ],
+      "id": "vrp.v311.test.payment-create.initial.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.payment-create.initial",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.payment-create"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.payment-create.repeated",
+            "vrp.v311.test.payment-read.initial"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.payment-create.initial"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.payment-read"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.payment-create.initial.instance"
+      ],
+      "id": "vrp.v311.test.payment-read.initial.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.payment-read.initial",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.payment-read"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.payment-read.initial"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.payment-create"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.payment-create.initial.instance"
+      ],
+      "id": "vrp.v311.test.payment-create.repeated.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.payment-create.repeated",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.payment-create"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.payment-read.repeated"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.payment-create.repeated"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.payment-read"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.payment-create.repeated.instance"
+      ],
+      "id": "vrp.v311.test.payment-read.repeated.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.payment-read.repeated",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.payment-read"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.payment-details-read.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.payment-read.repeated"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.payment-details-read"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.payment-read.repeated.instance"
+      ],
+      "id": "vrp.v311.test.payment-details-read.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.payment-details-read.positive",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.payment-details-read"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.consent-delete.positive"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.payment-details-read.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.consent-delete"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.payment-details-read.positive.instance"
+      ],
+      "id": "vrp.v311.test.consent-delete.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.consent-delete.positive",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.consent-delete"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "vrp.v311.test.consent-read.after-delete"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.consent-delete.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "vrp.v311.requirement.consent-read"
+      ],
+      "dependencyIds": [
+        "vrp.v311.test.consent-delete.positive.instance"
+      ],
+      "id": "vrp.v311.test.consent-read.after-delete.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "vrp.v311.test.consent-read.after-delete",
+            "vrp.v311.capability.domestic-vrp",
+            "vrp.v311.endpoint.consent-read"
+          ]
+        }
+      ],
+      "testDefinitionId": "vrp.v311.test.consent-read.after-delete"
+    }
+  ]
+}

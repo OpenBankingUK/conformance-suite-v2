@@ -1,0 +1,649 @@
+{
+  "documentType": "test-definition-catalogue",
+  "id": "obl.cbpii-v401.tests",
+  "requirementsCatalogueId": "obl.cbpii-v401.requirements",
+  "schemaVersion": "1.0",
+  "testDefinitions": [
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create",
+        "cbpii.v401.requirement.input.debtor-account-scheme",
+        "cbpii.v401.requirement.input.debtor-account-identification"
+      ],
+      "dependencies": [],
+      "description": "Creates a consent for confirmation of funds using the participant debtor account.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.positive",
+      "name": "Create a funds-confirmation consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.read.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.read.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.read.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.read.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.consentid.read"
+      ],
+      "dependencies": [
+        "cbpii.v401.test.funds_confirmation_consents.create.positive"
+      ],
+      "description": "Retrieves the consent after PSU authorisation.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive",
+      "name": "Get an authorised funds-confirmation consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.consentid.read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmations.create.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmations.create.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmations.create.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmations.create",
+        "cbpii.v401.requirement.input.instructed-amount",
+        "cbpii.v401.requirement.input.instructed-currency"
+      ],
+      "dependencies": [
+        "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive"
+      ],
+      "description": "Checks whether the instructed amount is available under an authorised consent.",
+      "id": "cbpii.v401.test.funds_confirmations.create.positive",
+      "name": "Create a confirmation of funds",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmations.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.instructed-amount",
+            "target": "/Data/InstructedAmount/Amount",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.instructed-currency",
+            "target": "/Data/InstructedAmount/Currency",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "unique-payment-reference",
+            "id": "cbpii.v401.modification.funds_confirmations.create.reference",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Reference"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 204,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.delete.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.delete.positive.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.consentid.delete"
+      ],
+      "dependencies": [
+        "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive"
+      ],
+      "description": "Revokes an existing funds-confirmation consent.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.consentid.delete.positive",
+      "name": "Delete a funds-confirmation consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.consentid.delete",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-name.http-status",
+          "type": "http-status"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-name.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Rejects a consent whose optional debtor account name exceeds the OpenAPI maximum length.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-name",
+      "name": "Reject an overlong debtor account name",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "overlong-string-351",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.invalid-account-name",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/DebtorAccount/Name"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-identification.http-status",
+          "type": "http-status"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-identification.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Rejects a consent whose debtor account identification exceeds the OpenAPI maximum length.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-identification",
+      "name": "Reject an overlong debtor account identification",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "overlong-string-257",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.invalid-account-identification",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/DebtorAccount/Identification"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-scheme.http-status",
+          "type": "http-status"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.invalid-account-scheme.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Rejects a consent whose debtor account scheme is outside the specification code set.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-scheme",
+      "name": "Reject an invalid debtor account scheme",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.invalid-account-scheme",
+            "location": "json-body",
+            "operation": "replace",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "value": "invalid-account-identification-scheme"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.delete.unknown-consent.http-status",
+          "type": "http-status"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.consentid.delete.unknown-consent.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.consentid.delete"
+      ],
+      "dependencies": [],
+      "description": "Rejects a delete request for a consent identifier that does not exist.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.consentid.delete.unknown-consent",
+      "name": "Reject deletion of an unknown consent",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.consentid.delete",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "id": "cbpii.v401.modification.funds_confirmation_consents.consentid.delete.unknown-consent",
+            "location": "path-parameter",
+            "operation": "replace",
+            "target": "ConsentId",
+            "value": "non-existent-consent-id"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-utc.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-utc.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-utc.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Accepts the OpenAPI date-time format represented as UTC with milliseconds.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.expiration-milliseconds-utc",
+      "name": "Create a consent with expiration date-time in UTC with milliseconds",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "next-day-date-time-utc-milliseconds",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.expiration-milliseconds-utc",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/ExpirationDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-offset.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-offset.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-milliseconds-offset.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Accepts the OpenAPI date-time format represented as numeric offset with milliseconds.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.expiration-milliseconds-offset",
+      "name": "Create a consent with expiration date-time in numeric offset with milliseconds",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "next-day-date-time-offset-milliseconds",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.expiration-milliseconds-offset",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/ExpirationDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-utc.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-utc.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-utc.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Accepts the OpenAPI date-time format represented as UTC without fractional seconds.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.expiration-seconds-utc",
+      "name": "Create a consent with expiration date-time in UTC without fractional seconds",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "next-day-date-time-utc",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.expiration-seconds-utc",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/ExpirationDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-offset.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-offset.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.expiration-seconds-offset.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Accepts the OpenAPI date-time format represented as numeric offset without fractional seconds.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.expiration-seconds-offset",
+      "name": "Create a consent with expiration date-time in numeric offset without fractional seconds",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "next-day-date-time-offset",
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.expiration-seconds-offset",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/ExpirationDateTime"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.without-financial-id.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.without-financial-id.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.without-financial-id.response-schema",
+          "schemaRef": "#/components/schemas/OBFundsConfirmationConsentResponse1",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "cbpii.v401.assertion.funds_confirmation_consents.create.without-financial-id.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "cbpii.v401.capability.confirmation-of-funds",
+      "coveredRequirementIds": [
+        "cbpii.v401.requirement.funds_confirmation_consents.create"
+      ],
+      "dependencies": [],
+      "description": "Confirms that the obsolete x-fapi-financial-id request header is not required.",
+      "id": "cbpii.v401.test.funds_confirmation_consents.create.without-financial-id",
+      "name": "Create a consent without x-fapi-financial-id",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "cbpii.v401.endpoint.funds_confirmation_consents.create",
+        "inputBindings": [
+          {
+            "inputId": "cbpii.v401.input.debtor-account-scheme",
+            "target": "/Data/DebtorAccount/SchemeName",
+            "transform": "identity",
+            "type": "json-body"
+          },
+          {
+            "inputId": "cbpii.v401.input.debtor-account-identification",
+            "target": "/Data/DebtorAccount/Identification",
+            "transform": "identity",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "id": "cbpii.v401.modification.funds_confirmation_consents.create.without-financial-id",
+            "location": "header",
+            "operation": "omit",
+            "target": "x-fapi-financial-id"
+          }
+        ]
+      }
+    }
+  ]
+}

@@ -5,7 +5,7 @@
       "origin": "inferred",
       "reasons": [
         {
-          "code": "requirements.capability.inferred",
+          "code": "requirements.capability.required",
           "sourceIds": [
             "ais.v401.capability.accounts",
             "ais.v401.capability.balances",
@@ -605,7 +605,7 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:899159537e1f14d99a34074eab948044297d84b67b91413595b9fe812cb7a021",
+  "id": "resolved-plan:f42afb4401b64f5af6f61b22a3b96ccc8bbd41ef3c54e049b763a0d32f6b4399",
   "predefinedInputs": [
     {
       "id": "ais.v401.input.from-booking-date-time",
@@ -663,7 +663,7 @@
         "uri": "conformance/configuration_contracts/catalogues/ais/v4_0_1/test-definitions.json"
       },
       {
-        "digest": "sha256:67d473a4005fde6d170341e612f14b7e74a191b64933364120211c17953f5a27",
+        "digest": "sha256:5e0cfab731ead173f0fa2562fa34e2a08bdf56469bf8f1dc8f5df811195bd75a",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
