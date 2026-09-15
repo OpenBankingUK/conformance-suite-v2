@@ -1,0 +1,47 @@
+{
+  "documentType": "participant-plan",
+  "id": "vrp-v311-golden-plan",
+  "predefinedInputs": [
+    {
+      "inputId": "vrp.v311.input.creditor-account-scheme-name",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "inputId": "vrp.v311.input.creditor-account-identification",
+      "value": "70000170000005"
+    },
+    {
+      "inputId": "vrp.v311.input.creditor-account-name",
+      "value": "VRP creditor"
+    },
+    {
+      "inputId": "vrp.v311.input.instructed-amount",
+      "value": "1.00"
+    },
+    {
+      "inputId": "vrp.v311.input.currency",
+      "value": "GBP"
+    },
+    {
+      "inputId": "vrp.v311.input.valid-from-date-time",
+      "value": "2026-09-15T00:00:00Z"
+    },
+    {
+      "inputId": "vrp.v311.input.valid-to-date-time",
+      "value": "2026-10-15T00:00:00Z"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "vrp.v311.capability.domestic-vrp",
+    "vrp.v311.capability.funds-confirmation"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "vrp",
+    "version": "3.1.11"
+  },
+  "suiteReleaseId": "obl.vrp-v311.catalogue-fixture"
+}

@@ -20,6 +20,13 @@
           "type": "array",
           "uniqueItems": true
         },
+        "requiredCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "selection": {
           "const": "conditional"
         }
@@ -43,6 +50,7 @@
           "enum": [
             "DELETE",
             "GET",
+            "PATCH",
             "POST",
             "PUT"
           ]
@@ -221,7 +229,10 @@
           "uniqueItems": true
         },
         "sensitivity": {
-          "const": "non-sensitive"
+          "enum": [
+            "non-sensitive",
+            "sensitive"
+          ]
         },
         "valueType": {
           "enum": [

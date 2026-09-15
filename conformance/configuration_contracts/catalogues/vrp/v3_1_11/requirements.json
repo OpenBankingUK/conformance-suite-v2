@@ -1,0 +1,408 @@
+{
+  "capabilities": [
+    {
+      "description": "Accepted MVP domestic VRP consent and payment lifecycle for Open Banking Read/Write 3.1.11.",
+      "id": "vrp.v311.capability.domestic-vrp",
+      "name": "Domestic variable recurring payments",
+      "requiredEndpointIds": [
+        "vrp.v311.endpoint.consent-create",
+        "vrp.v311.endpoint.consent-read",
+        "vrp.v311.endpoint.consent-delete",
+        "vrp.v311.endpoint.payment-create",
+        "vrp.v311.endpoint.payment-read",
+        "vrp.v311.endpoint.payment-details-read"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional funds-confirmation operation for an authorised domestic VRP consent in Read/Write 3.1.11.",
+      "id": "vrp.v311.capability.funds-confirmation",
+      "name": "Domestic VRP funds confirmation",
+      "requiredCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "requiredEndpointIds": [
+        "vrp.v311.endpoint.funds-confirmation"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "requirements-catalogue",
+  "endpoints": [
+    {
+      "id": "vrp.v311.endpoint.consent-create",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsPost",
+      "path": "/domestic-vrp-consents",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-read",
+      "method": "GET",
+      "operationId": "domesticVrpConsentsGet",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-delete",
+      "method": "DELETE",
+      "operationId": "domesticVrpConsentsDelete",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/delete"
+    },
+    {
+      "id": "vrp.v311.endpoint.funds-confirmation",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsFundsConfirmation",
+      "path": "/domestic-vrp-consents/{ConsentId}/funds-confirmation",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}~1funds-confirmation/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-create",
+      "method": "POST",
+      "operationId": "domesticVrpPost",
+      "path": "/domestic-vrps",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-read",
+      "method": "GET",
+      "operationId": "domesticVrpGet",
+      "path": "/domestic-vrps/{DomesticVRPId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}/get"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-details-read",
+      "method": "GET",
+      "operationId": "domesticVrpPaymentDetailsGet",
+      "path": "/domestic-vrps/{DomesticVRPId}/payment-details",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}~1payment-details/get"
+    }
+  ],
+  "id": "obl.vrp-v311.requirements",
+  "normativeReferences": [
+    {
+      "id": "ob-rw-v311.vrp-profile.flow",
+      "section": "Basics / Overview / Steps",
+      "title": "Open Banking Read/Write API 3.1.11 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.11/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v311.vrp-profile.restrictions",
+      "section": "Basics / Payment Restrictions",
+      "title": "Open Banking Read/Write API 3.1.11 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.11/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v311.vrp-profile.revocation",
+      "section": "Security & Access Control / Consent Revocation",
+      "title": "Open Banking Read/Write API 3.1.11 Variable Recurring Payments API Profile",
+      "uri": "https://openbankinguk.github.io/read-write-api-site3/v3.1.11/profiles/vrp-profile.html"
+    },
+    {
+      "id": "ob-rw-v311.vrp-openapi.operations",
+      "section": "Domestic VRP operation paths, request schemas, and responses",
+      "title": "Open Banking Read/Write API 3.1.11 VRP OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/vrp-openapi.json"
+    }
+  ],
+  "predefinedInputs": [
+    {
+      "description": "Account identification scheme used for the VRP creditor account.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "vrp.v311.input.creditor-account-scheme-name",
+      "label": "Creditor account scheme name",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account identification used for the VRP creditor account.",
+      "exampleValue": "70000170000005",
+      "id": "vrp.v311.input.creditor-account-identification",
+      "label": "Creditor account identification",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account name used for the VRP creditor account.",
+      "exampleValue": "VRP creditor",
+      "id": "vrp.v311.input.creditor-account-name",
+      "label": "Creditor account name",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Decimal amount used for consent limits, funds confirmation, and VRP payment instructions.",
+      "exampleValue": "1.00",
+      "id": "vrp.v311.input.instructed-amount",
+      "label": "Instructed amount",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 currency used for consent limits and VRP payments.",
+      "exampleValue": "GBP",
+      "id": "vrp.v311.input.currency",
+      "label": "Currency",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 start date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-09-15T00:00:00Z",
+      "id": "vrp.v311.input.valid-from-date-time",
+      "label": "Consent valid-from date time",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 end date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-10-15T00:00:00Z",
+      "id": "vrp.v311.input.valid-to-date-time",
+      "label": "Consent valid-to date time",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    }
+  ],
+  "requirements": [
+    {
+      "id": "vrp.v311.requirement.consent-create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.consent-create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Create a domestic VRP consent"
+    },
+    {
+      "id": "vrp.v311.requirement.consent-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.consent-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Retrieve a domestic VRP consent"
+    },
+    {
+      "id": "vrp.v311.requirement.consent-delete",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.revocation",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.consent-delete",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Delete a domestic VRP"
+    },
+    {
+      "id": "vrp.v311.requirement.funds-confirmation",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.funds-confirmation",
+        "targetId": "vrp.v311.endpoint.funds-confirmation",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Confirm availability of funds for a VRP"
+    },
+    {
+      "id": "vrp.v311.requirement.payment-create",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.payment-create",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Create a domestic VRP"
+    },
+    {
+      "id": "vrp.v311.requirement.payment-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.payment-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Retrieve a domestic VRP"
+    },
+    {
+      "id": "vrp.v311.requirement.payment-details-read",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.flow",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.endpoint.payment-details-read",
+        "targetType": "endpoint",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "Retrieve a domestic VRP"
+    },
+    {
+      "id": "vrp.v311.requirement.input.creditor-account-scheme-name",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.creditor-account-scheme-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account scheme name for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.creditor-account-identification",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.creditor-account-identification",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account identification for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.creditor-account-name",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.creditor-account-name",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies creditor account name for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.instructed-amount",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.instructed-amount",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies instructed amount for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.currency",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.currency",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies currency for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.valid-from-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.valid-from-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies valid from date time for standards-conformant domestic VRP request construction."
+    },
+    {
+      "id": "vrp.v311.requirement.input.valid-to-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.vrp-profile.restrictions",
+        "ob-rw-v311.vrp-openapi.operations"
+      ],
+      "rule": {
+        "capabilityId": "vrp.v311.capability.domestic-vrp",
+        "targetId": "vrp.v311.input.valid-to-date-time",
+        "targetType": "predefined-input",
+        "type": "required-when-capability-selected"
+      },
+      "statement": "The participant supplies valid to date time for standards-conformant domestic VRP request construction."
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "vrp",
+    "version": "3.1.11"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:16a6231aacf10548ee8ba778295371d41ea02d26232867dd916eb3cafbc7db12",
+      "id": "ob-rw-v311.vrp-openapi",
+      "title": "Open Banking Read/Write 3.1.11 VRP OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/vrp-openapi.json"
+    }
+  ]
+}

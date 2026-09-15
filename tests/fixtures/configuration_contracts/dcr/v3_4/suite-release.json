@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:c0f644234b955b9d4fe9af62d5903e61210894ad6263c22af82d0755406b845b",
+      "digest": "sha256:8296416b5b55c6ed3c8464060da522941958a294d0e1fd2b1e43c58304528663",
       "id": "execution-manifest-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

@@ -129,12 +129,12 @@
       "sourceDocument": "resolved-plan"
     }
   ],
-  "id": "resolved-plan:69c6024216ab1c8cc8b4c927fc65802b056f14796a956d765d7a32b8bd9f4120",
+  "id": "resolved-plan:457cb4065781fc93385f78498ca87c328e532fa293b12a1f6abc89098a49546a",
   "predefinedInputs": [],
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:c0f644234b955b9d4fe9af62d5903e61210894ad6263c22af82d0755406b845b",
+        "digest": "sha256:8296416b5b55c6ed3c8464060da522941958a294d0e1fd2b1e43c58304528663",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",

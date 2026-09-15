@@ -1,4 +1,4 @@
-"""Deterministic participant-plan compiler for the PIS walking skeleton."""
+"""Deterministic compiler for configuration-driven participant plans."""
 
 from __future__ import annotations
 
@@ -229,6 +229,7 @@ def _validate_trusted_compiler_inputs(
                 )
             )
     diagnostics.extend(_trusted_requirement_rule_diagnostics(requirements_catalogue))
+    diagnostics.extend(_trusted_capability_dependency_diagnostics(requirements_catalogue))
     diagnostics.extend(_trusted_test_dependency_diagnostics(test_definition_catalogue))
     if diagnostics:
         raise ConfigurationContractError(tuple(diagnostics))
@@ -282,6 +283,48 @@ def _trusted_requirement_rule_diagnostics(
                     instance_path=f"/predefinedInputs/{input_index}/requiredForCapabilityIds",
                 )
             )
+    return tuple(diagnostics)
+
+
+def _trusted_capability_dependency_diagnostics(
+    requirements_catalogue: RequirementsCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    capabilities = {capability.id: capability for capability in requirements_catalogue.capabilities}
+    indexes = {capability.id: index for index, capability in enumerate(requirements_catalogue.capabilities)}
+    diagnostics: list[ConfigurationDiagnostic] = []
+    state: dict[StableId, int] = {}
+
+    def visit(capability_id: StableId) -> None:
+        state[capability_id] = 1
+        capability = capabilities[capability_id]
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
+            instance_path = f"/capabilities/{indexes[capability_id]}/requiredCapabilityIds/{dependency_index}"
+            if dependency_id not in capabilities:
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        code=DiagnosticCode.REFERENCE_UNRESOLVED,
+                        severity=DiagnosticSeverity.ERROR,
+                        message=f"Referenced capability {dependency_id!s} does not exist",
+                        instance_path=instance_path,
+                    )
+                )
+                continue
+            if state.get(dependency_id) == 1:
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        code=DiagnosticCode.DEPENDENCY_CYCLE,
+                        severity=DiagnosticSeverity.ERROR,
+                        message=f"Capability dependency {dependency_id!s} creates a cycle",
+                        instance_path=instance_path,
+                    )
+                )
+            elif state.get(dependency_id, 0) == 0:
+                visit(dependency_id)
+        state[capability_id] = 2
+
+    for capability in requirements_catalogue.capabilities:
+        if state.get(capability.id, 0) == 0:
+            visit(capability.id)
     return tuple(diagnostics)
 
 
@@ -375,8 +418,22 @@ def _resolve_capabilities(
     participant_plan: ParticipantPlan,
     findings: list[CompilationFinding],
 ) -> tuple[tuple[ResolvedCapability, ...], set[StableId]]:
-    catalogue_ids = {capability.id for capability in requirements_catalogue.capabilities}
-    selected_ids = set(participant_plan.selected_capability_ids).intersection(catalogue_ids)
+    capabilities = {capability.id: capability for capability in requirements_catalogue.capabilities}
+    catalogue_ids = set(capabilities)
+    explicit_ids = set(participant_plan.selected_capability_ids).intersection(catalogue_ids)
+    selected_ids = set(explicit_ids)
+    required_by: dict[StableId, set[StableId]] = defaultdict(set)
+
+    def include_dependencies(capability_id: StableId) -> None:
+        for dependency_id in capabilities[capability_id].required_capability_ids:
+            required_by[dependency_id].add(capability_id)
+            if dependency_id not in selected_ids:
+                selected_ids.add(dependency_id)
+                include_dependencies(dependency_id)
+
+    for capability_id in tuple(explicit_ids):
+        include_dependencies(capability_id)
+
     indexes = {capability_id: index for index, capability_id in enumerate(participant_plan.selected_capability_ids)}
     for capability_id in sorted(set(participant_plan.selected_capability_ids).difference(catalogue_ids)):
         findings.append(
@@ -401,11 +458,19 @@ def _resolve_capabilities(
     resolved = tuple(
         ResolvedCapability(
             id=capability.id,
-            origin=SelectionOrigin.EXPLICIT,
+            origin=(SelectionOrigin.EXPLICIT if capability.id in explicit_ids else SelectionOrigin.INFERRED),
             reasons=(
                 ResolutionReason(
-                    code=StableId("plan.capability.explicit"),
-                    source_ids=(participant_plan.id, capability.id),
+                    code=StableId(
+                        "plan.capability.explicit"
+                        if capability.id in explicit_ids
+                        else "requirements.capability.required"
+                    ),
+                    source_ids=(
+                        (participant_plan.id, capability.id)
+                        if capability.id in explicit_ids
+                        else tuple(sorted(required_by[capability.id]))
+                    ),
                 ),
             ),
         )

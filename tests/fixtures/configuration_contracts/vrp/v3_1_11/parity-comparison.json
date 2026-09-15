@@ -1,0 +1,145 @@
+{
+  "allowedClassifications": [
+    "retained-coverage",
+    "intentional-correction",
+    "obsolete-behavior",
+    "genuine-omission"
+  ],
+  "baseline": {
+    "commit": "1908789b52e26e0a79fc5a565e411f771006c3ce",
+    "digest": "sha256:5d5fd01452f14f45f9e257fa51e50a8d72a23e202d43bbc356fd92a4a208a8dc",
+    "file": "ob_3.1_variable_recurring_payments.json",
+    "purpose": "migration-cross-check-only"
+  },
+  "classifications": [
+    {
+      "classification": "obsolete-behavior",
+      "legacyScriptId": "OB-301-VRP-100100",
+      "rationale": "The row targets a version earlier than the accepted 3.1.11 boundary.",
+      "replacementTestDefinitionIds": [],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#0:OB-301-VRP-100100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-100101",
+      "rationale": "The replacement retains the 3.1.11 consent-staging success contract.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.consent-create.positive"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#1:OB-301-VRP-100101"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyScriptId": "OB-301-VRP-100600",
+      "rationale": "The row targets a version earlier than the accepted 3.1.11 boundary.",
+      "replacementTestDefinitionIds": [],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#2:OB-301-VRP-100600"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-100601",
+      "rationale": "The replacement retains initial payment creation under an authorised consent.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.payment-create.initial"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#3:OB-301-VRP-100601"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-100610",
+      "rationale": "The replacement retains authorised consent retrieval and response validation.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.consent-read.authorised"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#4:OB-301-VRP-100610"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-100650",
+      "rationale": "The replacement retains the optional funds-confirmation operation.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.funds-confirmation.positive"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#5:OB-301-VRP-100650"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-10670",
+      "rationale": "The replacement retains retrieval of the initial VRP payment.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.payment-read.initial"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#6:OB-301-VRP-10670"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyScriptId": "OB-301-VRP-100700",
+      "rationale": "The row targets a version earlier than the accepted 3.1.11 boundary.",
+      "replacementTestDefinitionIds": [],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#7:OB-301-VRP-100700"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-100701",
+      "rationale": "The replacement retains repeated payment creation under the same consent.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.payment-create.repeated"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#8:OB-301-VRP-100701"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-101100",
+      "rationale": "The replacement retains retrieval of the repeated VRP payment.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.payment-read.repeated"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#9:OB-301-VRP-101100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-101200",
+      "rationale": "The replacement retains detailed payment-status retrieval.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.payment-details-read.positive"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#10:OB-301-VRP-101200"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-102100",
+      "rationale": "The replacement retains standards-defined consent revocation with HTTP 204.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.consent-delete.positive"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#11:OB-301-VRP-102100"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-301-VRP-102150",
+      "rationale": "The replacement retains the bad-request check after consent deletion.",
+      "replacementTestDefinitionIds": [
+        "vrp.v311.test.consent-read.after-delete"
+      ],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#12:OB-301-VRP-102150"
+    },
+    {
+      "classification": "obsolete-behavior",
+      "legacyScriptId": "OB-301-VRP-102200",
+      "rationale": "The legacy row accepted either success or failure when deleting an already deleted consent, so it made no deterministic conformance judgement.",
+      "replacementTestDefinitionIds": [],
+      "sourceRow": "ob_3.1_variable_recurring_payments.json#13:OB-301-VRP-102200"
+    }
+  ],
+  "documentType": "vrp-parity-comparison",
+  "requirementsCatalogueId": "obl.vrp-v311.requirements",
+  "schemaVersion": "1.0",
+  "summary": {
+    "genuine-omission": 0,
+    "intentional-correction": 0,
+    "obsolete-behavior": 4,
+    "retained-coverage": 10
+  },
+  "targetSpecificationVersion": "3.1.11",
+  "testDefinitionCatalogueId": "obl.vrp-v311.tests"
+}

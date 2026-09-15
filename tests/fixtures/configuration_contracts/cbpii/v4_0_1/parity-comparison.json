@@ -1,0 +1,147 @@
+{
+  "allowedClassifications": [
+    "retained-coverage",
+    "intentional-correction",
+    "obsolete-behavior",
+    "genuine-omission"
+  ],
+  "baseline": {
+    "digest": "sha256:ed05f4f858cb1ac619d6991451a4a699848d4e763d53a2129aa1920a5ef67a29",
+    "file": "ob_4.0_cbpii_fca.json",
+    "purpose": "migration-cross-check-only"
+  },
+  "classifications": [
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000001",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.positive"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#0:OB-400-CBPII-000001"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000002",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.positive"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#1:OB-400-CBPII-000002"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000003",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.consentid.read.positive"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#2:OB-400-CBPII-000003"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000004",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmations.create.positive"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#3:OB-400-CBPII-000004"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000005",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.consentid.delete.positive"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#4:OB-400-CBPII-000005"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000006",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-name"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#5:OB-400-CBPII-000006"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000007",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-identification"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#6:OB-400-CBPII-000007"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000008",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.invalid-account-scheme"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#7:OB-400-CBPII-000008"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-400-CBPII-000009",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.consentid.delete.unknown-consent"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#8:OB-400-CBPII-000009"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-400-CBPII-000009",
+      "rationale": "The replacement uses an independent stable identifier instead of the duplicate legacy script identifier and adds the authoritative OpenAPI success-response schema assertion omitted by the legacy row.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.expiration-milliseconds-utc"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#9:OB-400-CBPII-000009"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-400-CBPII-000010",
+      "rationale": "The replacement retains the accepted date-time format and adds the authoritative OpenAPI success-response schema assertion omitted by the legacy row.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.expiration-milliseconds-offset"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#10:OB-400-CBPII-000010"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-400-CBPII-000011",
+      "rationale": "The replacement retains the accepted date-time format and adds the authoritative OpenAPI success-response schema assertion omitted by the legacy row.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.expiration-seconds-utc"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#11:OB-400-CBPII-000011"
+    },
+    {
+      "classification": "intentional-correction",
+      "legacyScriptId": "OB-400-CBPII-000012",
+      "rationale": "The replacement retains the accepted date-time format and adds the authoritative OpenAPI success-response schema assertion omitted by the legacy row.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.expiration-seconds-offset"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#12:OB-400-CBPII-000012"
+    },
+    {
+      "classification": "retained-coverage",
+      "legacyScriptId": "OB-312-CBPII-000100",
+      "rationale": "The replacement retains the standards-derived request condition and expected response without making the legacy script structure or identifier a runtime dependency.",
+      "replacementTestDefinitionIds": [
+        "cbpii.v401.test.funds_confirmation_consents.create.without-financial-id"
+      ],
+      "sourceRow": "ob_4.0_cbpii_fca.json#13:OB-312-CBPII-000100"
+    }
+  ],
+  "summary": {
+    "genuine-omission": 0,
+    "intentional-correction": 4,
+    "obsolete-behavior": 0,
+    "retained-coverage": 10
+  }
+}
