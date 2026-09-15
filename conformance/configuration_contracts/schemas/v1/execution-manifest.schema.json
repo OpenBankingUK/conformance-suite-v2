@@ -142,7 +142,9 @@
           "enum": [
             "DELETE",
             "GET",
-            "POST"
+            "PATCH",
+            "POST",
+            "PUT"
           ]
         },
         "path": {

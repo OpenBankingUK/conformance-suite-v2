@@ -51,7 +51,9 @@ class HttpMethod(StrEnum):
 
     DELETE = "DELETE"
     GET = "GET"
+    PATCH = "PATCH"
     POST = "POST"
+    PUT = "PUT"
 
 
 class RequirementTargetType(StrEnum):
@@ -99,6 +101,7 @@ class Capability:
     description: str
     selection: str
     required_endpoint_ids: tuple[StableId, ...]
+    required_capability_ids: tuple[StableId, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

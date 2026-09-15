@@ -1,0 +1,705 @@
+{
+  "documentType": "test-definition-catalogue",
+  "id": "obl.vrp-v401.tests",
+  "requirementsCatalogueId": "obl.vrp-v401.requirements",
+  "schemaVersion": "1.0",
+  "testDefinitions": [
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v401.assertion.consent-create.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-create.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.consent-create.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AWAU",
+          "id": "vrp.v401.assertion.consent-create.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-create",
+        "vrp.v401.requirement.input.creditor-account-scheme-name",
+        "vrp.v401.requirement.input.creditor-account-identification",
+        "vrp.v401.requirement.input.creditor-account-name",
+        "vrp.v401.requirement.input.instructed-amount",
+        "vrp.v401.requirement.input.currency",
+        "vrp.v401.requirement.input.valid-from-date-time",
+        "vrp.v401.requirement.input.valid-to-date-time"
+      ],
+      "dependencies": [],
+      "description": "Create a domestic VRP consent",
+      "id": "vrp.v401.test.consent-create.positive",
+      "name": "Create a domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-create",
+        "inputBindings": [
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.valid-from-date-time",
+            "target": "/Data/ControlParameters/ValidFromDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.valid-to-date-time",
+            "target": "/Data/ControlParameters/ValidToDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.consent-read.authorised.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-read.authorised.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.consent-read.authorised.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AUTH",
+          "id": "vrp.v401.assertion.consent-read.authorised.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-read"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-create.positive"
+      ],
+      "description": "Retrieve an authorised domestic VRP consent",
+      "id": "vrp.v401.test.consent-read.authorised",
+      "name": "Retrieve an authorised domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v401.assertion.funds-confirmation.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.funds-confirmation.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.funds-confirmation.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBVRPFundsConfirmationResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.funds-confirmation",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.funds-confirmation"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-read.authorised"
+      ],
+      "description": "Confirm funds for a domestic VRP consent",
+      "id": "vrp.v401.test.funds-confirmation.positive",
+      "name": "Confirm funds for a domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.funds-confirmation",
+        "inputBindings": [
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Reference",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v401.assertion.payment-create.initial.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.payment-create.initial.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.payment-create.initial.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.payment-create"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-read.authorised"
+      ],
+      "description": "Create an initial domestic VRP payment",
+      "id": "vrp.v401.test.payment-create.initial",
+      "name": "Create an initial domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.payment-create",
+        "inputBindings": [
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Instruction/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Instruction/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Instruction/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/Instruction/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/Instruction/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v401.modification.instruction-id",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/InstructionIdentification"
+          },
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v401.modification.end-to-end-id",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/EndToEndIdentification"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.payment-read.initial.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.payment-read.initial.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.payment-read.initial.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.payment-read"
+      ],
+      "dependencies": [
+        "vrp.v401.test.payment-create.initial"
+      ],
+      "description": "Retrieve the initial domestic VRP payment",
+      "id": "vrp.v401.test.payment-read.initial",
+      "name": "Retrieve the initial domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.payment-read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v401.assertion.payment-create.repeated.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.payment-create.repeated.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.payment-create.repeated.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.payment-create"
+      ],
+      "dependencies": [
+        "vrp.v401.test.payment-create.initial"
+      ],
+      "description": "Create a repeated domestic VRP payment",
+      "id": "vrp.v401.test.payment-create.repeated",
+      "name": "Create a repeated domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.payment-create",
+        "inputBindings": [
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Instruction/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Instruction/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Instruction/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/Instruction/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/Instruction/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "modifications": [
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v401.modification.instruction-id.repeated",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/InstructionIdentification"
+          },
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v401.modification.end-to-end-id.repeated",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/EndToEndIdentification"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.payment-read.repeated.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.payment-read.repeated.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.payment-read.repeated.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.payment-read"
+      ],
+      "dependencies": [
+        "vrp.v401.test.payment-create.repeated"
+      ],
+      "description": "Retrieve the repeated domestic VRP payment",
+      "id": "vrp.v401.test.payment-read.repeated",
+      "name": "Retrieve the repeated domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.payment-read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.payment-details-read.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.payment-details-read.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.payment-details-read.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPDetails",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.payment-details-read"
+      ],
+      "dependencies": [
+        "vrp.v401.test.payment-read.repeated"
+      ],
+      "description": "Retrieve domestic VRP payment details",
+      "id": "vrp.v401.test.payment-details-read.positive",
+      "name": "Retrieve domestic VRP payment details",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.payment-details-read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.consent-replace.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-replace.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.consent-replace.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.consent-version-replacement",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-replace"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-read.authorised"
+      ],
+      "description": "Replace a domestic VRP consent for Standards-version migration",
+      "id": "vrp.v401.test.consent-replace.positive",
+      "name": "Replace a domestic VRP consent for Standards-version migration",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-replace",
+        "inputBindings": [
+          {
+            "inputId": "vrp.v401.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.instructed-amount",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.currency",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.valid-from-date-time",
+            "target": "/Data/ControlParameters/ValidFromDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v401.input.valid-to-date-time",
+            "target": "/Data/ControlParameters/ValidToDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v401.assertion.consent-patch.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-patch.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.consent-patch.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.consent-version-patch",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-patch"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-read.authorised"
+      ],
+      "description": "Patch a domestic VRP consent for Standards-version migration",
+      "id": "vrp.v401.test.consent-patch.positive",
+      "name": "Patch a domestic VRP consent for Standards-version migration",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-patch",
+        "inputBindings": [],
+        "modifications": [
+          {
+            "generator": "vrp-consent-version-migration-patch",
+            "id": "vrp.v401.modification.consent-version-patch",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/"
+          }
+        ]
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 204,
+          "id": "vrp.v401.assertion.consent-delete.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-delete.positive.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-delete"
+      ],
+      "dependencies": [
+        "vrp.v401.test.payment-details-read.positive"
+      ],
+      "description": "Delete a domestic VRP consent after revocation",
+      "id": "vrp.v401.test.consent-delete.positive",
+      "name": "Delete a domestic VRP consent after revocation",
+      "purpose": "positive",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-delete",
+        "inputBindings": [],
+        "modifications": []
+      }
+    },
+    {
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "vrp.v401.assertion.consent-read.after-delete.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v401.assertion.consent-read.after-delete.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v401.assertion.consent-read.after-delete.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "type": "response-schema"
+        }
+      ],
+      "capabilityId": "vrp.v401.capability.domestic-vrp",
+      "coveredRequirementIds": [
+        "vrp.v401.requirement.consent-read"
+      ],
+      "dependencies": [
+        "vrp.v401.test.consent-delete.positive"
+      ],
+      "description": "Reject retrieval of a deleted domestic VRP consent",
+      "id": "vrp.v401.test.consent-read.after-delete",
+      "name": "Reject retrieval of a deleted domestic VRP consent",
+      "purpose": "negative",
+      "request": {
+        "endpointId": "vrp.v401.endpoint.consent-read",
+        "inputBindings": [],
+        "modifications": []
+      }
+    }
+  ]
+}

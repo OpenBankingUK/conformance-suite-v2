@@ -78,7 +78,7 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:32dd32bba1d4253350478c98f291c4fcf27aa232912376be6693844c7fb4e911",
+  "id": "resolved-plan:fd4986c734bb9b61d3bda7065f1d69ae728f73ee331d032e040cd3fa30cbb543",
   "predefinedInputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -105,7 +105,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:644a3e75d95aee16c492a73ec100f92192361b909f370c8a332b72b356343ae0",
+        "digest": "sha256:b22b502e77cbf1986e64648dbd308d1fee57f01664492ce776440664b29773d7",
         "id": "requirements-catalogue-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
@@ -137,7 +137,7 @@
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
       },
       {
-        "digest": "sha256:43905f7e4e5ac760a0a7320faacd4d48bef77edb397b1121789c34ac0a7156d3",
+        "digest": "sha256:0019b18a2777adfce3dbeeaebd77eaab9cae39970ed6ca363b509e7df274d562",
         "id": "execution-manifest-v1",
         "kind": "json-schema",
         "mediaType": "application/schema+json",
