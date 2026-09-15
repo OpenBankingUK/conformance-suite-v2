@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- A coordinator-owned, content-addressed Open Banking MVP suite release now
+  registers all nine migrated PIS, AIS, CBPII, VRP, and DCR catalogue variants,
+  their contract schemas, and pinned technical sources. Registry tests verify
+  every artefact byte and prove that every registered catalogue compiles
+  without introducing PR 8 participant surfaces. PIS, VRP, and CBPII parity
+  reports are now bound to the exact baseline bytes and row identities they
+  claim to classify.
 - Replacement DCR 3.4 requirements and test-definition catalogues authored
   from the pinned Open Banking specification and OpenAPI operation inventory.
   The shared contracts now support setup-only test dependencies, explicit
@@ -19,8 +26,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   empty predefined-input sets, and JSON-presence assertions. Deterministic
   resolved-plan, referential-integrity, and per-case parity-classification
   fixtures keep legacy DCR behaviour as migration evidence only and surface
-  unobservable deletion-token invalidation as not assessed; central release
-  registry integration remains separate.
+  unobservable deletion-token invalidation as not assessed; its family fixture
+  descriptor remains test-only.
 - Replacement AIS requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, covering all 29 Account Information OpenAPI
   operations with explicit consent, permission, dependency, query-input,
@@ -30,30 +37,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   bindings, generated
   authorization and path mutations, multi-status assertions, and response
   header playback. Pinned parity ledgers classify every legacy AIS row, and
-  deterministic resolved-plan fixtures keep central release registration
-  separate.
+  deterministic resolved-plan fixtures remain separate from the central
+  release descriptor.
 - Replacement CBPII requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from the normative Confirmation of
   Funds profiles and content-addressed OpenAPI operations. Shared contracts now
   support generic functional scopes, `DELETE`, sensitive predefined inputs,
   and path-parameter modifications; fixtures prove complete parity
   classification, stable references, redaction, and deterministic compilation
-  without central registry integration.
+  independently of the central release descriptor.
 - Replacement VRP requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from the normative VRP profiles and
   content-addressed OpenAPI operations. Generic capability dependencies and
   `DELETE`/`PUT`/`PATCH` operation support preserve optional funds confirmation
   and v4 consent-migration scope, with pinned parity classifications,
-  referential-integrity checks, and deterministic compilation goldens. Central
-  release registry integration remains separate.
+  referential-integrity checks, and deterministic compilation goldens. Family
+  fixture descriptors remain test-only.
 - Replacement PIS requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from content-addressed OpenAPI
   operations and normative Payment Initiation profiles. The shared contracts
   now support technical-source pointers, version-correct string and structured
   frequency inputs, generic request modifications, richer assertions, stable
   referential-integrity diagnostics, pinned parity classifications, and
-  deterministic resolved-plan goldens. Central release registry integration
-  remains separate.
+  deterministic resolved-plan goldens. Family fixture descriptors remain
+  test-only.
 - Stable execution-manifest result traceability linking suite releases,
   requirement and test-definition IDs, compiled test instances, manifest
   steps, result observations, safe participant-plan snapshots, and retained

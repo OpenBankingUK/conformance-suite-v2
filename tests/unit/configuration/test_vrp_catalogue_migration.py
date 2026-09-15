@@ -28,12 +28,25 @@ from conformance.configuration_contracts import (
     validate_catalogue_references,
 )
 from conformance.json_types import JsonObject
+from tests.support.parity import assert_parity_report_matches_baseline
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
 _CATALOGUE_ROOT = REPO_ROOT / "conformance" / "configuration_contracts" / "catalogues" / "vrp"
 _FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "vrp"
+_BASELINE_PATHS = {
+    "v3_1_11": (
+        REPO_ROOT
+        / "conformance"
+        / "standards"
+        / "ob_read_write"
+        / "v3_1_11"
+        / "legacy"
+        / "ob_3.1_variable_recurring_payments.json"
+    ),
+    "v4_0_1": _FIXTURE_ROOT / "v4_0_1" / "ob_4.0_variable_recurring_payments.json",
+}
 _VERSION_CASES = (
     (
         "v3_1_11",
@@ -165,6 +178,7 @@ def test_vrp_parity_evidence_classifies_every_pinned_row(
     summary = cast(JsonObject, report["summary"])
     replacement_ids = {str(definition.id) for definition in tests.test_definitions}
 
+    assert_parity_report_matches_baseline(report, _BASELINE_PATHS[directory])
     assert baseline["purpose"] == "migration-cross-check-only"
     assert str(baseline["digest"]).startswith("sha256:")
     assert len(str(baseline["commit"])) == 40
