@@ -450,6 +450,16 @@ Move browser, CLI, REST, import/export, and review surfaces to the accepted
 participant-plan and resolved-plan contracts. Builder choices come from trusted
 catalogues, and review surfaces explain inferences and findings.
 
+The participant-surface cutover accepts these additional decisions:
+
+| ID | Decision | Rationale |
+| --- | --- | --- |
+| `TPA-067` | `participant-plan` `1.0` is the common browser, CLI, REST, import, and export document. It adds an optional, strictly shaped `executionConfiguration` containing the security environment, DCR settings, reporting metadata, and a named `compatibilityRuntimeInputs` extension point. The compiler ignores this section and excludes it from the deterministic resolved-plan identity. | Participant intent and local launch configuration travel in one participant-controlled document without allowing environment values to affect requirements, scope inference, test selection, or generated-plan identity. The compatibility field is explicit technical debt for values still required by the current executor but not owned by the replacement requirements catalogues. |
+| `TPA-068` | Browser scope choices are loaded from the coordinator-owned suite release and its requirements catalogues. A plan selects exactly one requirements scope and capability set; endpoint and test-dependency selections are inferred and read-only. | Removes the legacy UI's duplicate endpoint/capability inference and makes every browser choice use the same trusted definitions as CLI and REST compilation. |
+| `TPA-069` | Review pages render resolved capabilities, inferred endpoints, test instances, compiler reasons, and findings. Safe exports omit sensitive predefined values and all compatibility runtime values; trace snapshots retain only allow-listed non-secret execution metadata. | Keeps generated scope inspectable while preventing browser export and result traceability from becoming credential disclosure paths. |
+| `TPA-070` | Existing canonical `schemaVersion: "1.0"` CLI and REST inputs remain a compatibility-only fallback until PR 9. New participant-plan launches generate a stable execution manifest and bind its steps to current result observations. If a migrated operation has no current executor equivalent, launch is rejected explicitly rather than silently dropping selected work. | Preserves current automation during the cutover while ensuring new plans cannot claim execution or evidence for work the compatibility runtime did not perform. |
+| `TPA-071` | Sensitive logical inputs appear in execution manifests only as redacted input references with no value. Their values remain in the in-memory participant and compatibility execution binding, and result traceability preserves only the redacted reference. | Allows CBPII and future sensitive-input scopes to cross the manifest boundary without persisting account identifiers or weakening input-binding referential integrity. |
+
 ### PR 9: legacy removal
 
 Remove only structures with no remaining consumers. The change should be

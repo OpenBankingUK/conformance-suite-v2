@@ -34,6 +34,9 @@
             "default"
           ]
         },
+        "redacted": {
+          "type": "boolean"
+        },
         "value": {
           "$ref": "#/$defs/frequencyValue"
         }
@@ -41,7 +44,33 @@
       "required": [
         "id",
         "source",
-        "value"
+        "redacted"
+      ],
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "redacted": {
+                "const": true
+              }
+            },
+            "required": [
+              "redacted"
+            ]
+          },
+          "then": {
+            "not": {
+              "required": [
+                "value"
+              ]
+            }
+          },
+          "else": {
+            "required": [
+              "value"
+            ]
+          }
+        }
       ],
       "type": "object"
     },

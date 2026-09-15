@@ -1,111 +1,52 @@
 <section id="scope-options">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
-    {% if direct_endpoints %}
-        {{ form.endpoints.errors }}
-        <section aria-labelledby="direct-endpoints-heading">
-            <h3 id="direct-endpoints-heading">Dynamic Client Registration endpoints</h3>
-            <p class="helper">POST registration is mandatory and locked. Select any implemented registration-management operations.</p>
-            <div class="endpoint-tree">
-                {% for endpoint in direct_endpoints %}
-                    <article class="endpoint-card{% if endpoint.selected %} selected{% endif %}">
-                        <div class="endpoint-heading">
-                            <label>
-                                {% if endpoint.baseline %}
-                                    <input type="hidden" name="endpoints" value="{{ endpoint.id }}">
-                                {% endif %}
-                                <input type="checkbox"
-                                       name="{% if endpoint.baseline %}locked_endpoint{% else %}endpoints{% endif %}"
-                                       value="{{ endpoint.id }}"
-                                       {% if endpoint.selected %}checked{% endif %}
-                                       {% if endpoint.baseline %}disabled aria-disabled="true"{% endif %}>
-                                <strong>{{ endpoint.method }} {{ endpoint.display_path }}</strong>
-                            </label>
-                            <span class="chip">{% if endpoint.baseline %}Required and locked{% else %}Optional endpoint{% endif %}</span>
-                        </div>
-                    </article>
-                {% endfor %}
-            </div>
-        </section>
-    {% else %}
-    {{ form.resource_groups.errors }}
+    {{ form.requirements_scope.errors }}
+    {{ form.capabilities.errors }}
 
-    <section aria-labelledby="resource-groups-heading">
-        <h3 id="resource-groups-heading">Resource groups</h3>
-        <p class="helper">Select one or more groups that use the security environment from the previous step.</p>
+    <section aria-labelledby="requirements-scopes-heading">
+        <h3 id="requirements-scopes-heading">Requirements scope</h3>
+        <p class="helper">Choose one Standards-owned scope. A participant plan is compiled against exactly one requirements catalogue.</p>
         <div class="resource-grid">
-            {% for group in hierarchy.resource_groups %}
-                <label class="resource-card{% if group.selected %} selected{% endif %}">
-                    <input type="checkbox"
-                           name="resource_groups"
-                           value="{{ group.id }}"
-                           {% if group.selected %}checked{% endif %}>
-                    <strong>{{ group.label }}</strong>
+            {% for scope in participant_scope_options %}
+                <label class="resource-card{% if scope.selected %} selected{% endif %}">
+                    <input type="radio"
+                           name="requirements_scope"
+                           value="{{ scope.id }}"
+                           {% if scope.selected %}checked{% endif %}>
+                    <strong>{{ scope.label }}</strong>
                     <br>
-                    <span class="helper">{{ group.endpoint_count }} endpoints</span>
+                    <code>{{ scope.id }}</code>
                 </label>
             {% empty %}
-                <div class="message info">No resource groups are available for this catalogue boundary.</div>
+                <div class="message info">No trusted requirements scopes are available for this specification.</div>
             {% endfor %}
         </div>
-        {% endif %}
     </section>
 
-    {% if selected_resource_groups %}
-        <div class="scope-bulk-actions" aria-label="Endpoint bulk actions">
-            <button type="button" class="secondary" data-endpoint-bulk-action="select">Select all endpoints</button>
-            <button type="button" class="secondary" data-endpoint-bulk-action="deselect">Deselect all endpoints</button>
-        </div>
-    {% endif %}
-
-    <div class="endpoint-tree" aria-live="polite">
-        {% if selected_resource_groups %}
-            {% for group in selected_resource_groups %}
-                <section class="resource-tree" aria-labelledby="resource-group-{{ group.id }}">
-                    <h3 id="resource-group-{{ group.id }}">{{ group.label }}</h3>
-
-                    {% for endpoint in group.endpoints %}
-                        <article class="endpoint-card{% if endpoint.selected %} selected{% endif %}">
-                            <div class="endpoint-heading">
-                                <label>
-                                    <input type="checkbox"
-                                           name="endpoints"
-                                           value="{{ endpoint.id }}"
-                                           {% if endpoint.selected %}checked{% endif %}>
-                                    <strong>{{ endpoint.method }} {{ endpoint.display_path }}</strong>
-                                </label>
-                                <span class="chip">{% if endpoint.baseline %}Baseline{% else %}Optional endpoint{% endif %}</span>
-                            </div>
-
-                            {% if endpoint.selected %}
-                                <div class="features">
-                                    <h4>Endpoint features</h4>
-                                    {% for feature in endpoint.features %}
-                                        <label class="feature-card">
-                                            <input type="checkbox"
-                                                   name="endpoint_capabilities"
-                                                   value="{{ feature.value }}"
-                                                   {% if feature.selected %}checked{% endif %}
-                                                   {% if feature.required %}disabled{% endif %}>
-                                            <strong>{{ feature.label }}</strong>
-                                            <span class="chip">{{ feature.kind }}</span>
-                                            <br>
-                                            <span class="helper">{{ feature.description }}</span>
-                                            <br>
-                                            <code>{{ feature.capability_id }}</code>
-                                        </label>
-                                    {% empty %}
-                                        <div class="message info">No endpoint-scoped features are defined for this endpoint yet.</div>
-                                    {% endfor %}
-                                </div>
-                            {% endif %}
-                        </article>
+    {% for scope in participant_scope_options %}
+        {% if scope.selected %}
+            <section class="resource-tree" aria-labelledby="scope-{{ scope.id }}">
+                <h3 id="scope-{{ scope.id }}">Implemented capabilities</h3>
+                <p class="helper">Select capabilities implemented by the participant. Required endpoints and dependent capabilities are inferred by the compiler.</p>
+                <div class="endpoint-tree">
+                    {% for capability in scope.capabilities %}
+                        <label class="feature-card">
+                            <input type="checkbox"
+                                   name="capabilities"
+                                   value="{{ capability.id }}"
+                                   {% if capability.selected %}checked{% endif %}>
+                            <strong>{{ capability.name }}</strong>
+                            <span class="chip">{{ capability.inferred_endpoint_count }} inferred endpoints</span>
+                            <br>
+                            <span class="helper">{{ capability.description }}</span>
+                            <br>
+                            <code>{{ capability.id }}</code>
+                        </label>
                     {% empty %}
-                        <div class="message info">No endpoints are currently available for this resource group.</div>
+                        <div class="message info">No participant-selectable capabilities are defined for this scope.</div>
                     {% endfor %}
-                </section>
-            {% endfor %}
-        {% else %}
-            <div class="message info">No resource groups are selected yet. Select at least one group to reveal its endpoints.</div>
+                </div>
+            </section>
         {% endif %}
-    </div>
+    {% endfor %}
 </section>

@@ -20,6 +20,7 @@ from conformance.configuration_contracts import (
     ResolvedPlanAdapterError,
     compile_participant_plan,
     dump_execution_manifest,
+    execution_manifest_to_document,
     generate_execution_manifest,
     load_execution_manifest,
     load_participant_plan,
@@ -68,6 +69,7 @@ def test_resolved_plan_generates_deterministic_immutable_execution_manifest() ->
         test_instance.id for test_instance in resolved.test_instances
     ]
     assert first.steps[-1].dependency_ids == ("pis.dso.test.order-create.instance.request",)
+    assert first.inputs[0].value is not None
     assert not isinstance(first.inputs[0].value, str)
     assert first.inputs[0].value.point_in_time == "03"
     with pytest.raises(FrozenInstanceError):
@@ -118,16 +120,26 @@ def test_execution_manifest_rejects_participant_override_syntax() -> None:
     assert captured.value.diagnostics[0].instance_path == "/requestOverrides"
 
 
-def test_generation_rejects_redacted_runtime_input() -> None:
+def test_generation_references_redacted_runtime_input_without_copying_its_value() -> None:
     _suite, requirements, test_definitions, _participant_plan, resolved = _resolved_inputs()
     redacted_input = replace(resolved.predefined_inputs[0], value=None, redacted=True)
 
-    with pytest.raises(ExecutionManifestGenerationError, match="is redacted"):
-        generate_execution_manifest(
-            replace(resolved, predefined_inputs=(redacted_input,)),
-            requirements,
-            test_definitions,
-        )
+    manifest = generate_execution_manifest(
+        replace(resolved, predefined_inputs=(redacted_input,)),
+        requirements,
+        test_definitions,
+    )
+
+    assert manifest.inputs[0].redacted is True
+    assert manifest.inputs[0].value is None
+    serialized = execution_manifest_to_document(manifest)
+    assert serialized["inputs"] == [
+        {
+            "id": "pis.dso.input.frequency",
+            "redacted": True,
+            "source": "participant",
+        }
+    ]
 
 
 def test_generation_rejects_catalogue_bytes_not_bound_by_resolved_provenance() -> None:

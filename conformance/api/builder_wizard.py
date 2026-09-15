@@ -32,8 +32,17 @@ from conformance.catalogue import (
     supported_plan_document_boundaries,
 )
 from conformance.catalogue_registry import supported_catalogues
+from conformance.configuration_contracts import (
+    ParticipantPlan,
+    parse_participant_plan,
+)
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
+from conformance.participant_surface import (
+    ParticipantCatalogue,
+    participant_suite_release,
+    supported_participant_catalogues,
+)
 from conformance.specification_registry import (
     specification_for_boundary,
     supported_specifications,
@@ -331,6 +340,27 @@ class CatalogueScopeHierarchy:
     boundary: PlanDocumentBoundary
     resource_groups: tuple[ResourceGroupOption, ...]
     direct_endpoints: tuple[EndpointOption, ...] = ()
+
+
+@dataclass(frozen=True)
+class ParticipantCapabilityOption:
+    """One trusted requirements-catalogue capability shown by the wizard."""
+
+    id: str
+    name: str
+    description: str
+    selected: bool
+    inferred_endpoint_count: int
+
+
+@dataclass(frozen=True)
+class ParticipantScopeOption:
+    """One requirements scope and its participant-selectable capabilities."""
+
+    id: str
+    label: str
+    selected: bool
+    capabilities: tuple[ParticipantCapabilityOption, ...]
 
 
 @dataclass(frozen=True)
@@ -896,6 +926,86 @@ class ScopeSelectionForm(forms.Form):
                     code="invalid_capability",
                 )
         return cleaned_data
+
+
+class ParticipantScopeSelectionForm(forms.Form):
+    """Select one trusted requirements scope and its declared capabilities."""
+
+    requirements_scope: forms.ChoiceField = forms.ChoiceField(required=True)
+    capabilities: forms.MultipleChoiceField = forms.MultipleChoiceField(required=True)
+
+    def __init__(
+        self,
+        data: Mapping[str, object] | None = None,
+        *,
+        boundary: PlanDocumentBoundary,
+        initial: Mapping[str, object] | None = None,
+    ) -> None:
+        """Build choices directly from trusted requirements catalogues."""
+        self.boundary = boundary
+        self.catalogues = participant_catalogues_for_boundary(boundary)
+        selected_scope_values = _raw_or_initial_values(data, initial, "requirements_scope")
+        selected_scope = selected_scope_values[0] if selected_scope_values else None
+        if selected_scope is None and len(self.catalogues) == 1:
+            selected_scope = str(self.catalogues[0].requirements.specification.requirements_scope)
+        selected_capabilities = _raw_or_initial_values(data, initial, "capabilities")
+        effective_initial = {
+            "requirements_scope": selected_scope,
+            "capabilities": list(selected_capabilities),
+        }
+        super().__init__(
+            data=cast(MutableMapping[str, object] | None, data),
+            initial=cast(MutableMapping[str, object], effective_initial),
+        )
+        scope_choices = [
+            (
+                str(catalogue.requirements.specification.requirements_scope),
+                _participant_scope_label(str(catalogue.requirements.specification.requirements_scope)),
+            )
+            for catalogue in self.catalogues
+        ]
+        cast(forms.ChoiceField, self.fields["requirements_scope"]).choices = scope_choices
+        selected_catalogue = next(
+            (
+                catalogue
+                for catalogue in self.catalogues
+                if str(catalogue.requirements.specification.requirements_scope) == selected_scope
+            ),
+            self.catalogues[0] if len(self.catalogues) == 1 else None,
+        )
+        cast(forms.MultipleChoiceField, self.fields["capabilities"]).choices = [
+            (str(capability.id), capability.name)
+            for capability in (selected_catalogue.requirements.capabilities if selected_catalogue is not None else ())
+        ]
+        self.scope_options = tuple(
+            ParticipantScopeOption(
+                id=str(catalogue.requirements.specification.requirements_scope),
+                label=_participant_scope_label(str(catalogue.requirements.specification.requirements_scope)),
+                selected=str(catalogue.requirements.specification.requirements_scope) == selected_scope,
+                capabilities=tuple(
+                    ParticipantCapabilityOption(
+                        id=str(capability.id),
+                        name=capability.name,
+                        description=capability.description,
+                        selected=str(capability.id) in selected_capabilities,
+                        inferred_endpoint_count=len(capability.required_endpoint_ids),
+                    )
+                    for capability in catalogue.requirements.capabilities
+                ),
+            )
+            for catalogue in self.catalogues
+        )
+
+    @property
+    def selected_requirements_scope(self) -> str:
+        """Return the selected requirements scope."""
+        value = self.cleaned_data.get("requirements_scope")
+        return value if isinstance(value, str) else ""
+
+    @property
+    def selected_capability_ids(self) -> tuple[str, ...]:
+        """Return selected capability IDs in submitted order."""
+        return _cleaned_string_tuple(self.cleaned_data.get("capabilities"))
 
 
 class ExecutionConfigForm(forms.Form):
@@ -1697,6 +1807,33 @@ def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
     )
 
 
+def participant_catalogues_for_boundary(
+    boundary: PlanDocumentBoundary,
+) -> tuple[ParticipantCatalogue, ...]:
+    """Return trusted participant catalogues for a wizard boundary."""
+    expected_specification_id = (
+        "dynamic-client-registration" if boundary.specification == "dynamic-client-registration" else "read-write-api"
+    )
+    return tuple(
+        catalogue
+        for catalogue in supported_participant_catalogues()
+        if catalogue.requirements.scheme == boundary.scheme
+        and catalogue.requirements.specification.id == expected_specification_id
+        and catalogue.requirements.specification.version == boundary.version
+    )
+
+
+def _participant_scope_label(scope: str) -> str:
+    """Return the participant-facing label for one requirements scope."""
+    return {
+        "ais": "Account Information",
+        "cbpii": "Confirmation of Funds",
+        "dcr": "Dynamic Client Registration",
+        "pis": "Payment Initiation",
+        "vrp": "Variable Recurring Payments",
+    }.get(scope, scope.upper())
+
+
 def boundary_requires_resource_groups(boundary: PlanDocumentBoundary) -> bool:
     """Return whether a boundary requires participant resource-group selection.
 
@@ -2326,6 +2463,148 @@ def model_bank_config_from_plan_config(config: Mapping[str, JsonValue]) -> JsonO
         :func:`conformance.model_bank_config.parse_model_bank_config`.
     """
     return {key: _copy_json_value(value) for key, value in config.items() if key in _MODEL_CONFIG_KEYS}
+
+
+def participant_plan_from_draft(
+    draft: BuilderDraft,
+    *,
+    config: Mapping[str, JsonValue] | None = None,
+) -> ParticipantPlan:
+    """Build the public participant-plan contract from a browser draft."""
+    boundary = _draft_boundary_or_error(draft)
+    if len(draft.resource_group_ids) != 1:
+        raise CatalogueError("Select exactly one requirements scope")
+    scope = draft.resource_group_ids[0]
+    catalogue = next(
+        (
+            candidate
+            for candidate in participant_catalogues_for_boundary(boundary)
+            if str(candidate.requirements.specification.requirements_scope) == scope
+        ),
+        None,
+    )
+    if catalogue is None:
+        raise CatalogueError(f"Requirements scope {scope!r} is not available for this specification")
+    config_object = _copy_json_mapping(config if config is not None else draft.config)
+    runtime_values = _runtime_input_values_from_config(config_object)
+    predefined_input_ids = {str(item.id) for item in catalogue.requirements.predefined_inputs}
+    predefined_inputs: list[JsonValue] = []
+    for predefined_input in catalogue.requirements.predefined_inputs:
+        input_id = str(predefined_input.id)
+        if input_id in runtime_values:
+            predefined_inputs.append({"inputId": input_id, "value": runtime_values[input_id]})
+    compatibility_runtime_inputs = {
+        key: _copy_json_value(value) for key, value in runtime_values.items() if key not in predefined_input_ids
+    }
+    raw_plan: JsonObject = {
+        "documentType": "participant-plan",
+        "id": f"participant.{draft.draft_id}",
+        "predefinedInputs": predefined_inputs,
+        "schemaVersion": "1.0",
+        "scheme": str(catalogue.requirements.scheme),
+        "securityProfile": draft.security_profile,
+        "selectedCapabilityIds": list(draft.endpoint_ids),
+        "specification": {
+            "id": str(catalogue.requirements.specification.id),
+            "requirementsScope": scope,
+            "version": catalogue.requirements.specification.version,
+        },
+        "suiteReleaseId": str(participant_suite_release().id),
+        "executionConfiguration": {
+            "compatibilityRuntimeInputs": compatibility_runtime_inputs,
+            "dynamicClientRegistration": _copy_json_mapping(draft.dynamic_client_registration),
+            "metadata": _copy_json_mapping(draft.metadata),
+            "securityEnvironment": _merged_plan_context(
+                draft.security_environment,
+                security_environment_from_plan_config(config_object),
+            ),
+        },
+    }
+    try:
+        return parse_participant_plan(raw_plan)
+    except ValueError as error:
+        raise CatalogueError(str(error)) from error
+
+
+def participant_runtime_input_prompts_for_draft(
+    draft: BuilderDraft,
+) -> tuple[WizardRuntimeInputPrompt, ...]:
+    """Return logical input prompts owned by the selected requirements catalogue."""
+    boundary = _draft_boundary_or_error(draft)
+    if len(draft.resource_group_ids) != 1:
+        return ()
+    scope = draft.resource_group_ids[0]
+    catalogue = next(
+        (
+            candidate
+            for candidate in participant_catalogues_for_boundary(boundary)
+            if str(candidate.requirements.specification.requirements_scope) == scope
+        ),
+        None,
+    )
+    if catalogue is None:
+        raise CatalogueError(f"Requirements scope {scope!r} is not available for this specification")
+    capabilities_by_id = {str(item.id): item for item in catalogue.requirements.capabilities}
+    selected_ids = set(draft.endpoint_ids)
+    pending = list(selected_ids)
+    while pending:
+        capability_id = pending.pop()
+        capability = capabilities_by_id.get(capability_id)
+        if capability is None:
+            continue
+        for required_id in capability.required_capability_ids:
+            required = str(required_id)
+            if required not in selected_ids:
+                selected_ids.add(required)
+                pending.append(required)
+    runtime_values = _runtime_input_values_from_config(draft.config)
+    return tuple(
+        WizardRuntimeInputPrompt(
+            input_id=str(predefined_input.id),
+            name=f"{_RUNTIME_INPUT_PREFIX}{predefined_input.id!s}",
+            label=predefined_input.label,
+            input_type=("json" if predefined_input.value_type == "standing-order-frequency-v4" else "string"),
+            required=True,
+            sensitive=predefined_input.sensitivity != "non-sensitive",
+            value=_display_json_value(runtime_values.get(str(predefined_input.id))),
+            group="Catalogue-defined business inputs",
+            description=predefined_input.description,
+        )
+        for predefined_input in catalogue.requirements.predefined_inputs
+        if any(str(capability_id) in selected_ids for capability_id in predefined_input.required_for_capability_ids)
+    )
+
+
+def config_visibility_for_participant_draft(draft: BuilderDraft) -> ConfigVisibility:
+    """Return compatibility form visibility from trusted capability selections."""
+    scope = draft.resource_group_ids[0] if len(draft.resource_group_ids) == 1 else ""
+    selected = set(draft.endpoint_ids)
+    is_pis = scope == "pis"
+    has_domestic_payment = any(item.endswith(".domestic-payment") for item in selected)
+    has_domestic_scheduled = any(item.endswith(".domestic-scheduled-payment") for item in selected)
+    has_domestic_standing_order = any(item.endswith(".domestic-standing-order") for item in selected)
+    has_international_payment = any(item.endswith(".international-payment") for item in selected)
+    has_international_scheduled = any(item.endswith(".international-scheduled-payment") for item in selected)
+    return ConfigVisibility(
+        selected_api_ids=frozenset({scope}) if scope else frozenset(),
+        show_ais=scope == "ais",
+        show_pis=is_pis,
+        show_cbpii=scope == "cbpii",
+        show_vrp=scope == "vrp",
+        show_business_defaults=scope in {"ais", "pis", "cbpii", "vrp"},
+        ais_account_id_required=scope == "ais"
+        and any(not item.endswith(".account-access-consent") for item in selected),
+        pis_domestic_creditor_account_required=is_pis
+        and (has_domestic_payment or has_domestic_scheduled or has_domestic_standing_order),
+        pis_international_creditor_account_required=is_pis
+        and (has_international_payment or has_international_scheduled),
+        pis_instructed_amount_required=is_pis and bool(selected),
+        pis_currency_of_transfer_required=is_pis and (has_international_payment or has_international_scheduled),
+        pis_requested_execution_date_time_required=is_pis and has_domestic_scheduled,
+        pis_first_payment_date_time_required=is_pis and has_domestic_standing_order,
+        pis_standing_order_frequency_required=False,
+        pis_v311_standing_order_frequency_required=False,
+    )
 
 
 def plan_document_from_draft(draft: BuilderDraft, *, config: Mapping[str, JsonValue] | None = None) -> PlanDocumentV2:
@@ -4224,6 +4503,49 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
     )
     _set_derived_runtime_value(values, "fromBookingDateTime", ais.get("transactionFromDate"))
     _set_derived_runtime_value(values, "toBookingDateTime", ais.get("transactionToDate"))
+    pis = _object_config_value(config, "pis")
+    creditor_account = _object_config_value(pis, "creditorAccount")
+    international_creditor_account = _object_config_value(pis, "internationalCreditorAccount")
+    instructed_amount = _object_config_value(pis, "instructedAmount")
+    standing_order_frequency = _object_config_value(pis, "standingOrderFrequency")
+    _set_derived_runtime_value(values, "pisCreditorAccountSchemeName", creditor_account.get("schemeName"))
+    _set_derived_runtime_value(
+        values,
+        "pisCreditorAccountIdentification",
+        creditor_account.get("identification"),
+    )
+    _set_derived_runtime_value(values, "pisCreditorAccountName", creditor_account.get("name"))
+    _set_derived_runtime_value(
+        values,
+        "pisInternationalCreditorAccountSchemeName",
+        international_creditor_account.get("schemeName"),
+    )
+    _set_derived_runtime_value(
+        values,
+        "pisInternationalCreditorAccountIdentification",
+        international_creditor_account.get("identification"),
+    )
+    _set_derived_runtime_value(
+        values,
+        "pisInternationalCreditorAccountName",
+        international_creditor_account.get("name"),
+    )
+    _set_derived_runtime_value(values, "pisInstructedAmountAmount", instructed_amount.get("amount"))
+    _set_derived_runtime_value(values, "pisInstructedAmountCurrency", instructed_amount.get("currency"))
+    _set_derived_runtime_value(values, "pisStandingOrderFrequencyType", standing_order_frequency.get("type"))
+    _set_derived_runtime_value(
+        values,
+        "pisStandingOrderFrequencyPointInTime",
+        standing_order_frequency.get("pointInTime"),
+    )
+    _set_derived_runtime_value(values, "pisStandingOrderFrequencyV31", pis.get("standingOrderFrequencyV31"))
+    _set_derived_runtime_value(values, "pisCurrencyOfTransfer", pis.get("currencyOfTransfer"))
+    _set_derived_runtime_value(
+        values,
+        "pisRequestedExecutionDateTime",
+        pis.get("requestedExecutionDateTime"),
+    )
+    _set_derived_runtime_value(values, "pisFirstPaymentDateTime", pis.get("firstPaymentDateTime"))
 
 
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:

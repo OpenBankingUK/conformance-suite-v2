@@ -4,6 +4,7 @@
   "inputs": [
     {
       "id": "pis.dso.input.frequency",
+      "redacted": false,
       "source": "participant",
       "value": {
         "frequencyType": "WEEK",

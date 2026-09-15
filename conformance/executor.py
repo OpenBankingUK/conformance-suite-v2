@@ -603,6 +603,7 @@ def run_execution_manifest(
                 config=parse_dcr_execution_runtime_inputs(runtime_inputs),
                 execution_logger=logger_sink,
                 approved_release_policy=approved_release_policy,
+                result_traceability=prepared_manifest.result_traceability,
             )
             if dcr_clock is not None:
                 dcr_adapter.clock = dcr_clock

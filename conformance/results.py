@@ -329,7 +329,7 @@ def build_safe_participant_plan_snapshot(
                 }
             )
         snapshot_inputs.append(snapshot_input)
-    return {
+    snapshot: JsonObject = {
         "documentType": participant_plan.document_type,
         "id": str(participant_plan.id),
         "predefinedInputs": snapshot_inputs,
@@ -344,6 +344,46 @@ def build_safe_participant_plan_snapshot(
         },
         "suiteReleaseId": str(participant_plan.suite_release_id),
     }
+    if participant_plan.execution_configuration is not None:
+        configuration = participant_plan.execution_configuration
+        snapshot["executionConfiguration"] = {
+            "compatibilityRuntimeInputs": {key: None for key in configuration.compatibility_runtime_inputs},
+            "dynamicClientRegistration": _safe_execution_mapping(
+                configuration.dynamic_client_registration,
+                visible_keys={
+                    "disableKeepAlive",
+                    "registrationAudience",
+                    "transportCertificateSubjectDnOverride",
+                    "useNumericOidSubjectDn",
+                },
+            ),
+            "metadata": deepcopy(dict(configuration.metadata)),
+            "securityEnvironment": _safe_execution_mapping(
+                configuration.security_environment,
+                visible_keys={
+                    "authorizationEndpoint",
+                    "clientAuthMethod",
+                    "clientAuthSigningAlgorithm",
+                    "discoveryUrl",
+                    "issuer",
+                    "redirectUri",
+                    "resourceBaseUrl",
+                    "responseType",
+                    "signingAlgorithm",
+                    "tokenEndpoint",
+                },
+            ),
+        }
+    return snapshot
+
+
+def _safe_execution_mapping(
+    values: Mapping[str, JsonValue],
+    *,
+    visible_keys: set[str],
+) -> JsonObject:
+    """Copy allow-listed non-secret execution values and redact everything else."""
+    return {key: deepcopy(value) if key in visible_keys else None for key, value in values.items()}
 
 
 def mark_development_result_evidence(validation_result: JsonObject, result_object: JsonObject) -> None:

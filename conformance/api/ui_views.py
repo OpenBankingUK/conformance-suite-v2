@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from collections.abc import Mapping
+from copy import deepcopy
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -20,33 +21,28 @@ from conformance.api.builder_wizard import (
     BusinessConfigForm,
     CatalogueBoundaryForm,
     DiscoveryConfigForm,
+    ParticipantScopeSelectionForm,
     RuntimeInputsConfigForm,
-    ScopeSelectionForm,
     SecurityConfigForm,
     WizardRuntimeInputPrompt,
     boundary_requires_resource_groups,
     business_config_form_initial,
     catalogue_boundary_continue_blocker,
-    config_visibility_for_plan_document,
+    config_visibility_for_participant_draft,
     discovery_config_form_initial,
-    draft_scope_from_plan_document,
-    endpoint_capability_values_from_mapping,
     merge_business_config,
     merge_discovery_config,
     merge_runtime_input_config,
     merge_security_config,
-    missing_required_runtime_inputs,
     model_bank_config_from_plan_config,
-    plan_document_from_draft,
-    plan_document_to_export_json,
-    plan_document_with_runtime_placeholders,
-    runtime_input_prompts_for_plan_document,
+    participant_plan_from_draft,
+    participant_runtime_input_prompts_for_draft,
     security_config_form_initial,
     security_field_metadata,
     specification_options,
     version_options,
 )
-from conformance.api.plan_review import PlanTestCaseRow, compiled_plan_rows
+from conformance.api.plan_review import PlanTestCaseRow, resolved_plan_rows
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, RunRecord, run_store
 from conformance.catalogue import (
@@ -54,22 +50,29 @@ from conformance.catalogue import (
     CompiledTestPlan,
     PlanDocumentBoundary,
     PlanDocumentV2,
-    compile_test_plan_document,
     parse_test_plan_document,
-    plan_document_to_json_object,
 )
-from conformance.catalogue_registry import supported_catalogues
+from conformance.configuration_contracts import (
+    ParticipantPlan,
+    ResolvedPlan,
+    parse_participant_plan,
+    participant_plan_to_document,
+)
 from conformance.execution_log import ExecutionEvent
 from conformance.http import build_json_http_client
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.ozone_client import OzoneClientError, OzoneModelBankClient
-from conformance.plan_configuration import parse_dcr_plan_configuration, validate_dcr_file_references
-from conformance.test_plan_validation import (
-    TestPlanValidationError,
-    prepare_test_plan_for_run,
-    validate_test_plan_for_load,
+from conformance.participant_surface import (
+    ParticipantCatalogue,
+    ParticipantSurfaceError,
+    participant_plan_export_document,
+    participant_suite_release,
+    prepare_participant_plan_for_run,
+    resolve_participant_document,
 )
+from conformance.plan_configuration import parse_dcr_plan_configuration, validate_dcr_file_references
+from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 _UI_DISPLAY_TIME_ZONE = ZoneInfo("Europe/London")
 """Open Banking UK browser fallback timezone for server-rendered timestamps."""
@@ -93,11 +96,14 @@ class _BuilderReviewState:
         sensitive_export_warning: Warning shown beside export-with-secrets.
     """
 
-    document: PlanDocumentV2 | None
+    document: ParticipantPlan | None
+    resolved_plan: ResolvedPlan | None
+    catalogue: ParticipantCatalogue | None
     compiled_plan: CompiledTestPlan | None
     rows: tuple[PlanTestCaseRow, ...]
     runtime_prompts: tuple[WizardRuntimeInputPrompt, ...]
     missing_runtime_prompts: tuple[WizardRuntimeInputPrompt, ...]
+    findings: tuple[str, ...]
     blockers: tuple[str, ...]
     error: str | None
     safe_export_json: str
@@ -110,7 +116,14 @@ class _BuilderReviewState:
         Returns:
             True when the document compiles and has no launch blockers.
         """
-        return self.document is not None and self.compiled_plan is not None and not self.blockers and self.error is None
+        return (
+            self.document is not None
+            and self.resolved_plan is not None
+            and self.resolved_plan.selection_valid
+            and self.compiled_plan is not None
+            and not self.blockers
+            and self.error is None
+        )
 
 
 @require_GET
@@ -166,16 +179,12 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 specification=cast(str, form.cleaned_data["specification"]),
                 version=cast(str, form.cleaned_data["version"]),
             )
-            pruned_scope = ScopeSelectionForm(
+            pruned_scope = ParticipantScopeSelectionForm(
                 data={
-                    "resource_groups": list(draft.resource_group_ids),
-                    "endpoints": list(draft.endpoint_ids),
-                    "endpoint_capabilities": list(
-                        endpoint_capability_values_from_mapping(draft.endpoint_capability_ids)
-                    ),
+                    "requirements_scope": list(draft.resource_group_ids),
+                    "capabilities": list(draft.endpoint_ids),
                 },
                 boundary=selected_boundary,
-                prune_unavailable_choices=True,
             )
             pruned_scope.is_valid()
             updated_draft = draft.with_catalogue_boundary(
@@ -183,9 +192,11 @@ def builder_catalogue_boundary(request: HttpRequest, draft_id: str) -> HttpRespo
                 specification=selected_boundary.specification,
                 version=selected_boundary.version,
             ).with_scope_selection(
-                resource_group_ids=pruned_scope.selected_resource_group_ids,
-                endpoint_ids=pruned_scope.selected_endpoint_ids,
-                endpoint_capability_ids=pruned_scope.selected_endpoint_capability_ids,
+                resource_group_ids=(
+                    (pruned_scope.selected_requirements_scope,) if pruned_scope.selected_requirements_scope else ()
+                ),
+                endpoint_ids=pruned_scope.selected_capability_ids,
+                endpoint_capability_ids={},
             )
             draft_store.save(updated_draft)
             if catalogue_boundary_continue_blocker(selected_boundary) is not None:
@@ -236,12 +247,12 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
 
     if request.method == "POST":
-        form = ScopeSelectionForm(data=request.POST, boundary=boundary, initial=_scope_form_initial(draft))
+        form = ParticipantScopeSelectionForm(data=request.POST, boundary=boundary, initial=_scope_form_initial(draft))
         if form.is_valid():
             updated_draft = draft.with_scope_selection(
-                resource_group_ids=form.selected_resource_group_ids,
-                endpoint_ids=form.selected_endpoint_ids,
-                endpoint_capability_ids=form.selected_endpoint_capability_ids,
+                resource_group_ids=(form.selected_requirements_scope,),
+                endpoint_ids=form.selected_capability_ids,
+                endpoint_capability_ids={},
             )
             draft_store.save(updated_draft)
             if not boundary_requires_resource_groups(boundary):
@@ -254,7 +265,7 @@ def builder_scope(request: HttpRequest, draft_id: str) -> HttpResponse:
             status=400,
         )
 
-    form = ScopeSelectionForm(boundary=boundary, initial=_scope_form_initial(draft))
+    form = ParticipantScopeSelectionForm(boundary=boundary, initial=_scope_form_initial(draft))
     return render(
         request,
         "conformance/builder_scope.html",
@@ -281,11 +292,15 @@ def builder_scope_options(request: HttpRequest, draft_id: str) -> HttpResponse:
     if boundary is None:
         return HttpResponseNotFound("Builder draft catalogue boundary not selected")
 
-    form = ScopeSelectionForm(
-        data=request.POST,
+    scope_data = request.POST.copy()
+    posted_scope = scope_data.get("requirements_scope")
+    current_scope = draft.resource_group_ids[0] if draft.resource_group_ids else None
+    if posted_scope != current_scope:
+        scope_data.setlist("capabilities", [])
+    form = ParticipantScopeSelectionForm(
+        data=scope_data,
         boundary=boundary,
         initial=_scope_form_initial(draft),
-        prune_unavailable_choices=True,
     )
     status = 200 if form.is_valid() else 400
     return render(
@@ -321,7 +336,7 @@ def builder_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         return redirect("builder-scope", draft_id=draft.draft_id)
 
     try:
-        config_visibility = config_visibility_for_plan_document(plan_document_from_draft(draft))
+        config_visibility = config_visibility_for_participant_draft(draft)
     except CatalogueError as error:
         return render(
             request,
@@ -506,7 +521,7 @@ def builder_runtime_config(request: HttpRequest, draft_id: str) -> HttpResponse:
         return redirect("builder-catalogue-boundary", draft_id=draft.draft_id)
 
     try:
-        runtime_prompts = runtime_input_prompts_for_plan_document(plan_document_from_draft(draft))
+        runtime_prompts = participant_runtime_input_prompts_for_draft(draft)
     except CatalogueError as error:
         return render(
             request,
@@ -541,7 +556,7 @@ def builder_runtime_config(request: HttpRequest, draft_id: str) -> HttpResponse:
 
 @require_http_methods(["GET", "POST"])
 def builder_import(request: HttpRequest) -> HttpResponse:
-    """Render or process the browser v2 test-plan import flow.
+    """Render or process the browser participant-plan import flow.
 
     Args:
         request: The incoming browser request.
@@ -563,47 +578,116 @@ def builder_import(request: HttpRequest) -> HttpResponse:
             {"plan_json": raw_plan_json, "import_error": f"Plan JSON must be valid JSON: {error.msg}"},
             status=400,
         )
+    legacy_import_document: JsonObject | None = None
     try:
-        validation_result = validate_test_plan_for_load(raw_document)
-        if not validation_result.valid:
-            raise CatalogueError(validation_result.summary_message())
-        parsed_document = parse_test_plan_document(raw_document)
-        if not isinstance(parsed_document, PlanDocumentV2) or parsed_document.schema_version != "1.0":
-            raise CatalogueError("Browser import accepts schemaVersion 1.0 test plans only")
-        runtime_input_prompts_for_plan_document(parsed_document)
-    except CatalogueError as error:
-        return render(
-            request,
-            "conformance/builder_import.html",
-            {"plan_json": raw_plan_json, "import_error": f"Plan validation failed: {error}"},
-            status=400,
-        )
+        parsed_document, _catalogue, _resolved_plan = resolve_participant_document(raw_document)
+    except ParticipantSurfaceError as error:
+        try:
+            parsed_document = _migrated_legacy_dcr_plan(raw_document)
+            if isinstance(raw_document, dict):
+                legacy_import_document = deepcopy(cast(JsonObject, raw_document))
+        except CatalogueError, ParticipantSurfaceError:
+            return render(
+                request,
+                "conformance/builder_import.html",
+                {"plan_json": raw_plan_json, "import_error": f"Plan validation failed: {error}"},
+                status=400,
+            )
 
     draft_store = SessionBuilderDraftStore(request.session)
     draft = draft_store.create()
-    resource_group_ids, endpoint_ids, capability_ids = draft_scope_from_plan_document(parsed_document)
+    configuration = parsed_document.execution_configuration
+    config: JsonObject = {"inputs": {}}
+    if legacy_import_document is not None:
+        config["_legacyCanonicalPlan"] = legacy_import_document
+    raw_inputs = cast(JsonObject, config["inputs"])
+    for participant_input in parsed_document.predefined_inputs:
+        value = participant_input.value
+        serialized_value: JsonValue
+        if isinstance(value, str):
+            serialized_value = value
+        else:
+            serialized_value = {
+                "frequencyType": value.frequency_type,
+                **({"countPerPeriod": value.count_per_period} if value.count_per_period is not None else {}),
+                **({"pointInTime": value.point_in_time} if value.point_in_time is not None else {}),
+            }
+        raw_inputs[str(participant_input.input_id)] = {
+            "value": serialized_value,
+        }
+    if configuration is not None:
+        for input_id, compatibility_value in configuration.compatibility_runtime_inputs.items():
+            raw_inputs[input_id] = {"value": compatibility_value}
+    boundary_specification = (
+        "dynamic-client-registration"
+        if parsed_document.specification.id == "dynamic-client-registration"
+        else "read-write"
+    )
     imported_draft = (
         draft.with_catalogue_boundary(
-            scheme=parsed_document.scheme,
-            specification=parsed_document.specification,
-            version=parsed_document.version,
+            scheme=str(parsed_document.scheme),
+            specification=boundary_specification,
+            version=parsed_document.specification.version,
         )
         .with_scope_selection(
-            resource_group_ids=resource_group_ids,
-            endpoint_ids=endpoint_ids,
-            endpoint_capability_ids=capability_ids,
+            resource_group_ids=(str(parsed_document.specification.requirements_scope),),
+            endpoint_ids=tuple(str(item) for item in parsed_document.selected_capability_ids),
+            endpoint_capability_ids={},
         )
-        .with_config(config=parsed_document.config)
+        .with_config(config=config)
         .with_plan_context(
-            security_environment=parsed_document.security_environment,
-            business_test_data=parsed_document.business_test_data,
-            metadata=parsed_document.metadata,
-            execution_mode=parsed_document.execution_mode,
-            dynamic_client_registration=parsed_document.dynamic_client_registration,
+            security_environment=configuration.security_environment if configuration is not None else {},
+            business_test_data={},
+            metadata=configuration.metadata if configuration is not None else {},
+            execution_mode="certification",
+            dynamic_client_registration=(
+                configuration.dynamic_client_registration if configuration is not None else {}
+            ),
         )
     )
     draft_store.save(imported_draft)
     return redirect("builder-review", draft_id=draft.draft_id)
+
+
+def _migrated_legacy_dcr_plan(raw_document: object) -> ParticipantPlan:
+    """Translate the supported legacy DCR import shape into participant intent."""
+    legacy = parse_test_plan_document(raw_document)
+    if not isinstance(legacy, PlanDocumentV2) or legacy.specification != "dynamic-client-registration":
+        raise CatalogueError("Browser import accepts participant-plan 1.0 documents")
+    capability_by_method = {
+        "POST": "dcr.v34.capability.registration",
+        "GET": "dcr.v34.capability.retrieval",
+        "PUT": "dcr.v34.capability.update",
+        "DELETE": "dcr.v34.capability.deletion",
+    }
+    selected_capabilities = [
+        capability_by_method[endpoint.method]
+        for endpoint in legacy.endpoints
+        if endpoint.method in capability_by_method
+    ]
+    return parse_participant_plan(
+        {
+            "documentType": "participant-plan",
+            "executionConfiguration": {
+                "compatibilityRuntimeInputs": {},
+                "dynamicClientRegistration": deepcopy(dict(legacy.dynamic_client_registration)),
+                "metadata": deepcopy(dict(legacy.metadata)),
+                "securityEnvironment": deepcopy(dict(legacy.security_environment)),
+            },
+            "id": "participant.imported-dcr",
+            "predefinedInputs": [],
+            "schemaVersion": "1.0",
+            "scheme": legacy.scheme,
+            "securityProfile": legacy.security_profile,
+            "selectedCapabilityIds": selected_capabilities,
+            "specification": {
+                "id": "dynamic-client-registration",
+                "requirementsScope": "dcr",
+                "version": legacy.version,
+            },
+            "suiteReleaseId": str(participant_suite_release().id),
+        }
+    )
 
 
 @require_GET
@@ -639,14 +723,14 @@ def builder_export(request: HttpRequest, draft_id: str) -> HttpResponse:
     if draft is None:
         return HttpResponseNotFound("Builder draft not found")
     state = _builder_review_state(draft)
-    if state.document is None or state.compiled_plan is None:
+    if state.document is None or state.catalogue is None:
         return JsonResponse({"error": state.error or "Builder draft cannot be exported"}, status=400)
     if request.method == "GET" and request.GET.get("include_secrets") == "1":
         return JsonResponse({"error": "Secret exports require POST"}, status=405)
     include_secrets = request.method == "POST" and request.POST.get("include_secrets") == "1"
-    exported = plan_document_to_export_json(
+    exported = participant_plan_export_document(
         state.document,
-        sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
+        state.catalogue.requirements,
         include_secrets=include_secrets,
     )
     response = HttpResponse(
@@ -686,17 +770,31 @@ def builder_launch(request: HttpRequest, draft_id: str) -> HttpResponse:
         )
 
     try:
-        prepared = prepare_test_plan_for_run(plan_document_to_json_object(state.document), base_dir=Path.cwd())
-        status_body = start_run(
-            config=prepared.config,
-            compiled_plan=prepared.compiled_plan,
-            runtime_inputs=prepared.runtime_inputs,
-            runtime_input_base_dir=Path.cwd(),
-            browser_psu_prompts=True,
-            plan_snapshot=prepared.snapshot,
-            validation_result=prepared.validation.to_json_object(),
-        )
-    except (CatalogueError, ConfigError, TestPlanValidationError) as error:
+        legacy_import_document = draft.config.get("_legacyCanonicalPlan")
+        if isinstance(legacy_import_document, dict):
+            legacy_prepared = prepare_test_plan_for_run(legacy_import_document, base_dir=Path.cwd())
+            status_body = start_run(
+                config=legacy_prepared.config,
+                compiled_plan=legacy_prepared.compiled_plan,
+                runtime_inputs=legacy_prepared.runtime_inputs,
+                runtime_input_base_dir=Path.cwd(),
+                browser_psu_prompts=True,
+                plan_snapshot=legacy_prepared.snapshot,
+                validation_result=legacy_prepared.validation.to_json_object(),
+            )
+        else:
+            prepared = prepare_participant_plan_for_run(
+                participant_plan_to_document(state.document),
+                base_dir=Path.cwd(),
+            )
+            status_body = start_run(
+                config=prepared.config,
+                prepared_execution_manifest=prepared.prepared_execution,
+                browser_psu_prompts=True,
+                plan_snapshot=prepared.safe_snapshot,
+                validation_result=prepared.validation.to_json_object(),
+            )
+    except (CatalogueError, ConfigError, ParticipantSurfaceError, TestPlanValidationError) as error:
         return render(
             request,
             "conformance/builder_review.html",
@@ -905,7 +1003,7 @@ def _is_dcr_draft(draft: BuilderDraft) -> bool:
 
 
 def _scope_form_initial(draft: BuilderDraft) -> dict[str, object]:
-    """Return initial scope form values from a builder draft.
+    """Return initial trusted scope values from a builder draft.
 
     Args:
         draft: Current browser wizard draft.
@@ -914,9 +1012,8 @@ def _scope_form_initial(draft: BuilderDraft) -> dict[str, object]:
         Initial form values for resource groups, endpoints, and capabilities.
     """
     return {
-        "resource_groups": list(draft.resource_group_ids),
-        "endpoints": list(draft.endpoint_ids),
-        "endpoint_capabilities": list(endpoint_capability_values_from_mapping(draft.endpoint_capability_ids)),
+        "requirements_scope": draft.resource_group_ids[0] if draft.resource_group_ids else "",
+        "capabilities": list(draft.endpoint_ids),
     }
 
 
@@ -950,7 +1047,7 @@ def _builder_catalogue_boundary_context(
 def _builder_scope_context(
     *,
     draft: BuilderDraft,
-    form: ScopeSelectionForm,
+    form: ParticipantScopeSelectionForm,
     saved: bool,
 ) -> dict[str, object]:
     """Build template context for the resource/endpoints/features step.
@@ -968,7 +1065,7 @@ def _builder_scope_context(
     return context
 
 
-def _builder_scope_options_context(form: ScopeSelectionForm) -> dict[str, object]:
+def _builder_scope_options_context(form: ParticipantScopeSelectionForm) -> dict[str, object]:
     """Build template context for the scope-tree fragment.
 
     Args:
@@ -979,9 +1076,7 @@ def _builder_scope_options_context(form: ScopeSelectionForm) -> dict[str, object
     """
     return {
         "form": form,
-        "hierarchy": form.hierarchy,
-        "selected_resource_groups": tuple(group for group in form.hierarchy.resource_groups if group.selected),
-        "direct_endpoints": form.hierarchy.direct_endpoints,
+        "participant_scope_options": form.scope_options,
     }
 
 
@@ -1290,65 +1385,66 @@ def _builder_review_state(draft: BuilderDraft) -> _BuilderReviewState:
         "Use it only for local hand-off workflows and do not share it."
     )
     try:
-        document = plan_document_from_draft(draft)
-        runtime_prompts = runtime_input_prompts_for_plan_document(document)
-        missing_prompts = missing_required_runtime_inputs(document, runtime_prompts)
-        blockers = list(_model_config_blockers(document))
-        boundary_blocker = catalogue_boundary_continue_blocker(
-            PlanDocumentBoundary(document.scheme, document.specification, document.version)
-        )
-        if boundary_blocker is not None:
-            blockers.append(boundary_blocker)
-        blockers.extend(f"Required runtime input '{prompt.input_id}' is missing." for prompt in missing_prompts)
-        has_selected_scope = bool(document.endpoints) or any(
-            resource_group.endpoints or resource_group.select_all for resource_group in document.resource_groups
-        )
-        if not has_selected_scope:
-            if boundary_blocker is None:
-                blockers.append("Select at least one implemented endpoint before launch.")
-            safe_export = plan_document_to_export_json(
-                document,
-                sensitive_runtime_input_ids=(),
-                include_secrets=False,
-            )
-            return _BuilderReviewState(
-                document=document,
-                compiled_plan=None,
-                rows=(),
-                runtime_prompts=runtime_prompts,
-                missing_runtime_prompts=missing_prompts,
-                blockers=tuple(blockers),
-                error=None,
-                safe_export_json=json.dumps(safe_export, indent=2, sort_keys=True),
-                sensitive_export_warning=sensitive_export_warning,
-            )
-        preview_document = plan_document_with_runtime_placeholders(document, runtime_prompts)
-        compiled_plan = compile_test_plan_document(preview_document, supported_catalogues())
-        rows = compiled_plan_rows(compiled_plan)
-        blockers.extend(_selected_security_blockers(document, compiled_plan))
-        safe_export = plan_document_to_export_json(
+        document = participant_plan_from_draft(draft)
+        document_json = participant_plan_to_document(document)
+        document, catalogue, resolved_plan = resolve_participant_document(document_json)
+        runtime_prompts = participant_runtime_input_prompts_for_draft(draft)
+        missing_prompts = tuple(prompt for prompt in runtime_prompts if prompt.required and not prompt.value)
+        finding_messages = tuple(f"{finding.code!s}: {finding.message}" for finding in resolved_plan.findings)
+        blockers = [
+            message
+            for finding, message in zip(resolved_plan.findings, finding_messages, strict=True)
+            if finding.severity.value == "error"
+        ]
+        compiled_plan = None
+        legacy_import_document = draft.config.get("_legacyCanonicalPlan")
+        if isinstance(legacy_import_document, dict):
+            try:
+                compiled_plan = prepare_test_plan_for_run(
+                    legacy_import_document,
+                    base_dir=Path.cwd(),
+                ).compiled_plan
+            except TestPlanValidationError as error:
+                blockers.append(str(error))
+        elif not blockers:
+            try:
+                prepared = prepare_participant_plan_for_run(document_json, base_dir=Path.cwd())
+                compiled_plan = prepared.compiled_plan
+            except ParticipantSurfaceError as error:
+                blockers.append(str(error))
+        safe_export = participant_plan_export_document(
             document,
-            sensitive_runtime_input_ids=_sensitive_runtime_input_ids(compiled_plan),
+            catalogue.requirements,
             include_secrets=False,
         )
         return _BuilderReviewState(
             document=document,
+            resolved_plan=resolved_plan,
+            catalogue=catalogue,
             compiled_plan=compiled_plan,
-            rows=rows,
+            rows=resolved_plan_rows(
+                resolved_plan,
+                catalogue.requirements,
+                catalogue.test_definitions,
+            ),
             runtime_prompts=runtime_prompts,
             missing_runtime_prompts=missing_prompts,
+            findings=finding_messages,
             blockers=tuple(blockers),
             error=None,
             safe_export_json=json.dumps(safe_export, indent=2, sort_keys=True),
             sensitive_export_warning=sensitive_export_warning,
         )
-    except (CatalogueError, ConfigError) as error:
+    except (CatalogueError, ConfigError, ParticipantSurfaceError) as error:
         return _BuilderReviewState(
             document=None,
+            resolved_plan=None,
+            catalogue=None,
             compiled_plan=None,
             rows=(),
             runtime_prompts=(),
             missing_runtime_prompts=(),
+            findings=(),
             blockers=(str(error),),
             error=str(error),
             safe_export_json="",
@@ -1407,23 +1503,10 @@ def _builder_review_counts(state: _BuilderReviewState) -> dict[str, int]:
     Returns:
         Counts used by the review template.
     """
-    document = state.document
-    resource_group_count = len(document.resource_groups) if document is not None else 0
-    if state.compiled_plan is not None:
-        endpoint_count = len(state.compiled_plan.traceability.selected_endpoints)
-    else:
-        endpoint_count = (
-            (
-                len(document.endpoints)
-                if document.endpoints
-                else sum(len(resource_group.endpoints) for resource_group in document.resource_groups)
-            )
-            if document is not None
-            else 0
-        )
-    capability_count = (
-        len(state.compiled_plan.traceability.selected_capabilities) if state.compiled_plan is not None else 0
-    )
+    resolved_plan = state.resolved_plan
+    resource_group_count = 1 if state.document is not None else 0
+    endpoint_count = len(resolved_plan.endpoints) if resolved_plan is not None else 0
+    capability_count = len(resolved_plan.capabilities) if resolved_plan is not None else 0
     consent_count = sum(1 for row in state.rows if row.role == "consent")
     psu_authorisation_count = sum(1 for row in state.rows if row.role in {"consent", "token"})
     return {
@@ -1464,11 +1547,11 @@ def _masked_review_test_plan_json(state: _BuilderReviewState) -> str:
     Returns:
         JSON text with secret-bearing values replaced by ``"***"``.
     """
-    if state.document is None or state.compiled_plan is None:
+    if state.document is None or state.catalogue is None:
         return ""
-    safe_plan = plan_document_to_export_json(
+    safe_plan = participant_plan_export_document(
         state.document,
-        sensitive_runtime_input_ids=_sensitive_runtime_input_ids(state.compiled_plan),
+        state.catalogue.requirements,
         include_secrets=False,
     )
     masked_plan = _replace_empty_secret_markers(safe_plan)

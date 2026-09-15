@@ -6,8 +6,10 @@ import hashlib
 import json
 import re
 from collections.abc import Iterable, Mapping
+from copy import deepcopy
 from functools import cache
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 
 from jsonschema import (  # type: ignore[import-untyped]  # runtime schema library lacks stubs
@@ -43,6 +45,7 @@ from conformance.configuration_contracts.models import (
     HttpMethod,
     InputResolutionSource,
     NormativeReference,
+    ParticipantExecutionConfiguration,
     ParticipantInput,
     ParticipantPlan,
     PredefinedInput,
@@ -605,7 +608,7 @@ def test_definition_catalogue_to_document(catalogue: TestDefinitionCatalogue) ->
 
 def participant_plan_to_document(plan: ParticipantPlan) -> JsonObject:
     """Convert an immutable participant plan to its wire shape."""
-    return {
+    document: JsonObject = {
         "documentType": plan.document_type,
         "id": str(plan.id),
         "predefinedInputs": [
@@ -619,6 +622,15 @@ def participant_plan_to_document(plan: ParticipantPlan) -> JsonObject:
         "specification": _specification_to_document(plan.specification),
         "suiteReleaseId": str(plan.suite_release_id),
     }
+    if plan.execution_configuration is not None:
+        configuration = plan.execution_configuration
+        document["executionConfiguration"] = {
+            "compatibilityRuntimeInputs": deepcopy(dict(configuration.compatibility_runtime_inputs)),
+            "dynamicClientRegistration": deepcopy(dict(configuration.dynamic_client_registration)),
+            "metadata": deepcopy(dict(configuration.metadata)),
+            "securityEnvironment": deepcopy(dict(configuration.security_environment)),
+        }
+    return document
 
 
 def resolved_plan_to_document(plan: ResolvedPlan) -> JsonObject:
@@ -722,8 +734,13 @@ def execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
         "inputs": [
             {
                 "id": str(manifest_input.id),
+                "redacted": manifest_input.redacted,
                 "source": manifest_input.source.value,
-                "value": _input_value_to_document(manifest_input.value),
+                **(
+                    {"value": _input_value_to_document(manifest_input.value)}
+                    if manifest_input.value is not None
+                    else {}
+                ),
             }
             for manifest_input in manifest.inputs
         ],
@@ -1250,6 +1267,21 @@ def _test_definition_from_document(document: dict[str, object]) -> TestDefinitio
 def _participant_plan_from_schema_valid_document(document: dict[str, object]) -> ParticipantPlan:
     specification = cast(dict[str, object], document["specification"])
     predefined_inputs = cast(list[dict[str, object]], document["predefinedInputs"])
+    raw_execution_configuration = cast(dict[str, object] | None, document.get("executionConfiguration"))
+    execution_configuration = (
+        ParticipantExecutionConfiguration(
+            security_environment=_detached_json_mapping(raw_execution_configuration["securityEnvironment"]),
+            compatibility_runtime_inputs=_detached_json_mapping(
+                raw_execution_configuration["compatibilityRuntimeInputs"]
+            ),
+            dynamic_client_registration=_detached_json_mapping(
+                raw_execution_configuration["dynamicClientRegistration"]
+            ),
+            metadata=_detached_json_mapping(raw_execution_configuration["metadata"]),
+        )
+        if raw_execution_configuration is not None
+        else None
+    )
     return ParticipantPlan(
         schema_version=cast(str, document["schemaVersion"]),
         document_type=cast(str, document["documentType"]),
@@ -1268,7 +1300,13 @@ def _participant_plan_from_schema_valid_document(document: dict[str, object]) ->
             )
             for participant_input in predefined_inputs
         ),
+        execution_configuration=execution_configuration,
     )
+
+
+def _detached_json_mapping(value: object) -> Mapping[str, JsonValue]:
+    """Detach a schema-valid JSON object behind an immutable top-level mapping."""
+    return MappingProxyType(deepcopy(cast(dict[str, JsonValue], value)))
 
 
 def _resolved_plan_from_schema_valid_document(document: dict[str, object]) -> ResolvedPlan:
@@ -1385,7 +1423,12 @@ def _execution_manifest_from_schema_valid_document(document: dict[str, object]) 
             ExecutionManifestInput(
                 id=StableId(cast(str, manifest_input["id"])),
                 source=InputResolutionSource(cast(str, manifest_input["source"])),
-                value=_input_value_from_document(cast(str | dict[str, object], manifest_input["value"])),
+                value=(
+                    _input_value_from_document(cast(str | dict[str, object], manifest_input["value"]))
+                    if "value" in manifest_input
+                    else None
+                ),
+                redacted=cast(bool, manifest_input["redacted"]),
             )
             for manifest_input in inputs
         ),
