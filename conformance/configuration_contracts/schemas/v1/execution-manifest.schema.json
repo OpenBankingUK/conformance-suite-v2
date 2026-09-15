@@ -140,6 +140,7 @@
         },
         "method": {
           "enum": [
+            "DELETE",
             "GET",
             "POST"
           ]

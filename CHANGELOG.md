@@ -11,6 +11,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Replacement CBPII requirements and test-definition catalogue families for
+  Read/Write v3.1.11 and v4.0.1, authored from the normative Confirmation of
+  Funds profiles and content-addressed OpenAPI operations. Shared contracts now
+  support generic functional scopes, `DELETE`, sensitive predefined inputs,
+  and path-parameter modifications; fixtures prove complete parity
+  classification, stable references, redaction, and deterministic compilation
+  without central registry integration.
 - Replacement PIS requirements and test-definition catalogue families for
   Read/Write v3.1.11 and v4.0.1, authored from content-addressed OpenAPI
   operations and normative Payment Initiation profiles. The shared contracts

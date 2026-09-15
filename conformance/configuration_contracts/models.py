@@ -47,8 +47,9 @@ class SuiteRelease:
 
 
 class HttpMethod(StrEnum):
-    """HTTP methods supported by the walking-skeleton operation inventory."""
+    """HTTP methods supported by configuration-driven operation inventories."""
 
+    DELETE = "DELETE"
     GET = "GET"
     POST = "POST"
 

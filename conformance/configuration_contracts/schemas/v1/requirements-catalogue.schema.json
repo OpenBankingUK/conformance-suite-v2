@@ -41,6 +41,7 @@
         },
         "method": {
           "enum": [
+            "DELETE",
             "GET",
             "POST"
           ]
@@ -220,7 +221,10 @@
           "uniqueItems": true
         },
         "sensitivity": {
-          "const": "non-sensitive"
+          "enum": [
+            "non-sensitive",
+            "sensitive"
+          ]
         },
         "valueType": {
           "enum": [
@@ -310,7 +314,7 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "requirementsScope": {
-          "const": "pis"
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "version": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"

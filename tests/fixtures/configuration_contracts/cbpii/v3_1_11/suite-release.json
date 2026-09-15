@@ -1,0 +1,31 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:095a438f4ef2053da5f979de6af502d3b2f1261ace6cc8987db30fc333438e37",
+      "id": "obl.cbpii-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:5cdb5031664abb9eb607546e447fd1ad5bc7a01b96415178ca1cd15acdbfd5f7",
+      "id": "obl.cbpii-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/cbpii/v3_1_11/test-definitions.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.cbpii-v311.catalogue-fixture",
+  "publishedAt": "2026-09-15T00:00:00Z",
+  "releaseVersion": "0.0.0-cbpii-v311-fixture",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}
