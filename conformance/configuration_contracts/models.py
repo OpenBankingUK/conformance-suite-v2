@@ -47,8 +47,9 @@ class SuiteRelease:
 
 
 class HttpMethod(StrEnum):
-    """HTTP methods supported by the walking-skeleton operation inventory."""
+    """HTTP methods supported by configuration-driven operation inventories."""
 
+    DELETE = "DELETE"
     GET = "GET"
     POST = "POST"
 
@@ -98,6 +99,7 @@ class Capability:
     description: str
     selection: str
     required_endpoint_ids: tuple[StableId, ...]
+    required_capability_ids: tuple[StableId, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,6 +216,7 @@ class TestAssertion:
     id: StableId
     type: str
     expected_status: int | None = None
+    expected_statuses: tuple[int, ...] | None = None
     schema_ref: str | None = None
     header_name: str | None = None
     json_pointer: str | None = None
@@ -438,6 +441,7 @@ class ExecutionManifestAssertion:
     id: StableId
     type: str
     expected_status: int | None = None
+    expected_statuses: tuple[int, ...] | None = None
     schema_ref: str | None = None
     header_name: str | None = None
     json_pointer: str | None = None

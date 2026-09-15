@@ -20,6 +20,13 @@
           "type": "array",
           "uniqueItems": true
         },
+        "requiredCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+          },
+          "type": "array",
+          "uniqueItems": true
+        },
         "selection": {
           "const": "conditional"
         }
@@ -41,6 +48,7 @@
         },
         "method": {
           "enum": [
+            "DELETE",
             "GET",
             "POST"
           ]
@@ -172,6 +180,50 @@
           "if": {
             "properties": {
               "valueType": {
+                "const": "date-time"
+              }
+            },
+            "required": ["valueType"]
+          },
+          "then": {
+            "properties": {
+              "defaultValue": {
+                "format": "date-time",
+                "type": "string"
+              },
+              "exampleValue": {
+                "format": "date-time",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valueType": {
+                "const": "local-date-time"
+              }
+            },
+            "required": ["valueType"]
+          },
+          "then": {
+            "properties": {
+              "defaultValue": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$",
+                "type": "string"
+              },
+              "exampleValue": {
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(?:\\.\\d+)?$",
+                "type": "string"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "valueType": {
                 "const": "standing-order-frequency-v4"
               }
             },
@@ -224,6 +276,8 @@
         },
         "valueType": {
           "enum": [
+            "date-time",
+            "local-date-time",
             "string",
             "standing-order-frequency-v4"
           ]
@@ -310,7 +364,10 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "requirementsScope": {
-          "const": "pis"
+          "enum": [
+            "ais",
+            "pis"
+          ]
         },
         "version": {
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/version"

@@ -1,0 +1,39 @@
+{
+  "artifacts": [
+    {
+      "digest": "sha256:483bac8de5c65b3f2b09e722a71ad9d3ad638ee7d76d16fb180869c532f2c370",
+      "id": "obl.ais-v311.requirements",
+      "kind": "requirements-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/requirements.json"
+    },
+    {
+      "digest": "sha256:71ce5390f6193886496cb0364bdd627fb0b84c7c711cee2b334e3622d23483a3",
+      "id": "obl.ais-v311.tests",
+      "kind": "test-definition-catalogue",
+      "mediaType": "application/json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/test-definitions.json"
+    },
+    {
+      "digest": "sha256:67d473a4005fde6d170341e612f14b7e74a191b64933364120211c17953f5a27",
+      "id": "execution-manifest-v1",
+      "kind": "json-schema",
+      "mediaType": "application/schema+json",
+      "schemaVersion": "1.0",
+      "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+    }
+  ],
+  "documentType": "suite-release",
+  "id": "obl.ais-v311.catalogue-fixture",
+  "publishedAt": "2026-09-15T00:00:00Z",
+  "releaseVersion": "0.0.0-ais-v311-fixture",
+  "schemaVersion": "1.0",
+  "toolReleases": [
+    {
+      "id": "conformance-suite-v2",
+      "version": "0.1.0"
+    }
+  ]
+}

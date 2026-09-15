@@ -23,6 +23,29 @@
         {
           "additionalProperties": false,
           "properties": {
+            "expectedStatuses": {
+              "items": {
+                "maximum": 599,
+                "minimum": 100,
+                "type": "integer"
+              },
+              "minItems": 2,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "http-status-any-of"
+            }
+          },
+          "required": ["id", "type", "expectedStatuses"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
             "id": {
               "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
             },
@@ -48,6 +71,23 @@
             },
             "type": {
               "const": "header-present"
+            }
+          },
+          "required": ["id", "type", "headerName"],
+          "type": "object"
+        },
+        {
+          "additionalProperties": false,
+          "properties": {
+            "headerName": {
+              "pattern": "^[!#$%&'*+.^_`|~0-9A-Za-z-]+$",
+              "type": "string"
+            },
+            "id": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "header-equals-request"
             }
           },
           "required": ["id", "type", "headerName"],
@@ -93,29 +133,48 @@
       ]
     },
     "inputBinding": {
-      "additionalProperties": false,
-      "properties": {
-        "inputId": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+      "oneOf": [
+        {
+          "additionalProperties": false,
+          "properties": {
+            "inputId": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "target": {
+              "pattern": "^(?:/(?:[^~/]|~[01])*)*$",
+              "type": "string"
+            },
+            "transform": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "json-body"
+            }
+          },
+          "required": ["inputId", "type", "target", "transform"],
+          "type": "object"
         },
-        "target": {
-          "pattern": "^(?:/(?:[^~/]|~[01])*)*$",
-          "type": "string"
-        },
-        "transform": {
-          "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
-        },
-        "type": {
-          "const": "json-body"
+        {
+          "additionalProperties": false,
+          "properties": {
+            "inputId": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "target": {
+              "pattern": "^[A-Za-z][A-Za-z0-9_-]*$",
+              "type": "string"
+            },
+            "transform": {
+              "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
+            },
+            "type": {
+              "const": "query-parameter"
+            }
+          },
+          "required": ["inputId", "type", "target", "transform"],
+          "type": "object"
         }
-      },
-      "required": [
-        "inputId",
-        "type",
-        "target",
-        "transform"
-      ],
-      "type": "object"
+      ]
     },
     "nonEmptyString": {
       "minLength": 1,
@@ -131,7 +190,15 @@
           "$ref": "https://schemas.openbanking.org.uk/conformance/v1/common.schema.json#/$defs/stableId"
         },
         "location": {
-          "enum": ["header", "detached-jws-claim", "detached-jws-signature", "json-body"]
+          "enum": [
+            "authorization",
+            "detached-jws-claim",
+            "detached-jws-signature",
+            "header",
+            "json-body",
+            "path-parameter",
+            "query-parameter"
+          ]
         },
         "operation": {
           "enum": ["omit", "replace", "invalidate", "generate"]

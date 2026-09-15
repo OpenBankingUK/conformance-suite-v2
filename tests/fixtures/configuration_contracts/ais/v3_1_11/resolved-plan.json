@@ -1,0 +1,4372 @@
+{
+  "capabilities": [
+    {
+      "id": "ais.v311.capability.account-access-consent",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.capability.inferred",
+          "sourceIds": [
+            "ais.v311.capability.accounts",
+            "ais.v311.capability.balances",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.capability.offers",
+            "ais.v311.capability.parties",
+            "ais.v311.capability.products",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.capability.statements",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.accounts",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.accounts"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.balances",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.balances"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.beneficiaries",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.beneficiaries"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.direct-debits",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.direct-debits"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.offers",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.offers"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.parties",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.parties"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.products",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.products"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.scheduled-payments",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.scheduled-payments"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.standing-orders",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.standing-orders"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.statements",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ]
+    },
+    {
+      "id": "ais.v311.capability.transactions",
+      "origin": "explicit",
+      "reasons": [
+        {
+          "code": "plan.capability.explicit",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ]
+    }
+  ],
+  "documentType": "resolved-plan",
+  "endpoints": [
+    {
+      "id": "ais.v311.endpoint.post.account_access_consents",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.post.account_access_consents"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.post.account_access_consents"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.delete.account_access_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.delete.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.delete.account_access_consents.consentid"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.account_access_consents.consentid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.account_access_consents.consentid"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.balances",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.balances"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.balances",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.balances"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.balances"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.beneficiaries",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.beneficiaries",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.beneficiaries"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.direct_debits",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.direct_debits"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.direct_debits",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.direct_debits"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.direct_debits"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.offers",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.offers"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.offers",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.offers"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.offers"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.parties",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.parties"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.party",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.party"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.party",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.party"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.party"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.product",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.product"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.products",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.products"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.products"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.scheduled_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.scheduled_payments",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.scheduled_payments"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.scheduled_payments"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.standing_orders",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.standing_orders"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.standing_orders",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.standing_orders"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.standing_orders"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.statements",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.statements.statementid",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.statements",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.statements"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.statements"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.accounts.accountid.transactions",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ]
+    },
+    {
+      "id": "ais.v311.endpoint.get.transactions",
+      "origin": "inferred",
+      "reasons": [
+        {
+          "code": "requirements.endpoint.inferred",
+          "sourceIds": [
+            "ais.v311.requirement.get.transactions"
+          ]
+        }
+      ],
+      "requirementIds": [
+        "ais.v311.requirement.get.transactions"
+      ]
+    }
+  ],
+  "findings": [],
+  "id": "resolved-plan:feeee112bfb9426b9ceab83504dd30db4f1f3327b05004425bd5c808bac124fb",
+  "predefinedInputs": [
+    {
+      "id": "ais.v311.input.from-booking-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.input.from-booking-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "ais.v311.requirement.from-booking-date-time"
+      ],
+      "source": "participant",
+      "value": "2026-01-01T00:00:00Z"
+    },
+    {
+      "id": "ais.v311.input.to-booking-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "ais-v311-golden-plan",
+            "ais.v311.input.to-booking-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "ais.v311.requirement.to-booking-date-time"
+      ],
+      "source": "participant",
+      "value": "2026-01-31T23:59:59Z"
+    }
+  ],
+  "provenance": {
+    "artifacts": [
+      {
+        "digest": "sha256:483bac8de5c65b3f2b09e722a71ad9d3ad638ee7d76d16fb180869c532f2c370",
+        "id": "obl.ais-v311.requirements",
+        "kind": "requirements-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/requirements.json"
+      },
+      {
+        "digest": "sha256:71ce5390f6193886496cb0364bdd627fb0b84c7c711cee2b334e3622d23483a3",
+        "id": "obl.ais-v311.tests",
+        "kind": "test-definition-catalogue",
+        "mediaType": "application/json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/catalogues/ais/v3_1_11/test-definitions.json"
+      },
+      {
+        "digest": "sha256:67d473a4005fde6d170341e612f14b7e74a191b64933364120211c17953f5a27",
+        "id": "execution-manifest-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
+      }
+    ],
+    "participantPlanId": "ais-v311-golden-plan",
+    "requirementsCatalogueId": "obl.ais-v311.requirements",
+    "suitePublishedAt": "2026-09-15T00:00:00Z",
+    "suiteReleaseId": "obl.ais-v311.catalogue-fixture",
+    "suiteReleaseVersion": "0.0.0-ais-v311-fixture",
+    "testDefinitionCatalogueId": "obl.ais-v311.tests",
+    "toolReleases": [
+      {
+        "id": "conformance-suite-v2",
+        "version": "0.1.0"
+      }
+    ]
+  },
+  "requirements": [
+    {
+      "capabilityId": "ais.v311.capability.account-access-consent",
+      "id": "ais.v311.requirement.post.account_access_consents",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.post.account_access_consents",
+            "ais.v311.capability.account-access-consent"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.post.account_access_consents",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.account-access-consent",
+      "id": "ais.v311.requirement.delete.account_access_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.delete.account_access_consents.consentid",
+            "ais.v311.capability.account-access-consent"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.delete.account_access_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.account-access-consent",
+      "id": "ais.v311.requirement.get.account_access_consents.consentid",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.account_access_consents.consentid",
+            "ais.v311.capability.account-access-consent"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.account_access_consents.consentid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.accounts",
+      "id": "ais.v311.requirement.get.accounts",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts",
+            "ais.v311.capability.accounts"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.accounts",
+      "id": "ais.v311.requirement.get.accounts.accountid",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid",
+            "ais.v311.capability.accounts"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.balances",
+      "id": "ais.v311.requirement.get.accounts.accountid.balances",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.balances",
+            "ais.v311.capability.balances"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.balances",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.balances",
+      "id": "ais.v311.requirement.get.balances",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.balances",
+            "ais.v311.capability.balances"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.balances",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.beneficiaries",
+      "id": "ais.v311.requirement.get.accounts.accountid.beneficiaries",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.beneficiaries",
+            "ais.v311.capability.beneficiaries"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.beneficiaries",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.beneficiaries",
+      "id": "ais.v311.requirement.get.beneficiaries",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.beneficiaries",
+            "ais.v311.capability.beneficiaries"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.beneficiaries",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.direct-debits",
+      "id": "ais.v311.requirement.get.accounts.accountid.direct_debits",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.direct_debits",
+            "ais.v311.capability.direct-debits"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.direct_debits",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.direct-debits",
+      "id": "ais.v311.requirement.get.direct_debits",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.direct_debits",
+            "ais.v311.capability.direct-debits"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.direct_debits",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.offers",
+      "id": "ais.v311.requirement.get.accounts.accountid.offers",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.offers",
+            "ais.v311.capability.offers"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.offers",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.offers",
+      "id": "ais.v311.requirement.get.offers",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.offers",
+            "ais.v311.capability.offers"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.offers",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.parties",
+      "id": "ais.v311.requirement.get.accounts.accountid.parties",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.parties",
+            "ais.v311.capability.parties"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.parties",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.parties",
+      "id": "ais.v311.requirement.get.accounts.accountid.party",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.party",
+            "ais.v311.capability.parties"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.party",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.parties",
+      "id": "ais.v311.requirement.get.party",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.party",
+            "ais.v311.capability.parties"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.party",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.products",
+      "id": "ais.v311.requirement.get.accounts.accountid.product",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.product",
+            "ais.v311.capability.products"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.product",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.products",
+      "id": "ais.v311.requirement.get.products",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.products",
+            "ais.v311.capability.products"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.products",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.scheduled-payments",
+      "id": "ais.v311.requirement.get.accounts.accountid.scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.scheduled_payments",
+            "ais.v311.capability.scheduled-payments"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.scheduled_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.scheduled-payments",
+      "id": "ais.v311.requirement.get.scheduled_payments",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.scheduled_payments",
+            "ais.v311.capability.scheduled-payments"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.scheduled_payments",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.standing-orders",
+      "id": "ais.v311.requirement.get.accounts.accountid.standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.standing_orders",
+            "ais.v311.capability.standing-orders"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.standing_orders",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.standing-orders",
+      "id": "ais.v311.requirement.get.standing_orders",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.standing_orders",
+            "ais.v311.capability.standing-orders"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.standing_orders",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.statements",
+      "id": "ais.v311.requirement.get.accounts.accountid.statements",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.statements",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.statements",
+      "id": "ais.v311.requirement.get.accounts.accountid.statements.statementid",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.statements.statementid",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.statements",
+      "id": "ais.v311.requirement.get.accounts.accountid.statements.statementid.file",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid.file",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.statements",
+      "id": "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.statements",
+      "id": "ais.v311.requirement.get.statements",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.statements",
+            "ais.v311.capability.statements"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.statements",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.transactions",
+      "id": "ais.v311.requirement.get.accounts.accountid.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.accounts.accountid.transactions",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.accounts.accountid.transactions",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.transactions",
+      "id": "ais.v311.requirement.get.transactions",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.get.transactions",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.endpoint.get.transactions",
+      "targetType": "endpoint"
+    },
+    {
+      "capabilityId": "ais.v311.capability.transactions",
+      "id": "ais.v311.requirement.from-booking-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.from-booking-date-time",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.input.from-booking-date-time",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "ais.v311.capability.transactions",
+      "id": "ais.v311.requirement.to-booking-date-time",
+      "normativeReferenceIds": [
+        "ob-rw-v311.ais-profile",
+        "ob-rw-v311.ais-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "ais.v311.requirement.to-booking-date-time",
+            "ais.v311.capability.transactions"
+          ]
+        }
+      ],
+      "targetId": "ais.v311.input.to-booking-date-time",
+      "targetType": "predefined-input"
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectionValid": true,
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "ais",
+    "version": "3.1.11"
+  },
+  "testInstances": [
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.post.account_access_consents"
+      ],
+      "dependencyIds": [],
+      "id": "ais.v311.test.post.account_access_consents.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.post.account_access_consents.positive",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.post.account_access_consents"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.account_access_consents.consentid.invalid-resource",
+            "ais.v311.test.get.account_access_consents.consentid.positive",
+            "ais.v311.test.get.account_access_consents.consentid.unauthorized"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.post.account_access_consents.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.post.account_access_consents"
+      ],
+      "dependencyIds": [],
+      "id": "ais.v311.test.post.account_access_consents.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.post.account_access_consents.unauthorized",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.post.account_access_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.post.account_access_consents.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.post.account_access_consents"
+      ],
+      "dependencyIds": [],
+      "id": "ais.v311.test.post.account_access_consents.empty-permissions.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.post.account_access_consents.empty-permissions",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.post.account_access_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.post.account_access_consents.empty-permissions"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.post.account_access_consents"
+      ],
+      "dependencyIds": [],
+      "id": "ais.v311.test.post.account_access_consents.invalid-transaction-permissions.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.post.account_access_consents.invalid-transaction-permissions",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.post.account_access_consents"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.post.account_access_consents.invalid-transaction-permissions"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.post.account_access_consents.positive.instance"
+      ],
+      "id": "ais.v311.test.get.account_access_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.account_access_consents.consentid.positive",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.get.account_access_consents.consentid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.delete.account_access_consents.consentid.invalid-resource",
+            "ais.v311.test.delete.account_access_consents.consentid.positive",
+            "ais.v311.test.delete.account_access_consents.consentid.unauthorized",
+            "ais.v311.test.get.accounts.basic-permission",
+            "ais.v311.test.get.accounts.positive",
+            "ais.v311.test.get.accounts.unauthorized",
+            "ais.v311.test.get.accounts.wrong-permission"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.account_access_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.delete.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.delete.account_access_consents.consentid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.delete.account_access_consents.consentid.positive",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.delete.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.delete.account_access_consents.consentid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.delete.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.delete.account_access_consents.consentid.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.delete.account_access_consents.consentid.unauthorized",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.delete.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.delete.account_access_consents.consentid.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.delete.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.delete.account_access_consents.consentid.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.delete.account_access_consents.consentid.invalid-resource",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.delete.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.delete.account_access_consents.consentid.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.post.account_access_consents.positive.instance"
+      ],
+      "id": "ais.v311.test.get.account_access_consents.consentid.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.account_access_consents.consentid.unauthorized",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.get.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.account_access_consents.consentid.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.account_access_consents.consentid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.post.account_access_consents.positive.instance"
+      ],
+      "id": "ais.v311.test.get.account_access_consents.consentid.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.account_access_consents.consentid.invalid-resource",
+            "ais.v311.capability.account-access-consent",
+            "ais.v311.endpoint.get.account_access_consents.consentid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.account_access_consents.consentid.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.positive",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.balances.positive",
+            "ais.v311.test.get.accounts.accountid.balances.unauthorized",
+            "ais.v311.test.get.accounts.accountid.balances.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.basic-permission",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.positive",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.direct_debits.positive",
+            "ais.v311.test.get.accounts.accountid.direct_debits.unauthorized",
+            "ais.v311.test.get.accounts.accountid.direct_debits.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.offers.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.offers.positive",
+            "ais.v311.test.get.accounts.accountid.offers.unauthorized",
+            "ais.v311.test.get.accounts.accountid.offers.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.parties.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.parties.positive",
+            "ais.v311.test.get.accounts.accountid.parties.unauthorized",
+            "ais.v311.test.get.accounts.accountid.parties.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.party.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.party.positive",
+            "ais.v311.test.get.accounts.accountid.party.unauthorized",
+            "ais.v311.test.get.accounts.accountid.party.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.positive",
+            "ais.v311.test.get.accounts.accountid.product.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.product.positive",
+            "ais.v311.test.get.accounts.accountid.product.unauthorized",
+            "ais.v311.test.get.accounts.accountid.product.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.positive",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.unauthorized",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.standing_orders.positive",
+            "ais.v311.test.get.accounts.accountid.standing_orders.unauthorized",
+            "ais.v311.test.get.accounts.accountid.standing_orders.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.transactions.basic-permission",
+            "ais.v311.test.get.accounts.accountid.transactions.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.transactions.positive",
+            "ais.v311.test.get.accounts.accountid.transactions.unauthorized",
+            "ais.v311.test.get.accounts.accountid.transactions.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.unauthorized",
+            "ais.v311.test.get.accounts.accountid.wrong-permission",
+            "ais.v311.test.get.accounts.interaction-id-playback",
+            "ais.v311.test.get.balances.positive",
+            "ais.v311.test.get.balances.unauthorized",
+            "ais.v311.test.get.balances.wrong-permission",
+            "ais.v311.test.get.beneficiaries.basic-permission",
+            "ais.v311.test.get.beneficiaries.positive",
+            "ais.v311.test.get.beneficiaries.unauthorized",
+            "ais.v311.test.get.beneficiaries.wrong-permission",
+            "ais.v311.test.get.direct_debits.positive",
+            "ais.v311.test.get.direct_debits.unauthorized",
+            "ais.v311.test.get.direct_debits.wrong-permission",
+            "ais.v311.test.get.offers.positive",
+            "ais.v311.test.get.offers.unauthorized",
+            "ais.v311.test.get.offers.wrong-permission",
+            "ais.v311.test.get.party.positive",
+            "ais.v311.test.get.party.unauthorized",
+            "ais.v311.test.get.party.wrong-permission",
+            "ais.v311.test.get.products.positive",
+            "ais.v311.test.get.products.unauthorized",
+            "ais.v311.test.get.products.wrong-permission",
+            "ais.v311.test.get.scheduled_payments.positive",
+            "ais.v311.test.get.scheduled_payments.unauthorized",
+            "ais.v311.test.get.scheduled_payments.wrong-permission",
+            "ais.v311.test.get.standing_orders.positive",
+            "ais.v311.test.get.standing_orders.unauthorized",
+            "ais.v311.test.get.standing_orders.wrong-permission",
+            "ais.v311.test.get.statements.positive",
+            "ais.v311.test.get.statements.unauthorized",
+            "ais.v311.test.get.statements.wrong-permission",
+            "ais.v311.test.get.transactions.basic-permission",
+            "ais.v311.test.get.transactions.positive",
+            "ais.v311.test.get.transactions.unauthorized",
+            "ais.v311.test.get.transactions.wrong-permission"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.unauthorized",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.wrong-permission",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.interaction-id-playback",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.account_access_consents.consentid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.basic-permission",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.basic-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.positive",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.unauthorized",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.wrong-permission",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.interaction-id-playback",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.invalid-resource",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.basic-permission",
+            "ais.v311.capability.accounts",
+            "ais.v311.endpoint.get.accounts.accountid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.basic-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.balances.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.balances.positive",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.balances"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.balances.positive",
+            "ais.v311.test.get.accounts.accountid.balances.unauthorized",
+            "ais.v311.test.get.accounts.accountid.balances.wrong-permission",
+            "ais.v311.test.get.balances.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.balances.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.balances.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.positive",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.accounts.accountid.balances"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.balances.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.balances.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.unauthorized",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.accounts.accountid.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.balances.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.balances.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.wrong-permission",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.accounts.accountid.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.balances.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.balances.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.interaction-id-playback",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.accounts.accountid.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.balances.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.balances.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.balances.invalid-resource",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.accounts.accountid.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.balances.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.balances.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.balances.unauthorized",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.balances.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.balances.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.balances.wrong-permission",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.balances.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.balances"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.balances.positive.instance"
+      ],
+      "id": "ais.v311.test.get.balances.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.balances.interaction-id-playback",
+            "ais.v311.capability.balances",
+            "ais.v311.endpoint.get.balances"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.balances.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.beneficiaries.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.beneficiaries.positive",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.beneficiaries"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.positive",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized",
+            "ais.v311.test.get.accounts.accountid.beneficiaries.wrong-permission",
+            "ais.v311.test.get.beneficiaries.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.beneficiaries.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.positive",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.wrong-permission",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.interaction-id-playback",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.accounts.accountid.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.beneficiaries.basic-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.beneficiaries.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.beneficiaries.unauthorized",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.beneficiaries.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.beneficiaries.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.beneficiaries.wrong-permission",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.beneficiaries.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.beneficiaries.positive.instance"
+      ],
+      "id": "ais.v311.test.get.beneficiaries.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.beneficiaries.interaction-id-playback",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.beneficiaries.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.beneficiaries"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.beneficiaries.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.beneficiaries.basic-permission",
+            "ais.v311.capability.beneficiaries",
+            "ais.v311.endpoint.get.beneficiaries"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.beneficiaries.basic-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.direct_debits.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.direct_debits.positive",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.direct_debits"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.direct_debits.positive",
+            "ais.v311.test.get.accounts.accountid.direct_debits.unauthorized",
+            "ais.v311.test.get.accounts.accountid.direct_debits.wrong-permission",
+            "ais.v311.test.get.direct_debits.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.direct_debits.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.direct_debits.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.positive",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.accounts.accountid.direct_debits"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.direct_debits.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.direct_debits.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.unauthorized",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.accounts.accountid.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.direct_debits.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.direct_debits.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.wrong-permission",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.accounts.accountid.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.direct_debits.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.direct_debits.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.interaction-id-playback",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.accounts.accountid.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.direct_debits.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.accounts.accountid.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.direct_debits.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.direct_debits.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.direct_debits.unauthorized",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.direct_debits.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.direct_debits.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.direct_debits.wrong-permission",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.direct_debits.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.direct_debits"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.direct_debits.positive.instance"
+      ],
+      "id": "ais.v311.test.get.direct_debits.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.direct_debits.interaction-id-playback",
+            "ais.v311.capability.direct-debits",
+            "ais.v311.endpoint.get.direct_debits"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.direct_debits.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.offers.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.offers.positive",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.offers"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.offers.positive",
+            "ais.v311.test.get.accounts.accountid.offers.unauthorized",
+            "ais.v311.test.get.accounts.accountid.offers.wrong-permission",
+            "ais.v311.test.get.offers.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.offers.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.offers.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.positive",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.accounts.accountid.offers"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.offers.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.offers.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.unauthorized",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.accounts.accountid.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.offers.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.offers.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.wrong-permission",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.accounts.accountid.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.offers.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.offers.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.interaction-id-playback",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.accounts.accountid.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.offers.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.offers.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.offers.invalid-resource",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.accounts.accountid.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.offers.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.offers.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.offers.unauthorized",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.offers.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.offers.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.offers.wrong-permission",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.offers.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.offers"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.offers.positive.instance"
+      ],
+      "id": "ais.v311.test.get.offers.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.offers.interaction-id-playback",
+            "ais.v311.capability.offers",
+            "ais.v311.endpoint.get.offers"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.offers.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.party.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.party.positive",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.party"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.parties.positive",
+            "ais.v311.test.get.accounts.accountid.parties.unauthorized",
+            "ais.v311.test.get.accounts.accountid.parties.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.party.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.party.positive",
+            "ais.v311.test.get.accounts.accountid.party.unauthorized",
+            "ais.v311.test.get.accounts.accountid.party.wrong-permission",
+            "ais.v311.test.get.party.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.party.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.parties.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.positive",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.parties"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.parties.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.parties.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.unauthorized",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.parties"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.parties.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.parties.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.wrong-permission",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.parties"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.parties.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.parties.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.parties.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.interaction-id-playback",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.parties"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.parties.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.parties"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.parties.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.parties.invalid-resource",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.parties"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.parties.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.party.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.positive",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.party"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.party.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.party.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.unauthorized",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.party.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.party.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.wrong-permission",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.party.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.party.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.interaction-id-playback",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.party.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.party.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.party.invalid-resource",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.accounts.accountid.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.party.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.party.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.party.unauthorized",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.party.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.party.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.party.wrong-permission",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.party.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.party"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.party.positive.instance"
+      ],
+      "id": "ais.v311.test.get.party.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.party.interaction-id-playback",
+            "ais.v311.capability.parties",
+            "ais.v311.endpoint.get.party"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.party.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.products"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.products.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.products.positive",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.products"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.product.positive",
+            "ais.v311.test.get.accounts.accountid.product.unauthorized",
+            "ais.v311.test.get.accounts.accountid.product.wrong-permission",
+            "ais.v311.test.get.products.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.products.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.products.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.product.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.positive",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.accounts.accountid.product"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.product.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.products.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.product.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.unauthorized",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.accounts.accountid.product"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.product.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.products.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.product.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.wrong-permission",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.accounts.accountid.product"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.product.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.product.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.product.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.interaction-id-playback",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.accounts.accountid.product"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.product.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.product"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.products.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.product.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.product.invalid-resource",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.accounts.accountid.product"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.product.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.products"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.products.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.products.unauthorized",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.products"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.products.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.products"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.products.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.products.wrong-permission",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.products"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.products.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.products"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.products.positive.instance"
+      ],
+      "id": "ais.v311.test.get.products.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.products.interaction-id-playback",
+            "ais.v311.capability.products",
+            "ais.v311.endpoint.get.products"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.products.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.scheduled_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.scheduled_payments.positive",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.scheduled_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.positive",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.unauthorized",
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.wrong-permission",
+            "ais.v311.test.get.scheduled_payments.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.scheduled_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.scheduled_payments.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.positive",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.accounts.accountid.scheduled_payments"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.scheduled_payments.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.scheduled_payments.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.unauthorized",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.accounts.accountid.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.scheduled_payments.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.scheduled_payments.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.wrong-permission",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.accounts.accountid.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.scheduled_payments.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.scheduled_payments.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.interaction-id-playback",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.accounts.accountid.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.scheduled_payments.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.accounts.accountid.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.scheduled_payments.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.scheduled_payments.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.scheduled_payments.unauthorized",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.scheduled_payments.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.scheduled_payments.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.scheduled_payments.wrong-permission",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.scheduled_payments.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.scheduled_payments"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.scheduled_payments.positive.instance"
+      ],
+      "id": "ais.v311.test.get.scheduled_payments.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.scheduled_payments.interaction-id-playback",
+            "ais.v311.capability.scheduled-payments",
+            "ais.v311.endpoint.get.scheduled_payments"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.scheduled_payments.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.standing_orders.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.standing_orders.positive",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.standing_orders"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.standing_orders.positive",
+            "ais.v311.test.get.accounts.accountid.standing_orders.unauthorized",
+            "ais.v311.test.get.accounts.accountid.standing_orders.wrong-permission",
+            "ais.v311.test.get.standing_orders.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.standing_orders.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.standing_orders.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.positive",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.accounts.accountid.standing_orders"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.standing_orders.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.standing_orders.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.unauthorized",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.accounts.accountid.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.standing_orders.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.standing_orders.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.wrong-permission",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.accounts.accountid.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.standing_orders.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.standing_orders.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.interaction-id-playback",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.accounts.accountid.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.standing_orders.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.accounts.accountid.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.standing_orders.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.standing_orders.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.standing_orders.unauthorized",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.standing_orders.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.standing_orders.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.standing_orders.wrong-permission",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.standing_orders.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.standing_orders"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.standing_orders.positive.instance"
+      ],
+      "id": "ais.v311.test.get.standing_orders.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.standing_orders.interaction-id-playback",
+            "ais.v311.capability.standing-orders",
+            "ais.v311.endpoint.get.standing_orders"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.standing_orders.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.statements.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.statements.positive",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.statements"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.statementid.wrong-permission",
+            "ais.v311.test.get.accounts.accountid.statements.unauthorized",
+            "ais.v311.test.get.accounts.accountid.statements.wrong-permission",
+            "ais.v311.test.get.statements.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.statements.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.positive",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.unauthorized",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.wrong-permission",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.interaction-id-playback",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.invalid-resource",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.positive",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.unauthorized",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.wrong-permission",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.statements.statementid.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.interaction-id-playback",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.invalid-resource",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.file.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.unauthorized",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.file.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.file.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.wrong-permission",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.file.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.statements.statementid.file.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.file.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.interaction-id-playback",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.file.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.file"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.file.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.file.invalid-resource",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.file"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.file.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.unauthorized",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.wrong-permission",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.interaction-id-playback",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.statements.statementid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.invalid-resource",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.accounts.accountid.statements.statementid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.statements.statementid.transactions.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.statements.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.statements.unauthorized",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.statements.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.statements.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.statements.wrong-permission",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.statements.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.statements"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.statements.positive.instance"
+      ],
+      "id": "ais.v311.test.get.statements.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.statements.interaction-id-playback",
+            "ais.v311.capability.statements",
+            "ais.v311.endpoint.get.statements"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.statements.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.transactions",
+        "ais.v311.requirement.from-booking-date-time",
+        "ais.v311.requirement.to-booking-date-time"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.transactions.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.transactions.positive",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.transactions"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.basic-permission",
+            "ais.v311.test.get.accounts.accountid.transactions.invalid-resource",
+            "ais.v311.test.get.accounts.accountid.transactions.positive",
+            "ais.v311.test.get.accounts.accountid.transactions.unauthorized",
+            "ais.v311.test.get.accounts.accountid.transactions.wrong-permission",
+            "ais.v311.test.get.transactions.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.transactions.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions",
+        "ais.v311.requirement.from-booking-date-time",
+        "ais.v311.requirement.to-booking-date-time"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.positive.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.positive",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        },
+        {
+          "code": "tests.dependency.required-by",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.interaction-id-playback"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.positive"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.unauthorized",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.wrong-permission",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.accountid.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.interaction-id-playback",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.invalid-resource.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.invalid-resource",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.invalid-resource"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.accounts.accountid.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance",
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.accounts.accountid.transactions.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.accounts.accountid.transactions.basic-permission",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.accounts.accountid.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.accounts.accountid.transactions.basic-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.transactions.unauthorized.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.transactions.unauthorized",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.transactions.unauthorized"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.transactions.wrong-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.transactions.wrong-permission",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.transactions.wrong-permission"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.transactions.positive.instance"
+      ],
+      "id": "ais.v311.test.get.transactions.interaction-id-playback.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.transactions.interaction-id-playback",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.transactions.interaction-id-playback"
+    },
+    {
+      "coveredRequirementIds": [
+        "ais.v311.requirement.get.transactions"
+      ],
+      "dependencyIds": [
+        "ais.v311.test.get.accounts.positive.instance"
+      ],
+      "id": "ais.v311.test.get.transactions.basic-permission.instance",
+      "reasons": [
+        {
+          "code": "tests.applicability.selected",
+          "sourceIds": [
+            "ais.v311.test.get.transactions.basic-permission",
+            "ais.v311.capability.transactions",
+            "ais.v311.endpoint.get.transactions"
+          ]
+        }
+      ],
+      "testDefinitionId": "ais.v311.test.get.transactions.basic-permission"
+    }
+  ]
+}

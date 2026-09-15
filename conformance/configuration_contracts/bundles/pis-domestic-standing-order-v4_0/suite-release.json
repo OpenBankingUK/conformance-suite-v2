@@ -1,7 +1,7 @@
 {
   "artifacts": [
     {
-      "digest": "sha256:fc13a169600c8d0f08591c976e8dddcc2369cb402ace1df65a93320a1956f450",
+      "digest": "sha256:729f7971fcddb3f84bc64befc8a09e15aa14b387341685f0d8333f4af0c979b0",
       "id": "requirements-catalogue-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",
@@ -9,7 +9,7 @@
       "uri": "conformance/configuration_contracts/schemas/v1/requirements-catalogue.schema.json"
     },
     {
-      "digest": "sha256:33ec1d80b17bfd5424a4e3c4debf26bf5e22118f93c370a2403f6c13cb5b6eed",
+      "digest": "sha256:5c13656caaab3d01c8fe6d1b67b2531411ed316d5cf46202de13d384be295e8c",
       "id": "test-definition-catalogue-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",
@@ -33,7 +33,7 @@
       "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
     },
     {
-      "digest": "sha256:64cd47aa90de14d52bcc90aceb0ed5c2f04274d5ef36b41d99f5d3167118485d",
+      "digest": "sha256:67d473a4005fde6d170341e612f14b7e74a191b64933364120211c17953f5a27",
       "id": "execution-manifest-v1",
       "kind": "json-schema",
       "mediaType": "application/schema+json",

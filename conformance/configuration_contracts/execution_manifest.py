@@ -149,6 +149,7 @@ def generate_execution_manifest(
                         id=assertion.id,
                         type=assertion.type,
                         expected_status=assertion.expected_status,
+                        expected_statuses=assertion.expected_statuses,
                         schema_ref=assertion.schema_ref,
                         header_name=assertion.header_name,
                         json_pointer=assertion.json_pointer,

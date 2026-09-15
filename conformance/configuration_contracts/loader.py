@@ -46,6 +46,7 @@ from conformance.configuration_contracts.models import (
     ParticipantInput,
     ParticipantPlan,
     PredefinedInput,
+    PredefinedInputValue,
     RequestInputBinding,
     RequestModification,
     Requirement,
@@ -376,13 +377,20 @@ def requirements_catalogue_to_document(catalogue: RequirementsCatalogue) -> Json
     """Convert an immutable requirements catalogue to its wire shape."""
     return {
         "capabilities": [
-            {
-                "description": capability.description,
-                "id": str(capability.id),
-                "name": capability.name,
-                "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
-                "selection": capability.selection,
-            }
+            _without_none_values(
+                {
+                    "description": capability.description,
+                    "id": str(capability.id),
+                    "name": capability.name,
+                    "requiredCapabilityIds": (
+                        [str(capability_id) for capability_id in capability.required_capability_ids]
+                        if capability.required_capability_ids
+                        else None
+                    ),
+                    "requiredEndpointIds": [str(endpoint_id) for endpoint_id in capability.required_endpoint_ids],
+                    "selection": capability.selection,
+                }
+            )
             for capability in catalogue.capabilities
         ],
         "documentType": catalogue.document_type,
@@ -1002,6 +1010,10 @@ def _requirements_catalogue_from_schema_valid_document(document: dict[str, objec
                 required_endpoint_ids=tuple(
                     StableId(endpoint_id) for endpoint_id in cast(list[str], capability["requiredEndpointIds"])
                 ),
+                required_capability_ids=tuple(
+                    StableId(capability_id)
+                    for capability_id in cast(list[str], capability.get("requiredCapabilityIds", []))
+                ),
             )
             for capability in capabilities
         ),
@@ -1372,6 +1384,7 @@ def _assertion_to_document(assertion: TestAssertion | ExecutionManifestAssertion
     return _without_none_values(
         {
             "expectedStatus": assertion.expected_status,
+            "expectedStatuses": (None if assertion.expected_statuses is None else list(assertion.expected_statuses)),
             "expectedValue": assertion.expected_value,
             "headerName": assertion.header_name,
             "id": str(assertion.id),
@@ -1387,6 +1400,9 @@ def _test_assertion_from_document(document: dict[str, object]) -> TestAssertion:
         id=StableId(cast(str, document["id"])),
         type=cast(str, document["type"]),
         expected_status=cast(int | None, document.get("expectedStatus")),
+        expected_statuses=(
+            None if "expectedStatuses" not in document else tuple(cast(list[int], document["expectedStatuses"]))
+        ),
         schema_ref=cast(str | None, document.get("schemaRef")),
         header_name=cast(str | None, document.get("headerName")),
         json_pointer=cast(str | None, document.get("jsonPointer")),
@@ -1400,6 +1416,7 @@ def _execution_assertion_from_document(document: dict[str, object]) -> Execution
         id=assertion.id,
         type=assertion.type,
         expected_status=assertion.expected_status,
+        expected_statuses=assertion.expected_statuses,
         schema_ref=assertion.schema_ref,
         header_name=assertion.header_name,
         json_pointer=assertion.json_pointer,
@@ -1717,14 +1734,20 @@ def _validate_requirements_catalogue_semantics(
                         object_kind="endpoint",
                     )
                 )
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
+            if dependency_id not in capability_ids:
+                diagnostics.append(
+                    _unresolved_reference_diagnostic(
+                        dependency_id,
+                        instance_path=(f"/capabilities/{capability_index}/requiredCapabilityIds/{dependency_index}"),
+                        object_kind="capability",
+                    )
+                )
+    diagnostics.extend(_capability_dependency_diagnostics(catalogue))
     for input_index, predefined_input in enumerate(catalogue.predefined_inputs):
         values = (predefined_input.example_value, predefined_input.default_value)
         if any(
-            value is not None
-            and (
-                (predefined_input.value_type == "string" and not isinstance(value, str))
-                or (predefined_input.value_type == "standing-order-frequency-v4" and isinstance(value, str))
-            )
+            value is not None and not _predefined_input_value_matches_type(predefined_input.value_type, value)
             for value in values
         ):
             diagnostics.append(
@@ -1773,6 +1796,47 @@ def _validate_requirements_catalogue_semantics(
                         object_kind="normative reference",
                     )
                 )
+    return tuple(diagnostics)
+
+
+def _predefined_input_value_matches_type(value_type: StableId, value: PredefinedInputValue) -> bool:
+    if value_type in {"date-time", "local-date-time", "string"}:
+        return isinstance(value, str)
+    if value_type == "standing-order-frequency-v4":
+        return not isinstance(value, str)
+    return False
+
+
+def _capability_dependency_diagnostics(
+    catalogue: RequirementsCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    capabilities = {capability.id: capability for capability in catalogue.capabilities}
+    indexes = {capability.id: index for index, capability in enumerate(catalogue.capabilities)}
+    diagnostics: list[ConfigurationDiagnostic] = []
+    state: dict[StableId, int] = {}
+
+    def visit(capability_id: StableId) -> None:
+        state[capability_id] = 1
+        for dependency_index, dependency_id in enumerate(capabilities[capability_id].required_capability_ids):
+            if dependency_id not in capabilities:
+                continue
+            if state.get(dependency_id) == 1:
+                diagnostics.append(
+                    _diagnostic(
+                        DiagnosticCode.DEPENDENCY_CYCLE,
+                        f"Capability dependency {dependency_id!s} creates a cycle",
+                        instance_path=(
+                            f"/capabilities/{indexes[capability_id]}/requiredCapabilityIds/{dependency_index}"
+                        ),
+                    )
+                )
+            elif state.get(dependency_id, 0) == 0:
+                visit(dependency_id)
+        state[capability_id] = 2
+
+    for capability in catalogue.capabilities:
+        if state.get(capability.id, 0) == 0:
+            visit(capability.id)
     return tuple(diagnostics)
 
 

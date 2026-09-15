@@ -250,7 +250,15 @@ def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifes
         ):
             raise ResolvedPlanAdapterError(f"Legacy request for {legacy_case_id} differs from the execution manifest")
         legacy_statuses = _legacy_expected_statuses(legacy_case)
-        manifest_statuses = tuple(assertion.expected_status for assertion in step.assertions)
+        manifest_statuses = tuple(
+            status
+            for assertion in step.assertions
+            for status in (
+                (assertion.expected_status,)
+                if assertion.expected_status is not None
+                else assertion.expected_statuses or ()
+            )
+        )
         if legacy_statuses != manifest_statuses:
             raise ResolvedPlanAdapterError(f"Legacy assertions for {legacy_case_id} differ from the execution manifest")
         expected_dependencies_list: list[str] = []

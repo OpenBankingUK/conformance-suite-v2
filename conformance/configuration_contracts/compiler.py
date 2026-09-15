@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from collections import defaultdict
 from collections.abc import Iterable, Mapping
+from datetime import datetime
 from enum import StrEnum
 
 from conformance.configuration_contracts.diagnostics import (
@@ -48,6 +50,9 @@ from conformance.configuration_contracts.models import (
     TestDefinitionCatalogue,
 )
 from conformance.json_types import JsonValue
+
+_RFC3339_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?(?:Z|[+-]\d{2}:\d{2})$")
+_LOCAL_DATE_TIME = re.compile(r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?$")
 
 
 class CompilationFindingCode(StrEnum):
@@ -222,6 +227,7 @@ def _validate_trusted_compiler_inputs(
                 )
             )
     diagnostics.extend(_trusted_requirement_rule_diagnostics(requirements_catalogue))
+    diagnostics.extend(_trusted_capability_dependency_diagnostics(requirements_catalogue))
     diagnostics.extend(_trusted_test_dependency_diagnostics(test_definition_catalogue))
     if diagnostics:
         raise ConfigurationContractError(tuple(diagnostics))
@@ -324,6 +330,48 @@ def _trusted_test_dependency_diagnostics(
     return tuple(diagnostics)
 
 
+def _trusted_capability_dependency_diagnostics(
+    requirements_catalogue: RequirementsCatalogue,
+) -> tuple[ConfigurationDiagnostic, ...]:
+    capabilities = {capability.id: capability for capability in requirements_catalogue.capabilities}
+    indexes = {capability.id: index for index, capability in enumerate(requirements_catalogue.capabilities)}
+    diagnostics: list[ConfigurationDiagnostic] = []
+    state: dict[StableId, int] = {}
+
+    def visit(capability_id: StableId) -> None:
+        state[capability_id] = 1
+        capability = capabilities[capability_id]
+        for dependency_index, dependency_id in enumerate(capability.required_capability_ids):
+            instance_path = f"/capabilities/{indexes[capability_id]}/requiredCapabilityIds/{dependency_index}"
+            if dependency_id not in capabilities:
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        code=DiagnosticCode.REFERENCE_UNRESOLVED,
+                        severity=DiagnosticSeverity.ERROR,
+                        message=f"Referenced capability {dependency_id!s} does not exist",
+                        instance_path=instance_path,
+                    )
+                )
+                continue
+            if state.get(dependency_id) == 1:
+                diagnostics.append(
+                    ConfigurationDiagnostic(
+                        code=DiagnosticCode.DEPENDENCY_CYCLE,
+                        severity=DiagnosticSeverity.ERROR,
+                        message=f"Capability dependency {dependency_id!s} creates a cycle",
+                        instance_path=instance_path,
+                    )
+                )
+            elif state.get(dependency_id, 0) == 0:
+                visit(dependency_id)
+        state[capability_id] = 2
+
+    for capability in requirements_catalogue.capabilities:
+        if state.get(capability.id, 0) == 0:
+            visit(capability.id)
+    return tuple(diagnostics)
+
+
 def _plan_reference_findings(
     suite_release: SuiteRelease,
     requirements_catalogue: RequirementsCatalogue,
@@ -368,8 +416,19 @@ def _resolve_capabilities(
     participant_plan: ParticipantPlan,
     findings: list[CompilationFinding],
 ) -> tuple[tuple[ResolvedCapability, ...], set[StableId]]:
-    catalogue_ids = {capability.id for capability in requirements_catalogue.capabilities}
-    selected_ids = set(participant_plan.selected_capability_ids).intersection(catalogue_ids)
+    capabilities_by_id = {capability.id: capability for capability in requirements_catalogue.capabilities}
+    catalogue_ids = set(capabilities_by_id)
+    explicit_ids = set(participant_plan.selected_capability_ids).intersection(catalogue_ids)
+    selected_ids = set(explicit_ids)
+    required_by: dict[StableId, list[StableId]] = defaultdict(list)
+    pending = list(explicit_ids)
+    while pending:
+        capability_id = pending.pop()
+        for dependency_id in capabilities_by_id[capability_id].required_capability_ids:
+            required_by[dependency_id].append(capability_id)
+            if dependency_id not in selected_ids:
+                selected_ids.add(dependency_id)
+                pending.append(dependency_id)
     indexes = {capability_id: index for index, capability_id in enumerate(participant_plan.selected_capability_ids)}
     for capability_id in sorted(set(participant_plan.selected_capability_ids).difference(catalogue_ids)):
         findings.append(
@@ -394,11 +453,19 @@ def _resolve_capabilities(
     resolved = tuple(
         ResolvedCapability(
             id=capability.id,
-            origin=SelectionOrigin.EXPLICIT,
+            origin=(SelectionOrigin.EXPLICIT if capability.id in explicit_ids else SelectionOrigin.INFERRED),
             reasons=(
                 ResolutionReason(
-                    code=StableId("plan.capability.explicit"),
-                    source_ids=(participant_plan.id, capability.id),
+                    code=StableId(
+                        "plan.capability.explicit"
+                        if capability.id in explicit_ids
+                        else "requirements.capability.inferred"
+                    ),
+                    source_ids=(
+                        (participant_plan.id, capability.id)
+                        if capability.id in explicit_ids
+                        else tuple(sorted(set(required_by[capability.id])))
+                    ),
                 ),
             ),
         )
@@ -518,12 +585,7 @@ def _resolve_predefined_inputs(
             continue
         participant_input = participant_inputs.get(predefined_input.id)
         if participant_input is not None:
-            if (
-                predefined_input.value_type == "string"
-                and not isinstance(participant_input.value, str)
-                or predefined_input.value_type == "standing-order-frequency-v4"
-                and isinstance(participant_input.value, str)
-            ):
+            if not _input_value_matches_type(predefined_input.value_type, participant_input.value):
                 findings.append(
                     _finding(
                         CompilationFindingCode.INPUT_INVALID,
@@ -565,6 +627,30 @@ def _resolve_predefined_inputs(
             )
         )
     return tuple(resolved)
+
+
+def _input_value_matches_type(value_type: StableId, value: PredefinedInputValue) -> bool:
+    if value_type == "string":
+        return isinstance(value, str)
+    if value_type == "date-time":
+        if not isinstance(value, str) or _RFC3339_DATE_TIME.fullmatch(value) is None:
+            return False
+        try:
+            parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        except ValueError:
+            return False
+        return parsed.tzinfo is not None
+    if value_type == "local-date-time":
+        if not isinstance(value, str) or _LOCAL_DATE_TIME.fullmatch(value) is None:
+            return False
+        try:
+            parsed = datetime.fromisoformat(value)
+        except ValueError:
+            return False
+        return parsed.tzinfo is None
+    if value_type == "standing-order-frequency-v4":
+        return not isinstance(value, str)
+    return False
 
 
 def _resolved_input(
