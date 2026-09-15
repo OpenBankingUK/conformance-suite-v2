@@ -32,7 +32,8 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
         TestPlanSpec,
         compile_test_plan,
     )
-    from conformance.executor import run_compiled_test_plan
+    from conformance.configuration_contracts import adapt_compiled_plan_to_execution_manifest
+    from conformance.executor import run_execution_manifest
 
     catalogue_key = CatalogueKey(standard="open-banking", version="v4.0", api="ais")
     catalogue = TestCatalogue(
@@ -104,10 +105,13 @@ def test_run_compiled_test_plan_attaches_catalogue_traceability(tmp_path: Path) 
 
     execution_logger = BufferedExecutionLogger(run_id="compiled-plan-run", developer_mode=False)
     with httpx.Client(transport=httpx.MockTransport(mock_handler)) as client:
-        result = run_compiled_test_plan(
+        prepared_manifest = adapt_compiled_plan_to_execution_manifest(
             compiled_plan,
             runtime_inputs=spec.runtime_inputs,
             runtime_input_base_dir=tmp_path,
+        )
+        result = run_execution_manifest(
+            prepared_manifest,
             client=client,
             execution_logger=execution_logger,
         )

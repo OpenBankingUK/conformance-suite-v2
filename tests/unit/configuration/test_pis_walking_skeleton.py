@@ -228,6 +228,7 @@ def test_suite_release_binds_exact_catalogue_and_schema_bytes() -> None:
         ("json-schema", "participant-plan-v1"),
         ("json-schema", "requirements-catalogue-v1"),
         ("json-schema", "resolved-plan-v1"),
+        ("json-schema", "execution-manifest-v1"),
         ("json-schema", "test-definition-catalogue-v1"),
         ("requirements-catalogue", "obl.pis-domestic-standing-order-v4.requirements"),
         ("test-definition-catalogue", "obl.pis-domestic-standing-order-v4.tests"),

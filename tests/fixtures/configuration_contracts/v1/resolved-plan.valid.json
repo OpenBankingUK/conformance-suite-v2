@@ -78,7 +78,7 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:5b06a6eb5a40011e1b0c3ab3b212d095f935cbeeac3b39c747cfbb059f341959",
+  "id": "resolved-plan:fe087212d1b5776dd5b296a054c6a9471b903c450ba892082e9b75e29d52886a",
   "predefinedInputs": [
     {
       "id": "pis.dso.input.frequency",
@@ -135,6 +135,14 @@
         "mediaType": "application/schema+json",
         "schemaVersion": "1.0",
         "uri": "conformance/configuration_contracts/schemas/v1/resolved-plan.schema.json"
+      },
+      {
+        "digest": "sha256:eaa4ee9f8eb59c5874a582bd3f691e873bf39b2eee1db38650a667d59f0f4780",
+        "id": "execution-manifest-v1",
+        "kind": "json-schema",
+        "mediaType": "application/schema+json",
+        "schemaVersion": "1.0",
+        "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
       },
       {
         "digest": "sha256:3d8a8afc1bf11b02c0751e2c1b5da79c64b61d4e31da98a0ec5b493604df0c57",

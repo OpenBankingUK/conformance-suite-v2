@@ -11,6 +11,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Immutable, schema-versioned execution manifests generated deterministically
+  from resolved plans, with resolved inputs, operation templates, dependency
+  ordering, assertions, masked-evidence instructions, and copied provenance.
+  Explicit Read/Write and DCR compatibility adapters preserve the existing
+  execution machinery while moving the runner entry point behind the manifest
+  boundary.
 - Strict `participant-plan` and generated `resolved-plan` contracts for the PIS
   domestic-standing-order walking skeleton, with deterministic requirement and
   dependency resolution, explicit/defaulted predefined-input provenance,

@@ -26,6 +26,7 @@ class DiagnosticCode(StrEnum):
     DEPENDENCY_CYCLE = "config.semantic.dependency-cycle"
     RULE_INCONSISTENT = "config.semantic.rule-inconsistent"
     RESOLVED_PLAN_INCONSISTENT = "config.semantic.resolved-plan-inconsistent"
+    EXECUTION_MANIFEST_INCONSISTENT = "config.semantic.execution-manifest-inconsistent"
     SUITE_RELEASE_SELF_REFERENCE = "config.semantic.suite-release-self-reference"
     REFERENCE_UNRESOLVED = "config.reference.unresolved"
     ARTIFACT_UNRESOLVED = "config.reference.artifact-unresolved"
