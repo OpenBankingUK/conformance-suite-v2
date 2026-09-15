@@ -3,7 +3,8 @@
 import json
 from datetime import UTC, datetime
 from pathlib import Path
-from unittest.mock import patch
+from typing import cast
+from unittest.mock import Mock, patch
 from zoneinfo import ZoneInfo
 
 import pytest
@@ -13,6 +14,7 @@ from conformance.api.auth_session_store import auth_session_store
 from conformance.api.run_lifecycle import BrowserParticipantActionLogger
 from conformance.api.run_store import run_store
 from conformance.approved_releases import APPROVED_RELEASE_POLICY_SCHEMA_VERSION
+from conformance.configuration_contracts import PreparedExecutionManifest
 
 pytestmark = pytest.mark.component
 
@@ -38,6 +40,11 @@ VALID_TEST_PLAN = {
     "businessTestData": {},
     "metadata": {},
 }
+
+
+def _prepared_execution() -> PreparedExecutionManifest:
+    """Return an opaque prepared execution for lifecycle-boundary tests."""
+    return cast(PreparedExecutionManifest, Mock(spec=PreparedExecutionManifest))
 
 
 @pytest.mark.usefixtures("api_singleton_stores")
@@ -416,10 +423,10 @@ class TestExecuteRunDiscardsAuthSessions:
             steps=(),
         )
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             return_value=fake_result,
         ):
-            _execute_run(record.run_id, config, manifest=None, plan=None)
+            _execute_run(record.run_id, config, _prepared_execution())
 
         assert auth_session_store.for_run(record.run_id) == []
         # The run itself transitioned to completed (sanity check).
@@ -457,10 +464,10 @@ class TestExecuteRunDiscardsAuthSessions:
             return fake_result
 
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             side_effect=reset_store_then_return_result,
         ):
-            _execute_run(record.run_id, config, manifest=None, plan=None)
+            _execute_run(record.run_id, config, _prepared_execution())
 
         assert run_store.get_run(record.run_id) is None
         assert auth_session_store.for_run(record.run_id) == []
@@ -492,10 +499,10 @@ class TestExecuteRunDiscardsAuthSessions:
             steps=(),
         )
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             return_value=fake_result,
         ):
-            _execute_run(record.run_id, config, manifest=None, plan=None)
+            _execute_run(record.run_id, config, _prepared_execution())
 
         updated = run_store.get_run(record.run_id)
         assert updated is not None
@@ -520,10 +527,10 @@ class TestExecuteRunDiscardsAuthSessions:
             result_output_path=Path("results.json"),
         )
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             side_effect=RuntimeError("boom"),
         ):
-            _execute_run(record.run_id, config, manifest=None, plan=None)
+            _execute_run(record.run_id, config, _prepared_execution())
 
         assert auth_session_store.for_run(record.run_id) == []
         assert run_store.get_run(record.run_id).status == "failed"  # type: ignore[union-attr]
@@ -554,10 +561,10 @@ class TestExecuteRunDiscardsAuthSessions:
             steps=(),
         )
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             return_value=fake_result,
         ):
-            _execute_run(finishing.run_id, config, manifest=None, plan=None)
+            _execute_run(finishing.run_id, config, _prepared_execution())
 
         assert auth_session_store.for_run(finishing.run_id) == []
         assert len(auth_session_store.for_run(other_run_id)) == 1
@@ -586,15 +593,19 @@ class TestExecuteRunDiscardsAuthSessions:
         )
 
         def emit_browser_action(
-            config: ModelBankConfig,
+            _prepared: PreparedExecutionManifest,
             *,
+            client: object,
             execution_logger: ExecutionLogger,
+            **_kwargs: object,
         ) -> SmokeCheckResult:
             """Assert the lifecycle provided the browser logger and emit a PSU URL.
 
             Args:
-                config: Runtime model-bank configuration passed to the smoke check.
+                _prepared: Prepared execution passed to the lifecycle.
+                client: HTTP client built by the lifecycle.
                 execution_logger: Logger supplied by the lifecycle.
+                **_kwargs: Remaining execution options.
 
             Returns:
                 The fake successful smoke-check result.
@@ -604,10 +615,10 @@ class TestExecuteRunDiscardsAuthSessions:
             return fake_result
 
         with patch(
-            "conformance.api.run_lifecycle.run_model_bank_smoke_check",
+            "conformance.api.run_lifecycle.run_execution_manifest",
             side_effect=emit_browser_action,
         ):
-            _execute_run(record.run_id, config, manifest=None, plan=None, browser_psu_prompts=True)
+            _execute_run(record.run_id, config, _prepared_execution(), browser_psu_prompts=True)
 
         updated = run_store.get_run(record.run_id)
         assert updated is not None
@@ -616,8 +627,8 @@ class TestExecuteRunDiscardsAuthSessions:
         assert log_bytes is not None
         assert raw_url.encode("utf-8") not in log_bytes
 
-    def test_manifest_run_passes_runtime_config_to_executor(self) -> None:
-        """Manifest runs receive safe config placeholder values from the lifecycle."""
+    def test_execution_manifest_run_passes_runtime_config_to_executor(self) -> None:
+        """Execution-manifest runs receive safe config values from the lifecycle."""
         from datetime import datetime
         from pathlib import Path
 
@@ -625,7 +636,6 @@ class TestExecuteRunDiscardsAuthSessions:
 
         from conformance.api.run_lifecycle import _execute_run
         from conformance.approved_releases import ApprovedReleasePolicy
-        from conformance.manifest import parse_manifest
         from conformance.model_bank_config import ModelBankConfig
         from conformance.results import SmokeCheckResult
 
@@ -639,20 +649,6 @@ class TestExecuteRunDiscardsAuthSessions:
             result_output_path=Path("results.json"),
             approved_release_policy=approved_release_policy,
         )
-        manifest = parse_manifest(
-            {
-                "schemaVersion": "v1",
-                "name": "runtime config",
-                "steps": [
-                    {
-                        "id": "config-driven",
-                        "name": "Config-driven request",
-                        "request": {"method": "GET", "url": "${config.discoveryUrl}"},
-                        "assertions": [{"type": "http_status", "expected": 200}],
-                    }
-                ],
-            }
-        )
         fake_result = SmokeCheckResult(
             status="passed",
             started_at=datetime.now(UTC),
@@ -662,9 +658,12 @@ class TestExecuteRunDiscardsAuthSessions:
         with (
             httpx.Client() as fake_client,
             patch("conformance.api.run_lifecycle.build_json_http_client", return_value=fake_client),
-            patch("conformance.api.run_lifecycle.run_manifest", return_value=fake_result) as mock_run_manifest,
+            patch(
+                "conformance.api.run_lifecycle.run_execution_manifest",
+                return_value=fake_result,
+            ) as mock_run_manifest,
         ):
-            _execute_run(record.run_id, config, manifest=manifest, plan=None)
+            _execute_run(record.run_id, config, _prepared_execution())
 
         assert mock_run_manifest.call_args is not None
         runtime_config = mock_run_manifest.call_args.kwargs["runtime_config"]

@@ -20,8 +20,8 @@ from tests.support.run_execution import StubbedRunExecution
 pytestmark = pytest.mark.component
 
 
-def _canonical_dcr_plan(service: DcrProtocolService, root: Path, *, full_scope: bool = False) -> JsonObject:
-    """Build a canonical DCR plan referencing deterministic local credentials.
+def _participant_dcr_plan(service: DcrProtocolService, root: Path, *, full_scope: bool = False) -> JsonObject:
+    """Build a participant DCR plan referencing deterministic local credentials.
 
     Args:
         service: Running deterministic DCR protocol service.
@@ -29,84 +29,47 @@ def _canonical_dcr_plan(service: DcrProtocolService, root: Path, *, full_scope: 
         full_scope: Whether to select all optional management endpoints.
 
     Returns:
-        Canonical schemaVersion 1.0 plan.
+        Participant-plan 1.0 document.
     """
     ssa_path = root / "participant-ssa.jwt"
     ssa_path.write_text(service.protocol.software_statement_assertion, encoding="utf-8")
-    endpoints: list[JsonValue] = [
-        {
-            "method": "POST",
-            "path": "/register",
-            "operationId": "RegisterClient",
-            "required": True,
-            "locked": True,
-        }
-    ]
+    selected_capabilities: list[JsonValue] = ["dcr.v34.capability.registration"]
     if full_scope:
-        endpoints.extend(
-            {
-                "method": method,
-                "path": "/register/{ClientId}",
-                "operationId": operation_id,
-                "required": False,
-                "locked": False,
-            }
-            for method, operation_id in (
-                ("GET", "GetClient"),
-                ("PUT", "UpdateClient"),
-                ("DELETE", "DeleteClient"),
+        selected_capabilities.extend(
+            (
+                "dcr.v34.capability.retrieval",
+                "dcr.v34.capability.update",
+                "dcr.v34.capability.deletion",
             )
         )
-    return {
-        "schemaVersion": "1.0",
-        "specification": {
-            "family": "OBL_DCR",
-            "scheme": "open-banking-uk",
-            "name": "dynamic-client-registration",
-            "version": "3.4",
-        },
-        "executionMode": "certification",
-        "securityEnvironment": {
-            "discoveryUrl": service.discovery_url,
-            "clientAuthMethod": "tls_client_auth",
-            "signingPrivateKeyPath": str(service.protocol.signing_private_key_path),
-            "signingKeyId": "fixture-signing-key",
-            "mtls": {
-                "enabled": True,
-                "certificatePath": str(service.tls.client_certificate_path),
-                "privateKeyPath": str(service.tls.client_private_key_path),
-                "caBundlePath": str(service.tls.ca_certificate_path),
-            },
-        },
-        "endpoints": endpoints,
-        "dynamicClientRegistration": {
-            "softwareStatementAssertionPath": str(ssa_path),
-            "registrationAudience": "aspsp123",
-        },
-        "metadata": {"aspspName": "Deterministic DCR service"},
-    }
-
-
-def _participant_dcr_registration_plan(service: DcrProtocolService, root: Path) -> JsonObject:
-    """Build the participant-plan form of the DCR registration scope."""
-    legacy = _canonical_dcr_plan(service, root)
-    security_environment = cast(JsonObject, legacy["securityEnvironment"])
-    dynamic_registration = cast(JsonObject, legacy["dynamicClientRegistration"])
-    metadata = cast(JsonObject, legacy["metadata"])
     return {
         "documentType": "participant-plan",
         "executionConfiguration": {
             "compatibilityRuntimeInputs": {},
-            "dynamicClientRegistration": dynamic_registration,
-            "metadata": metadata,
-            "securityEnvironment": security_environment,
+            "dynamicClientRegistration": {
+                "softwareStatementAssertionPath": str(ssa_path),
+                "registrationAudience": "aspsp123",
+            },
+            "metadata": {"aspspName": "Deterministic DCR service"},
+            "securityEnvironment": {
+                "discoveryUrl": service.discovery_url,
+                "clientAuthMethod": "tls_client_auth",
+                "signingPrivateKeyPath": str(service.protocol.signing_private_key_path),
+                "signingKeyId": "fixture-signing-key",
+                "mtls": {
+                    "enabled": True,
+                    "certificatePath": str(service.tls.client_certificate_path),
+                    "privateKeyPath": str(service.tls.client_private_key_path),
+                    "caBundlePath": str(service.tls.ca_certificate_path),
+                },
+            },
         },
-        "id": "participant.dcr-registration-product-flow",
+        "id": "participant.dcr-product-flow",
         "predefinedInputs": [],
         "schemaVersion": "1.0",
         "scheme": "open-banking-uk",
         "securityProfile": "all",
-        "selectedCapabilityIds": ["dcr.v34.capability.registration"],
+        "selectedCapabilityIds": selected_capabilities,
         "specification": {
             "id": "dynamic-client-registration",
             "requirementsScope": "dcr",
@@ -159,7 +122,7 @@ def test_cli_participant_plan_runs_dcr_with_stable_traceability(
     """
     plan_path = tmp_path / "dcr-plan.json"
     plan_path.write_text(
-        json.dumps(_participant_dcr_registration_plan(dcr_test_service, tmp_path)),
+        json.dumps(_participant_dcr_plan(dcr_test_service, tmp_path)),
         encoding="utf-8",
     )
     monkeypatch.setattr(dcr_test_service_module, "_FIXED_NOW", int(time.time()))
@@ -208,7 +171,7 @@ def test_rest_launch_status_and_result_accept_dcr_local_references(
 
     creation = client.post(
         "/api/runs/",
-        data=json.dumps(_canonical_dcr_plan(dcr_test_service, tmp_path)),
+        data=json.dumps(_participant_dcr_plan(dcr_test_service, tmp_path)),
         content_type="application/json",
     )
 
@@ -226,34 +189,25 @@ def test_rest_launch_status_and_result_accept_dcr_local_references(
     assert len(result_response.json()["catalogue"]["traceGroups"]) == 10
 
 
-def test_browser_import_review_launch_and_run_detail_preserve_dcr_hierarchy(
+def test_browser_import_reviews_but_blocks_unmapped_dcr_work(
     dcr_protocol_service: DcrProtocolService,
     stubbed_run_execution: StubbedRunExecution,
     tmp_path: Path,
 ) -> None:
-    """Browser import safely reviews DCR and snapshots all selected execution steps."""
+    """Browser import exposes replacement DCR work the compatibility runtime cannot observe."""
     client = Client()
-    plan = _canonical_dcr_plan(dcr_protocol_service, tmp_path, full_scope=True)
+    plan = _participant_dcr_plan(dcr_protocol_service, tmp_path, full_scope=True)
     import_response = client.post("/builder/import/", data={"plan_json": json.dumps(plan)})
 
     assert import_response.status_code == 302
     review_response = client.get(import_response["Location"])
     review_content = review_response.content.decode("utf-8")
     assert review_response.status_code == 200
-    assert "34" in review_content
+    assert "dcr.v34.test.retrieval.revoked-token" in review_content
+    assert "cannot provide a stable observation" in review_content
     assert dcr_protocol_service.protocol.software_statement_assertion not in review_content
 
     launch_url = import_response["Location"].replace("/review/", "/launch/")
     launch_response = client.post(launch_url)
-    assert launch_response.status_code == 302
-    run_id = launch_response["Location"].rstrip("/").split("/")[-1]
-    record = run_store.get_run(run_id)
-    assert record is not None
-    assert len(record.planned_steps) == 79
-    assert record.planned_steps[0].group == "DCR-001 / DCR-001-C01"
-    detail = client.get(launch_response["Location"])
-    content = detail.content.decode("utf-8")
-    assert detail.status_code == 200
-    assert "DCR-001-C01-S01" in content
-    assert "DCR-001 / DCR-001-C01" in content
-    stubbed_run_execution.wait_for_launch()
+    assert launch_response.status_code == 400
+    stubbed_run_execution.assert_not_launched()

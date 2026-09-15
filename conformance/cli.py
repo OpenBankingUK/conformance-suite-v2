@@ -6,11 +6,10 @@ import argparse
 import json
 import logging
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from pathlib import Path
 
 from conformance.api.auth_session_store import auth_session_store
-from conformance.catalogue import CompiledTestPlan
 from conformance.configuration_contracts import PreparedExecutionManifest
 from conformance.context import RuntimeConfig
 from conformance.execution_log import (
@@ -19,20 +18,19 @@ from conformance.execution_log import (
     new_run_id,
     warn_if_developer_mode,
 )
-from conformance.executor import run_compiled_test_plan, run_execution_manifest
+from conformance.executor import run_execution_manifest
 from conformance.http import build_json_http_client
-from conformance.json_types import JsonObject, JsonValue
+from conformance.json_types import JsonObject
 from conformance.model_bank_config import ConfigError, ModelBankConfig, load_model_bank_config
 from conformance.participant_surface import ParticipantSurfaceError, prepare_participant_plan_for_run
 from conformance.results import SmokeCheckResult, mark_development_result_evidence
 from conformance.runner import run_model_bank_smoke_check
-from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 logger = logging.getLogger(__name__)
 
 
 def run(argv: Sequence[str] | None = None) -> int:
-    """Run a conformance check from config input or a canonical test plan.
+    """Run a conformance check from config input or a participant plan.
 
     Args:
         argv: Optional argument list to parse instead of `sys.argv`.
@@ -72,46 +70,30 @@ def run(argv: Sequence[str] | None = None) -> int:
     validation_result: JsonObject | None = None
 
     if args.test_plan is not None:
-        prepared_execution_manifest: PreparedExecutionManifest | None = None
         try:
             raw_test_plan = json.loads(args.test_plan.read_text(encoding="utf-8"))
-            if isinstance(raw_test_plan, dict) and raw_test_plan.get("documentType") == "participant-plan":
-                participant_prepared = prepare_participant_plan_for_run(
-                    raw_test_plan,
-                    base_dir=args.test_plan.parent,
-                )
-                config = participant_prepared.config
-                compiled_plan = participant_prepared.compiled_plan
-                runtime_inputs = participant_prepared.runtime_inputs
-                validation_result = participant_prepared.validation.to_json_object()
-                plan_snapshot = participant_prepared.safe_snapshot
-                prepared_execution_manifest = participant_prepared.prepared_execution
-            else:
-                legacy_prepared = prepare_test_plan_for_run(raw_test_plan, base_dir=args.test_plan.parent)
-                config = legacy_prepared.config
-                compiled_plan = legacy_prepared.compiled_plan
-                runtime_inputs = legacy_prepared.runtime_inputs
-                validation_result = legacy_prepared.validation.to_json_object()
-                plan_snapshot = legacy_prepared.snapshot
+            participant_prepared = prepare_participant_plan_for_run(
+                raw_test_plan,
+                base_dir=args.test_plan.parent,
+            )
+            config = participant_prepared.config
+            validation_result = participant_prepared.validation.to_json_object()
+            plan_snapshot = participant_prepared.safe_snapshot
         except json.JSONDecodeError as error:
             logger.error("Test-plan JSON error: %s", error.msg)
             return 2
         except OSError as error:
             logger.error("Unable to read test plan: %s", error)
             return 2
-        except (ParticipantSurfaceError, TestPlanValidationError) as error:
+        except ParticipantSurfaceError as error:
             logger.error("Test-plan validation error: %s", error)
             return 2
 
-        runtime_input_base_dir = args.test_plan.parent
-        result = _run_cli_compiled_plan(
+        result = _run_cli_participant_plan(
             config=config,
-            compiled_plan=compiled_plan,
-            runtime_inputs=runtime_inputs,
-            runtime_input_base_dir=runtime_input_base_dir,
+            prepared_execution_manifest=participant_prepared.prepared_execution,
             logger_sink=logger_sink,
             run_id=run_id,
-            prepared_execution_manifest=prepared_execution_manifest,
         )
     else:
         assert args.config is not None  # noqa: S101 - argparse validation above
@@ -164,23 +146,18 @@ def run(argv: Sequence[str] | None = None) -> int:
     return 1
 
 
-def _run_cli_compiled_plan(
+def _run_cli_participant_plan(
     *,
     config: ModelBankConfig,
-    compiled_plan: CompiledTestPlan,
-    runtime_inputs: Mapping[str, JsonValue],
-    runtime_input_base_dir: Path,
+    prepared_execution_manifest: PreparedExecutionManifest,
     logger_sink: PsuAuthorizationUrlConsoleLogger,
     run_id: str,
-    prepared_execution_manifest: PreparedExecutionManifest | None = None,
 ) -> SmokeCheckResult:
-    """Run a compiled catalogue plan from the CLI.
+    """Run a prepared participant plan from the CLI.
 
     Args:
         config: Parsed model-bank config.
-        compiled_plan: Compiled catalogue plan.
-        runtime_inputs: Plan-derived runtime input values.
-        runtime_input_base_dir: Directory used for runtime file references.
+        prepared_execution_manifest: Generated manifest and runtime compatibility binding.
         logger_sink: Execution logger used by the CLI.
         run_id: Run id used for log/auth correlation.
 
@@ -193,38 +170,8 @@ def _run_cli_compiled_plan(
         client_private_key_path=config.tls.client_private_key_path,
     )
     try:
-        if prepared_execution_manifest is not None:
-            return run_execution_manifest(
-                prepared_execution_manifest,
-                client=http_client,
-                execution_logger=logger_sink,
-                run_id=run_id,
-                auth_session_store=auth_session_store,
-                runtime_config=RuntimeConfig(
-                    discovery_url=config.discovery_url,
-                    oauth_resource_base_url=config.oauth.resource_base_url if config.oauth is not None else None,
-                    oauth_client_id=config.oauth.client_id if config.oauth is not None else None,
-                    oauth_redirect_uri=config.oauth.redirect_uri if config.oauth is not None else None,
-                    oauth_authorization_endpoint=(
-                        config.oauth.authorization_endpoint if config.oauth is not None else None
-                    ),
-                    oauth_issuer=config.oauth.issuer if config.oauth is not None else None,
-                    oauth_token_endpoint=config.oauth.token_endpoint if config.oauth is not None else None,
-                    oauth_response_type=config.oauth.response_type if config.oauth is not None else None,
-                    oauth_request_object_signing_alg=(
-                        config.oauth.request_object_signing_alg if config.oauth is not None else None
-                    ),
-                ),
-                fapi_signing_config=config.fapi_signing,
-                mtls_client_configured=(
-                    config.tls.client_certificate_path is not None and config.tls.client_private_key_path is not None
-                ),
-                approved_release_policy=config.approved_release_policy,
-            )
-        return run_compiled_test_plan(
-            compiled_plan,
-            runtime_inputs=runtime_inputs,
-            runtime_input_base_dir=runtime_input_base_dir,
+        return run_execution_manifest(
+            prepared_execution_manifest,
             client=http_client,
             execution_logger=logger_sink,
             run_id=run_id,

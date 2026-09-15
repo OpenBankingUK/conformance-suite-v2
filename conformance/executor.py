@@ -513,7 +513,11 @@ def run_compiled_test_plan(
     dcr_clock: Callable[[], datetime] | None = None,
     dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
-    """Adapt a compiled catalogue plan to the execution-manifest boundary.
+    """Exercise a compiled catalogue plan through the compatibility runtime.
+
+    Public participant surfaces call :func:`run_execution_manifest` with a
+    generated manifest. This entry point remains for focused runtime and golden
+    tests while the hardened executor still consumes ``CompiledTestPlan``.
 
     Args:
         compiled_plan: Deterministic catalogue graph produced by the compiler.

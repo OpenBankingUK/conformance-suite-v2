@@ -35,109 +35,81 @@ request and assertion details stay collapsed under audit details.
 
 ## CLI plan execution
 
-The preferred CLI path accepts a canonical JSON-first test plan that contains
-the specification, security environment, specification-owned scope/config, and
-reporting metadata in one portable document:
+The CLI accepts a `participant-plan` 1.0 document containing participant scope,
+predefined inputs, and local execution configuration:
 
 ```bash
 uv run python main.py --test-plan path/to/test-plan.json
 ```
 
-Browser discovery can prefill OAuth/FAPI values from OpenID metadata, but
-exported JSON includes only the final accepted values without recording whether
-they came from discovery or manual entry. A single Read/Write plan can span AIS,
-PIS, CBPII, and VRP catalogue areas when those groups use one security
-environment and OpenID discovery URL. cVRP is not exposed under the Open Banking
-UK Read/Write boundary for now. Read/Write version `3.1.11` is backed by
-dedicated v3.1 catalogue areas and the pinned v3.1.11 OpenAPI documents; it is
-not routed through the v4 catalogues.
-
-For v3.1.11 domestic standing orders, set
-`businessTestData.pis.standingOrderFrequencyV31` to the scalar frequency format
-defined by the v3.1 specification, such as `EvryDay` or
-`IntrvlWkDay:01:03`. The v4 `standingOrderFrequency` object remains unchanged
-for v4 plans.
-
 ```json
 {
-  "schemaVersion": "1.0",
-  "specification": {
-    "family": "OBL_READ_WRITE",
-    "version": "4.0.1",
-    "profile": "FAPI1_ADVANCED"
-  },
-  "executionMode": "certification",
-  "securityEnvironment": {
-    "name": "Primary Authorization Server",
-    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
-    "clientAuthMethod": "private_key_jwt",
-    "signingAlgorithm": "PS256",
-    "resourceBaseUrl": "https://resource.example.com",
-    "mtls": {
-      "enabled": true,
-      "certificatePath": "/absolute/path/to/transport-cert.pem"
+  "documentType": "participant-plan",
+  "executionConfiguration": {
+    "compatibilityRuntimeInputs": {
+      "pisCreditorAccountIdentification": "08080021325698",
+      "pisCreditorAccountName": "Merchant",
+      "pisCreditorAccountSchemeName": "UK.OBIE.SortCodeAccountNumber",
+      "pisFirstPaymentDateTime": "2026-10-01T00:00:00Z",
+      "pisInstructedAmountAmount": "10.00",
+      "pisInstructedAmountCurrency": "GBP"
+    },
+    "dynamicClientRegistration": {},
+    "metadata": {"aspspName": "Example Bank"},
+    "securityEnvironment": {
+      "clientId": "client-123",
+      "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
+      "redirectUri": "https://client.example.com/callback",
+      "resourceBaseUrl": "https://resource.example.com"
     }
   },
-  "resourceGroups": ["AIS"],
-  "businessTestData": {
-    "ais": {"accountIds": ["account-123"]},
-    "inputs": {"accessToken": {"value": "token-reference-or-local-debug-value"}}
+  "id": "participant.pis-v401.example",
+  "predefinedInputs": [
+    {
+      "inputId": "pis.v401.input.standing-order-frequency",
+      "value": {"frequencyType": "WEEK", "pointInTime": "03"}
+    }
+  ],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "pis.v401.capability.domestic-standing-order"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "pis",
+    "version": "4.0.1"
   },
-  "metadata": {
-    "aspspName": "Example Bank",
-    "brandName": "Example Retail",
-    "environmentName": "Sandbox"
-  }
+  "suiteReleaseId": "obl.open-banking-mvp.catalogue-release"
 }
 ```
 
-`resourceGroups` accepts either shorthand group names such as `"AIS"` or detailed
-objects with explicit endpoint/capability selections for builder exports. Required
-endpoint capabilities may be omitted because the compiler selects them
-automatically for implemented endpoints. Optional capabilities must be listed
-under their endpoint to generate implementation-dependent tests. Public browser,
-CLI, and REST execution paths accept canonical schemaVersion `1.0` plans only.
-`config.testSuite`, public `--manifest`, public `--deselect`, public
-`--plan-spec`, REST `manifest`, REST `planSpec`, and REST `deselectStepIds` are
-intentionally rejected. Mandatory applicable catalogue tests cannot be
-arbitrarily deselected.
+Each plan selects one requirements scope and its participant-facing
+capabilities. Trusted release catalogues infer required capabilities, endpoints,
+tests, and dependencies. `compatibilityRuntimeInputs` is restricted execution
+configuration for values still consumed by the current hardened runtime; it
+does not affect deterministic plan resolution.
 
-DCR plans instead use family `OBL_DCR`, specification
-`dynamic-client-registration`, version `3.4`, top-level `endpoints`, and
-`dynamicClientRegistration`; they must not contain `resourceGroups` or
-`businessTestData`. See
+DCR plans select specification `dynamic-client-registration`, requirements
+scope `dcr`, and DCR capabilities. See
 [`docs/DCR_3_4_PARITY_CONTRACT.md`](docs/DCR_3_4_PARITY_CONTRACT.md) for the
-complete canonical example, configuration migration, supported auth methods, and
-operator workflow. Legacy `conformance-dcr` JSON is not directly importable.
+supported auth methods and operator workflow. Legacy canonical
+`schemaVersion: "1.0"` plans are no longer accepted by browser import, CLI, or
+REST.
 
 ## Browser and REST launch
 
-The browser wizard imports, exports, reviews, and launches the same canonical
-test plan that the catalogue compiler accepts through CLI and REST. The REST run
-creation endpoint accepts the canonical document directly, or under `testPlan`,
-in `POST /api/runs/`:
+The browser wizard imports, exports, reviews, and launches the same
+`participant-plan` document accepted through CLI and REST. `POST /api/runs/`
+accepts the document directly or under `testPlan`.
 
-```json
-{
-  "schemaVersion": "1.0",
-  "specification": {"family": "OBL_READ_WRITE", "version": "4.0.1"},
-  "securityEnvironment": {
-    "discoveryUrl": "https://aspsp.example.com/.well-known/openid-configuration",
-    "resourceBaseUrl": "https://resource.example.com"
-  },
-  "resourceGroups": ["AIS"],
-  "businessTestData": {},
-  "metadata": {}
-}
-```
-
-Browser exports are secret-safe by default: the generated schemaVersion `1.0`
-test plan preserves resource-group, endpoint, capability, business-data, and
-non-sensitive runtime references, but writes secret-bearing strings as empty strings. A separate
-export-with-secrets action is available for local power-user workflows. Launch
-still uses Read/Write runtime values retained in the same browser session or
-supplied by direct CLI/API submission. DCR accepts credential file references
-only, never inline SSA, PEM, assertion, secret, or token material.
+Browser exports are secret-safe by default: selected capabilities and
+non-sensitive predefined inputs are retained, while sensitive predefined inputs
+and compatibility runtime values are omitted or redacted. A separate
+export-with-secrets action is available for local power-user workflows. DCR
+accepts credential file references only, never inline SSA, PEM, assertion,
+secret, or token material.
 
 Run detail, result downloads, and NDJSON execution logs keep the existing
 masking and evidence behaviour. Result JSON includes the safe test-plan snapshot,
@@ -195,7 +167,7 @@ CLI exit codes are:
 | --- | --- |
 | `0` | All selected checks passed. |
 | `1` | Execution completed with failed checks. |
-| `2` | Config, canonical test plan, or catalogue compilation input was invalid. |
+| `2` | Config, participant plan, or catalogue compilation input was invalid. |
 | `3` | Result or execution-log output could not be written. |
 
 Set `CONFORMANCE_DEVELOPER_MODE=true` only for local debugging. It disables

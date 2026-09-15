@@ -17,8 +17,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   resolved reviews show inferred endpoints, generated tests, reasons, and
   findings. A strict execution-configuration section carries environment and
   credential references without affecting resolved-plan identity, and safe
-  snapshots redact compatibility runtime values. Legacy canonical CLI/REST
-  plans remain an explicit compatibility path until the legacy-removal layer.
+  snapshots redact compatibility runtime values. Browser import, CLI, and REST
+  now accept this document type exclusively.
 - A coordinator-owned, content-addressed Open Banking MVP suite release now
   registers all nine migrated PIS, AIS, CBPII, VRP, and DCR catalogue variants,
   their contract schemas, and pinned technical sources. Registry tests verify
@@ -84,9 +84,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strict `participant-plan` and generated `resolved-plan` contracts for the PIS
   domestic-standing-order walking skeleton, with deterministic requirement and
   dependency resolution, explicit/defaulted predefined-input provenance,
-  stable retained findings, exact suite-release traceability, and an adapter
-  that feeds the four resolved tests plus translated frequency values into the
-  existing `CompiledTestPlan` execution path.
+  stable retained findings, and exact suite-release traceability.
 - Strict, configuration-driven Read/Write v4.0 PIS domestic-standing-order
   requirements and test-definition catalogues, including conditional endpoint
   obligations, normative references, a predefined logical frequency input,
@@ -148,9 +146,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Participant-facing execution now compiles endpoint selections into catalogue plans and reuses the hardened HTTP, masking, signing, PSU authorisation, logging, and result-evidence execution path.
 - CBPII catalogue coverage now executes the distinct legacy invalid-account and expirationDateTime variants from the 3.1.11, 4.0.0, and 4.0.1 FCS manifests instead of grouping them into aggregated cases.
 - CBPII consent expiry and invalid-consent requests now replay the legacy next-day UTC macros and literal `42` identifier instead of fixed or generated substitutes.
+
 - PIS, AIS, and VRP catalogue coverage now has explicit parity guards for all legacy v3.1 and v4.0 FCS manifest scripts, with AIS expanded across the remaining accounts-and-transactions resource families.
-- Public documentation now describes canonical JSON-first test plans, grouped config plus endpoint/capability execution, and the guided builder workflow instead of checked-in examples, config-selected suites, public manifest authoring, `planSpec`, or generated-test selection.
-- Browser import/export now accepts and emits schemaVersion `1.0` JSON-first test plans only.
+- Public documentation now describes schema-owned participant plans,
+  requirements-scope/capability selection, and the guided builder workflow
+  instead of checked-in examples, config-selected suites, public manifest
+  authoring, `planSpec`, or generated-test selection.
+- Browser import/export now accepts and emits `participant-plan` 1.0 documents
+  only.
 - Browser wizard sessions now default to server-side file storage so local builder drafts work without running SQLite migrations first.
 - Browser config prompts now derive exact runtime values such as resource base URL, consented AIS account id, transaction filters, and CBPII debtor account fields from structured config defaults instead of duplicating them as manual endpoint prompts.
 - Browser discovery now treats JWKS as automatic security metadata rather than a participant-facing follow-up choice, removes participant-configurable HTTP and PSU authorisation timeouts, and drives response-signature validation from catalogue coverage.
@@ -195,6 +198,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Removed
 
+- Legacy canonical `schemaVersion: "1.0"` plan acceptance from browser import,
+  CLI `--test-plan`, and REST run creation. These public surfaces now require
+  the replacement `participant-plan` document.
+- The superseded PIS walking-skeleton-to-`CompiledTestPlan` adapter and
+  unreachable browser review/rendering helpers left behind by the participant
+  surface cutover.
+- Raw `Manifest`/`TestPlan` and bare `CompiledTestPlan` launch branches from the
+  asynchronous API/browser lifecycle; every public run now supplies a generated
+  execution manifest with its compatibility binding.
 - Removed the `integration`, `ozone`, and `e2e` pytest markers, the live-network `make integration` target, the empty `tests/integration/` package, and the orphaned `tests/fixtures/e2e-default.yaml` placeholder. Former integration coverage is reclassified as `component`.
 - Removed the unsupported `.github/workflows/ozone-integration.yml` and placeholder `.github/workflows/e2e.yml` workflows. `.github/workflows/ci.yml` remains the single pipeline: the canonical `make check` gate and a parallel Docker build that starts the container and probes `/health/`.
 - Removed the `interrogate` and `pydoclint` dev dependencies together with their `pyproject.toml` configuration, their `make lint` commands, their CI steps, and `.github/instructions/docstrings.instructions.md`. Docstring *presence* on modules, packages, public classes, functions, and methods is still enforced by Ruff `D100`–`D104`; mandatory Google-style `Args`/`Returns` sections and universal private-helper docstrings are no longer required.

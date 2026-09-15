@@ -37,7 +37,6 @@ from conformance.api.run_store import RunConflictError, run_store
 from conformance.catalogue import CompiledTestPlan
 from conformance.json_types import JsonObject, JsonValue
 from conformance.participant_surface import ParticipantSurfaceError, prepare_participant_plan_for_run
-from conformance.test_plan_validation import TestPlanValidationError, prepare_test_plan_for_run
 
 logger = logging.getLogger(__name__)
 
@@ -254,9 +253,9 @@ def create_run(request: HttpRequest) -> JsonResponse:
     if not isinstance(body, dict):
         return JsonResponse({"error": "Request body must be a JSON object"}, status=400)
 
-    canonical_response = _create_run_from_canonical_test_plan(body)
-    if canonical_response is not None:
-        return canonical_response
+    participant_response = _create_run_from_participant_plan(body)
+    if participant_response is not None:
+        return participant_response
 
     legacy_fields = sorted(set(body) & {"config", "planSpec", "manifest", "deselectStepIds"})
     if legacy_fields:
@@ -264,27 +263,27 @@ def create_run(request: HttpRequest) -> JsonResponse:
             {
                 "error": (
                     "Legacy run request field(s) are no longer supported: "
-                    f"{', '.join(legacy_fields)}. Submit a canonical schemaVersion 1.0 test plan as the "
+                    f"{', '.join(legacy_fields)}. Submit a participant-plan 1.0 document as the "
                     'request body or under "testPlan".'
                 )
             },
             status=400,
         )
     return JsonResponse(
-        {"error": 'Request body must be a schemaVersion 1.0 test plan or contain a "testPlan" object'},
+        {"error": 'Request body must be a participant-plan 1.0 document or contain a "testPlan" object'},
         status=400,
     )
 
 
-def _create_run_from_canonical_test_plan(body: dict[str, JsonValue]) -> JsonResponse | None:
-    """Create a run from a canonical JSON-first test-plan request body.
+def _create_run_from_participant_plan(body: dict[str, JsonValue]) -> JsonResponse | None:
+    """Create a run from a participant-plan request body.
 
     Args:
         body: Decoded JSON request body.
 
     Returns:
-        JSON response when the body is a canonical test plan request, otherwise
-        ``None`` when the body is not a canonical test-plan request.
+        JSON response when the body is a participant-plan request, otherwise
+        ``None`` when the body is not a participant-plan request.
     """
     raw_test_plan = body.get("testPlan")
     if raw_test_plan is not None:
@@ -293,43 +292,30 @@ def _create_run_from_canonical_test_plan(body: dict[str, JsonValue]) -> JsonResp
             return JsonResponse({"error": f"Unknown request field(s): {', '.join(unknown_keys)}"}, status=400)
         if not isinstance(raw_test_plan, dict):
             return JsonResponse({"error": '"testPlan" key must be a JSON object'}, status=400)
-        return _start_canonical_test_plan(raw_test_plan)
-    if body.get("schemaVersion") == "1.0":
-        return _start_canonical_test_plan(body)
+        return _start_participant_plan(raw_test_plan)
+    if body.get("documentType") == "participant-plan":
+        return _start_participant_plan(body)
     return None
 
 
-def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonResponse:
-    """Validate and launch a canonical JSON-first test plan.
+def _start_participant_plan(raw_test_plan: dict[str, JsonValue]) -> JsonResponse:
+    """Validate and launch a participant plan.
 
     Args:
-        raw_test_plan: Decoded canonical test-plan JSON object.
+        raw_test_plan: Decoded participant-plan JSON object.
 
     Returns:
         Run status JSON on success or a validation/conflict error response.
     """
     try:
-        is_participant_plan = raw_test_plan.get("documentType") == "participant-plan"
-        if is_participant_plan:
-            participant_prepared = prepare_participant_plan_for_run(raw_test_plan, base_dir=Path.cwd())
-            config = participant_prepared.config
-            compiled_plan = participant_prepared.compiled_plan
-            runtime_inputs = participant_prepared.runtime_inputs
-            plan_snapshot = participant_prepared.safe_snapshot
-            validation_result = participant_prepared.validation.to_json_object()
-            prepared_execution_manifest = participant_prepared.prepared_execution
-        else:
-            legacy_prepared = prepare_test_plan_for_run(raw_test_plan, base_dir=Path.cwd())
-            config = legacy_prepared.config
-            compiled_plan = legacy_prepared.compiled_plan
-            runtime_inputs = legacy_prepared.runtime_inputs
-            plan_snapshot = legacy_prepared.snapshot
-            validation_result = legacy_prepared.validation.to_json_object()
-            prepared_execution_manifest = None
-        api_file_reference_error = _api_file_reference_error(compiled_plan, runtime_inputs)
+        participant_prepared = prepare_participant_plan_for_run(raw_test_plan, base_dir=Path.cwd())
+        api_file_reference_error = _api_file_reference_error(
+            participant_prepared.compiled_plan,
+            participant_prepared.runtime_inputs,
+        )
         if api_file_reference_error is not None:
             return api_file_reference_error
-    except (ParticipantSurfaceError, TestPlanValidationError) as error:
+    except ParticipantSurfaceError as error:
         return JsonResponse(
             {
                 "error": f"Test plan validation failed: {error}",
@@ -338,22 +324,12 @@ def _start_canonical_test_plan(raw_test_plan: dict[str, JsonValue]) -> JsonRespo
         )
 
     try:
-        if prepared_execution_manifest is not None:
-            response_body = start_run(
-                config=config,
-                prepared_execution_manifest=prepared_execution_manifest,
-                plan_snapshot=plan_snapshot,
-                validation_result=validation_result,
-            )
-        else:
-            response_body = start_run(
-                config=config,
-                compiled_plan=compiled_plan,
-                runtime_inputs=runtime_inputs,
-                runtime_input_base_dir=Path.cwd(),
-                plan_snapshot=plan_snapshot,
-                validation_result=validation_result,
-            )
+        response_body = start_run(
+            config=participant_prepared.config,
+            prepared_execution_manifest=participant_prepared.prepared_execution,
+            plan_snapshot=participant_prepared.safe_snapshot,
+            validation_result=participant_prepared.validation.to_json_object(),
+        )
     except RunConflictError as error:
         return JsonResponse(
             {"error": "A run is already active", "activeRunId": error.active_run_id},

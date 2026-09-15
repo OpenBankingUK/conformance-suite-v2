@@ -7,8 +7,10 @@ import httpx
 import pytest
 
 from conformance import cli
-from conformance.catalogue import CatalogueKey, CompiledTestPlan
+from conformance.catalogue import CatalogueKey
+from conformance.configuration_contracts import PreparedExecutionManifest
 from conformance.results import SmokeCheckResult
+from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
@@ -388,9 +390,8 @@ def test_cli_rejects_removed_deselect_flag(tmp_path: Path) -> None:
     assert exit_code == 2
 
 
-def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    """CLI accepts v3.1.11 and passes only v3.1 requests to execution."""
-    plan_path = tmp_path / "v311-plan.json"
+def test_cli_rejects_legacy_canonical_plan(tmp_path: Path) -> None:
+    plan_path = tmp_path / "legacy-plan.json"
     plan_path.write_text(
         json.dumps(
             {
@@ -422,37 +423,51 @@ def test_cli_compiles_v311_canonical_plan(monkeypatch: pytest.MonkeyPatch, tmp_p
         ),
         encoding="utf-8",
     )
-    captured_plans: list[CompiledTestPlan] = []
 
-    def run_compiled_plan(**kwargs: object) -> SmokeCheckResult:
-        """Capture the compiled plan and return a successful CLI result.
+    exit_code = cli.run(["--test-plan", str(plan_path)])
 
-        Args:
-            **kwargs: Keyword arguments passed by the CLI execution wrapper.
+    assert exit_code == 2
 
-        Returns:
-            Minimal successful smoke-check result.
-        """
-        compiled_plan = kwargs["compiled_plan"]
-        assert isinstance(compiled_plan, CompiledTestPlan)
-        captured_plans.append(compiled_plan)
+
+def test_cli_compiles_participant_plan(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    plan_path = tmp_path / "participant-plan.json"
+    plan_path.write_text(
+        (
+            REPO_ROOT
+            / "tests"
+            / "fixtures"
+            / "configuration_contracts"
+            / "pis"
+            / "v4_0_1"
+            / "participant-plan.surface.json"
+        ).read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    captured: list[PreparedExecutionManifest] = []
+
+    def run_participant_plan(**kwargs: object) -> SmokeCheckResult:
+        prepared = kwargs["prepared_execution_manifest"]
+        assert isinstance(prepared, PreparedExecutionManifest)
+        captured.append(prepared)
         now = datetime.now(UTC)
         return SmokeCheckResult(status="passed", started_at=now, finished_at=now, steps=())
 
-    monkeypatch.setattr(cli, "_run_cli_compiled_plan", run_compiled_plan)
+    monkeypatch.setattr(cli, "_run_cli_participant_plan", run_participant_plan)
     monkeypatch.chdir(tmp_path)
 
     exit_code = cli.run(["--test-plan", str(plan_path)])
 
     assert exit_code == 0
-    assert len(captured_plans) == 1
-    assert captured_plans[0].catalogue_key == CatalogueKey(
+    assert len(captured) == 1
+    assert captured[0].manifest is not None
+    assert captured[0].compiled_plan.catalogue_key == CatalogueKey(
         "open-banking-uk",
-        "3.1.11",
+        "4.0.1",
         "read-write",
     )
     assert all(
-        "/v4.0/" not in request.path
-        for test_case in captured_plans[0].test_cases
+        "/v4.0/" in request.path
+        for test_case in captured[0].compiled_plan.test_cases
         for request in test_case.request_steps
+        if request.path.startswith("/open-banking/")
     )
