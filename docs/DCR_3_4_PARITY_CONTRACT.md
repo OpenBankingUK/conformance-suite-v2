@@ -4,11 +4,8 @@ This document fixes the coverage and migration contract for first-class Open
 Banking UK Dynamic Client Registration (DCR) 3.4 support. The machine-readable
 source of truth is
 [`conformance/standards/ob_dcr/v3_4/parity-contract.json`](../conformance/standards/ob_dcr/v3_4/parity-contract.json).
-Replacement catalogue work must be authored in the new catalogue model and
-compared deterministically against that contract rather than reconstructing the
-legacy suite from counts. The comparison is a migration and release gate; the
-parity contract and pinned legacy sources are not production suite artefacts or
-runtime dependencies.
+Later catalogue and runtime work must consume that contract rather than
+reconstructing the legacy suite from counts.
 
 ## Pinned provenance
 

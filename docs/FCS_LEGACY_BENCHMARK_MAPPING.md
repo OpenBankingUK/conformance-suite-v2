@@ -8,10 +8,6 @@ The v4 mapping continues to use the legacy manifest set under `manifests/`.
 The v2 product no longer exposes legacy manifests, suite resources, or
 pre-selected smoke/slice suite names to participants. Legacy provenance is kept
 inside catalogue test-case `compliance_scope` values and result traceability.
-That provenance describes the current compatibility implementation. In the
-replacement architecture, legacy manifests, assertions, data files, and parity
-contracts are pinned comparison inputs used to verify catalogue migration; they
-are not released configuration artefacts or runtime dependencies.
 
 ## Source manifest families
 
@@ -41,12 +37,6 @@ version predicates, request data, assertion order, context capture, schema
 flags, and response-signature flags. Only HTTP method casing and JSON object-key
 ordering are normalized. Assertion and data references resolve exclusively
 against the pinned v1.10.0 `assertions.json` and `data.json`.
-
-Replacement catalogues are authored independently in the new model and compared
-against this pinned contract before release. The comparison report records
-parity and approved corrections as release-gate evidence; replacement
-catalogue, compiler, manifest, and result contracts do not consume the legacy
-files.
 
 | API | Rows | Unique script IDs | Schema checks | Signature checks |
 | --- | ---: | ---: | ---: | ---: |
