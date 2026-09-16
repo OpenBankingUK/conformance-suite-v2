@@ -7,13 +7,18 @@ from copy import deepcopy
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 from conformance.catalogue import CatalogueRequestStep, CompiledTestPlan
 from conformance.configuration_contracts.diagnostics import ConfigurationContractError
 from conformance.configuration_contracts.loader import (
-    execution_manifest_id,
-    execution_manifest_to_document,
-    parse_execution_manifest,
+    execution_manifest_id as _v1_execution_manifest_id,
+)
+from conformance.configuration_contracts.loader import (
+    execution_manifest_to_document as _v1_execution_manifest_to_document,
+)
+from conformance.configuration_contracts.loader import (
+    parse_execution_manifest as _parse_v1_execution_manifest,
 )
 from conformance.configuration_contracts.models import (
     DetachedJwsOmittedClaim,
@@ -33,8 +38,13 @@ from conformance.configuration_contracts.models import (
     TokenEndpointAuthSource,
 )
 from conformance.configuration_contracts.suite_release_artifacts import SuiteReleaseArtifactResolver
-from conformance.json_types import JsonValue
+from conformance.json_types import JsonObject, JsonValue
 from conformance.results import ResultTraceabilitySource
+
+if TYPE_CHECKING:
+    from conformance.configuration_contracts.v2_models import ExecutionManifest as V2ExecutionManifest
+
+type SupportedExecutionManifest = ExecutionManifest | V2ExecutionManifest
 
 
 class ResolvedPlanAdapterError(ValueError):
@@ -52,7 +62,7 @@ class LegacyExecutionEngine(StrEnum):
 class PreparedExecutionManifest:
     """Immutable manifest plus non-work runtime environment and provenance."""
 
-    manifest: ExecutionManifest
+    manifest: SupportedExecutionManifest
     engine: LegacyExecutionEngine
     runtime_inputs: Mapping[str, JsonValue]
     runtime_input_base_dir: Path
@@ -80,6 +90,35 @@ _VRP_CONSENT_STEP_IDS = {
     "vrp-consent-create-awaiting-authorisation-v4-request",
     "cvrp-consent-create-awaiting-authorisation-v4-request",
 }
+
+
+def _execution_manifest_to_document(manifest: ExecutionManifest) -> JsonObject:
+    """Dispatch serialization without making the v1 compatibility module authoritative."""
+    if manifest.schema_version == "2.0":
+        from conformance.configuration_contracts.v2_loader import (
+            execution_manifest_to_document,
+        )
+
+        return execution_manifest_to_document(manifest)  # type: ignore[arg-type]  # version-dispatched model
+    return _v1_execution_manifest_to_document(manifest)
+
+
+def _execution_manifest_id(manifest: ExecutionManifest) -> StableId:
+    """Dispatch content addressing by the manifest's declared contract."""
+    if manifest.schema_version == "2.0":
+        from conformance.configuration_contracts.v2_loader import execution_manifest_id
+
+        return execution_manifest_id(manifest)  # type: ignore[arg-type]  # version-dispatched model
+    return _v1_execution_manifest_id(manifest)
+
+
+def _parse_execution_manifest(document: JsonObject) -> ExecutionManifest:
+    """Dispatch parsing by schemaVersion while retaining v1 deletion-only code."""
+    if document.get("schemaVersion") == "2.0":
+        from conformance.configuration_contracts.v2_loader import parse_execution_manifest
+
+        return parse_execution_manifest(document)  # type: ignore[return-value]  # version-dispatched model
+    return _parse_v1_execution_manifest(document)
 
 
 def materialize_execution_manifest_requests(
@@ -166,9 +205,9 @@ def materialize_execution_manifest_requests(
             )
         )
     provisional = replace(manifest, steps=tuple(materialized_steps))
-    materialized = replace(provisional, id=execution_manifest_id(provisional))
+    materialized = replace(provisional, id=_execution_manifest_id(provisional))
     try:
-        return parse_execution_manifest(execution_manifest_to_document(materialized))
+        return _parse_execution_manifest(_execution_manifest_to_document(materialized))
     except ConfigurationContractError as error:
         raise ResolvedPlanAdapterError("Materialised execution manifest is invalid") from error
 
@@ -347,7 +386,7 @@ def validate_execution_manifest_compatibility(prepared: PreparedExecutionManifes
     """Reject incomplete or unsupported runner instructions before execution."""
     manifest = prepared.manifest
     try:
-        parse_execution_manifest(execution_manifest_to_document(manifest))
+        _parse_execution_manifest(_execution_manifest_to_document(cast(ExecutionManifest, manifest)))
     except ConfigurationContractError as error:
         raise ResolvedPlanAdapterError("Prepared execution manifest is invalid") from error
     if prepared.engine not in {LegacyExecutionEngine.READ_WRITE, LegacyExecutionEngine.DCR}:

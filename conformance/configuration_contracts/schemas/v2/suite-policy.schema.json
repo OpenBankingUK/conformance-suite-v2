@@ -1,0 +1,32 @@
+{
+  "$id": "https://schemas.openbanking.org.uk/conformance/v2/suite-policy.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "blockingFindingSeverities": {
+      "const": [
+        "error"
+      ]
+    },
+    "documentType": {
+      "const": "suite-policy"
+    },
+    "id": {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+    },
+    "resultClaim": {
+      "const": "approved-executable-tests-only"
+    },
+    "schemaVersion": {
+      "const": "2.0"
+    }
+  },
+  "required": [
+    "schemaVersion",
+    "documentType",
+    "id",
+    "resultClaim",
+    "blockingFindingSeverities"
+  ],
+  "type": "object"
+}

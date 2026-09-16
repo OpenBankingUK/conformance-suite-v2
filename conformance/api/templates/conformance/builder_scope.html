@@ -262,14 +262,14 @@
     <header>
         <div>
             <h1>Select participant scope</h1>
-            <div class="muted">Select one requirements scope and the capabilities your implementation supports.</div>
+            <div class="muted">Select one test scope and the capabilities your implementation supports.</div>
         </div>
         <a class="button secondary" href="{% url 'home' %}">Main menu</a>
     </header>
 
     <section class="panel" aria-labelledby="scope-heading">
-        <h2 id="scope-heading">Requirements scope and capabilities</h2>
-        <p class="helper">Choices are loaded from the trusted suite-release requirements catalogues. Endpoints and test dependencies are generated and cannot be edited here.</p>
+        <h2 id="scope-heading">Test scope and capabilities</h2>
+        <p class="helper">Choices are loaded from the trusted suite-release executable test catalogues. Endpoints and test dependencies are generated and cannot be edited here.</p>
         <p class="helper">Draft <span class="step-id">{{ draft.draft_id }}</span></p>
 
         <div class="boundary-summary" aria-label="Selected catalogue boundary">
@@ -279,7 +279,7 @@
         </div>
 
         {% if saved %}
-            <div class="message success">Requirements scope and capabilities saved.</div>
+            <div class="message success">Test scope and capabilities saved.</div>
         {% endif %}
         <div class="message info">Next you will supply any catalogue-defined logical inputs required by these capabilities.</div>
 
@@ -288,7 +288,7 @@
               data-scope-form
               data-scope-options-url="{% url 'builder-scope-options' draft.draft_id %}"
               hx-post="{% url 'builder-scope-options' draft.draft_id %}"
-              hx-trigger="change from:input[name='requirements_scope'], change from:input[name='capabilities']"
+              hx-trigger="change from:input[name='test_scope'], change from:input[name='capabilities']"
               hx-target="#scope-options"
               hx-swap="outerHTML">
             {% csrf_token %}
@@ -310,7 +310,7 @@
 
         let activeRequest = null;
 
-        const scopeInputs = new Set(["requirements_scope", "capabilities"]);
+        const scopeInputs = new Set(["test_scope", "capabilities"]);
 
         const checkboxInputs = (name) => Array.from(form.querySelectorAll(`input[name='${name}']`))
             .filter((input) => input instanceof HTMLInputElement);

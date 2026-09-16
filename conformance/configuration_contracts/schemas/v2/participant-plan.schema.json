@@ -1,0 +1,281 @@
+{
+  "$defs": {
+    "executionConfiguration": {
+      "additionalProperties": false,
+      "properties": {
+        "compatibilityRuntimeInputs": {
+          "additionalProperties": {
+            "type": [
+              "array",
+              "boolean",
+              "null",
+              "number",
+              "object",
+              "string"
+            ]
+          },
+          "type": "object"
+        },
+        "dynamicClientRegistration": {
+          "additionalProperties": false,
+          "properties": {
+            "disableKeepAlive": {
+              "type": "boolean"
+            },
+            "redirectUrisOverride": {
+              "items": {
+                "format": "uri",
+                "type": "string"
+              },
+              "minItems": 1,
+              "type": "array",
+              "uniqueItems": true
+            },
+            "registrationAudience": {
+              "pattern": "^[0-9A-Za-z]{1,18}$",
+              "type": "string"
+            },
+            "registrationIssuerOverride": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signingCertificatePath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "softwareStatementAssertionPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "transportCertificateSubjectDnOverride": {
+              "maxLength": 512,
+              "minLength": 1,
+              "type": "string"
+            },
+            "useNumericOidSubjectDn": {
+              "type": "boolean"
+            }
+          },
+          "type": "object"
+        },
+        "metadata": {
+          "additionalProperties": false,
+          "properties": {
+            "aspspName": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "brandName": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "environmentName": {
+              "minLength": 1,
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
+        "securityEnvironment": {
+          "additionalProperties": false,
+          "properties": {
+            "authorizationEndpoint": {
+              "format": "uri",
+              "type": "string"
+            },
+            "clientAssertionIssuer": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "clientAssertionSubject": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "clientAuthMethod": {
+              "enum": [
+                "client_secret_basic",
+                "client_secret_jwt",
+                "private_key_jwt",
+                "tls_client_auth"
+              ]
+            },
+            "clientAuthSigningAlgorithm": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "clientId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "discoveryUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "issuer": {
+              "format": "uri",
+              "type": "string"
+            },
+            "mtls": {
+              "additionalProperties": false,
+              "properties": {
+                "caBundlePath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "certificatePath": {
+                  "minLength": 1,
+                  "type": "string"
+                },
+                "enabled": {
+                  "type": "boolean"
+                },
+                "privateKeyPath": {
+                  "minLength": 1,
+                  "type": "string"
+                }
+              },
+              "type": "object"
+            },
+            "redirectUri": {
+              "format": "uri",
+              "type": "string"
+            },
+            "resourceBaseUrl": {
+              "format": "uri",
+              "type": "string"
+            },
+            "responseType": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signingAlgorithm": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signingCertificatePath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signingKeyId": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "signingPrivateKeyPath": {
+              "minLength": 1,
+              "type": "string"
+            },
+            "tokenEndpoint": {
+              "format": "uri",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "required": [
+        "securityEnvironment",
+        "compatibilityRuntimeInputs",
+        "dynamicClientRegistration",
+        "metadata"
+      ],
+      "type": "object"
+    },
+    "participantInput": {
+      "additionalProperties": false,
+      "properties": {
+        "inputId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+        },
+        "value": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/test-definition-catalogue.schema.json#/$defs/predefinedInputValue"
+        }
+      },
+      "required": [
+        "inputId",
+        "value"
+      ],
+      "type": "object"
+    },
+    "specification": {
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+        },
+        "testScope": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+        },
+        "version": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/version"
+        }
+      },
+      "required": [
+        "id",
+        "version",
+        "testScope"
+      ],
+      "type": "object"
+    }
+  },
+  "$id": "https://schemas.openbanking.org.uk/conformance/v2/participant-plan.schema.json",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "allOf": [
+    {
+      "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/documentEnvelope"
+    },
+    {
+      "properties": {
+        "documentType": {
+          "const": "participant-plan"
+        },
+        "executionConfiguration": {
+          "$ref": "#/$defs/executionConfiguration"
+        },
+        "predefinedInputs": {
+          "items": {
+            "$ref": "#/$defs/participantInput"
+          },
+          "type": "array"
+        },
+        "schemaVersion": {
+          "const": "2.0"
+        },
+        "scheme": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+        },
+        "securityProfile": {
+          "enum": [
+            "all",
+            "fapi1-advanced"
+          ]
+        },
+        "selectedCapabilityIds": {
+          "items": {
+            "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+          },
+          "minItems": 1,
+          "type": "array",
+          "uniqueItems": true
+        },
+        "specification": {
+          "$ref": "#/$defs/specification"
+        },
+        "suiteReleaseId": {
+          "$ref": "https://schemas.openbanking.org.uk/conformance/v2/common.schema.json#/$defs/stableId"
+        }
+      },
+      "required": [
+        "suiteReleaseId",
+        "scheme",
+        "specification",
+        "securityProfile",
+        "selectedCapabilityIds",
+        "predefinedInputs"
+      ],
+      "type": "object"
+    }
+  ],
+  "title": "Open Banking UK participant test plan",
+  "type": "object",
+  "unevaluatedProperties": false
+}

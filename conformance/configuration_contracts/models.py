@@ -346,6 +346,7 @@ class FindingSourceDocument(StrEnum):
 
     PARTICIPANT_PLAN = "participant-plan"
     REQUIREMENTS_CATALOGUE = "requirements-catalogue"
+    TEST_DEFINITION_CATALOGUE = "test-definition-catalogue"
     RESOLVED_PLAN = "resolved-plan"
 
 
@@ -462,6 +463,7 @@ class EvidenceMode(StrEnum):
     """Evidence handling modes supported by the initial runner boundary."""
 
     MASKED = "masked"
+    NONE = "none"
 
 
 class RequestBaseUrlSource(StrEnum):

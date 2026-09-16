@@ -27,7 +27,12 @@ pytestmark = pytest.mark.unit
 
 _MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "v1" / "execution-manifest.valid.json"
 _RELEASE_PATH = (
-    REPO_ROOT / "conformance" / "configuration_contracts" / "bundles" / "open-banking-mvp" / "suite-release.json"
+    REPO_ROOT
+    / "conformance"
+    / "configuration_contracts"
+    / "bundles"
+    / "open-banking-mvp"
+    / "suite-release.v1.compatibility.json"
 )
 
 

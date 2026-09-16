@@ -17,10 +17,26 @@ if TYPE_CHECKING:
     from conformance.approved_releases import ApprovedReleasePolicy
     from conformance.catalogue import CompiledTestPlan
     from conformance.configuration_contracts.models import (
-        ExecutionManifest,
-        ParticipantPlan,
+        ExecutionManifest as V1ExecutionManifest,
+    )
+    from conformance.configuration_contracts.models import (
+        ParticipantPlan as V1ParticipantPlan,
+    )
+    from conformance.configuration_contracts.models import (
         RequirementsCatalogue,
-        ResolvedPlan,
+    )
+    from conformance.configuration_contracts.models import (
+        ResolvedPlan as V1ResolvedPlan,
+    )
+    from conformance.configuration_contracts.v2_models import (
+        ExecutionManifest as V2ExecutionManifest,
+    )
+    from conformance.configuration_contracts.v2_models import (
+        ParticipantPlan,
+        TestDefinitionCatalogue,
+    )
+    from conformance.configuration_contracts.v2_models import (
+        ResolvedPlan as V2ResolvedPlan,
     )
     from conformance.test_plan import TestPlan
 
@@ -94,8 +110,8 @@ class ResultTraceabilitySource:
         participant_plan_snapshot: Secret-safe snapshot of participant intent.
     """
 
-    execution_manifest: ExecutionManifest
-    resolved_plan: ResolvedPlan
+    execution_manifest: V1ExecutionManifest | V2ExecutionManifest
+    resolved_plan: V1ResolvedPlan | V2ResolvedPlan
     participant_plan_snapshot: Mapping[str, JsonValue]
 
     def __post_init__(self) -> None:
@@ -270,17 +286,17 @@ def build_smoke_check_result(
 
 
 def build_safe_participant_plan_snapshot(
-    participant_plan: ParticipantPlan,
-    requirements_catalogue: RequirementsCatalogue,
+    participant_plan: V1ParticipantPlan | ParticipantPlan,
+    catalogue: RequirementsCatalogue | TestDefinitionCatalogue,
 ) -> JsonObject:
     """Build a participant-intent snapshot without persisting sensitive values.
 
-    Input sensitivity remains owned by the trusted requirements catalogue. An
+    Input sensitivity remains owned by the trusted executable catalogue. An
     unknown input is rejected rather than copied without a classification.
 
     Args:
         participant_plan: Participant-authored plan used for compilation.
-        requirements_catalogue: Trusted definitions classifying plan inputs.
+        catalogue: Trusted definitions classifying plan inputs.
 
     Returns:
         Detached JSON object safe to embed in generated result evidence.
@@ -288,9 +304,7 @@ def build_safe_participant_plan_snapshot(
     Raises:
         ValueError: If the participant plan references an unclassified input.
     """
-    input_definitions = {
-        predefined_input.id: predefined_input for predefined_input in requirements_catalogue.predefined_inputs
-    }
+    input_definitions = {predefined_input.id: predefined_input for predefined_input in catalogue.predefined_inputs}
     snapshot_inputs: list[JsonValue] = []
     for participant_input in participant_plan.predefined_inputs:
         input_definition = input_definitions.get(participant_input.input_id)
@@ -315,6 +329,9 @@ def build_safe_participant_plan_snapshot(
                 }
             )
         snapshot_inputs.append(snapshot_input)
+    specification = participant_plan.specification
+    is_v2 = participant_plan.schema_version == "2.0"
+    scope = specification.test_scope if hasattr(specification, "test_scope") else specification.requirements_scope
     snapshot: JsonObject = {
         "documentType": participant_plan.document_type,
         "id": str(participant_plan.id),
@@ -325,7 +342,7 @@ def build_safe_participant_plan_snapshot(
         "selectedCapabilityIds": [str(capability_id) for capability_id in participant_plan.selected_capability_ids],
         "specification": {
             "id": str(participant_plan.specification.id),
-            "requirementsScope": str(participant_plan.specification.requirements_scope),
+            ("testScope" if is_v2 else "requirementsScope"): str(scope),
             "version": participant_plan.specification.version,
         },
         "suiteReleaseId": str(participant_plan.suite_release_id),
@@ -637,56 +654,36 @@ def _result_traceability_to_json_object(
         if test_definition_id in seen_test_definition_ids:
             continue
         seen_test_definition_ids.add(test_definition_id)
-        test_definitions.append(
-            {
-                "id": test_definition_id,
-                "coveredRequirementIds": [
-                    str(requirement_id) for requirement_id in manifest_step.covered_requirement_ids
-                ],
-            }
-        )
+        test_definitions.append({"id": test_definition_id})
 
     manifest_steps: list[JsonValue] = []
     for manifest_step in manifest.steps:
         manifest_step_id = str(manifest_step.id)
         observation = result_by_observation_id.get(manifest_step_id)
-        manifest_steps.append(
-            {
-                "id": manifest_step_id,
-                "testInstanceId": str(manifest_step.test_instance_id),
-                "testDefinitionId": str(manifest_step.test_definition_id),
-                "coveredRequirementIds": [
-                    str(requirement_id) for requirement_id in manifest_step.covered_requirement_ids
-                ],
-                "resultObservationId": manifest_step_id,
-                "resultStatus": observation.status if observation is not None else "missing",
-            }
-        )
+        rendered_step: JsonObject = {
+            "id": manifest_step_id,
+            "testInstanceId": str(manifest_step.test_instance_id),
+            "testDefinitionId": str(manifest_step.test_definition_id),
+            "assertionIds": [str(assertion.id) for assertion in manifest_step.assertions],
+            "resultObservationId": manifest_step_id,
+            "resultStatus": observation.status if observation is not None else "missing",
+        }
+        manifest_steps.append(rendered_step)
 
     provenance = manifest.provenance
-    return {
+    result: JsonObject = {
         "suiteRelease": {
             "id": str(provenance.suite_release_id),
             "version": provenance.suite_release_version,
             "publishedAt": provenance.suite_published_at,
         },
         "participantPlanSnapshot": deepcopy(dict(source.participant_plan_snapshot)),
-        "requirements": [
-            {
-                "id": str(requirement.id),
-                "normativeReferenceIds": [str(reference_id) for reference_id in requirement.normative_reference_ids],
-            }
-            for requirement in resolved_plan.requirements
-        ],
         "testDefinitions": test_definitions,
         "compiledTestInstances": [
             {
                 "id": str(test_instance.id),
                 "testDefinitionId": str(test_instance.test_definition_id),
                 "dependencyIds": [str(dependency_id) for dependency_id in test_instance.dependency_ids],
-                "coveredRequirementIds": [
-                    str(requirement_id) for requirement_id in test_instance.covered_requirement_ids
-                ],
             }
             for test_instance in resolved_plan.test_instances
         ],
@@ -708,6 +705,7 @@ def _result_traceability_to_json_object(
             for finding in resolved_plan.findings
         ],
     }
+    return result
 
 
 def _compiled_trace_groups_to_json_object(
@@ -745,7 +743,6 @@ def _compiled_trace_groups_to_json_object(
                 "name": trace_group.name,
                 "intent": trace_group.intent,
                 "sourceSymbol": trace_group.source_symbol,
-                "normativeReferenceIds": list(trace_group.normative_reference_ids),
             }
         case_is_unselected = test_case.test_case_id in skipped_ids
         rendered_steps: list[JsonValue] = []

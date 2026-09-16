@@ -10,8 +10,15 @@ import pytest
 from django.test import Client
 from django.urls import reverse
 
+import conformance.api.builder_wizard
+import conformance.configuration_contracts.compiled_plan_adapter
+import conformance.test_plan_validation
+from conformance.api.builder_draft_store import BuilderDraft
+from conformance.api.builder_wizard import participant_plan_from_draft
 from conformance.api.run_store import run_store
 from conformance.configuration_contracts import PreparedExecutionManifest
+from conformance.configuration_contracts.models import StandingOrderFrequency
+from conformance.participant_surface import supported_participant_catalogues
 from tests.support.paths import REPO_ROOT
 from tests.support.run_execution import StubbedRunExecution
 
@@ -38,7 +45,19 @@ def _draft_id(location: str) -> str:
 def test_browser_builds_reviews_exports_and_launches_participant_plan(
     mock_fetch_discovery: Mock,
     stubbed_run_execution: StubbedRunExecution,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("legacy authority was called")
+
+    monkeypatch.setattr(conformance.api.builder_wizard, "supported_catalogues", fail)
+    monkeypatch.setattr(conformance.api.builder_wizard, "compile_test_plan_document", fail)
+    monkeypatch.setattr(conformance.test_plan_validation, "prepare_test_plan_for_run", fail)
+    monkeypatch.setattr(
+        conformance.configuration_contracts.compiled_plan_adapter,
+        "materialize_execution_manifest_requests",
+        fail,
+    )
     mock_fetch_discovery.return_value = {}
     client = Client()
     response = client.post("/builder/new/")
@@ -66,14 +85,14 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
 
     scope_page = client.get(response["Location"])
     scope_content = scope_page.content.decode()
-    assert "Requirements scope and capabilities" in scope_content
+    assert "Test scope and capabilities" in scope_content
     assert "Payment Initiation" in scope_content
     assert "GET /open-banking" not in scope_content
 
     response = client.post(
         response["Location"],
         data={
-            "requirements_scope": "pis",
+            "test_scope": "pis",
             "capabilities": ["pis.v401.capability.domestic-standing-order"],
         },
     )
@@ -147,6 +166,132 @@ def test_rest_accepts_the_same_participant_plan(
     assert "08080021325698" not in json.dumps(record.plan_snapshot)
     launch = stubbed_run_execution.wait_for_launch()
     assert isinstance(launch.args[2], PreparedExecutionManifest)
+
+
+@pytest.mark.parametrize("test_scope", ["cbpii", "vrp"])
+def test_rest_launches_remaining_v2_catalogue_families(
+    stubbed_run_execution: StubbedRunExecution,
+    test_scope: str,
+) -> None:
+    participant_catalogue = next(
+        item
+        for item in supported_participant_catalogues()
+        if item.test_catalogue.specification.test_scope == test_scope
+        and item.test_catalogue.specification.version == "4.0.1"
+    )
+    catalogue = participant_catalogue.test_catalogue
+    capability = catalogue.capabilities[0]
+    inputs = []
+    for item in catalogue.predefined_inputs:
+        if capability.id not in item.required_for_capability_ids:
+            continue
+        value = item.example_value
+        inputs.append(
+            {
+                "inputId": str(item.id),
+                "value": (
+                    {
+                        "frequencyType": value.frequency_type,
+                        **(
+                            {"countPerPeriod": value.count_per_period}
+                            if isinstance(value, StandingOrderFrequency) and value.count_per_period is not None
+                            else {}
+                        ),
+                        **(
+                            {"pointInTime": value.point_in_time}
+                            if isinstance(value, StandingOrderFrequency) and value.point_in_time is not None
+                            else {}
+                        ),
+                    }
+                    if isinstance(value, StandingOrderFrequency)
+                    else value
+                ),
+            }
+        )
+    raw_plan = {
+        "documentType": "participant-plan",
+        "executionConfiguration": {
+            "compatibilityRuntimeInputs": {
+                "resourceBaseUrl": "https://rs.example.com",
+            },
+            "dynamicClientRegistration": {},
+            "metadata": {},
+            "securityEnvironment": {"discoveryUrl": "https://as.example.com/.well-known/openid-configuration"},
+        },
+        "id": f"participant.{test_scope}.component",
+        "predefinedInputs": inputs,
+        "schemaVersion": "2.0",
+        "scheme": str(catalogue.scheme),
+        "securityProfile": "fapi1-advanced",
+        "selectedCapabilityIds": [str(capability.id)],
+        "specification": {
+            "id": str(catalogue.specification.id),
+            "testScope": test_scope,
+            "version": catalogue.specification.version,
+        },
+        "suiteReleaseId": str(participant_catalogue.suite_release.id),
+    }
+
+    response = Client().post("/api/runs/", data=json.dumps(raw_plan), content_type="application/json")
+
+    assert response.status_code == 201
+    prepared = stubbed_run_execution.wait_for_launch().args[2]
+    assert isinstance(prepared, PreparedExecutionManifest)
+    assert prepared.manifest.schema_version == "2.0"
+    assert prepared.result_traceability is not None
+    if test_scope == "cbpii":
+        debtor_name = next(item for item in prepared.manifest.inputs if item.id.endswith("debtor-account-name"))
+        assert debtor_name.value == "Debtor account"
+        assert debtor_name.redacted is False
+
+
+def test_browser_import_rejects_catalogue_unsupported_security_profile() -> None:
+    client = Client()
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["securityProfile"] = "all"
+
+    response = client.post(
+        reverse("builder-import"),
+        data={"plan_json": json.dumps(raw_plan)},
+    )
+
+    assert response.status_code == 400
+    assert b"plan.reference.security-profile-unsupported" in response.content
+
+
+def test_browser_promotes_cbpii_debtor_name_to_catalogue_input() -> None:
+    draft = (
+        BuilderDraft.create()
+        .with_catalogue_boundary(
+            scheme="open-banking-uk",
+            specification="read-write",
+            version="4.0.1",
+        )
+        .with_scope_selection(
+            resource_group_ids=("cbpii",),
+            endpoint_ids=("cbpii.v401.capability.confirmation-of-funds",),
+            endpoint_capability_ids={},
+        )
+        .with_config(
+            config={
+                "cbpii": {
+                    "debtorAccount": {
+                        "schemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "identification": "08080021325698",
+                        "name": "Participant debtor",
+                    },
+                    "instructedAmount": {"amount": "10.00", "currency": "GBP"},
+                }
+            }
+        )
+    )
+
+    plan = participant_plan_from_draft(draft)
+
+    inputs = {str(item.input_id): item.value for item in plan.predefined_inputs}
+    assert inputs["cbpii.v401.input.debtor-account-name"] == "Participant debtor"
+    assert plan.execution_configuration is not None
+    assert "debtorAccountName" not in plan.execution_configuration.compatibility_runtime_inputs
 
 
 @pytest.mark.parametrize(
@@ -232,7 +377,9 @@ def test_rest_accepts_dcr_registration_with_explicit_observation_mapping(
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "dcr" / "v3_4" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.catalogue-release"
+    raw_plan["schemaVersion"] = "2.0"
+    raw_plan["specification"]["testScope"] = raw_plan["specification"].pop("requirementsScope")
+    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
     raw_plan["selectedCapabilityIds"] = ["dcr.v34.capability.registration"]
     raw_plan["executionConfiguration"] = {
         "compatibilityRuntimeInputs": {},

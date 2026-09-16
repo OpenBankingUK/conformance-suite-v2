@@ -129,6 +129,69 @@ from conformance.configuration_contracts.suite_release_artifacts import (
     SuiteReleaseArtifactResolver,
     preflight_suite_release_artifacts,
 )
+from conformance.configuration_contracts.v2_compiler import (
+    CompilationFindingCode as V2CompilationFindingCode,
+)
+from conformance.configuration_contracts.v2_compiler import (
+    ParticipantPlanCompilationError as V2ParticipantPlanCompilationError,
+)
+from conformance.configuration_contracts.v2_compiler import (
+    compile_participant_plan as compile_participant_plan_v2,
+)
+from conformance.configuration_contracts.v2_compiler import (
+    resolve_participant_plan as resolve_participant_plan_v2,
+)
+from conformance.configuration_contracts.v2_execution_manifest import (
+    ExecutionManifestGenerationError as V2ExecutionManifestGenerationError,
+)
+from conformance.configuration_contracts.v2_execution_manifest import (
+    generate_execution_manifest as generate_execution_manifest_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    dump_execution_manifest as dump_execution_manifest_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    dump_participant_plan as dump_participant_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    dump_resolved_plan as dump_resolved_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    dump_test_definition_catalogue as dump_test_definition_catalogue_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_execution_manifest as load_execution_manifest_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_participant_plan as load_participant_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_resolved_plan as load_resolved_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_suite_release as load_suite_release_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_test_definition_catalogue as load_test_definition_catalogue_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    parse_execution_manifest as parse_execution_manifest_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    parse_participant_plan as parse_participant_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    parse_resolved_plan as parse_resolved_plan_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    parse_suite_release as parse_suite_release_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    parse_test_definition_catalogue as parse_test_definition_catalogue_v2,
+)
+from conformance.configuration_contracts.v2_loader import (
+    validate_bundled_schemas as validate_bundled_schemas_v2,
+)
 
 __all__ = [
     "ArtifactReference",
@@ -246,4 +309,25 @@ __all__ = [
     "validate_catalogue_references",
     "validate_execution_manifest_compatibility",
     "verify_suite_release_artifacts",
+    "V2CompilationFindingCode",
+    "V2ExecutionManifestGenerationError",
+    "V2ParticipantPlanCompilationError",
+    "compile_participant_plan_v2",
+    "dump_execution_manifest_v2",
+    "dump_participant_plan_v2",
+    "dump_resolved_plan_v2",
+    "dump_test_definition_catalogue_v2",
+    "generate_execution_manifest_v2",
+    "load_execution_manifest_v2",
+    "load_participant_plan_v2",
+    "load_resolved_plan_v2",
+    "load_suite_release_v2",
+    "load_test_definition_catalogue_v2",
+    "parse_execution_manifest_v2",
+    "parse_participant_plan_v2",
+    "parse_resolved_plan_v2",
+    "parse_suite_release_v2",
+    "parse_test_definition_catalogue_v2",
+    "resolve_participant_plan_v2",
+    "validate_bundled_schemas_v2",
 ]

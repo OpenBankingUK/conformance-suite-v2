@@ -25,7 +25,7 @@ The supported workflow is:
    unchecked until the participant declares that behaviour as implemented.
 8. Provide resource-group-specific business data and generated runtime artifacts.
    Domain-specific fields appear only for the selected endpoint scope.
-9. Review the generated schemaVersion `1.0` test plan, export reusable JSON, or launch the
+9. Review the generated schemaVersion `2.0` test plan, export reusable JSON, or launch the
    run.
 
 The UI shows generated tests, counts, source traceability, runtime/auth
@@ -35,7 +35,7 @@ request and assertion details stay collapsed under audit details.
 
 ## CLI plan execution
 
-The CLI accepts a `participant-plan` 1.0 document containing participant scope,
+The CLI accepts a `participant-plan` 2.0 document containing participant scope,
 predefined inputs, and local execution configuration:
 
 ```bash
@@ -87,7 +87,7 @@ uv run python main.py --test-plan path/to/test-plan.json
       "value": {"frequencyType": "WEEK", "pointInTime": "03"}
     }
   ],
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "scheme": "open-banking-uk",
   "securityProfile": "fapi1-advanced",
   "selectedCapabilityIds": [
@@ -95,16 +95,20 @@ uv run python main.py --test-plan path/to/test-plan.json
   ],
   "specification": {
     "id": "read-write-api",
-    "requirementsScope": "pis",
+    "testScope": "pis",
     "version": "4.0.1"
   },
-  "suiteReleaseId": "obl.open-banking-mvp.catalogue-release"
+  "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release"
 }
 ```
 
-Each plan selects one requirements scope and its participant-facing
-capabilities. Trusted release catalogues infer required capabilities, endpoints,
-tests, and dependencies. `compatibilityRuntimeInputs` is restricted execution
+Each plan selects one test scope and its participant-facing capabilities. A
+manually authored, reviewed executable catalogue directly owns scheme and
+specification identity, capability and input metadata, endpoint source
+bindings, test applicability and dependencies, requests, assertions, outputs,
+and evidence policy. The pinned suite release infers required capabilities,
+endpoints, tests, and dependencies from that catalogue.
+`compatibilityRuntimeInputs` is restricted execution
 configuration for environment, credential references, captured protocol-session
 state, and runtime-generated values still consumed by the current hardened
 runtime. Participant-controlled PIS account, amount, currency, date, and
@@ -112,12 +116,19 @@ frequency values must use catalogue-defined `predefinedInputs`; known legacy
 PIS aliases are rejected. Compatibility configuration does not affect
 deterministic plan resolution.
 
-DCR plans select specification `dynamic-client-registration`, requirements
-scope `dcr`, and DCR capabilities. See
+DCR plans select specification `dynamic-client-registration`, test scope `dcr`,
+and DCR capabilities. See
 [`docs/DCR_3_4_PARITY_CONTRACT.md`](docs/DCR_3_4_PARITY_CONTRACT.md) for the
 supported auth methods and operator workflow. Legacy canonical
-`schemaVersion: "1.0"` plans are no longer accepted by browser import, CLI, or
+`schemaVersion: "1.0"` participant plans are no longer accepted by browser
+import, CLI, or
 REST.
+
+The active release binds exact 2.0 catalogue, contract-schema, execution-policy,
+and technical-source bytes. Local preflight verifies every binding before any
+network request. Result traceability follows suite release → test definition →
+resolved instance → manifest step/assertion → observation; it does not expose a
+requirements or normative-reference authority.
 
 ## Browser and REST launch
 

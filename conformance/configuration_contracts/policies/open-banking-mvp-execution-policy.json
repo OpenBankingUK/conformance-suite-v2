@@ -1,0 +1,9 @@
+{
+  "blockingFindingSeverities": [
+    "error"
+  ],
+  "documentType": "suite-policy",
+  "id": "obl.open-banking-mvp.execution-policy",
+  "resultClaim": "approved-executable-tests-only",
+  "schemaVersion": "2.0"
+}

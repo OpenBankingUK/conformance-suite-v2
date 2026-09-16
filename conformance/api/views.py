@@ -16,7 +16,7 @@ import functools
 import ipaddress
 import json
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
@@ -34,7 +34,6 @@ from conformance.api.auth_session_store import (
 )
 from conformance.api.run_lifecycle import start_run
 from conformance.api.run_store import RunConflictError, run_store
-from conformance.catalogue import CompiledTestPlan
 from conformance.json_types import JsonObject, JsonValue
 from conformance.participant_surface import ParticipantSurfaceError, prepare_participant_plan_for_run
 
@@ -309,12 +308,6 @@ def _start_participant_plan(raw_test_plan: dict[str, JsonValue]) -> JsonResponse
     """
     try:
         participant_prepared = prepare_participant_plan_for_run(raw_test_plan, base_dir=Path.cwd())
-        api_file_reference_error = _api_file_reference_error(
-            participant_prepared.compiled_plan,
-            participant_prepared.runtime_inputs,
-        )
-        if api_file_reference_error is not None:
-            return api_file_reference_error
     except ParticipantSurfaceError as error:
         return JsonResponse(
             {
@@ -337,49 +330,6 @@ def _start_participant_plan(raw_test_plan: dict[str, JsonValue]) -> JsonResponse
         )
 
     return JsonResponse(response_body, status=201)
-
-
-def _api_file_reference_error(
-    compiled_plan: CompiledTestPlan,
-    runtime_inputs: Mapping[str, JsonValue],
-) -> JsonResponse | None:
-    """Return a 400 response for unsupported API server-local file references.
-
-    DCR plans necessarily use operator-provisioned SSA, mTLS, and signing files.
-    Those canonical references are accepted after shared preparation has verified
-    that they are absolute existing files. Other catalogue runtime file inputs
-    remain rejected at this REST boundary.
-
-    Args:
-        compiled_plan: Compiled catalogue plan used to identify selected runtime
-            input types.
-        runtime_inputs: Participant-supplied runtime inputs keyed by input id.
-
-    Returns:
-        Error response when any selected ``file_reference`` input is supplied,
-        otherwise ``None``.
-    """
-    if compiled_plan.catalogue_key.api in {"dcr", "dynamic-client-registration"}:
-        return None
-    file_reference_input_ids = sorted(
-        trace.input_id
-        for trace in compiled_plan.traceability.runtime_input_snapshot
-        if trace.input_type == "file_reference"
-        and trace.input_id in runtime_inputs
-        and runtime_inputs[trace.input_id] is not None
-    )
-    if not file_reference_input_ids:
-        return None
-    joined_input_ids = ", ".join(file_reference_input_ids)
-    return JsonResponse(
-        {
-            "error": (
-                "Test plan validation failed: file_reference runtime inputs are not accepted by the REST API: "
-                f"{joined_input_ids}"
-            )
-        },
-        status=400,
-    )
 
 
 @_require_loopback

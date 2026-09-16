@@ -104,7 +104,7 @@ class TestBuilderWizardUi:
 
         content = response.content.decode()
         assert response.status_code == 200
-        assert "Requirements scope and capabilities" in content
+        assert "Test scope and capabilities" in content
         assert "Payment Initiation" in content
         assert "Variable Recurring Payments" in content
         assert 'name="endpoints"' not in content

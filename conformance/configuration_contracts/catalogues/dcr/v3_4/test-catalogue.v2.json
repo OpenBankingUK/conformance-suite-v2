@@ -1,0 +1,1037 @@
+{
+  "allowedSecurityProfiles": [
+    "all"
+  ],
+  "capabilities": [
+    {
+      "description": "Conditional Dynamic Client Registration operation defined by Open Banking DCR 3.4.",
+      "id": "dcr.v34.capability.registration",
+      "name": "Dynamic client registration",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.registration"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional retrieval of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.retrieval",
+      "name": "Dynamic client retrieval",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-retrieval"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional update of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.update",
+      "name": "Dynamic client update",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-update"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional deletion of a dynamically registered client; registration is inferred as test setup.",
+      "id": "dcr.v34.capability.deletion",
+      "name": "Dynamic client deletion",
+      "requiredEndpointIds": [
+        "dcr.v34.endpoint.client-deletion"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "test-definition-catalogue",
+  "endpoints": [
+    {
+      "id": "dcr.v34.endpoint.registration",
+      "method": "POST",
+      "path": "/register",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register/post"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-retrieval",
+      "method": "GET",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/get"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-update",
+      "method": "PUT",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/put"
+    },
+    {
+      "id": "dcr.v34.endpoint.client-deletion",
+      "method": "DELETE",
+      "path": "/register/{ClientId}",
+      "sourceId": "ob-dcr-v34.openapi",
+      "sourcePointer": "/paths/~1register~1{ClientId}/delete"
+    }
+  ],
+  "id": "obl.dcr-v34.tests.v2",
+  "predefinedInputs": [],
+  "schemaVersion": "2.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "dynamic-client-registration",
+    "testScope": "dcr",
+    "version": "3.4"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:e40e48e8262701f979c93388f0f7598158cfc2ced6f2f330f8ecac51585ba04e",
+      "id": "ob-dcr-v34.openapi",
+      "title": "Open Banking Dynamic Client Registration API 3.4 OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/client-registration-api-specs/v3.4/dist/client-registration-openapi.yaml"
+    }
+  ],
+  "testDefinitions": [
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "dcr.v34.assertion.registration.status-201",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration.response-schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        },
+        {
+          "id": "dcr.v34.assertion.registration.client-id",
+          "jsonPointer": "/client_id",
+          "type": "json-present"
+        }
+      ],
+      "dependencies": [],
+      "description": "Register a client with the DCR 3.4 JWS claim set and validate the created-client response.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.positive",
+      "name": "Register a dynamic client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.registration.client-id",
+          "jsonPointer": "/client_id",
+          "sensitive": false,
+          "source": "response-json"
+        }
+      ],
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "dcr.v34.assertion.registration-expired.status-400",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration-expired.error-schema",
+          "schemaRef": "#/components/schemas/RegistrationError",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [],
+      "description": "Verify that a registration JWS whose exp claim is in the past is rejected with a registration error.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.expired",
+      "name": "Reject an expired registration request",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration-expired.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "generator": "expired-unix-time",
+            "id": "dcr.v34.modification.registration-expired.exp",
+            "location": "jws-claim",
+            "operation": "replace",
+            "target": "/exp"
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "dcr.v34.assertion.registration-invalid-issuer.status-400",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration-invalid-issuer.error-schema",
+          "schemaRef": "#/components/schemas/RegistrationError",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [],
+      "description": "Verify that an issuer outside the DCR 3.4 Base62 and length constraints is rejected.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.invalid-issuer",
+      "name": "Reject an invalid registration issuer",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration-invalid-issuer.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "id": "dcr.v34.modification.registration-invalid-issuer.iss",
+            "location": "jws-claim",
+            "operation": "replace",
+            "target": "/iss",
+            "value": "invalid-issuer!"
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "dcr.v34.assertion.registration-empty-issuer.status-400",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration-empty-issuer.error-schema",
+          "schemaRef": "#/components/schemas/RegistrationError",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [],
+      "description": "Verify that an empty issuer violates the DCR 3.4 minimum length.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.empty-issuer",
+      "name": "Reject an empty registration issuer",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration-empty-issuer.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "id": "dcr.v34.modification.registration-empty-issuer.iss",
+            "location": "jws-claim",
+            "operation": "replace",
+            "target": "/iss",
+            "value": ""
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "dcr.v34.assertion.registration-overlong-issuer.status-400",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration-overlong-issuer.error-schema",
+          "schemaRef": "#/components/schemas/RegistrationError",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [],
+      "description": "Verify that an issuer longer than 22 characters violates the DCR 3.4 maximum length.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.overlong-issuer",
+      "name": "Reject an overlong registration issuer",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration-overlong-issuer.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "id": "dcr.v34.modification.registration-overlong-issuer.iss",
+            "location": "jws-claim",
+            "operation": "replace",
+            "target": "/iss",
+            "value": "12345678901234567890123"
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.registration"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "dcr.v34.assertion.registration-invalid-auth-method.status-400",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.registration-invalid-auth-method.error-schema",
+          "schemaRef": "#/components/schemas/RegistrationError",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [],
+      "description": "Verify that a token endpoint authentication method outside the DCR 3.4 enumeration is rejected.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.registration.invalid-auth-method",
+      "name": "Reject an invalid token endpoint authentication method",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "dcr-registration",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.registration",
+        "inputBindings": [],
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws",
+            "id": "dcr.v34.modification.registration-invalid-auth-method.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "id": "dcr.v34.modification.registration-invalid-auth-method.value",
+            "location": "jws-claim",
+            "operation": "replace",
+            "target": "/token_endpoint_auth_method",
+            "value": "RS256"
+          }
+        ],
+        "path": "/register",
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.retrieval"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "dcr.v34.assertion.retrieval.status-200",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.retrieval.response-schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        },
+        {
+          "id": "dcr.v34.assertion.retrieval.client-id",
+          "jsonPointer": "/client_id",
+          "type": "json-present"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Retrieve the client created by the registration prerequisite using client-credentials authorization and mTLS.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.retrieval.positive",
+      "name": "Retrieve a dynamic client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.retrieval.access-token",
+          "sensitive": true,
+          "source": "authorization-access-token"
+        }
+      ],
+      "purpose": "positive",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-retrieval",
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.retrieval"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.retrieval-unknown.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Verify that retrieving an unknown ClientId is unauthorized.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.retrieval.unknown-client",
+      "name": "Reject retrieval of an unknown client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.retrieval-unknown.access-token",
+          "sensitive": true,
+          "source": "authorization-access-token"
+        }
+      ],
+      "purpose": "negative",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-retrieval",
+        "inputBindings": [],
+        "invalidateProducedAuthorizationToken": true,
+        "method": "GET",
+        "modifications": [
+          {
+            "generator": "unknown-client-id",
+            "id": "dcr.v34.modification.retrieval-unknown.client-id",
+            "location": "path-parameter",
+            "operation": "replace",
+            "target": "ClientId"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.retrieval"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.retrieval-revoked-token.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.retrieval.unknown-client"
+      ],
+      "description": "Reuse the token presented for an unknown ClientId against the registered client and require rejection.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.retrieval.revoked-token",
+      "name": "Reject the token revoked after unknown-client retrieval",
+      "purpose": "security",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-retrieval",
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.retrieval-unknown.access-token",
+            "target": "Authorization",
+            "type": "authorization-access-token"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.retrieval"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.retrieval-missing-authorization.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Verify that the retrieval operation rejects a request without client-credentials authorization.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.retrieval.missing-authorization",
+      "name": "Reject retrieval without authorization",
+      "purpose": "security",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-retrieval",
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [
+          {
+            "id": "dcr.v34.modification.retrieval-missing-authorization.header",
+            "location": "header",
+            "operation": "omit",
+            "target": "Authorization"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.update"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "dcr.v34.assertion.update.status-200",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.update.response-schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Update the registered client with a complete DCR 3.4 claim set and retain existing long-lived token validity.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.update.positive",
+      "name": "Update a dynamic client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.update.access-token",
+          "sensitive": true,
+          "source": "authorization-access-token"
+        }
+      ],
+      "purpose": "positive",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.client-update",
+        "inputBindings": [],
+        "method": "PUT",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws-complete-claims",
+            "id": "dcr.v34.modification.update.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.update"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "dcr.v34.assertion.update-token-continuity.status-200",
+          "type": "http-status"
+        },
+        {
+          "id": "dcr.v34.assertion.update-token-continuity.response-schema",
+          "schemaRef": "#/components/schemas/OBRegistrationProperties1",
+          "schemaSourceId": "ob-dcr-v34.openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.update.positive"
+      ],
+      "description": "Reuse the same long-lived access token for a second complete update after a successful modification.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.update.token-continuity",
+      "name": "Retain token validity after client update",
+      "purpose": "positive",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.client-update",
+        "inputBindings": [],
+        "method": "PUT",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws-complete-claims",
+            "id": "dcr.v34.modification.update-token-continuity.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.update.access-token",
+            "target": "Authorization",
+            "type": "authorization-access-token"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.update"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.update-unknown.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Verify that updating an unknown ClientId is unauthorized.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.update.unknown-client",
+      "name": "Reject update of an unknown client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.update-unknown.access-token",
+          "sensitive": true,
+          "source": "authorization-access-token"
+        }
+      ],
+      "purpose": "negative",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.client-update",
+        "inputBindings": [],
+        "invalidateProducedAuthorizationToken": true,
+        "method": "PUT",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws-complete-claims",
+            "id": "dcr.v34.modification.update-unknown.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          },
+          {
+            "generator": "unknown-client-id",
+            "id": "dcr.v34.modification.update-unknown.client-id",
+            "location": "path-parameter",
+            "operation": "replace",
+            "target": "ClientId"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.update"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.update-revoked-token.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.update.unknown-client"
+      ],
+      "description": "Reuse the token presented for an unknown ClientId against the registered client and require rejection.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.update.revoked-token",
+      "name": "Reject the token revoked after unknown-client update",
+      "purpose": "security",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "contentType": "application/json",
+        "endpointId": "dcr.v34.endpoint.client-update",
+        "inputBindings": [],
+        "method": "PUT",
+        "modifications": [
+          {
+            "generator": "dcr-v34-registration-jws-complete-claims",
+            "id": "dcr.v34.modification.update-revoked-token.generate-jws",
+            "location": "request-body",
+            "operation": "generate"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.update-unknown.access-token",
+            "target": "Authorization",
+            "type": "authorization-access-token"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.deletion"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 204,
+          "id": "dcr.v34.assertion.deletion.status-204",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.deletion.revoked-token"
+      ],
+      "description": "Delete the client created by the registration prerequisite and assert the specified success status.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.deletion.positive",
+      "name": "Delete a dynamic client",
+      "purpose": "positive",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-deletion",
+        "inputBindings": [],
+        "method": "DELETE",
+        "modifications": [],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.deletion"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.deletion-unknown.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.registration.positive"
+      ],
+      "description": "Verify that deleting an unknown ClientId is unauthorized.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.deletion.unknown-client",
+      "name": "Reject deletion of an unknown client",
+      "outputs": [
+        {
+          "id": "dcr.v34.output.deletion-unknown.access-token",
+          "sensitive": true,
+          "source": "authorization-access-token"
+        }
+      ],
+      "purpose": "negative",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-deletion",
+        "inputBindings": [],
+        "invalidateProducedAuthorizationToken": true,
+        "method": "DELETE",
+        "modifications": [
+          {
+            "generator": "unknown-client-id",
+            "id": "dcr.v34.modification.deletion-unknown.client-id",
+            "location": "path-parameter",
+            "operation": "replace",
+            "target": "ClientId"
+          }
+        ],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "client_id",
+            "type": "authorization-client-id"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "dcr.v34.capability.deletion"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 401,
+          "id": "dcr.v34.assertion.deletion-revoked-token.status-401",
+          "type": "http-status"
+        }
+      ],
+      "dependencies": [
+        "dcr.v34.test.deletion.unknown-client"
+      ],
+      "description": "Reuse the token presented for an unknown ClientId against the registered client and require rejection.",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "dcr.v34.test.deletion.revoked-token",
+      "name": "Reject the token revoked after unknown-client deletion",
+      "purpose": "security",
+      "request": {
+        "authorizationProfile": "oauth2-client-credentials",
+        "baseUrlSource": "dcr-management",
+        "endpointId": "dcr.v34.endpoint.client-deletion",
+        "inputBindings": [],
+        "method": "DELETE",
+        "modifications": [],
+        "path": "/register/{ClientId}",
+        "stateBindings": [
+          {
+            "outputId": "dcr.v34.output.registration.client-id",
+            "target": "ClientId",
+            "type": "path-parameter"
+          },
+          {
+            "outputId": "dcr.v34.output.deletion-unknown.access-token",
+            "target": "Authorization",
+            "type": "authorization-access-token"
+          }
+        ],
+        "transportProfile": "mutual-tls"
+      }
+    }
+  ]
+}

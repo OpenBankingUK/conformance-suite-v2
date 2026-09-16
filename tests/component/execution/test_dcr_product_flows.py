@@ -67,16 +67,16 @@ def _participant_dcr_plan(service: DcrProtocolService, root: Path, *, full_scope
         },
         "id": "participant.dcr-product-flow",
         "predefinedInputs": [],
-        "schemaVersion": "1.0",
+        "schemaVersion": "2.0",
         "scheme": "open-banking-uk",
         "securityProfile": "all",
         "selectedCapabilityIds": selected_capabilities,
         "specification": {
             "id": "dynamic-client-registration",
-            "requirementsScope": "dcr",
+            "testScope": "dcr",
             "version": "3.4",
         },
-        "suiteReleaseId": "obl.open-banking-mvp.catalogue-release",
+        "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release",
     }
 
 
