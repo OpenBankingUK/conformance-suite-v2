@@ -11,7 +11,7 @@
       "value": "2026-01-31T23:59:59"
     }
   ],
-  "schemaVersion": "1.0",
+  "schemaVersion": "2.0",
   "scheme": "open-banking-uk",
   "securityProfile": "fapi1-advanced",
   "selectedCapabilityIds": [
@@ -29,8 +29,8 @@
   ],
   "specification": {
     "id": "read-write-api",
-    "requirementsScope": "ais",
+    "testScope": "ais",
     "version": "4.0.1"
   },
-  "suiteReleaseId": "obl.ais-v401.catalogue-fixture"
+  "suiteReleaseId": "obl.open-banking-mvp.test-catalogue-release"
 }

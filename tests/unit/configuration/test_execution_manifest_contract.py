@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from copy import deepcopy
 from dataclasses import replace
 from types import MappingProxyType
 from typing import cast
@@ -16,6 +17,7 @@ from conformance.configuration_contracts import (
     DetachedJwsProfile,
     DiagnosticCode,
     ExecutionDetachedJws,
+    ExecutionManifest,
     ExecutionManifestHeader,
     ExecutionPsuAuthorization,
     ExecutionResponseSignature,
@@ -26,9 +28,13 @@ from conformance.configuration_contracts import (
     ResponseSignatureSource,
     StableId,
     TokenEndpointAuthSource,
+    compile_participant_plan,
     execution_manifest_id,
     execution_manifest_to_document,
-    load_execution_manifest,
+    generate_execution_manifest,
+    load_participant_plan,
+    load_suite_release,
+    load_test_definition_catalogue,
     parse_execution_manifest,
 )
 from conformance.json_types import JsonObject
@@ -36,18 +42,23 @@ from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
-_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "v1" / "execution-manifest.valid.json"
+_ROOT = REPO_ROOT / "conformance" / "configuration_contracts"
+_RELEASE_PATH = _ROOT / "bundles" / "open-banking-mvp" / "suite-release.json"
+_CATALOGUE_PATH = _ROOT / "catalogues" / "pis" / "v4_0_1" / "test-catalogue.v2.json"
+_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
+)
 
 
 def test_complete_request_templates_round_trip_and_detach_mutable_json() -> None:
-    manifest = load_execution_manifest(_MANIFEST_PATH)
+    manifest = _manifest()
     source_body: JsonObject = {
         "Data": {
             "Reference": "${runtime.paymentReference}",
             "InteractionId": "${generated.interactionId}",
         }
     }
-    first, second, third, fourth = manifest.steps
+    first, second, third, *_remaining = manifest.steps
     first_request = replace(
         first.request,
         base_url_source=RequestBaseUrlSource.RESOURCE,
@@ -92,7 +103,7 @@ def test_complete_request_templates_round_trip_and_detach_mutable_json() -> None
             replace(first, request=first_request),
             second,
             replace(third, request=third_request),
-            fourth,
+            *manifest.steps[3:],
         ),
     )
     complete = replace(provisional, id=execution_manifest_id(provisional))
@@ -108,7 +119,7 @@ def test_complete_request_templates_round_trip_and_detach_mutable_json() -> None
 
 
 def test_request_template_mutations_change_content_addressed_manifest_id() -> None:
-    manifest = load_execution_manifest(_MANIFEST_PATH)
+    manifest = _manifest()
     first = manifest.steps[0]
     body_one: JsonObject = {"Data": {"Value": "one"}}
     body_two: JsonObject = {"Data": {"Value": "two"}}
@@ -150,7 +161,7 @@ def test_request_template_unsupported_vocabulary_fails_closed(
     field: str,
     value: object,
 ) -> None:
-    document = cast(JsonObject, json.loads(_MANIFEST_PATH.read_text(encoding="utf-8")))
+    document = deepcopy(execution_manifest_to_document(_manifest()))
     request = cast(JsonObject, cast(list[JsonObject], document["steps"])[0]["request"])
     request[field] = cast("str | JsonObject", value)
     _reidentify(document)
@@ -161,22 +172,22 @@ def test_request_template_unsupported_vocabulary_fails_closed(
     assert captured.value.diagnostics[0].code is DiagnosticCode.SCHEMA_VALIDATION_FAILED
 
 
-def test_request_template_rejects_duplicate_headers_and_missing_generated_reference() -> None:
-    document = cast(JsonObject, json.loads(_MANIFEST_PATH.read_text(encoding="utf-8")))
+def test_request_template_rejects_ambiguous_header_value_sources() -> None:
+    document = deepcopy(execution_manifest_to_document(_manifest()))
     request = cast(JsonObject, cast(list[JsonObject], document["steps"])[0]["request"])
     request["headerTemplates"] = [
-        {"name": "X-Test", "literalValue": "${generated.missing}"},
-        {"name": "x-test", "literalValue": "duplicate"},
+        {
+            "name": "X-Test",
+            "literalValue": "literal",
+            "runtimeInputRef": "resourceBaseUrl",
+        },
     ]
     _reidentify(document)
 
     with pytest.raises(ConfigurationContractError) as captured:
         parse_execution_manifest(document)
 
-    assert {diagnostic.code for diagnostic in captured.value.diagnostics} == {
-        DiagnosticCode.DUPLICATE_ID,
-        DiagnosticCode.REFERENCE_UNRESOLVED,
-    }
+    assert captured.value.diagnostics[0].code is DiagnosticCode.SCHEMA_VALIDATION_FAILED
 
 
 def _reidentify(document: JsonObject) -> None:
@@ -184,3 +195,14 @@ def _reidentify(document: JsonObject) -> None:
     del identity_document["id"]
     canonical = json.dumps(identity_document, separators=(",", ":"), sort_keys=True)
     document["id"] = f"execution-manifest:{hashlib.sha256(canonical.encode()).hexdigest()}"
+
+
+def _manifest() -> ExecutionManifest:
+    catalogue = load_test_definition_catalogue(_CATALOGUE_PATH)
+    participant_plan = load_participant_plan(_PLAN_PATH)
+    resolved_plan = compile_participant_plan(
+        load_suite_release(_RELEASE_PATH),
+        catalogue,
+        participant_plan,
+    )
+    return generate_execution_manifest(resolved_plan, catalogue)

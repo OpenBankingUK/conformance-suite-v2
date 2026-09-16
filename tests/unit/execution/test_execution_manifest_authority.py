@@ -5,26 +5,19 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from typing import cast
 
 import httpx
 import pytest
 
 from conformance.configuration_contracts import (
-    ExecutionManifest,
     ExecutionManifestAssertion,
     ExecutionManifestHeader,
     HttpMethod,
-    LegacyExecutionEngine,
     PreparedExecutionManifest,
     RequestBaseUrlSource,
     StableId,
     SuiteReleaseArtifactError,
     execution_manifest_id,
-    load_execution_manifest,
-    load_participant_plan,
-    load_requirements_catalogue,
-    load_resolved_plan,
     load_suite_release,
     preflight_suite_release_artifacts,
 )
@@ -32,13 +25,16 @@ from conformance.executor import _execution_manifest_to_runtime_manifest, run_ex
 from conformance.json_types import JsonObject
 from conformance.manifest import JsonBody, ManifestStep
 from conformance.participant_surface import prepare_participant_plan_for_run
-from conformance.results import ResultTraceabilitySource, build_safe_participant_plan_snapshot
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
-_BUNDLE_ROOT = REPO_ROOT / "conformance" / "configuration_contracts" / "bundles" / "pis-domestic-standing-order-v4_0"
-_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "v1"
+_RELEASE_PATH = (
+    REPO_ROOT / "conformance" / "configuration_contracts" / "bundles" / "open-banking-mvp" / "suite-release.json"
+)
+_SURFACE_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
+)
 
 
 @pytest.mark.parametrize(
@@ -116,7 +112,7 @@ def test_stale_manifest_identity_fails_before_network_execution(tmp_path: Path) 
         header="value",
         body={"Data": {}},
     )
-    source_manifest = cast(ExecutionManifest, prepared.manifest)
+    source_manifest = prepared.manifest
     stale = replace(
         source_manifest,
         steps=(
@@ -136,7 +132,7 @@ def test_stale_manifest_identity_fails_before_network_execution(tmp_path: Path) 
     with pytest.raises(SuiteReleaseArtifactError, match="manifest-id-mismatch"):
         preflight_suite_release_artifacts(
             stale,
-            load_suite_release(_BUNDLE_ROOT / "suite-release.json"),
+            load_suite_release(_RELEASE_PATH),
         )
     with httpx.Client(transport=httpx.MockTransport(handler)):
         pass
@@ -151,7 +147,7 @@ def test_failed_dependency_skips_request_without_reporting_assertions(tmp_path: 
         header="value",
         body={"Data": {}},
     )
-    source_manifest = cast(ExecutionManifest, prepared.manifest)
+    source_manifest = prepared.manifest
     first = source_manifest.steps[0]
     second = replace(
         first,
@@ -176,7 +172,7 @@ def test_failed_dependency_skips_request_without_reporting_assertions(tmp_path: 
         manifest=manifest,
         artifact_resolver=preflight_suite_release_artifacts(
             manifest,
-            load_suite_release(_BUNDLE_ROOT / "suite-release.json"),
+            load_suite_release(_RELEASE_PATH),
         ),
         result_traceability=replace(
             prepared.result_traceability,
@@ -211,7 +207,7 @@ def test_materialized_sensitive_bindings_remain_masked_and_ais_consent_is_signed
     )
     pis_prepared = prepare_participant_plan_for_run(pis_plan, base_dir=tmp_path)
     pis_runtime = _execution_manifest_to_runtime_manifest(
-        cast(ExecutionManifest, pis_prepared.execution_manifest),
+        pis_prepared.execution_manifest,
         runtime_inputs=pis_prepared.runtime_inputs,
         runtime_input_base_dir=tmp_path,
         runtime_config=None,
@@ -256,9 +252,6 @@ def test_materialized_sensitive_bindings_remain_masked_and_ais_consent_is_signed
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "vrp" / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    vrp_plan["schemaVersion"] = "2.0"
-    vrp_plan["specification"]["testScope"] = vrp_plan["specification"].pop("requirementsScope")
-    vrp_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
     vrp_plan["selectedCapabilityIds"] = ["vrp.v401.capability.domestic-vrp"]
     vrp_plan["executionConfiguration"] = {
         "compatibilityRuntimeInputs": {"resourceBaseUrl": "https://rs.example.com"},
@@ -283,7 +276,7 @@ def test_form_body_template_is_sent_exactly(tmp_path: Path) -> None:
         header="value",
         body={"unused": True},
     )
-    source_manifest = cast(ExecutionManifest, prepared.manifest)
+    source_manifest = prepared.manifest
     request = replace(
         source_manifest.steps[0].request,
         content_type="application/x-www-form-urlencoded",
@@ -304,7 +297,7 @@ def test_form_body_template_is_sent_exactly(tmp_path: Path) -> None:
         runtime_inputs={"resourceBaseUrl": "https://api.example.com", "scope": "payments"},
         artifact_resolver=preflight_suite_release_artifacts(
             manifest,
-            load_suite_release(_BUNDLE_ROOT / "suite-release.json"),
+            load_suite_release(_RELEASE_PATH),
         ),
         result_traceability=replace(prepared.result_traceability, execution_manifest=manifest),
     )
@@ -333,7 +326,11 @@ def _prepared_manifest(
     expected_status: int = 201,
     assertion_id: str = "assertion-status",
 ) -> PreparedExecutionManifest:
-    source = load_execution_manifest(_FIXTURE_ROOT / "execution-manifest.valid.json")
+    prepared_plan = prepare_participant_plan_for_run(
+        json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8")),
+        base_dir=tmp_path,
+    )
+    source = prepared_plan.execution_manifest
     source_step = source.steps[0]
     request = replace(
         source_step.request,
@@ -374,19 +371,15 @@ def _prepared_manifest(
     )
     provisional = replace(source, steps=(step,))
     manifest = replace(provisional, id=execution_manifest_id(provisional))
-    release = load_suite_release(_BUNDLE_ROOT / "suite-release.json")
-    resolved = load_resolved_plan(_FIXTURE_ROOT / "resolved-plan.valid.json")
-    participant = load_participant_plan(_FIXTURE_ROOT / "participant-plan.valid.json")
-    requirements = load_requirements_catalogue(_BUNDLE_ROOT / "requirements.json")
-    return PreparedExecutionManifest(
+    release = load_suite_release(_RELEASE_PATH)
+    assert prepared_plan.prepared_execution.result_traceability is not None
+    return replace(
+        prepared_plan.prepared_execution,
         manifest=manifest,
-        engine=LegacyExecutionEngine.READ_WRITE,
         runtime_inputs={"resourceBaseUrl": "https://api.example.com"},
-        runtime_input_base_dir=tmp_path,
         artifact_resolver=preflight_suite_release_artifacts(manifest, release),
-        result_traceability=ResultTraceabilitySource(
+        result_traceability=replace(
+            prepared_plan.prepared_execution.result_traceability,
             execution_manifest=manifest,
-            resolved_plan=resolved,
-            participant_plan_snapshot=build_safe_participant_plan_snapshot(participant, requirements),
         ),
     )

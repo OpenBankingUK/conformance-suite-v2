@@ -2,14 +2,15 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import replace
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any, cast
 
 import pytest
 
-import conformance.configuration_contracts.loader
 from conformance.configuration_contracts import (
     ConfigurationContractError,
     DiagnosticCode,
@@ -58,6 +59,63 @@ pytestmark = pytest.mark.unit
 _ROOT = REPO_ROOT / "conformance" / "configuration_contracts"
 _RELEASE_PATH = _ROOT / "bundles" / "open-banking-mvp" / "suite-release.json"
 _CATALOGUE_PATHS = tuple(sorted(_ROOT.glob("catalogues/*/*/test-catalogue.v2.json")))
+_FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts"
+_PARITY_CASES = (
+    (
+        "ais",
+        "v3_1_11",
+        REPO_ROOT
+        / "conformance"
+        / "standards"
+        / "ob_read_write"
+        / "v3_1_11"
+        / "legacy"
+        / "ob_3.1_accounts_transactions_fca.json",
+    ),
+    (
+        "ais",
+        "v4_0_1",
+        REPO_ROOT
+        / "conformance"
+        / "standards"
+        / "ob_read_write"
+        / "v4_0"
+        / "legacy-ob_4.0_accounts_transactions_fca.json",
+    ),
+    (
+        "cbpii",
+        "v3_1_11",
+        REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "v3_1_11" / "legacy" / "ob_3.1_cbpii_fca.json",
+    ),
+    ("cbpii", "v4_0_1", _FIXTURE_ROOT / "cbpii" / "v4_0_1" / "ob_4.0_cbpii_fca.json"),
+    (
+        "dcr",
+        "v3_4",
+        REPO_ROOT / "conformance" / "standards" / "ob_dcr" / "v3_4" / "parity-contract.json",
+    ),
+    (
+        "pis",
+        "v3_1_11",
+        REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "v3_1_11" / "legacy" / "ob_3.1_payment_fca.json",
+    ),
+    (
+        "pis",
+        "v4_0_1",
+        REPO_ROOT / "conformance" / "standards" / "ob_read_write" / "v4_0" / "legacy" / "ob_4.0_payment_fca.json",
+    ),
+    (
+        "vrp",
+        "v3_1_11",
+        REPO_ROOT
+        / "conformance"
+        / "standards"
+        / "ob_read_write"
+        / "v3_1_11"
+        / "legacy"
+        / "ob_3.1_variable_recurring_payments.json",
+    ),
+    ("vrp", "v4_0_1", _FIXTURE_ROOT / "vrp" / "v4_0_1" / "ob_4.0_variable_recurring_payments.json"),
+)
 
 
 def test_v2_schemas_and_all_nine_manually_reviewed_catalogues_are_valid() -> None:
@@ -83,6 +141,46 @@ def test_v2_schemas_and_all_nine_manually_reviewed_catalogues_are_valid() -> Non
     assert all(
         item.allowed_security_profiles == (("all",) if item.specification.test_scope == "dcr" else ("fapi1-advanced",))
         for item in catalogues
+    )
+
+
+@pytest.mark.parametrize(("family", "version", "baseline_path"), _PARITY_CASES)
+def test_every_supported_family_version_retains_pinned_parity(
+    family: str,
+    version: str,
+    baseline_path: Path,
+) -> None:
+    report = cast(
+        JsonObject,
+        json.loads((_FIXTURE_ROOT / family / version / "parity-comparison.json").read_text(encoding="utf-8")),
+    )
+    catalogue = load_test_definition_catalogue_v2(_ROOT / "catalogues" / family / version / "test-catalogue.v2.json")
+    classifications = cast(list[JsonObject], report["classifications"])
+    summary = cast(JsonObject, report["summary"])
+    replacement_ids = {str(item.id) for item in catalogue.test_definitions}
+    source_key = "sourceCase" if family == "dcr" else "sourceRow"
+
+    baseline = cast(JsonObject, report["baseline"])
+    assert baseline["digest"] == f"sha256:{hashlib.sha256(baseline_path.read_bytes()).hexdigest()}"
+    if family == "dcr":
+        baseline_document = cast(JsonObject, json.loads(baseline_path.read_text(encoding="utf-8")))
+        expected_sources = {
+            f"parity-contract.json#/scenarios/{scenario_index}/cases/{case_index}"
+            for scenario_index, scenario in enumerate(cast(list[JsonObject], baseline_document["scenarios"]))
+            for case_index, _case in enumerate(cast(list[JsonObject], scenario["cases"]))
+        }
+    else:
+        baseline_document = cast(JsonObject, json.loads(baseline_path.read_text(encoding="utf-8")))
+        expected_sources = {
+            f"{baseline['file']}#{index}:{script['id']}"
+            for index, script in enumerate(cast(list[JsonObject], baseline_document["scripts"]))
+        }
+    assert baseline["purpose"] == "migration-cross-check-only"
+    assert {item[source_key] for item in classifications} == expected_sources
+    assert summary["genuine-omission"] == 0
+    assert sum(cast(int, value) for value in summary.values()) == len(classifications)
+    assert all(
+        set(cast(list[str], item["replacementTestDefinitionIds"])) <= replacement_ids for item in classifications
     )
 
 
@@ -480,35 +578,13 @@ def test_v2_compile_and_manifest_are_deterministic_for_every_supported_family(
     )
 
 
-def test_v2_parsers_do_not_delegate_to_requirements_bearing_v1_mappers(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    assert "configuration_contracts.loader" not in (_ROOT / "v2_loader.py").read_text()
-
+def test_v2_parsers_round_trip_without_legacy_contract_modules() -> None:
+    assert not any((_ROOT / name).exists() for name in ("loader.py", "compiler.py", "execution_manifest.py"))
     release = load_suite_release_v2(_RELEASE_PATH)
     catalogue = load_test_definition_catalogue_v2(_ROOT / "catalogues" / "pis" / "v4_0_1" / "test-catalogue.v2.json")
     plan = parse_participant_plan_v2(_participant_document(release.id, catalogue))
     resolved = compile_participant_plan_v2(release, catalogue, plan)
     manifest = generate_execution_manifest_v2(resolved, catalogue)
-
-    def fail(*args: object, **kwargs: object) -> None:
-        raise AssertionError("v1 requirements-bearing mapper was called")
-
-    monkeypatch.setattr(
-        conformance.configuration_contracts.loader,
-        "_resolved_plan_from_schema_valid_document",
-        fail,
-    )
-    monkeypatch.setattr(
-        conformance.configuration_contracts.loader,
-        "_execution_manifest_from_schema_valid_document",
-        fail,
-    )
-    monkeypatch.setattr(
-        conformance.configuration_contracts.loader,
-        "_test_definition_from_document",
-        fail,
-    )
 
     assert parse_resolved_plan(resolved_plan_to_document(resolved)) == resolved
     assert parse_execution_manifest(execution_manifest_to_document(manifest)) == manifest

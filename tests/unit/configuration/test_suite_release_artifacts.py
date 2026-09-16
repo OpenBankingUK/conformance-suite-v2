@@ -16,24 +16,25 @@ from conformance.configuration_contracts import (
     SuiteRelease,
     SuiteReleaseArtifactError,
     SuiteReleaseArtifactErrorCode,
+    compile_participant_plan,
     execution_manifest_id,
-    load_execution_manifest,
+    generate_execution_manifest,
+    load_participant_plan,
     load_suite_release,
+    load_test_definition_catalogue,
     preflight_suite_release_artifacts,
 )
 from tests.support.paths import REPO_ROOT
 
 pytestmark = pytest.mark.unit
 
-_MANIFEST_PATH = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "v1" / "execution-manifest.valid.json"
 _RELEASE_PATH = (
-    REPO_ROOT
-    / "conformance"
-    / "configuration_contracts"
-    / "bundles"
-    / "open-banking-mvp"
-    / "suite-release.v1.compatibility.json"
+    REPO_ROOT / "conformance" / "configuration_contracts" / "bundles" / "open-banking-mvp" / "suite-release.json"
 )
+_CATALOGUE_PATH = (
+    REPO_ROOT / "conformance" / "configuration_contracts" / "catalogues" / "pis" / "v4_0_1" / "test-catalogue.v2.json"
+)
+_PLAN_PATH = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.json"
 
 
 @pytest.mark.parametrize(
@@ -110,6 +111,15 @@ def test_preflight_rejects_resolved_path_escape() -> None:
         uri="../pyproject.toml",
         digest=_digest(escaped_path),
         media_type="application/json",
+    )
+    changed_release = replace(
+        changed_release,
+        artifacts=tuple(
+            sorted(
+                changed_release.artifacts,
+                key=lambda artifact: artifact.id != source_id,
+            )
+        ),
     )
     manifest = _manifest_with_schema(
         changed_release,
@@ -234,7 +244,12 @@ def _manifest_with_schema(
     source_id: StableId | None,
     pointer: str,
 ) -> ExecutionManifest:
-    manifest = load_execution_manifest(_MANIFEST_PATH)
+    catalogue = load_test_definition_catalogue(_CATALOGUE_PATH)
+    participant_plan = load_participant_plan(_PLAN_PATH)
+    manifest = generate_execution_manifest(
+        compile_participant_plan(load_suite_release(_RELEASE_PATH), catalogue, participant_plan),
+        catalogue,
+    )
     first_step = manifest.steps[0]
     schema_assertion = ExecutionManifestAssertion(
         id=first_step.assertions[0].id,

@@ -285,8 +285,8 @@ side effects. Result JSON assertions should cover:
 The catalogue model is the participant-facing contract. Keep focused coverage
 for:
 
-- Shared plan-document parsing and unknown-field rejection for v1 compatibility
-  specs and v2 browser/API/CLI documents.
+- Shared participant-plan 2.0 parsing and unknown-field rejection across
+  browser, API, and CLI documents.
 - Duplicate catalogue/test/request/assertion ID detection.
 - Applicability filtering by catalogue key or v2 boundary, profile,
   implemented endpoint, and selected endpoint capabilities.
