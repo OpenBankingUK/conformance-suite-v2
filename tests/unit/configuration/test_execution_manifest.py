@@ -218,9 +218,9 @@ def test_result_traceability_connects_stable_ids_for_passed_and_failed_runs(
             "value": {"frequencyType": "WEEK", "pointInTime": "03"},
         }
     ]
-    assert [item["id"] for item in cast("list[JsonObject]", traceability["requirements"])] == [
-        requirement.id for requirement in resolved.requirements
-    ]
+    assert "requirements" not in traceability
+    assert "normativeReferenceIds" not in json.dumps(traceability)
+    assert "coveredRequirementIds" not in json.dumps(traceability)
     assert [item["id"] for item in cast("list[JsonObject]", traceability["testDefinitions"])] == [
         test_instance.test_definition_id for test_instance in resolved.test_instances
     ]

@@ -1,0 +1,1160 @@
+{
+  "allowedSecurityProfiles": [
+    "fapi1-advanced"
+  ],
+  "capabilities": [
+    {
+      "description": "Accepted MVP domestic VRP consent and payment lifecycle for Open Banking Read/Write 3.1.11.",
+      "id": "vrp.v311.capability.domestic-vrp",
+      "name": "Domestic variable recurring payments",
+      "requiredEndpointIds": [
+        "vrp.v311.endpoint.consent-create",
+        "vrp.v311.endpoint.consent-read",
+        "vrp.v311.endpoint.consent-delete",
+        "vrp.v311.endpoint.payment-create",
+        "vrp.v311.endpoint.payment-read",
+        "vrp.v311.endpoint.payment-details-read"
+      ],
+      "selection": "conditional"
+    },
+    {
+      "description": "Optional funds-confirmation operation for an authorised domestic VRP consent in Read/Write 3.1.11.",
+      "id": "vrp.v311.capability.funds-confirmation",
+      "name": "Domestic VRP funds confirmation",
+      "requiredCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "requiredEndpointIds": [
+        "vrp.v311.endpoint.funds-confirmation"
+      ],
+      "selection": "conditional"
+    }
+  ],
+  "documentType": "test-definition-catalogue",
+  "endpoints": [
+    {
+      "id": "vrp.v311.endpoint.consent-create",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsPost",
+      "path": "/domestic-vrp-consents",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-read",
+      "method": "GET",
+      "operationId": "domesticVrpConsentsGet",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/get"
+    },
+    {
+      "id": "vrp.v311.endpoint.consent-delete",
+      "method": "DELETE",
+      "operationId": "domesticVrpConsentsDelete",
+      "path": "/domestic-vrp-consents/{ConsentId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}/delete"
+    },
+    {
+      "id": "vrp.v311.endpoint.funds-confirmation",
+      "method": "POST",
+      "operationId": "domesticVrpConsentsFundsConfirmation",
+      "path": "/domestic-vrp-consents/{ConsentId}/funds-confirmation",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrp-consents~1{ConsentId}~1funds-confirmation/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-create",
+      "method": "POST",
+      "operationId": "domesticVrpPost",
+      "path": "/domestic-vrps",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps/post"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-read",
+      "method": "GET",
+      "operationId": "domesticVrpGet",
+      "path": "/domestic-vrps/{DomesticVRPId}",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}/get"
+    },
+    {
+      "id": "vrp.v311.endpoint.payment-details-read",
+      "method": "GET",
+      "operationId": "domesticVrpPaymentDetailsGet",
+      "path": "/domestic-vrps/{DomesticVRPId}/payment-details",
+      "sourceId": "ob-rw-v311.vrp-openapi",
+      "sourcePointer": "/paths/~1domestic-vrps~1{DomesticVRPId}~1payment-details/get"
+    }
+  ],
+  "id": "obl.vrp-v311.tests.v2",
+  "predefinedInputs": [
+    {
+      "description": "Account identification scheme used for the VRP creditor account.",
+      "exampleValue": "UK.OBIE.SortCodeAccountNumber",
+      "id": "vrp.v311.input.creditor-account-scheme-name",
+      "label": "Creditor account scheme name",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account identification used for the VRP creditor account.",
+      "exampleValue": "70000170000005",
+      "id": "vrp.v311.input.creditor-account-identification",
+      "label": "Creditor account identification",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Account name used for the VRP creditor account.",
+      "exampleValue": "VRP creditor",
+      "id": "vrp.v311.input.creditor-account-name",
+      "label": "Creditor account name",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "Decimal amount used for consent limits, funds confirmation, and VRP payment instructions.",
+      "exampleValue": "1.00",
+      "id": "vrp.v311.input.instructed-amount",
+      "label": "Instructed amount",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "ISO 4217 currency used for consent limits and VRP payments.",
+      "exampleValue": "GBP",
+      "id": "vrp.v311.input.currency",
+      "label": "Currency",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 start date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-09-15T00:00:00Z",
+      "id": "vrp.v311.input.valid-from-date-time",
+      "label": "Consent valid-from date time",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    },
+    {
+      "description": "RFC 3339 end date-time for the VRP consent control parameters.",
+      "exampleValue": "2026-10-15T00:00:00Z",
+      "id": "vrp.v311.input.valid-to-date-time",
+      "label": "Consent valid-to date time",
+      "requiredForCapabilityIds": [
+        "vrp.v311.capability.domestic-vrp"
+      ],
+      "sensitivity": "non-sensitive",
+      "valueType": "string"
+    }
+  ],
+  "schemaVersion": "2.0",
+  "scheme": "open-banking-uk",
+  "specification": {
+    "id": "read-write-api",
+    "testScope": "vrp",
+    "version": "3.1.11"
+  },
+  "technicalSources": [
+    {
+      "digest": "sha256:16a6231aacf10548ee8ba778295371d41ea02d26232867dd916eb3cafbc7db12",
+      "id": "ob-rw-v311.vrp-openapi",
+      "title": "Open Banking Read/Write 3.1.11 VRP OpenAPI",
+      "uri": "https://raw.githubusercontent.com/OpenBankingUK/read-write-api-specs/v3.1.11/dist/openapi/vrp-openapi.json"
+    }
+  ],
+  "testDefinitions": [
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v311.assertion.consent-create.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.consent-create.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.consent-create.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "AwaitingAuthorisation",
+          "id": "vrp.v311.assertion.consent-create.positive.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "dependencies": [],
+      "description": "Create a domestic VRP consent",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.consent-create.positive",
+      "name": "Create a domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "detachedJws": {
+          "omittedClaims": [],
+          "profile": "ob-v3.1.4+",
+          "source": "fapi-signing"
+        },
+        "endpointId": "vrp.v311.endpoint.consent-create",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          },
+          {
+            "generatedValue": "uuid4",
+            "name": "x-idempotency-key"
+          }
+        ],
+        "inputBindings": [
+          {
+            "inputId": "vrp.v311.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.instructed-amount",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.instructed-amount",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.currency",
+            "target": "/Data/ControlParameters/MaximumIndividualAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.currency",
+            "target": "/Data/ControlParameters/PeriodicLimits/0/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.valid-from-date-time",
+            "target": "/Data/ControlParameters/ValidFromDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.valid-to-date-time",
+            "target": "/Data/ControlParameters/ValidToDateTime",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "jsonBodyTemplate": {
+          "Data": {
+            "ControlParameters": {
+              "MaximumIndividualAmount": {
+                "Amount": "10.00",
+                "Currency": "${runtime.vrpInstructedAmountCurrency}"
+              },
+              "PSUAuthenticationMethods": [
+                "UK.OBIE.SCANotRequired"
+              ],
+              "PeriodicLimits": [
+                {
+                  "Amount": "10.00",
+                  "Currency": "GBP",
+                  "PeriodAlignment": "Consent",
+                  "PeriodType": "Week"
+                }
+              ],
+              "VRPType": [
+                "UK.OBIE.VRPType.Sweeping"
+              ],
+              "ValidFromDateTime": "${runtime.vrpValidFromDateTime}",
+              "ValidToDateTime": "${runtime.vrpValidToDateTime}"
+            },
+            "Initiation": {
+              "CreditorAccount": {
+                "Identification": "${runtime.vrpCreditorAccountIdentification}",
+                "Name": "${runtime.vrpCreditorAccountName}",
+                "SchemeName": "${runtime.vrpCreditorAccountSchemeName}"
+              },
+              "RemittanceInformation": {
+                "Reference": "${runtime.vrpCreditorAccountIdentification}",
+                "Unstructured": "Test Unstructured Data"
+              }
+            }
+          },
+          "Risk": {}
+        },
+        "method": "POST",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrp-consents",
+        "psuAuthorization": {
+          "authorizationStepId": "vrp-consent-create-awaiting-authorisation-v31-3111-authorisation",
+          "authorizationStepName": "Authorise VRP consent",
+          "flowLabel": "VRP consent",
+          "tokenId": "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access",
+          "tokenStepId": "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-token"
+        },
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl",
+          "vrpCreditorAccountSchemeName",
+          "vrpCreditorAccountIdentification",
+          "vrpCreditorAccountName",
+          "vrpInstructedAmountAmount",
+          "vrpInstructedAmountCurrency",
+          "vrpValidFromDateTime",
+          "vrpValidToDateTime"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v311.assertion.consent-read.authorised.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.consent-read.authorised.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.consent-read.authorised.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPConsentResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        },
+        {
+          "expectedValue": "Authorised",
+          "id": "vrp.v311.assertion.consent-read.authorised.resource-status",
+          "jsonPointer": "/Data/Status",
+          "type": "json-value"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.consent-create.positive"
+      ],
+      "description": "Retrieve an authorised domestic VRP consent",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.consent-read.authorised",
+      "name": "Retrieve an authorised domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.consent-read",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrp-consents/${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.funds-confirmation"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v311.assertion.funds-confirmation.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.funds-confirmation.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.funds-confirmation.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBVRPFundsConfirmationResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.consent-read.authorised"
+      ],
+      "description": "Confirm funds for a domestic VRP consent",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.funds-confirmation.positive",
+      "name": "Confirm funds for a domestic VRP consent",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "detachedJws": {
+          "omittedClaims": [],
+          "profile": "ob-v3.1.4+",
+          "source": "fapi-signing"
+        },
+        "endpointId": "vrp.v311.endpoint.funds-confirmation",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          },
+          {
+            "generatedValue": "uuid4",
+            "name": "x-idempotency-key"
+          }
+        ],
+        "inputBindings": [
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Reference",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.instructed-amount",
+            "target": "/Data/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.currency",
+            "target": "/Data/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "jsonBodyTemplate": {
+          "Data": {
+            "ConsentId": "${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+            "InstructedAmount": {
+              "Amount": "${runtime.vrpInstructedAmountAmount}",
+              "Currency": "${runtime.vrpInstructedAmountCurrency}"
+            },
+            "Reference": "${runtime.vrpCreditorAccountIdentification}"
+          }
+        },
+        "method": "POST",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrp-consents/${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}/funds-confirmation",
+        "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl",
+          "vrpCreditorAccountIdentification",
+          "vrpInstructedAmountAmount",
+          "vrpInstructedAmountCurrency"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v311.assertion.payment-create.initial.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.payment-create.initial.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.payment-create.initial.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.consent-read.authorised"
+      ],
+      "description": "Create an initial domestic VRP payment",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.payment-create.initial",
+      "name": "Create an initial domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "detachedJws": {
+          "omittedClaims": [],
+          "profile": "ob-v3.1.4+",
+          "source": "fapi-signing"
+        },
+        "endpointId": "vrp.v311.endpoint.payment-create",
+        "generatedValues": {
+          "endToEndIdentification": "uuid4-hex",
+          "instructionIdentification": "uuid4-hex"
+        },
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          },
+          {
+            "generatedValue": "uuid4",
+            "name": "x-idempotency-key"
+          }
+        ],
+        "inputBindings": [
+          {
+            "inputId": "vrp.v311.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-scheme-name",
+            "target": "/Data/Instruction/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Instruction/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-name",
+            "target": "/Data/Instruction/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.instructed-amount",
+            "target": "/Data/Instruction/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.currency",
+            "target": "/Data/Instruction/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "jsonBodyTemplate": {
+          "Data": {
+            "ConsentId": "${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+            "Initiation": {
+              "CreditorAccount": {
+                "Identification": "${runtime.vrpCreditorAccountIdentification}",
+                "Name": "${runtime.vrpCreditorAccountName}",
+                "SchemeName": "${runtime.vrpCreditorAccountSchemeName}"
+              },
+              "RemittanceInformation": {
+                "Reference": "${runtime.vrpCreditorAccountIdentification}",
+                "Unstructured": "Test Unstructured Data"
+              }
+            },
+            "Instruction": {
+              "CreditorAccount": {
+                "Identification": "${runtime.vrpCreditorAccountIdentification}",
+                "Name": "${runtime.vrpCreditorAccountName}",
+                "SchemeName": "${runtime.vrpCreditorAccountSchemeName}"
+              },
+              "EndToEndIdentification": "${generated.endToEndIdentification}",
+              "InstructedAmount": {
+                "Amount": "${runtime.vrpInstructedAmountAmount}",
+                "Currency": "${runtime.vrpInstructedAmountCurrency}"
+              },
+              "InstructionIdentification": "${generated.instructionIdentification}",
+              "RemittanceInformation": {
+                "Reference": "${runtime.vrpCreditorAccountIdentification}",
+                "Unstructured": "Test Unstructured Data"
+              }
+            },
+            "PSUAuthenticationMethod": "UK.OBIE.SCANotRequired",
+            "VRPType": "UK.OBIE.VRPType.Sweeping"
+          },
+          "Risk": {}
+        },
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v311.modification.instruction-id",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/InstructionIdentification"
+          },
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v311.modification.end-to-end-id",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/EndToEndIdentification"
+          }
+        ],
+        "path": "/open-banking/v3.1/pisp/domestic-vrps",
+        "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl",
+          "vrpCreditorAccountSchemeName",
+          "vrpCreditorAccountIdentification",
+          "vrpCreditorAccountName",
+          "vrpInstructedAmountAmount",
+          "vrpInstructedAmountCurrency"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v311.assertion.payment-read.initial.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.payment-read.initial.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.payment-read.initial.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.payment-create.initial"
+      ],
+      "description": "Retrieve the initial domestic VRP payment",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.payment-read.initial",
+      "name": "Retrieve the initial domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.payment-read",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrps/${steps.vrp.v311.test.payment-create.repeated.instance.request.response.body.Data.DomesticVRPId}",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 201,
+          "id": "vrp.v311.assertion.payment-create.repeated.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.payment-create.repeated.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.payment-create.repeated.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.payment-create.initial"
+      ],
+      "description": "Create a repeated domestic VRP payment",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.payment-create.repeated",
+      "name": "Create a repeated domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "detachedJws": {
+          "omittedClaims": [],
+          "profile": "ob-v3.1.4+",
+          "source": "fapi-signing"
+        },
+        "endpointId": "vrp.v311.endpoint.payment-create",
+        "generatedValues": {
+          "endToEndIdentification": "uuid4-hex",
+          "instructionIdentification": "uuid4-hex"
+        },
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          },
+          {
+            "generatedValue": "uuid4",
+            "name": "x-idempotency-key"
+          }
+        ],
+        "inputBindings": [
+          {
+            "inputId": "vrp.v311.input.creditor-account-scheme-name",
+            "target": "/Data/Initiation/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-scheme-name",
+            "target": "/Data/Instruction/CreditorAccount/SchemeName",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Initiation/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-identification",
+            "target": "/Data/Instruction/CreditorAccount/Identification",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-name",
+            "target": "/Data/Initiation/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.creditor-account-name",
+            "target": "/Data/Instruction/CreditorAccount/Name",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.instructed-amount",
+            "target": "/Data/Instruction/InstructedAmount/Amount",
+            "transform": "identity-string",
+            "type": "json-body"
+          },
+          {
+            "inputId": "vrp.v311.input.currency",
+            "target": "/Data/Instruction/InstructedAmount/Currency",
+            "transform": "identity-string",
+            "type": "json-body"
+          }
+        ],
+        "jsonBodyTemplate": {
+          "Data": {
+            "ConsentId": "${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+            "Initiation": {
+              "CreditorAccount": {
+                "Identification": "${runtime.vrpCreditorAccountIdentification}",
+                "Name": "${runtime.vrpCreditorAccountName}",
+                "SchemeName": "${runtime.vrpCreditorAccountSchemeName}"
+              },
+              "RemittanceInformation": {
+                "Reference": "${runtime.vrpCreditorAccountIdentification}",
+                "Unstructured": "Test Unstructured Data"
+              }
+            },
+            "Instruction": {
+              "CreditorAccount": {
+                "Identification": "${runtime.vrpCreditorAccountIdentification}",
+                "Name": "${runtime.vrpCreditorAccountName}",
+                "SchemeName": "${runtime.vrpCreditorAccountSchemeName}"
+              },
+              "EndToEndIdentification": "${generated.endToEndIdentification}",
+              "InstructedAmount": {
+                "Amount": "${runtime.vrpInstructedAmountAmount}",
+                "Currency": "${runtime.vrpInstructedAmountCurrency}"
+              },
+              "InstructionIdentification": "${generated.instructionIdentification}",
+              "RemittanceInformation": {
+                "Reference": "${runtime.vrpCreditorAccountIdentification}",
+                "Unstructured": "Test Unstructured Data"
+              }
+            },
+            "PSUAuthenticationMethod": "UK.OBIE.SCANotRequired",
+            "VRPType": "UK.OBIE.VRPType.Sweeping"
+          },
+          "Risk": {}
+        },
+        "method": "POST",
+        "modifications": [
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v311.modification.instruction-id.repeated",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/InstructionIdentification"
+          },
+          {
+            "generator": "uuid4-hex",
+            "id": "vrp.v311.modification.end-to-end-id.repeated",
+            "location": "json-body",
+            "operation": "generate",
+            "target": "/Data/Instruction/EndToEndIdentification"
+          }
+        ],
+        "path": "/open-banking/v3.1/pisp/domestic-vrps",
+        "requiredTokenId": "vrp-consent-create-awaiting-authorisation-v31-3111-psu-payment-access",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl",
+          "vrpCreditorAccountSchemeName",
+          "vrpCreditorAccountIdentification",
+          "vrpCreditorAccountName",
+          "vrpInstructedAmountAmount",
+          "vrpInstructedAmountCurrency"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v311.assertion.payment-read.repeated.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.payment-read.repeated.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.payment-read.repeated.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPResponse",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.payment-create.repeated"
+      ],
+      "description": "Retrieve the repeated domestic VRP payment",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.payment-read.repeated",
+      "name": "Retrieve the repeated domestic VRP payment",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.payment-read",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrps/${steps.vrp.v311.test.payment-create.repeated.instance.request.response.body.Data.DomesticVRPId}",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 200,
+          "id": "vrp.v311.assertion.payment-details-read.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.payment-details-read.positive.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.payment-details-read.positive.response-schema",
+          "schemaRef": "#/components/schemas/OBDomesticVRPDetails",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.payment-read.repeated"
+      ],
+      "description": "Retrieve domestic VRP payment details",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.payment-details-read.positive",
+      "name": "Retrieve domestic VRP payment details",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.payment-details-read",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrps/${steps.vrp-payment-create-repeated-v31-3111-request.response.body.Data.DomesticVRPId}/payment-details",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 204,
+          "id": "vrp.v311.assertion.consent-delete.positive.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.consent-delete.positive.interaction-id",
+          "type": "header-present"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.payment-details-read.positive"
+      ],
+      "description": "Delete a domestic VRP consent after revocation",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.consent-delete.positive",
+      "name": "Delete a domestic VRP consent after revocation",
+      "purpose": "positive",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.consent-delete",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "DELETE",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrp-consents/${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    },
+    {
+      "applicability": {
+        "capabilityIds": [
+          "vrp.v311.capability.domestic-vrp"
+        ]
+      },
+      "assertions": [
+        {
+          "expectedStatus": 400,
+          "id": "vrp.v311.assertion.consent-read.after-delete.http-status",
+          "type": "http-status"
+        },
+        {
+          "headerName": "x-fapi-interaction-id",
+          "id": "vrp.v311.assertion.consent-read.after-delete.interaction-id",
+          "type": "header-present"
+        },
+        {
+          "id": "vrp.v311.assertion.consent-read.after-delete.response-schema",
+          "schemaRef": "#/components/schemas/OBErrorResponse1",
+          "schemaSourceId": "ob-rw-v311.vrp-openapi",
+          "type": "response-schema"
+        }
+      ],
+      "dependencies": [
+        "vrp.v311.test.consent-delete.positive"
+      ],
+      "description": "Reject retrieval of a deleted domestic VRP consent",
+      "evidencePolicy": {
+        "request": "masked",
+        "response": "masked"
+      },
+      "id": "vrp.v311.test.consent-read.after-delete",
+      "name": "Reject retrieval of a deleted domestic VRP consent",
+      "purpose": "negative",
+      "request": {
+        "baseUrlSource": "resource",
+        "endpointId": "vrp.v311.endpoint.consent-read",
+        "headerTemplates": [
+          {
+            "generatedValue": "uuid4",
+            "name": "x-fapi-interaction-id"
+          }
+        ],
+        "inputBindings": [],
+        "method": "GET",
+        "modifications": [],
+        "path": "/open-banking/v3.1/pisp/domestic-vrp-consents/${steps.vrp.v311.test.consent-create.positive.instance.request.response.body.Data.ConsentId}",
+        "requiredTokenId": "vrp-payment-access",
+        "requiredTokenScope": "payments",
+        "responseSignature": {
+          "source": "discovery-jwks"
+        },
+        "runtimeInputRefs": [
+          "resourceBaseUrl"
+        ]
+      }
+    }
+  ]
+}

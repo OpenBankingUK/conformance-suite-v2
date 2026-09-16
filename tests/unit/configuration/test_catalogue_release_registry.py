@@ -19,7 +19,12 @@ from tests.support.paths import REPO_ROOT
 pytestmark = pytest.mark.unit
 
 _REGISTRY_PATH = (
-    REPO_ROOT / "conformance" / "configuration_contracts" / "bundles" / "open-banking-mvp" / "suite-release.json"
+    REPO_ROOT
+    / "conformance"
+    / "configuration_contracts"
+    / "bundles"
+    / "open-banking-mvp"
+    / "suite-release.v1.compatibility.json"
 )
 _CATALOGUE_ROOT = REPO_ROOT / "conformance" / "configuration_contracts" / "catalogues"
 _FIXTURE_ROOT = REPO_ROOT / "tests" / "fixtures" / "configuration_contracts"

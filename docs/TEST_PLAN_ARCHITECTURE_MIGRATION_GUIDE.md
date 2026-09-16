@@ -533,17 +533,15 @@ manifest-authoritative assessment note.
 | `TPA-088` | `documented-only`, manual-evidence, and other non-executable requirement states are outside the executable catalogue and automated assessment contract. Such obligations may be described in documentation or handled by a separate human certification process, but they neither appear as synthetic tests nor make an otherwise complete automated run indeterminate. | The automated tool should report tests and results. It must not invent evidence contracts for obligations that have no executable test or silently turn those obligations into runtime certification logic. |
 | `TPA-089` | The requirement-catalogue schema and artefacts, `coveredRequirementIds`, `normativeReferenceIds`, requirement `assessment`, requirement-derived applicability, and requirement-level result links are superseded target concepts. A follow-up migration must consolidate still-needed executable metadata into the human-authored test catalogue and then remove those structures. New work must not deepen dependencies on them. | The repository already implements the superseded split, so safe removal requires an explicit migration rather than pretending the correction has already been implemented. Recording the destination now prevents certification work from entrenching the wrong authority. |
 
-### Catalogue-consolidation migration debt
+### Catalogue-consolidation production cutover
 
-The repository currently implements the superseded requirements split. Its
-requirements-catalogue schemas and artefacts, requirement rules and assessment
-states, requirement-derived compiler output, `coveredRequirementIds`,
-`normativeReferenceIds`, and requirement-level result traceability are
-**Compatibility only** until removed. They remain necessary to keep the
-working system intact during migration, but they are not target authority and
-must not gain new consumers.
+The active production path now implements the corrected architecture with
+schema version `2.0`. The coordinator release binds only the nine manually
+reviewed executable test catalogues, v2 contract schemas, execution policy, and
+technical sources. Participant surfaces use `testScope`; compilation,
+manifests, and result traceability contain no requirements or normative blocks.
 
-The next catalogue-consolidation layer must:
+The completed cutover:
 
 - move executable scope, capabilities, predefined inputs, applicability,
   dependencies, request construction, assertions, expected outcomes, and
@@ -555,8 +553,13 @@ The next catalogue-consolidation layer must:
   requirement-to-test edge;
 - replace resolved-plan, manifest, result, and assessment links with the
   accepted suite-release-to-observation chain from `TPA-087`; and
-- remove the superseded requirement artefacts and fields only after all
-  production consumers have migrated.
+- isolates the superseded requirement artefacts and fields after all production
+  consumers have migrated.
+
+The v1 requirements schema, JSON artefacts, models, loaders, compiler, and
+focused migration fixtures remain **Compatibility/deletion only** for PR2.
+They have no active suite-release binding or production caller and must not gain
+new consumers.
 
 Certification-validator implementation must wait for that consolidated
 catalogue contract. It must not treat the current requirements catalogue,

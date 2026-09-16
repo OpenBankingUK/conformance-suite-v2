@@ -9,6 +9,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Production participant surfaces now use the corrected `schemaVersion: "2.0"`
+  contracts and public `testScope` field. Nine manually reviewed executable
+  catalogues directly own scheme/specification identity, capabilities,
+  endpoints and content-addressed technical sources, predefined inputs,
+  applicability, dependencies, request construction, assertions, outputs, and
+  evidence policy. The active suite release pins those catalogues, v2 schemas,
+  policy, and technical sources and performs complete local digest preflight
+  before network access.
+- Compilation, manifests, and results no longer consume or emit requirements,
+  normative references, assessment states, or requirement-coverage links.
+  Traceability is now suite release → test definition → resolved instance →
+  manifest step/assertion → observation. Existing v1 requirements contracts
+  remain isolated as compatibility/deletion-only code for the follow-up
+  cleanup.
+- Participant launch now carries complete request, authorization, signing,
+  assertion, output, and evidence instructions directly from the v2 catalogue
+  into the immutable execution manifest. It no longer rebuilds a v1
+  `CompiledTestPlan` or materializes requests from the legacy catalogue
+  registry, and `suite-release.json` is the single active v2 release.
+
 ### Fixed
 
 - AIS accounts participant plans now compile and launch through the shared
@@ -33,9 +55,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   changes remain content-addressed, while creditor identifiers and names are
   redacted before identity generation and masked in request evidence using
   catalogue-derived JSON locations.
-- A single `participant-plan` 1.0 surface now drives browser construction and
+- A single `participant-plan` 2.0 surface now drives browser construction and
   review, JSON import/export, CLI execution, and REST run creation. Browser
-  scope choices come from the trusted suite-release requirements catalogues;
+  scope choices come from the trusted suite-release executable catalogues;
   resolved reviews show inferred endpoints, generated tests, reasons, and
   findings. A strict execution-configuration section carries environment and
   credential references without affecting resolved-plan identity, and safe

@@ -5,11 +5,13 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
+from typing import cast
 
 import httpx
 import pytest
 
 from conformance.configuration_contracts import (
+    ExecutionManifest,
     ExecutionManifestAssertion,
     ExecutionManifestHeader,
     HttpMethod,
@@ -114,12 +116,13 @@ def test_stale_manifest_identity_fails_before_network_execution(tmp_path: Path) 
         header="value",
         body={"Data": {}},
     )
+    source_manifest = cast(ExecutionManifest, prepared.manifest)
     stale = replace(
-        prepared.manifest,
+        source_manifest,
         steps=(
             replace(
-                prepared.manifest.steps[0],
-                request=replace(prepared.manifest.steps[0].request, path="/tampered"),
+                source_manifest.steps[0],
+                request=replace(source_manifest.steps[0].request, path="/tampered"),
             ),
         ),
     )
@@ -148,7 +151,8 @@ def test_failed_dependency_skips_request_without_reporting_assertions(tmp_path: 
         header="value",
         body={"Data": {}},
     )
-    first = prepared.manifest.steps[0]
+    source_manifest = cast(ExecutionManifest, prepared.manifest)
+    first = source_manifest.steps[0]
     second = replace(
         first,
         id=StableId("manifest-second"),
@@ -164,7 +168,7 @@ def test_failed_dependency_skips_request_without_reporting_assertions(tmp_path: 
             ),
         ),
     )
-    provisional = replace(prepared.manifest, steps=(first, second))
+    provisional = replace(source_manifest, steps=(first, second))
     manifest = replace(provisional, id=execution_manifest_id(provisional))
     assert prepared.result_traceability is not None
     prepared = replace(
@@ -207,7 +211,7 @@ def test_materialized_sensitive_bindings_remain_masked_and_ais_consent_is_signed
     )
     pis_prepared = prepare_participant_plan_for_run(pis_plan, base_dir=tmp_path)
     pis_runtime = _execution_manifest_to_runtime_manifest(
-        pis_prepared.execution_manifest,
+        cast(ExecutionManifest, pis_prepared.execution_manifest),
         runtime_inputs=pis_prepared.runtime_inputs,
         runtime_input_base_dir=tmp_path,
         runtime_config=None,
@@ -252,7 +256,9 @@ def test_materialized_sensitive_bindings_remain_masked_and_ais_consent_is_signed
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "vrp" / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    vrp_plan["suiteReleaseId"] = "obl.open-banking-mvp.catalogue-release"
+    vrp_plan["schemaVersion"] = "2.0"
+    vrp_plan["specification"]["testScope"] = vrp_plan["specification"].pop("requirementsScope")
+    vrp_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
     vrp_plan["selectedCapabilityIds"] = ["vrp.v401.capability.domestic-vrp"]
     vrp_plan["executionConfiguration"] = {
         "compatibilityRuntimeInputs": {"resourceBaseUrl": "https://rs.example.com"},
@@ -277,8 +283,9 @@ def test_form_body_template_is_sent_exactly(tmp_path: Path) -> None:
         header="value",
         body={"unused": True},
     )
+    source_manifest = cast(ExecutionManifest, prepared.manifest)
     request = replace(
-        prepared.manifest.steps[0].request,
+        source_manifest.steps[0].request,
         content_type="application/x-www-form-urlencoded",
         json_body_template=None,
         form_body_template={
@@ -287,8 +294,8 @@ def test_form_body_template_is_sent_exactly(tmp_path: Path) -> None:
         },
         runtime_input_refs=("resourceBaseUrl", "scope"),
     )
-    step = replace(prepared.manifest.steps[0], request=request)
-    provisional = replace(prepared.manifest, steps=(step,))
+    step = replace(source_manifest.steps[0], request=request)
+    provisional = replace(source_manifest, steps=(step,))
     manifest = replace(provisional, id=execution_manifest_id(provisional))
     assert prepared.result_traceability is not None
     prepared = replace(

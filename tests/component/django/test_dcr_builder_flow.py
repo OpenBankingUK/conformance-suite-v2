@@ -43,7 +43,7 @@ def test_dcr_browser_flow_reviews_and_exports_participant_plan(
     scope_saved = client.post(
         selected["Location"],
         data={
-            "requirements_scope": "dcr",
+            "test_scope": "dcr",
             "capabilities": ["dcr.v34.capability.retrieval"],
         },
     )
@@ -77,7 +77,7 @@ def test_dcr_browser_flow_reviews_and_exports_participant_plan(
     assert exported.status_code == 200
     plan = exported.json()
     assert plan["documentType"] == "participant-plan"
-    assert plan["specification"]["requirementsScope"] == "dcr"
+    assert plan["specification"]["testScope"] == "dcr"
     assert plan["selectedCapabilityIds"] == ["dcr.v34.capability.retrieval"]
     execution = plan["executionConfiguration"]
     assert execution["dynamicClientRegistration"]["softwareStatementAssertionPath"] == str(tmp_path / "ssa.jwt")

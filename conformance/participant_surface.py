@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from collections.abc import Mapping
 from copy import deepcopy
 from dataclasses import dataclass
@@ -10,41 +9,48 @@ from functools import cache
 from pathlib import Path
 from types import MappingProxyType
 
-from conformance.catalogue import CatalogueKey, CompiledTestPlan, EndpointRef, TestCatalogue
-from conformance.catalogue_registry import resolve_catalogue
 from conformance.configuration_contracts import (
-    ConfigurationContractError,
-    ExecutionManifest,
-    ExecutionManifestGenerationError,
-    ParticipantPlan,
-    ParticipantPlanCompilationError,
     PreparedExecutionManifest,
-    RequirementsCatalogue,
-    ResolvedPlan,
-    SuiteRelease,
-    TestDefinitionCatalogue,
-    compile_participant_plan,
-    generate_execution_manifest,
-    load_requirements_catalogue,
-    load_suite_release,
-    load_test_definition_catalogue,
-    materialize_execution_manifest_requests,
-    parse_participant_plan,
-    participant_plan_to_document,
     preflight_suite_release_artifacts,
-    resolve_participant_plan,
     validate_execution_manifest_compatibility,
 )
 from conformance.configuration_contracts.compiled_plan_adapter import LegacyExecutionEngine
+from conformance.configuration_contracts.diagnostics import ConfigurationContractError
+from conformance.configuration_contracts.models import (
+    SuiteRelease,
+)
+from conformance.configuration_contracts.v2_compiler import (
+    ParticipantPlanCompilationError,
+    compile_participant_plan,
+    resolve_participant_plan,
+)
+from conformance.configuration_contracts.v2_execution_manifest import (
+    ExecutionManifestGenerationError,
+    generate_execution_manifest,
+)
+from conformance.configuration_contracts.v2_loader import (
+    load_suite_release,
+    load_test_definition_catalogue,
+    parse_participant_plan,
+    participant_plan_to_document,
+)
+from conformance.configuration_contracts.v2_models import (
+    ExecutionManifest,
+    ParticipantPlan,
+    ResolvedPlan,
+    TestDefinitionCatalogue,
+)
 from conformance.json_types import JsonObject, JsonValue
-from conformance.model_bank_config import ModelBankConfig
+from conformance.model_bank_config import ConfigError, ModelBankConfig, parse_model_bank_config
+from conformance.plan_configuration import (
+    dcr_execution_runtime_inputs,
+    parse_dcr_plan_configuration,
+    validate_dcr_file_references,
+)
 from conformance.results import ResultTraceabilitySource, build_safe_participant_plan_snapshot
 from conformance.test_plan_validation import (
-    PreparedTestPlan,
-    TestPlanValidationError,
     TestPlanValidationIssue,
     TestPlanValidationResult,
-    prepare_test_plan_for_run,
 )
 
 _CONFIGURATION_ROOT = Path(__file__).resolve().parent / "configuration_contracts"
@@ -62,32 +68,12 @@ _CATALOGUE_DIRECTORY_BY_SCOPE_VERSION = {
     ("vrp", "3.1.11"): ("vrp", "v3_1_11"),
     ("vrp", "4.0.1"): ("vrp", "v4_0_1"),
 }
-_LEGACY_API_BY_SCOPE = {
-    "ais": "ais",
-    "cbpii": "cbpii",
-    "dcr": "dcr",
-    "pis": "pis",
-    "vrp": "vrp",
-}
-_RESOURCE_GROUP_ID_BY_SCOPE = {
-    "ais": "AIS",
-    "cbpii": "CBPII",
-    "pis": "PIS",
-    "vrp": "VRP",
-}
-_RESOURCE_PATH_PREFIX_BY_SCOPE = {
-    ("ais", "3.1.11"): "/open-banking/v3.1/aisp",
-    ("ais", "4.0.1"): "/open-banking/v4.0/aisp",
-    ("cbpii", "3.1.11"): "/open-banking/v3.1/cbpii",
-    ("cbpii", "4.0.1"): "/open-banking/v4.0/cbpii",
-    ("pis", "3.1.11"): "/open-banking/v3.1/pisp",
-    ("pis", "4.0.1"): "/open-banking/v4.0/pisp",
-}
 _LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX = {
     "from-booking-date-time": "fromBookingDateTime",
     "to-booking-date-time": "toBookingDateTime",
     "debtor-account-scheme": "debtorAccountSchemeName",
     "debtor-account-identification": "debtorAccountIdentification",
+    "debtor-account-name": "debtorAccountName",
     "instructed-currency": "cbpiiInstructedAmountCurrency",
     "creditor-account-scheme-name": "vrpCreditorAccountSchemeName",
     "creditor-account-identification": "vrpCreditorAccountIdentification",
@@ -142,20 +128,6 @@ _PIS_ALLOWED_COMPATIBILITY_RUNTIME_INPUTS = frozenset(
         "xFapiInteractionId",
     }
 )
-_DCR_OBSERVATION_ID_BY_TEST_DEFINITION_ID = {
-    "dcr.v34.test.registration.positive": "DCR-002-C01-S02",
-    "dcr.v34.test.registration.expired": "DCR-004-C01-S02",
-    "dcr.v34.test.registration.invalid-issuer": "DCR-004-C02-S02",
-    "dcr.v34.test.registration.empty-issuer": "DCR-004-C03-S02",
-    "dcr.v34.test.registration.overlong-issuer": "DCR-004-C04-S02",
-    "dcr.v34.test.registration.invalid-auth-method": "DCR-004-C05-S02",
-    "dcr.v34.test.retrieval.positive": "DCR-005-C03-S01",
-    "dcr.v34.test.retrieval.unknown-client": "DCR-003-C04-S01",
-    "dcr.v34.test.retrieval.missing-authorization": "DCR-007-C02-S02",
-    "dcr.v34.test.update.positive": "DCR-008-C03-S02",
-    "dcr.v34.test.update.unknown-client": "DCR-009-C04-S02",
-    "dcr.v34.test.deletion.positive": "DCR-002-C03-S01",
-}
 
 
 class ParticipantSurfaceError(ValueError):
@@ -164,11 +136,10 @@ class ParticipantSurfaceError(ValueError):
 
 @dataclass(frozen=True, slots=True)
 class ParticipantCatalogue:
-    """Trusted release catalogue selected for one participant-plan scope."""
+    """Trusted released executable catalogue selected for participant intent."""
 
     suite_release: SuiteRelease
-    requirements: RequirementsCatalogue
-    test_definitions: TestDefinitionCatalogue
+    test_catalogue: TestDefinitionCatalogue
 
 
 @dataclass(frozen=True, slots=True)
@@ -181,7 +152,6 @@ class PreparedParticipantPlan:
     prepared_execution: PreparedExecutionManifest
     catalogue: ParticipantCatalogue
     config: ModelBankConfig
-    compiled_plan: CompiledTestPlan
     runtime_inputs: Mapping[str, JsonValue]
     safe_snapshot: JsonObject
     validation: TestPlanValidationResult
@@ -195,18 +165,16 @@ def participant_suite_release() -> SuiteRelease:
 
 @cache
 def supported_participant_catalogues() -> tuple[ParticipantCatalogue, ...]:
-    """Load every requirements/test pair bound by the participant release."""
+    """Load every executable catalogue bound by the participant release."""
     suite_release = participant_suite_release()
     catalogues: list[ParticipantCatalogue] = []
     for family, version_directory in _CATALOGUE_DIRECTORY_BY_SCOPE_VERSION.values():
         root = _CATALOGUE_ROOT / family / version_directory
-        requirements = load_requirements_catalogue(root / "requirements.json")
-        test_definitions = load_test_definition_catalogue(root / "test-definitions.json")
+        test_catalogue = load_test_definition_catalogue(root / "test-catalogue.v2.json")
         catalogues.append(
             ParticipantCatalogue(
                 suite_release=suite_release,
-                requirements=requirements,
-                test_definitions=test_definitions,
+                test_catalogue=test_catalogue,
             )
         )
     return tuple(catalogues)
@@ -220,18 +188,18 @@ def participant_catalogue_for_plan(plan: ParticipantPlan) -> ParticipantCatalogu
             f"Participant plan selects suite release {plan.suite_release_id!s}; this tool accepts {suite_release.id!s}"
         )
     for catalogue in supported_participant_catalogues():
-        specification = catalogue.requirements.specification
+        specification = catalogue.test_catalogue.specification
         if (
-            plan.scheme == catalogue.requirements.scheme
+            plan.scheme == catalogue.test_catalogue.scheme
             and plan.specification.id == specification.id
             and plan.specification.version == specification.version
-            and plan.specification.requirements_scope == specification.requirements_scope
+            and plan.specification.test_scope == specification.test_scope
         ):
             return catalogue
     raise ParticipantSurfaceError(
-        "No trusted requirements catalogue matches "
+        "No trusted executable test catalogue matches "
         f"{plan.specification.id!s}/{plan.specification.version}/"
-        f"{plan.specification.requirements_scope!s}"
+        f"{plan.specification.test_scope!s}"
     )
 
 
@@ -243,8 +211,7 @@ def compile_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
         catalogue = participant_catalogue_for_plan(participant_plan)
         resolved_plan = compile_participant_plan(
             catalogue.suite_release,
-            catalogue.requirements,
-            catalogue.test_definitions,
+            catalogue.test_catalogue,
             participant_plan,
         )
     except (ConfigurationContractError, ParticipantPlanCompilationError) as error:
@@ -260,8 +227,7 @@ def resolve_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
         catalogue = participant_catalogue_for_plan(participant_plan)
         resolved_plan = resolve_participant_plan(
             catalogue.suite_release,
-            catalogue.requirements,
-            catalogue.test_definitions,
+            catalogue.test_catalogue,
             participant_plan,
         )
     except ConfigurationContractError as error:
@@ -272,7 +238,7 @@ def resolve_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
 def _validate_pis_compatibility_inputs(plan: ParticipantPlan) -> None:
     """Restrict PIS compatibility inputs to technical runtime categories."""
     configuration = plan.execution_configuration
-    if configuration is None or str(plan.specification.requirements_scope) != "pis":
+    if configuration is None or str(plan.specification.test_scope) != "pis":
         return
     forbidden = sorted(_PIS_BUSINESS_RUNTIME_ALIASES.intersection(configuration.compatibility_runtime_inputs))
     if forbidden:
@@ -295,33 +261,17 @@ def prepare_participant_plan_for_run(
     *,
     base_dir: Path,
 ) -> PreparedParticipantPlan:
-    """Prepare the shared participant document for compatibility execution."""
+    """Prepare the shared participant document for manifest-authoritative execution."""
     participant_plan, catalogue, resolved_plan = compile_participant_document(raw_plan)
     if participant_plan.execution_configuration is None:
         raise ParticipantSurfaceError("executionConfiguration is required to launch a participant plan")
     try:
         execution_manifest = generate_execution_manifest(
             resolved_plan,
-            catalogue.requirements,
-            catalogue.test_definitions,
+            catalogue.test_catalogue,
         )
-        compatibility_document = _legacy_compatibility_document(
-            participant_plan,
-            catalogue.requirements,
-            resolved_plan,
-        )
-        prepared_legacy = prepare_test_plan_for_run(compatibility_document, base_dir=base_dir)
-        observation_ids = (
-            MappingProxyType({str(step.id): str(step.id) for step in execution_manifest.steps})
-            if str(participant_plan.specification.requirements_scope) == "dcr"
-            else _manifest_observation_ids(execution_manifest, prepared_legacy.compiled_plan)
-        )
-        execution_manifest = materialize_execution_manifest_requests(
-            execution_manifest,
-            prepared_legacy.compiled_plan,
-            observation_ids=observation_ids,
-        )
-    except (ExecutionManifestGenerationError, TestPlanValidationError) as error:
+        config, runtime_inputs = _prepare_runtime_environment(participant_plan, base_dir=base_dir)
+    except (ConfigError, ExecutionManifestGenerationError) as error:
         raise ParticipantSurfaceError(f"Execution configuration is invalid: {error}") from error
     validation = TestPlanValidationResult(
         schema_version=participant_plan.schema_version,
@@ -335,13 +285,12 @@ def prepare_participant_plan_for_run(
             for finding in resolved_plan.findings
         ),
     )
-    safe_snapshot = build_safe_participant_plan_snapshot(participant_plan, catalogue.requirements)
+    safe_snapshot = build_safe_participant_plan_snapshot(participant_plan, catalogue.test_catalogue)
     prepared_execution = _prepare_execution_binding(
         participant_plan,
         resolved_plan,
         execution_manifest,
-        prepared_legacy,
-        observation_ids=observation_ids,
+        runtime_inputs=runtime_inputs,
         suite_release=catalogue.suite_release,
         safe_snapshot=safe_snapshot,
         runtime_input_base_dir=base_dir,
@@ -352,9 +301,8 @@ def prepare_participant_plan_for_run(
         execution_manifest=execution_manifest,
         prepared_execution=prepared_execution,
         catalogue=catalogue,
-        config=prepared_legacy.config,
-        compiled_plan=prepared_legacy.compiled_plan,
-        runtime_inputs=prepared_legacy.runtime_inputs,
+        config=config,
+        runtime_inputs=runtime_inputs,
         safe_snapshot=safe_snapshot,
         validation=validation,
     )
@@ -364,18 +312,17 @@ def _prepare_execution_binding(
     participant_plan: ParticipantPlan,
     resolved_plan: ResolvedPlan,
     manifest: ExecutionManifest,
-    prepared_legacy: PreparedTestPlan,
     *,
-    observation_ids: Mapping[str, str],
+    runtime_inputs: Mapping[str, JsonValue],
     suite_release: SuiteRelease,
     safe_snapshot: JsonObject,
     runtime_input_base_dir: Path,
 ) -> PreparedExecutionManifest:
-    scope = str(participant_plan.specification.requirements_scope)
+    scope = str(participant_plan.specification.test_scope)
     prepared = PreparedExecutionManifest(
         manifest=manifest,
         engine=LegacyExecutionEngine.DCR if scope == "dcr" else LegacyExecutionEngine.READ_WRITE,
-        runtime_inputs=prepared_legacy.runtime_inputs,
+        runtime_inputs=runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
         artifact_resolver=preflight_suite_release_artifacts(manifest, suite_release),
         result_traceability=ResultTraceabilitySource(
@@ -388,112 +335,9 @@ def _prepare_execution_binding(
     return prepared
 
 
-def _sensitive_json_pointers_by_observation_id(
-    manifest: ExecutionManifest,
-    observation_ids: Mapping[str, str],
-) -> Mapping[str, tuple[str, ...]]:
-    """Derive evidence-only masking locations from immutable manifest bindings."""
-    sensitive_input_ids = {item.id for item in manifest.inputs if item.redacted}
-    pointers_by_observation: dict[str, list[str]] = {}
-    for step in manifest.steps:
-        observation_id = observation_ids[str(step.id)]
-        pointers = pointers_by_observation.setdefault(observation_id, [])
-        for binding in step.request.input_bindings:
-            if binding.input_id in sensitive_input_ids and binding.type == "json-body":
-                pointers.append(binding.target)
-    return MappingProxyType(
-        {
-            observation_id: tuple(dict.fromkeys(pointers))
-            for observation_id, pointers in pointers_by_observation.items()
-            if pointers
-        }
-    )
-
-
-def _manifest_observation_ids(
-    manifest: ExecutionManifest,
-    compiled_plan: CompiledTestPlan,
-) -> Mapping[str, str]:
-    request_candidates = [
-        (
-            request.method,
-            request.path,
-            request.step_id,
-            request.compatibility_test_definition_ids,
-        )
-        for test_case in compiled_plan.test_cases
-        for request in test_case.request_steps
-    ]
-    execution_candidates = [
-        step.step_id for test_case in compiled_plan.test_cases for step in test_case.execution_steps
-    ]
-    if execution_candidates and not request_candidates:
-        available_ids = set(execution_candidates)
-        dcr_observations: dict[str, str] = {}
-        for manifest_step in manifest.steps:
-            observation_id = _DCR_OBSERVATION_ID_BY_TEST_DEFINITION_ID.get(str(manifest_step.test_definition_id))
-            if observation_id is None or observation_id not in available_ids:
-                raise ParticipantSurfaceError(
-                    "The DCR compatibility executor cannot provide a stable observation for "
-                    f"{manifest_step.test_definition_id!s}"
-                )
-            dcr_observations[str(manifest_step.id)] = observation_id
-        return MappingProxyType(dcr_observations)
-
-    explicitly_mapped: dict[str, tuple[str, str, str]] = {}
-    for method, path, step_id, test_definition_ids in request_candidates:
-        for test_definition_id in test_definition_ids:
-            if test_definition_id in explicitly_mapped:
-                raise ParticipantSurfaceError(
-                    "Compatibility catalogue reference unresolved: "
-                    f"test definition {test_definition_id} maps to multiple executable observations"
-                )
-            explicitly_mapped[test_definition_id] = (method, path, step_id)
-
-    unused = [(method, path, step_id) for method, path, step_id, _definition_ids in request_candidates]
-    reserved_step_ids = {step_id for _method, _path, step_id in explicitly_mapped.values()}
-    observations: dict[str, str] = {}
-    for manifest_step in manifest.steps:
-        normalized_manifest_path = _normalized_placeholder_path(manifest_step.request.path)
-        test_definition_id = str(manifest_step.test_definition_id)
-        explicit_candidate = explicitly_mapped.get(test_definition_id)
-        if explicit_candidate is not None:
-            explicit_method, explicit_path, _explicit_step_id = explicit_candidate
-            if explicit_method != manifest_step.request.method.value or not _normalized_placeholder_path(
-                explicit_path
-            ).endswith(normalized_manifest_path):
-                raise ParticipantSurfaceError(
-                    "Compatibility catalogue reference unresolved: "
-                    f"test definition {test_definition_id} maps to "
-                    f"{explicit_method} {explicit_path}, not "
-                    f"{manifest_step.request.method.value} {manifest_step.request.path}"
-                )
-            match_index = unused.index(explicit_candidate) if explicit_candidate in unused else None
-        else:
-            match_index = next(
-                (
-                    index
-                    for index, (method, path, _step_id) in enumerate(unused)
-                    if method == manifest_step.request.method.value
-                    and _step_id not in reserved_step_ids
-                    and _normalized_placeholder_path(path).endswith(normalized_manifest_path)
-                ),
-                None,
-            )
-        if match_index is None:
-            raise ParticipantSurfaceError(
-                "Compatibility catalogue reference unresolved: no executable observation matches "
-                f"manifest step {manifest_step.id!s} "
-                f"({manifest_step.request.method.value} {manifest_step.request.path})"
-            )
-        _method, _path, observation_id = unused.pop(match_index)
-        observations[str(manifest_step.id)] = observation_id
-    return MappingProxyType(observations)
-
-
 def participant_plan_export_document(
     plan: ParticipantPlan,
-    requirements: RequirementsCatalogue,
+    catalogue: TestDefinitionCatalogue,
     *,
     include_secrets: bool,
 ) -> JsonObject:
@@ -501,7 +345,7 @@ def participant_plan_export_document(
     if include_secrets:
         return participant_plan_to_document(plan)
     document = participant_plan_to_document(plan)
-    sensitive_ids = {str(item.id) for item in requirements.predefined_inputs if item.sensitivity != "non-sensitive"}
+    sensitive_ids = {str(item.id) for item in catalogue.predefined_inputs if item.sensitivity != "non-sensitive"}
     raw_inputs = document.get("predefinedInputs")
     if isinstance(raw_inputs, list):
         document["predefinedInputs"] = [
@@ -525,136 +369,52 @@ def participant_plan_export_document(
     return document
 
 
-def _legacy_compatibility_document(
+def _prepare_runtime_environment(
     plan: ParticipantPlan,
-    requirements: RequirementsCatalogue,
-    resolved_plan: ResolvedPlan,
-) -> JsonObject:
+    *,
+    base_dir: Path,
+) -> tuple[ModelBankConfig, Mapping[str, JsonValue]]:
+    """Validate non-work runtime configuration without rebuilding test work."""
     configuration = plan.execution_configuration
     if configuration is None:
         raise ParticipantSurfaceError("executionConfiguration is required to launch a participant plan")
-    scope = str(plan.specification.requirements_scope)
+    scope = str(plan.specification.test_scope)
     runtime_inputs = dict(configuration.compatibility_runtime_inputs)
-    runtime_inputs.update(_legacy_predefined_inputs(plan, scope=scope))
-    security_environment = deepcopy(dict(configuration.security_environment))
+    runtime_inputs.update(_participant_input_runtime_values(plan, scope=scope))
+    security = deepcopy(dict(configuration.security_environment))
+    for key in ("discoveryUrl", "resourceBaseUrl"):
+        if key in security:
+            runtime_inputs[key] = security[key]
     if scope == "dcr":
-        return {
-            "schemaVersion": "1.0",
-            "specification": {
-                "family": "OBL_DCR",
-                "scheme": str(plan.scheme),
-                "name": str(plan.specification.id),
-                "version": plan.specification.version,
-            },
-            "securityEnvironment": security_environment,
-            "endpoints": _legacy_dcr_endpoints(requirements, resolved_plan),
-            "dynamicClientRegistration": deepcopy(dict(configuration.dynamic_client_registration)),
-            "metadata": deepcopy(dict(configuration.metadata)),
-        }
-    return {
-        "schemaVersion": "1.0",
-        "specification": {
-            "family": "OBL_READ_WRITE",
-            "version": plan.specification.version,
-            "profile": "FAPI1_ADVANCED",
-        },
-        "securityEnvironment": security_environment,
-        "resourceGroups": [
-            {
-                "id": _RESOURCE_GROUP_ID_BY_SCOPE[scope],
-                "endpoints": _legacy_read_write_endpoints(requirements, resolved_plan),
-            }
-        ],
-        "businessTestData": {"runtimeInputs": runtime_inputs},
-        "metadata": deepcopy(dict(configuration.metadata)),
-    }
-
-
-def _legacy_read_write_endpoints(
-    requirements: RequirementsCatalogue,
-    resolved_plan: ResolvedPlan,
-) -> list[JsonValue]:
-    selected_ids = {endpoint.id for endpoint in resolved_plan.endpoints}
-    scope = str(requirements.specification.requirements_scope)
-    version = requirements.specification.version
-    prefix = _RESOURCE_PATH_PREFIX_BY_SCOPE.get((scope, version), "")
-    legacy_catalogue = _legacy_catalogue_for_scope_version(scope, version)
-    legacy_refs = {
-        endpoint_ref
-        for test_case in legacy_catalogue.test_cases
-        for endpoint_ref in test_case.applicability.endpoint_refs
-    }
-    legacy_refs.update(
-        EndpointRef(
-            method=request.method,
-            path=request.path,
+        dcr_config = parse_dcr_plan_configuration(
+            configuration.security_environment,
+            configuration.dynamic_client_registration,
+            configuration.metadata,
         )
-        for test_case in legacy_catalogue.test_cases
-        for request in test_case.request_steps
-    )
-    legacy_refs.update(
-        endpoint_ref for capability in legacy_catalogue.capabilities for endpoint_ref in capability.endpoint_refs
-    )
-    endpoints: list[JsonValue] = []
-    for endpoint in requirements.endpoints:
-        if endpoint.id not in selected_ids:
-            continue
-        expected_path = f"{prefix}{endpoint.path}"
-        normalized_path = _normalized_placeholder_path(expected_path)
-        legacy_ref = next(
-            (
-                candidate
-                for candidate in sorted(
-                    legacy_refs,
-                    key=lambda item: ("${" in item.path, item.path),
-                )
-                if candidate.method == endpoint.method.value
-                and _normalized_placeholder_path(candidate.path) == normalized_path
-            ),
-            None,
-        )
-        if legacy_ref is None:
-            raise ParticipantSurfaceError(
-                "Compatibility catalogue reference unresolved: "
-                f"no executable operation matches {endpoint.method.value} {endpoint.path}"
-            )
-        endpoints.append(
-            {
-                "method": endpoint.method.value,
-                "path": legacy_ref.path,
-                **({"operationId": endpoint.operation_id} if endpoint.operation_id is not None else {}),
-            }
-        )
-    return endpoints
+        validate_dcr_file_references(dcr_config)
+        runtime_inputs.update(dcr_execution_runtime_inputs(dcr_config))
+    config_document = _model_bank_config_document(security)
+    config = parse_model_bank_config(config_document, base_dir=base_dir)
+    _validate_runtime_file_references(config)
+    return config, MappingProxyType(runtime_inputs)
 
 
-def _legacy_dcr_endpoints(
-    requirements: RequirementsCatalogue,
-    resolved_plan: ResolvedPlan,
-) -> list[JsonValue]:
-    selected_ids = {endpoint.id for endpoint in resolved_plan.endpoints}
-    endpoints: list[JsonValue] = []
-    for endpoint in requirements.endpoints:
-        if endpoint.id not in selected_ids:
-            continue
-        registration = endpoint.method.value == "POST" and endpoint.path == "/register"
-        endpoints.append(
-            {
-                "method": endpoint.method.value,
-                "path": endpoint.path,
-                "required": registration,
-                "locked": registration,
-            }
-        )
-    return endpoints
-
-
-def _legacy_predefined_inputs(plan: ParticipantPlan, *, scope: str) -> JsonObject:
+def _participant_input_runtime_values(plan: ParticipantPlan, *, scope: str) -> JsonObject:
+    """Expose participant values only as non-authoritative runtime data."""
     values: JsonObject = {}
     for participant_input in plan.predefined_inputs:
         input_id = str(participant_input.input_id)
-        suffix = input_id.rsplit(".input.", maxsplit=1)[-1]
         value = participant_input.value
+        values[input_id] = (
+            {
+                "frequencyType": value.frequency_type,
+                **({"countPerPeriod": value.count_per_period} if value.count_per_period is not None else {}),
+                **({"pointInTime": value.point_in_time} if value.point_in_time is not None else {}),
+            }
+            if not isinstance(value, str)
+            else value
+        )
+        suffix = input_id.rsplit(".input.", maxsplit=1)[-1]
         if suffix == "standing-order-frequency":
             if isinstance(value, str):
                 values["pisStandingOrderFrequencyV31"] = value
@@ -681,29 +441,56 @@ def _legacy_predefined_inputs(plan: ParticipantPlan, *, scope: str) -> JsonObjec
     return values
 
 
-def legacy_catalogue_for_participant_plan(plan: ParticipantPlan) -> TestCatalogue:
-    """Return the existing executable catalogue used by the compatibility adapter."""
-    scope = str(plan.specification.requirements_scope)
-    return _legacy_catalogue_for_scope_version(scope, plan.specification.version)
+def _model_bank_config_document(security: JsonObject) -> JsonObject:
+    """Map the v2 security environment to the runtime's typed configuration."""
+    document: JsonObject = {}
+    if "discoveryUrl" in security:
+        document["discoveryUrl"] = security["discoveryUrl"]
+    oauth_keys = {
+        "clientId": "clientId",
+        "redirectUri": "redirectUri",
+        "authorizationEndpoint": "authorizationEndpoint",
+        "issuer": "issuer",
+        "tokenEndpoint": "tokenEndpoint",
+        "resourceBaseUrl": "resourceBaseUrl",
+        "responseType": "responseType",
+        "signingAlgorithm": "requestObjectSigningAlg",
+    }
+    oauth = {target: security[source] for source, target in oauth_keys.items() if source in security}
+    if {"clientId", "redirectUri"} <= oauth.keys():
+        document["oauth"] = oauth
+    if "resourceBaseUrl" in security:
+        document["resourceServer"] = {"baseUrl": security["resourceBaseUrl"]}
+    mtls = security.get("mtls")
+    if isinstance(mtls, dict):
+        tls_keys = {
+            "caBundlePath": "caBundlePath",
+            "certificatePath": "clientCertificatePath",
+            "privateKeyPath": "clientPrivateKeyPath",  # pragma: allowlist secret -- configuration field names only
+        }
+        document["tls"] = {target: mtls[source] for source, target in tls_keys.items() if source in mtls}
+    signing_keys = {
+        "signingCertificatePath": "signingCertificatePath",
+        "signingPrivateKeyPath": "signingPrivateKeyPath",  # pragma: allowlist secret -- configuration field names only
+        "signingKeyId": "kid",
+        "clientAssertionIssuer": "clientAssertionIssuer",
+        "clientAssertionSubject": "clientAssertionSubject",
+        "clientAuthMethod": "tokenEndpointAuthMethod",
+    }
+    signing = {target: security[source] for source, target in signing_keys.items() if source in security}
+    if set(signing_keys.values()) <= signing.keys():
+        document["fapiSigning"] = signing
+    return document
 
 
-def _legacy_catalogue_for_scope_version(scope: str, version: str) -> TestCatalogue:
-    api = _LEGACY_API_BY_SCOPE.get(scope)
-    if api is None:
-        raise ParticipantSurfaceError(f"No compatibility catalogue exists for scope {scope}")
-    legacy_version = {
-        "3.1.11": "v3.1",
-        "4.0.1": "v4.0",
-    }.get(version, f"v{version}")
-    return resolve_catalogue(
-        CatalogueKey(
-            standard="open-banking",
-            version=legacy_version,
-            api=api,
-        )
+def _validate_runtime_file_references(config: ModelBankConfig) -> None:
+    """Fail before launch when configured credential paths do not exist."""
+    paths = (
+        config.tls.ca_bundle_path,
+        config.tls.client_certificate_path,
+        config.tls.client_private_key_path,
+        None if config.fapi_signing is None else config.fapi_signing.signing_certificate_path,
+        None if config.fapi_signing is None else config.fapi_signing.signing_private_key_path,
     )
-
-
-def _normalized_placeholder_path(path: str) -> str:
-    """Normalize path-parameter names for cross-catalogue operation matching."""
-    return re.sub(r"\$\{[^}]+\}|\{[^}]+\}", "{}", path)
+    if missing := next((path for path in paths if path is not None and not path.is_file()), None):
+        raise ConfigError(f"Configured credential path does not exist: {missing}")

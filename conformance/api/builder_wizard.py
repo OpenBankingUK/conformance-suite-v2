@@ -29,13 +29,10 @@ from conformance.catalogue import (
     parse_test_plan_document,
     plan_document_to_json_object,
     security_environment_from_plan_config,
-    supported_plan_document_boundaries,
 )
 from conformance.catalogue_registry import supported_catalogues
-from conformance.configuration_contracts import (
-    ParticipantPlan,
-    parse_participant_plan,
-)
+from conformance.configuration_contracts.v2_loader import parse_participant_plan
+from conformance.configuration_contracts.v2_models import ParticipantPlan
 from conformance.json_types import JsonObject, JsonValue
 from conformance.model_bank_config import ConfigError, parse_model_bank_config
 from conformance.participant_surface import (
@@ -344,7 +341,7 @@ class CatalogueScopeHierarchy:
 
 @dataclass(frozen=True)
 class ParticipantCapabilityOption:
-    """One trusted requirements-catalogue capability shown by the wizard."""
+    """One trusted executable-catalogue capability shown by the wizard."""
 
     id: str
     name: str
@@ -355,7 +352,7 @@ class ParticipantCapabilityOption:
 
 @dataclass(frozen=True)
 class ParticipantScopeOption:
-    """One requirements scope and its participant-selectable capabilities."""
+    """One test scope and its participant-selectable capabilities."""
 
     id: str
     label: str
@@ -699,10 +696,9 @@ class CatalogueBoundaryForm(forms.Form):
         effective_initial = _effective_initial(initial, boundaries=self._boundaries)
         selected_boundary = _boundary_from_form_values(data, effective_initial, boundaries=self._boundaries)
         self.selected_boundary = selected_boundary
-        selected_resource_groups = _raw_or_initial_values(data, effective_initial, "resource_groups")
-        self.resource_group_hierarchy = catalogue_scope_hierarchy(
-            selected_boundary,
-            selected_resource_group_ids=selected_resource_groups,
+        self.resource_group_hierarchy = CatalogueScopeHierarchy(
+            boundary=selected_boundary,
+            resource_groups=(),
         )
         effective_data = (
             _pruned_catalogue_boundary_form_data(data, hierarchy=self.resource_group_hierarchy)
@@ -929,9 +925,9 @@ class ScopeSelectionForm(forms.Form):
 
 
 class ParticipantScopeSelectionForm(forms.Form):
-    """Select one trusted requirements scope and its declared capabilities."""
+    """Select one trusted test scope and its declared capabilities."""
 
-    requirements_scope: forms.ChoiceField = forms.ChoiceField(required=True)
+    test_scope: forms.ChoiceField = forms.ChoiceField(required=True)
     capabilities: forms.MultipleChoiceField = forms.MultipleChoiceField(required=True)
 
     def __init__(
@@ -941,16 +937,16 @@ class ParticipantScopeSelectionForm(forms.Form):
         boundary: PlanDocumentBoundary,
         initial: Mapping[str, object] | None = None,
     ) -> None:
-        """Build choices directly from trusted requirements catalogues."""
+        """Build choices directly from trusted executable catalogues."""
         self.boundary = boundary
         self.catalogues = participant_catalogues_for_boundary(boundary)
-        selected_scope_values = _raw_or_initial_values(data, initial, "requirements_scope")
+        selected_scope_values = _raw_or_initial_values(data, initial, "test_scope")
         selected_scope = selected_scope_values[0] if selected_scope_values else None
         if selected_scope is None and len(self.catalogues) == 1:
-            selected_scope = str(self.catalogues[0].requirements.specification.requirements_scope)
+            selected_scope = str(self.catalogues[0].test_catalogue.specification.test_scope)
         selected_capabilities = _raw_or_initial_values(data, initial, "capabilities")
         effective_initial = {
-            "requirements_scope": selected_scope,
+            "test_scope": selected_scope,
             "capabilities": list(selected_capabilities),
         }
         super().__init__(
@@ -959,29 +955,29 @@ class ParticipantScopeSelectionForm(forms.Form):
         )
         scope_choices = [
             (
-                str(catalogue.requirements.specification.requirements_scope),
-                _participant_scope_label(str(catalogue.requirements.specification.requirements_scope)),
+                str(catalogue.test_catalogue.specification.test_scope),
+                _participant_scope_label(str(catalogue.test_catalogue.specification.test_scope)),
             )
             for catalogue in self.catalogues
         ]
-        cast(forms.ChoiceField, self.fields["requirements_scope"]).choices = scope_choices
+        cast(forms.ChoiceField, self.fields["test_scope"]).choices = scope_choices
         selected_catalogue = next(
             (
                 catalogue
                 for catalogue in self.catalogues
-                if str(catalogue.requirements.specification.requirements_scope) == selected_scope
+                if str(catalogue.test_catalogue.specification.test_scope) == selected_scope
             ),
             self.catalogues[0] if len(self.catalogues) == 1 else None,
         )
         cast(forms.MultipleChoiceField, self.fields["capabilities"]).choices = [
             (str(capability.id), capability.name)
-            for capability in (selected_catalogue.requirements.capabilities if selected_catalogue is not None else ())
+            for capability in (selected_catalogue.test_catalogue.capabilities if selected_catalogue is not None else ())
         ]
         self.scope_options = tuple(
             ParticipantScopeOption(
-                id=str(catalogue.requirements.specification.requirements_scope),
-                label=_participant_scope_label(str(catalogue.requirements.specification.requirements_scope)),
-                selected=str(catalogue.requirements.specification.requirements_scope) == selected_scope,
+                id=str(catalogue.test_catalogue.specification.test_scope),
+                label=_participant_scope_label(str(catalogue.test_catalogue.specification.test_scope)),
+                selected=str(catalogue.test_catalogue.specification.test_scope) == selected_scope,
                 capabilities=tuple(
                     ParticipantCapabilityOption(
                         id=str(capability.id),
@@ -990,16 +986,16 @@ class ParticipantScopeSelectionForm(forms.Form):
                         selected=str(capability.id) in selected_capabilities,
                         inferred_endpoint_count=len(capability.required_endpoint_ids),
                     )
-                    for capability in catalogue.requirements.capabilities
+                    for capability in catalogue.test_catalogue.capabilities
                 ),
             )
             for catalogue in self.catalogues
         )
 
     @property
-    def selected_requirements_scope(self) -> str:
-        """Return the selected requirements scope."""
-        value = self.cleaned_data.get("requirements_scope")
+    def selected_test_scope(self) -> str:
+        """Return the selected test scope."""
+        value = self.cleaned_data.get("test_scope")
         return value if isinstance(value, str) else ""
 
     @property
@@ -1801,7 +1797,20 @@ def catalogue_boundary_options() -> tuple[PlanDocumentBoundary, ...]:
     Returns:
         Catalogue-backed boundaries followed by registered future boundaries.
     """
-    catalogue_backed_boundaries = supported_plan_document_boundaries(supported_catalogues())
+    catalogue_backed_boundaries = tuple(
+        dict.fromkeys(
+            PlanDocumentBoundary(
+                scheme=str(item.test_catalogue.scheme),
+                specification=(
+                    "dynamic-client-registration"
+                    if str(item.test_catalogue.specification.id) == "dynamic-client-registration"
+                    else "read-write"
+                ),
+                version=item.test_catalogue.specification.version,
+            )
+            for item in supported_participant_catalogues()
+        )
+    )
     return catalogue_backed_boundaries + tuple(
         boundary for boundary in _REGISTERED_BOUNDARIES if boundary not in catalogue_backed_boundaries
     )
@@ -1817,14 +1826,14 @@ def participant_catalogues_for_boundary(
     return tuple(
         catalogue
         for catalogue in supported_participant_catalogues()
-        if catalogue.requirements.scheme == boundary.scheme
-        and catalogue.requirements.specification.id == expected_specification_id
-        and catalogue.requirements.specification.version == boundary.version
+        if catalogue.test_catalogue.scheme == boundary.scheme
+        and catalogue.test_catalogue.specification.id == expected_specification_id
+        and catalogue.test_catalogue.specification.version == boundary.version
     )
 
 
 def _participant_scope_label(scope: str) -> str:
-    """Return the participant-facing label for one requirements scope."""
+    """Return the participant-facing label for one test scope."""
     return {
         "ais": "Account Information",
         "cbpii": "Confirmation of Funds",
@@ -1864,9 +1873,7 @@ def boundary_is_selector_only(boundary: PlanDocumentBoundary) -> bool:
         True when the wizard can display the boundary but cannot compile or
         launch plans for it yet.
     """
-    return boundary in _REGISTERED_BOUNDARIES and boundary not in supported_plan_document_boundaries(
-        supported_catalogues()
-    )
+    return boundary in _REGISTERED_BOUNDARIES and not participant_catalogues_for_boundary(boundary)
 
 
 def catalogue_boundary_continue_blocker(boundary: PlanDocumentBoundary) -> str | None:
@@ -2473,28 +2480,33 @@ def participant_plan_from_draft(
     """Build the public participant-plan contract from a browser draft."""
     boundary = _draft_boundary_or_error(draft)
     if len(draft.resource_group_ids) != 1:
-        raise CatalogueError("Select exactly one requirements scope")
+        raise CatalogueError("Select exactly one test scope")
     scope = draft.resource_group_ids[0]
     catalogue = next(
         (
             candidate
             for candidate in participant_catalogues_for_boundary(boundary)
-            if str(candidate.requirements.specification.requirements_scope) == scope
+            if str(candidate.test_catalogue.specification.test_scope) == scope
         ),
         None,
     )
     if catalogue is None:
-        raise CatalogueError(f"Requirements scope {scope!r} is not available for this specification")
+        raise CatalogueError(f"Test scope {scope!r} is not available for this specification")
     config_object = _copy_json_mapping(config if config is not None else draft.config)
     runtime_values = _runtime_input_values_from_config(config_object)
     if scope == "pis":
         _promote_pis_business_inputs(
             runtime_values,
-            specification_version=catalogue.requirements.specification.version,
+            specification_version=catalogue.test_catalogue.specification.version,
         )
-    predefined_input_ids = {str(item.id) for item in catalogue.requirements.predefined_inputs}
+    elif scope == "cbpii":
+        _promote_cbpii_business_inputs(
+            runtime_values,
+            specification_version=catalogue.test_catalogue.specification.version,
+        )
+    predefined_input_ids = {str(item.id) for item in catalogue.test_catalogue.predefined_inputs}
     predefined_inputs: list[JsonValue] = []
-    for predefined_input in catalogue.requirements.predefined_inputs:
+    for predefined_input in catalogue.test_catalogue.predefined_inputs:
         input_id = str(predefined_input.id)
         if input_id in runtime_values:
             predefined_inputs.append({"inputId": input_id, "value": runtime_values[input_id]})
@@ -2505,14 +2517,14 @@ def participant_plan_from_draft(
         "documentType": "participant-plan",
         "id": f"participant.{draft.draft_id}",
         "predefinedInputs": predefined_inputs,
-        "schemaVersion": "1.0",
-        "scheme": str(catalogue.requirements.scheme),
+        "schemaVersion": "2.0",
+        "scheme": str(catalogue.test_catalogue.scheme),
         "securityProfile": draft.security_profile,
         "selectedCapabilityIds": list(draft.endpoint_ids),
         "specification": {
-            "id": str(catalogue.requirements.specification.id),
-            "requirementsScope": scope,
-            "version": catalogue.requirements.specification.version,
+            "id": str(catalogue.test_catalogue.specification.id),
+            "testScope": scope,
+            "version": catalogue.test_catalogue.specification.version,
         },
         "suiteReleaseId": str(participant_suite_release().id),
         "executionConfiguration": {
@@ -2534,7 +2546,7 @@ def participant_plan_from_draft(
 def participant_runtime_input_prompts_for_draft(
     draft: BuilderDraft,
 ) -> tuple[WizardRuntimeInputPrompt, ...]:
-    """Return logical input prompts owned by the selected requirements catalogue."""
+    """Return logical input prompts owned by the selected executable catalogue."""
     boundary = _draft_boundary_or_error(draft)
     if len(draft.resource_group_ids) != 1:
         return ()
@@ -2543,13 +2555,13 @@ def participant_runtime_input_prompts_for_draft(
         (
             candidate
             for candidate in participant_catalogues_for_boundary(boundary)
-            if str(candidate.requirements.specification.requirements_scope) == scope
+            if str(candidate.test_catalogue.specification.test_scope) == scope
         ),
         None,
     )
     if catalogue is None:
-        raise CatalogueError(f"Requirements scope {scope!r} is not available for this specification")
-    capabilities_by_id = {str(item.id): item for item in catalogue.requirements.capabilities}
+        raise CatalogueError(f"Test scope {scope!r} is not available for this specification")
+    capabilities_by_id = {str(item.id): item for item in catalogue.test_catalogue.capabilities}
     selected_ids = set(draft.endpoint_ids)
     pending = list(selected_ids)
     while pending:
@@ -2575,7 +2587,7 @@ def participant_runtime_input_prompts_for_draft(
             group="Catalogue-defined business inputs",
             description=predefined_input.description,
         )
-        for predefined_input in catalogue.requirements.predefined_inputs
+        for predefined_input in catalogue.test_catalogue.predefined_inputs
         if any(str(capability_id) in selected_ids for capability_id in predefined_input.required_for_capability_ids)
     )
 
@@ -4597,6 +4609,29 @@ def _promote_pis_business_inputs(
             if point_in_time is not None:
                 frequency_value["pointInTime"] = point_in_time
             values[logical_id] = frequency_value
+
+
+def _promote_cbpii_business_inputs(
+    values: JsonObject,
+    *,
+    specification_version: str,
+) -> None:
+    """Move browser CBPII form values onto versioned predefined-input IDs."""
+    version_id = {"3.1.11": "v311", "4.0.1": "v401"}.get(specification_version)
+    if version_id is None:
+        raise CatalogueError(f"Unsupported CBPII specification version {specification_version!r}")
+    aliases = {
+        "debtorAccountSchemeName": "debtor-account-scheme",
+        "debtorAccountIdentification": "debtor-account-identification",
+        "debtorAccountName": "debtor-account-name",
+        "cbpiiInstructedAmountAmount": "instructed-amount",
+        "cbpiiInstructedAmountCurrency": "instructed-currency",
+    }
+    for alias, slug in aliases.items():
+        value = values.pop(alias, None)
+        logical_id = f"cbpii.{version_id}.input.{slug}"
+        if value is not None and logical_id not in values:
+            values[logical_id] = value
 
 
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:

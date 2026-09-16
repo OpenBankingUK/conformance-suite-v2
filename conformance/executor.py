@@ -46,6 +46,7 @@ from conformance.configuration_contracts import (
     PreparedExecutionManifest,
     RequestBaseUrlSource,
     RequestModification,
+    RequestStateBinding,
     StableId,
     SuiteReleaseArtifactResolver,
     validate_execution_manifest_compatibility,
@@ -620,7 +621,7 @@ def run_execution_manifest(
     dcr_jwt_id_factory: Callable[[], str] | None = None,
 ) -> SmokeCheckResult:
     """Execute only work declared by one immutable execution manifest."""
-    manifest = prepared_manifest.manifest
+    manifest = cast(ExecutionManifest, prepared_manifest.manifest)
     runtime_inputs = prepared_manifest.runtime_inputs
     runtime_input_base_dir = prepared_manifest.runtime_input_base_dir
     validate_execution_manifest_compatibility(prepared_manifest)
@@ -715,8 +716,18 @@ def _execution_manifest_to_runtime_manifest(
         )
         acquired_token_ids.add(token_id)
 
-    input_values = {item.id: item.value for item in manifest.inputs if item.value is not None}
+    input_values = {
+        item.id: (runtime_inputs.get(str(item.id)) if item.redacted else item.value)
+        for item in manifest.inputs
+        if item.value is not None or str(item.id) in runtime_inputs
+    }
     sensitive_input_ids = {item.id for item in manifest.inputs if item.redacted}
+    state_output_templates = {
+        output.id: _response_output_template(step.id, output.json_pointer)
+        for step in manifest.steps
+        for output in step.outputs
+        if output.source == "response-json" and output.json_pointer is not None
+    }
     ais_profiles = tuple(
         profile
         for profile, token_id in _AIS_PERMISSION_PROFILE_TOKEN_IDS.items()
@@ -731,6 +742,7 @@ def _execution_manifest_to_runtime_manifest(
             runtime_input_base_dir=runtime_input_base_dir,
             runtime_config=runtime_config,
             artifact_resolver=artifact_resolver,
+            state_output_templates=state_output_templates,
         )
         steps.append(runtime_step)
         if ais_profiles and any(
@@ -903,15 +915,34 @@ def _execution_manifest_step_to_runtime_step(
     runtime_input_base_dir: Path,
     runtime_config: RuntimeConfig | None,
     artifact_resolver: SuiteReleaseArtifactResolver,
+    state_output_templates: Mapping[StableId, str] | None = None,
 ) -> ManifestStep:
     """Build one private runtime step from one immutable manifest step."""
     stable_step = manifest_step
     request = stable_step.request
+    body_template = _mutable_manifest_json(request.json_body_template)
+    for binding in request.input_bindings:
+        if binding.type != "json-body":
+            continue
+        value = input_values.get(binding.input_id)
+        if value is not None:
+            _set_json_pointer_value(
+                body_template,
+                binding.target,
+                _binding_value(value, str(binding.transform)),
+            )
     request_step = CatalogueRequestStep(
         step_id=str(stable_step.id),
         name=stable_step.name,
         method=request.method.value,
-        path=request.path,
+        path=_path_template_with_modifications(
+            _request_path_with_state_bindings(
+                request.path,
+                state_bindings=request.state_bindings,
+                state_output_templates=state_output_templates or {},
+            ),
+            request.modifications,
+        ),
         query_parameters=request.query_templates,
         runtime_input_refs=request.runtime_input_refs,
         headers=tuple(
@@ -923,7 +954,7 @@ def _execution_manifest_step_to_runtime_step(
             for header in request.header_templates
             if header.literal_value is None
         ),
-        body_template=_mutable_manifest_json(request.json_body_template),
+        body_template=body_template,
         generated_values={name: strategy.value for name, strategy in request.generated_values.items()},
         required_token_id=(None if request.required_token_id is None else str(request.required_token_id)),
         produced_token_id=(None if request.produced_token_id is None else str(request.produced_token_id)),
@@ -952,6 +983,8 @@ def _execution_manifest_step_to_runtime_step(
         )
         or {}
     )
+    if request.content_type is not None:
+        headers["Content-Type"] = request.content_type
     for header in request.header_templates:
         if header.literal_value is not None:
             headers[header.name] = _resolve_catalogue_template_string(
@@ -1020,6 +1053,54 @@ def _execution_manifest_step_to_runtime_step(
             else ResponseSignaturePolicy(source=request.response_signature.source.value)
         ),
     )
+
+
+def _response_output_template(step_id: StableId, json_pointer: str) -> str:
+    tokens = tuple(token.replace("~1", "/").replace("~0", "~") for token in json_pointer.removeprefix("/").split("/"))
+    if not tokens or any(not token or "." in token for token in tokens):
+        raise ValueError(f"Manifest output JSON Pointer {json_pointer!r} cannot be used in a request path")
+    return f"${{steps.{step_id!s}.response.body.{'.'.join(tokens)}}}"
+
+
+def _request_path_with_state_bindings(
+    path: str,
+    *,
+    state_bindings: tuple[RequestStateBinding, ...],
+    state_output_templates: Mapping[StableId, str],
+) -> str:
+    resolved = path
+    for binding in state_bindings:
+        if binding.type != "path-parameter":
+            raise ValueError(f"Unsupported Read/Write manifest state binding type: {binding.type}")
+        try:
+            value = state_output_templates[binding.output_id]
+        except KeyError as error:
+            raise ValueError(f"Manifest state output {binding.output_id!s} has no response value") from error
+        marker = f"{{{binding.target}}}"
+        if marker not in resolved:
+            raise ValueError(
+                f"Manifest state binding {binding.output_id!s} targets absent path parameter {binding.target}"
+            )
+        resolved = resolved.replace(marker, value)
+    return resolved
+
+
+def _path_template_with_modifications(
+    path: str,
+    modifications: tuple[RequestModification, ...],
+) -> str:
+    resolved = path
+    for modification in modifications:
+        if (
+            modification.location == "path-parameter"
+            and modification.operation in {"replace", "generate"}
+            and modification.target is not None
+        ):
+            resolved = resolved.replace(
+                f"{{{modification.target}}}",
+                str(_manifest_modification_value(modification)),
+            )
+    return resolved
 
 
 def _execution_manifest_request_url(
@@ -1135,14 +1216,20 @@ def _binding_value(value: object, transform: str) -> JsonValue:
         return cast("JsonValue", value)
     if transform == "standing-order-frequency-string":
         frequency_type = getattr(value, "frequency_type", None)
+        if frequency_type is None and isinstance(value, Mapping):
+            frequency_type = value.get("frequencyType")
         if isinstance(frequency_type, str):
             return frequency_type
     if transform == "standing-order-frequency-object":
         frequency_type = getattr(value, "frequency_type", None)
+        if frequency_type is None and isinstance(value, Mapping):
+            frequency_type = value.get("frequencyType")
         if isinstance(frequency_type, str):
             result: JsonObject = {"frequencyType": frequency_type}
-            count = getattr(value, "count_per_period", None)
-            point = getattr(value, "point_in_time", None)
+            count = (
+                value.get("countPerPeriod") if isinstance(value, Mapping) else getattr(value, "count_per_period", None)
+            )
+            point = value.get("pointInTime") if isinstance(value, Mapping) else getattr(value, "point_in_time", None)
             if count is not None:
                 result["countPerPeriod"] = count
             if point is not None:

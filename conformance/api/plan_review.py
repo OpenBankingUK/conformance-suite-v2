@@ -6,11 +6,7 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 
 from conformance.catalogue import ApplicabilityDecision, CatalogueTestCase, CompiledTestPlan
-from conformance.configuration_contracts import (
-    RequirementsCatalogue,
-    ResolvedPlan,
-    TestDefinitionCatalogue,
-)
+from conformance.configuration_contracts.v2_models import ResolvedPlan, TestDefinitionCatalogue
 
 
 @dataclass(frozen=True)
@@ -117,17 +113,21 @@ def compiled_plan_rows(compiled_plan: CompiledTestPlan) -> tuple[PlanTestCaseRow
 
 def resolved_plan_rows(
     resolved_plan: ResolvedPlan,
-    requirements: RequirementsCatalogue,
-    test_definitions: TestDefinitionCatalogue,
+    catalogue: TestDefinitionCatalogue,
 ) -> tuple[PlanTestCaseRow, ...]:
     """Build review rows from generated resolved-plan test instances."""
-    definitions_by_id = {definition.id: definition for definition in test_definitions.test_definitions}
-    input_definitions = {item.id: item for item in requirements.predefined_inputs}
+    definitions_by_id = {definition.id: definition for definition in catalogue.test_definitions}
+    input_definitions = {item.id: item for item in catalogue.predefined_inputs}
     capability_origins = {item.id: item.origin.value for item in resolved_plan.capabilities}
     rows: list[PlanTestCaseRow] = []
     for instance in resolved_plan.test_instances:
         definition = definitions_by_id[instance.test_definition_id]
-        origin = capability_origins.get(definition.capability_id, "inferred")
+        origin = (
+            "explicit"
+            if any(capability_origins.get(item) == "explicit" for item in definition.applicability.capability_ids)
+            else "inferred"
+        )
+        capability_labels = ", ".join(str(item) for item in definition.applicability.capability_ids)
         rows.append(
             PlanTestCaseRow(
                 id=str(instance.id),
@@ -135,8 +135,8 @@ def resolved_plan_rows(
                 role=definition.purpose,
                 phase="execution",
                 source=f"{origin.title()} capability",
-                source_detail=str(definition.capability_id),
-                mandatory=bool(instance.covered_requirement_ids),
+                source_detail=capability_labels,
+                mandatory=True,
                 dependencies=tuple(str(dependency_id) for dependency_id in instance.dependency_ids),
                 request_count=1,
                 assertion_count=len(definition.assertions),
@@ -151,7 +151,7 @@ def resolved_plan_rows(
                 ),
                 request_step_ids=(f"{instance.id!s}.request",),
                 assertion_summaries=tuple(str(assertion.id) for assertion in definition.assertions),
-                compliance_scope=tuple(str(item) for item in instance.covered_requirement_ids),
+                compliance_scope=(),
             )
         )
     return tuple(rows)

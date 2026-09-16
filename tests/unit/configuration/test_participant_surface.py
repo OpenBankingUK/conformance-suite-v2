@@ -3,25 +3,29 @@
 from __future__ import annotations
 
 import json
-from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
 import pytest
 
+import conformance.catalogue_registry
+import conformance.configuration_contracts.compiled_plan_adapter
+import conformance.test_plan_validation
 from conformance.configuration_contracts import (
     ConfigurationContractError,
     DiagnosticCode,
+)
+from conformance.configuration_contracts.v2_execution_manifest import generate_execution_manifest
+from conformance.configuration_contracts.v2_loader import (
     dump_execution_manifest,
     dump_resolved_plan,
-    generate_execution_manifest,
     parse_participant_plan,
     participant_plan_to_document,
 )
+from conformance.json_types import JsonObject
 from conformance.participant_surface import (
     ParticipantSurfaceError,
-    _legacy_predefined_inputs,
-    _manifest_observation_ids,
+    _participant_input_runtime_values,
     compile_participant_document,
     participant_plan_export_document,
     prepare_participant_plan_for_run,
@@ -33,9 +37,6 @@ pytestmark = pytest.mark.unit
 
 _SURFACE_PLAN_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
-)
-_AIS_ACCOUNTS_SURFACE_PLAN_PATH = (
-    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "ais" / "v4_0_1" / "participant-plan.surface.json"
 )
 _INVALID_EXECUTION_PATH = (
     REPO_ROOT
@@ -60,14 +61,16 @@ def test_execution_configuration_round_trips_through_participant_plan() -> None:
 
 
 def test_execution_configuration_rejects_unknown_properties() -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["executionConfiguration"]["unknown"] = True
     with pytest.raises(ConfigurationContractError) as captured:
-        parse_participant_plan(json.loads(_INVALID_EXECUTION_PATH.read_text(encoding="utf-8")))
+        parse_participant_plan(raw_plan)
 
     assert captured.value.diagnostics[0].code is DiagnosticCode.SCHEMA_VALIDATION_FAILED
-    assert captured.value.diagnostics[0].instance_path == "/executionConfiguration/unknown"
+    assert captured.value.diagnostics[0].instance_path == ""
 
 
-def test_shared_surface_prepares_resolved_manifest_and_legacy_execution(tmp_path: Path) -> None:
+def test_shared_surface_prepares_resolved_manifest_and_direct_execution(tmp_path: Path) -> None:
     raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
 
     prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
@@ -77,12 +80,12 @@ def test_shared_surface_prepares_resolved_manifest_and_legacy_execution(tmp_path
     assert prepared.prepared_execution.manifest == prepared.execution_manifest
     assert prepared.prepared_execution.result_traceability is not None
     assert prepared.prepared_execution.artifact_resolver.manifest == prepared.execution_manifest
-    assert prepared.compiled_plan.traceability.generated_test_case_ids == (
-        "pis-v4-domestic-standing-order-consent-create",
-        "pis-v4-domestic-standing-order-consent-read",
-        "pis-v4-domestic-standing-order-create",
-        "pis-v4-domestic-standing-order-read",
-        "pis-v4-domestic-standing-order-consent-reject-invalid-frequency",
+    assert tuple(str(step.test_definition_id) for step in prepared.execution_manifest.steps) == (
+        "pis.v401.test.domestic_standing_order_consents.positive",
+        "pis.v401.test.domestic_standing_order_consents.consentid.positive",
+        "pis.v401.test.domestic_standing_orders.positive",
+        "pis.v401.test.domestic_standing_orders.domesticstandingorderid.positive",
+        "pis.v401.test.domestic-standing-order-consent.invalid-frequency",
     )
 
 
@@ -134,7 +137,7 @@ def test_sensitive_input_is_traceable_without_value_fingerprint(tmp_path: Path) 
     assert resolved_input.value is None
 
 
-def test_pis_predefined_inputs_lower_only_inside_compatibility_adapter(tmp_path: Path) -> None:
+def test_pis_predefined_inputs_are_non_work_runtime_values(tmp_path: Path) -> None:
     raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
 
     prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
@@ -192,7 +195,7 @@ def test_safe_snapshot_and_export_redact_compatibility_values(tmp_path: Path) ->
 
     snapshot = build_safe_participant_plan_snapshot(
         prepared.participant_plan,
-        prepared.catalogue.requirements,
+        prepared.catalogue.test_catalogue,
     )
     execution = snapshot["executionConfiguration"]
     assert isinstance(execution, dict)
@@ -202,7 +205,7 @@ def test_safe_snapshot_and_export_redact_compatibility_values(tmp_path: Path) ->
 
     exported = participant_plan_export_document(
         prepared.participant_plan,
-        prepared.catalogue.requirements,
+        prepared.catalogue.test_catalogue,
         include_secrets=False,
     )
     exported_execution = exported["executionConfiguration"]
@@ -218,26 +221,28 @@ def test_public_surface_rejects_non_registered_suite_release(tmp_path: Path) -> 
         prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
 
 
-def test_missing_compatibility_operation_has_stable_reference_diagnostic(tmp_path: Path) -> None:
-    raw_plan = json.loads(_AIS_ACCOUNTS_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
-    prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
-    compiled_without_delete = replace(
-        prepared.compiled_plan,
-        test_cases=tuple(
-            test_case
-            for test_case in prepared.compiled_plan.test_cases
-            if not any(request.method == "DELETE" for request in test_case.request_steps)
-        ),
-    )
+def test_legacy_authorities_cannot_affect_v2_compile_review_or_launch(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def fail(*args: object, **kwargs: object) -> None:
+        raise AssertionError("legacy authority was called")
 
-    with pytest.raises(
-        ParticipantSurfaceError,
-        match=(
-            r"Compatibility catalogue reference unresolved: no executable observation matches "
-            r"manifest step .* \(DELETE .*account-access-consents/"
-        ),
-    ):
-        _manifest_observation_ids(prepared.execution_manifest, compiled_without_delete)
+    monkeypatch.setattr(conformance.catalogue_registry, "resolve_catalogue", fail)
+    monkeypatch.setattr(conformance.test_plan_validation, "prepare_test_plan_for_run", fail)
+    monkeypatch.setattr(
+        conformance.configuration_contracts.compiled_plan_adapter,
+        "materialize_execution_manifest_requests",
+        fail,
+    )
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+
+    _plan, catalogue, resolved = compile_participant_document(raw_plan)
+    prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    assert resolved.test_instances
+    assert catalogue.test_catalogue.test_definitions
+    assert prepared.execution_manifest.steps
 
 
 @pytest.mark.parametrize(
@@ -257,8 +262,9 @@ def test_scope_specific_amounts_reach_compatibility_runtime(
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / family / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
+    raw_plan = _as_v2_participant_plan(raw_plan)
     plan = parse_participant_plan(raw_plan)
-    assert _legacy_predefined_inputs(plan, scope=family)[expected_input_id] == expected_value
+    assert _participant_input_runtime_values(plan, scope=family)[expected_input_id] == expected_value
 
 
 def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
@@ -267,14 +273,33 @@ def test_cbpii_manifest_keeps_sensitive_input_out_of_generated_value() -> None:
             REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "cbpii" / "v4_0_1" / "participant-plan.json"
         ).read_text(encoding="utf-8")
     )
-    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.catalogue-release"
+    raw_plan = _as_v2_participant_plan(raw_plan)
+    predefined_inputs = raw_plan["predefinedInputs"]
+    assert isinstance(predefined_inputs, list)
+    predefined_inputs.append(
+        {
+            "inputId": "cbpii.v401.input.debtor-account-name",
+            "value": "Debtor account",
+        }
+    )
 
     _plan, catalogue, resolved = compile_participant_document(raw_plan)
     manifest = generate_execution_manifest(
         resolved,
-        catalogue.requirements,
-        catalogue.test_definitions,
+        catalogue.test_catalogue,
     )
     debtor_id = next(item for item in manifest.inputs if item.id.endswith("debtor-account-identification"))
     assert debtor_id.redacted is True
     assert debtor_id.value is None
+    debtor_name = next(item for item in manifest.inputs if item.id.endswith("debtor-account-name"))
+    assert debtor_name.redacted is False
+    assert debtor_name.value == "Debtor account"
+
+
+def _as_v2_participant_plan(raw_plan: JsonObject) -> JsonObject:
+    raw_plan["schemaVersion"] = "2.0"
+    raw_plan["suiteReleaseId"] = "obl.open-banking-mvp.test-catalogue-release"
+    specification = raw_plan["specification"]
+    assert isinstance(specification, dict)
+    specification["testScope"] = specification.pop("requirementsScope")
+    return raw_plan

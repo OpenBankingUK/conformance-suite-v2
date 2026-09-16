@@ -1,16 +1,16 @@
 <section id="scope-options">
     {% if form.non_field_errors %}{{ form.non_field_errors }}{% endif %}
-    {{ form.requirements_scope.errors }}
+    {{ form.test_scope.errors }}
     {{ form.capabilities.errors }}
 
-    <section aria-labelledby="requirements-scopes-heading">
-        <h3 id="requirements-scopes-heading">Requirements scope</h3>
-        <p class="helper">Choose one Standards-owned scope. A participant plan is compiled against exactly one requirements catalogue.</p>
+    <section aria-labelledby="test-scopes-heading">
+        <h3 id="test-scopes-heading">Test scope</h3>
+        <p class="helper">Choose one Standards-owned scope. A participant plan is compiled against exactly one executable test catalogue.</p>
         <div class="resource-grid">
             {% for scope in participant_scope_options %}
                 <label class="resource-card{% if scope.selected %} selected{% endif %}">
                     <input type="radio"
-                           name="requirements_scope"
+                           name="test_scope"
                            value="{{ scope.id }}"
                            {% if scope.selected %}checked{% endif %}>
                     <strong>{{ scope.label }}</strong>
@@ -18,7 +18,7 @@
                     <code>{{ scope.id }}</code>
                 </label>
             {% empty %}
-                <div class="message info">No trusted requirements scopes are available for this specification.</div>
+                <div class="message info">No trusted test scopes are available for this specification.</div>
             {% endfor %}
         </div>
     </section>

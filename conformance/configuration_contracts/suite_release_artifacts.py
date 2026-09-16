@@ -10,12 +10,12 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from types import MappingProxyType
-from typing import cast
+from typing import TYPE_CHECKING, cast
 from urllib.parse import unquote
 
 import yaml
 
-from conformance.configuration_contracts.loader import execution_manifest_id
+from conformance.configuration_contracts.loader import execution_manifest_id as _v1_execution_manifest_id
 from conformance.configuration_contracts.models import (
     ArtifactReference,
     ExecutionManifest,
@@ -24,6 +24,11 @@ from conformance.configuration_contracts.models import (
     SuiteRelease,
 )
 from conformance.json_types import JsonValue
+
+if TYPE_CHECKING:
+    from conformance.configuration_contracts.v2_models import ExecutionManifest as V2ExecutionManifest
+
+type SupportedExecutionManifest = ExecutionManifest | V2ExecutionManifest
 
 TRUSTED_CONFIGURATION_ROOT = Path(__file__).resolve().parents[2]
 """Repository root against which suite-release artifact URIs are interpreted."""
@@ -83,18 +88,21 @@ class ResolvedSuiteArtifact:
 class SuiteReleaseArtifactResolver:
     """Immutable manifest-bound resolver populated by complete local preflight."""
 
-    manifest: ExecutionManifest
+    manifest: SupportedExecutionManifest
     suite_release: SuiteRelease
     trusted_root: Path = TRUSTED_CONFIGURATION_ROOT
     resolved_artifacts: Mapping[StableId, ResolvedSuiteArtifact] = field(init=False)
     resolved_assertion_schemas: Mapping[tuple[StableId, StableId], JsonValue] = field(init=False)
 
     def __post_init__(self) -> None:
-        """Bind release identity and resolve every response-schema assertion."""
+        """Bind identity and resolve every released byte before network I/O."""
         _verify_release_binding(self.manifest, self.suite_release)
         root = _resolve_root(self.trusted_root)
         artifacts: dict[StableId, ResolvedSuiteArtifact] = {}
         schemas: dict[tuple[StableId, StableId], JsonValue] = {}
+        if self.suite_release.schema_version == "2.0":
+            for reference in self.suite_release.artifacts:
+                artifacts[reference.id] = _resolve_artifact(reference, root=root)
         for step in self.manifest.steps:
             for assertion in step.assertions:
                 if assertion.type != "response-schema":
@@ -194,7 +202,7 @@ class SuiteReleaseArtifactResolver:
 
 
 def preflight_suite_release_artifacts(
-    manifest: ExecutionManifest,
+    manifest: SupportedExecutionManifest,
     accepted_release: SuiteRelease,
     *,
     trusted_root: Path = TRUSTED_CONFIGURATION_ROOT,
@@ -207,8 +215,8 @@ def preflight_suite_release_artifacts(
     )
 
 
-def _verify_release_binding(manifest: ExecutionManifest, release: SuiteRelease) -> None:
-    if manifest.id != execution_manifest_id(manifest):
+def _verify_release_binding(manifest: SupportedExecutionManifest, release: SuiteRelease) -> None:
+    if manifest.id != _execution_manifest_id(manifest):
         raise SuiteReleaseArtifactError(
             SuiteReleaseArtifactErrorCode.MANIFEST_ID_MISMATCH,
             "Execution manifest ID does not match its immutable content",
@@ -226,6 +234,15 @@ def _verify_release_binding(manifest: ExecutionManifest, release: SuiteRelease) 
             SuiteReleaseArtifactErrorCode.ARTIFACT_IDENTITY_MISMATCH,
             "Execution manifest artifact identities do not match the accepted release",
         )
+
+
+def _execution_manifest_id(manifest: SupportedExecutionManifest) -> StableId:
+    """Dispatch content addressing without allowing v1 code into the active path."""
+    if manifest.schema_version == "2.0":
+        from conformance.configuration_contracts.v2_loader import execution_manifest_id
+
+        return execution_manifest_id(cast("V2ExecutionManifest", manifest))
+    return _v1_execution_manifest_id(cast(ExecutionManifest, manifest))
 
 
 def _resolve_root(root: Path) -> Path:
