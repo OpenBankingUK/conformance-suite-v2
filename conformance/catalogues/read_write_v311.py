@@ -930,6 +930,12 @@ def _transform_request_step(
             path=path,
             body_template=body_template,
         ),
+        compatibility_test_definition_ids=tuple(
+            test_definition_id.replace("ais.v401.", "ais.v311.")
+            if api == "ais"
+            else _replace_tokens(test_definition_id, id_replacements)
+            for test_definition_id in request_step.compatibility_test_definition_ids
+        ),
         detached_jws_profile=_v311_detached_jws_profile(request_step, api=api),
         required_token_id=(
             _replace_tokens(request_step.required_token_id, id_replacements)

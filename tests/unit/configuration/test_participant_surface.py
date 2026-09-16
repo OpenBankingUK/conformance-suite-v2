@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import cast
 
@@ -18,6 +19,7 @@ from conformance.configuration_contracts import (
 from conformance.participant_surface import (
     ParticipantSurfaceError,
     _legacy_predefined_inputs,
+    _manifest_observation_ids,
     compile_participant_document,
     participant_plan_export_document,
     prepare_participant_plan_for_run,
@@ -29,6 +31,9 @@ pytestmark = pytest.mark.unit
 
 _SURFACE_PLAN_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
+)
+_AIS_ACCOUNTS_SURFACE_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "ais" / "v4_0_1" / "participant-plan.surface.json"
 )
 _INVALID_EXECUTION_PATH = (
     REPO_ROOT
@@ -122,6 +127,28 @@ def test_public_surface_rejects_non_registered_suite_release(tmp_path: Path) -> 
 
     with pytest.raises(ParticipantSurfaceError, match="this tool accepts"):
         prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+
+
+def test_missing_compatibility_operation_has_stable_reference_diagnostic(tmp_path: Path) -> None:
+    raw_plan = json.loads(_AIS_ACCOUNTS_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+    compiled_without_delete = replace(
+        prepared.compiled_plan,
+        test_cases=tuple(
+            test_case
+            for test_case in prepared.compiled_plan.test_cases
+            if not any(request.method == "DELETE" for request in test_case.request_steps)
+        ),
+    )
+
+    with pytest.raises(
+        ParticipantSurfaceError,
+        match=(
+            r"Compatibility catalogue reference unresolved: no executable observation matches "
+            r"manifest step .* \(DELETE /account-access-consents/\{ConsentId\}\)"
+        ),
+    ):
+        _manifest_observation_ids(prepared.execution_manifest, compiled_without_delete)
 
 
 @pytest.mark.parametrize(

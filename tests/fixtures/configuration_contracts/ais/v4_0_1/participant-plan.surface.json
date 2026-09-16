@@ -1,0 +1,32 @@
+{
+  "documentType": "participant-plan",
+  "executionConfiguration": {
+    "compatibilityRuntimeInputs": {
+      "consentedAccountId": "account-123"
+    },
+    "dynamicClientRegistration": {},
+    "metadata": {
+      "aspspName": "Example ASPSP"
+    },
+    "securityEnvironment": {
+      "clientId": "client-123",
+      "discoveryUrl": "https://as.example.com/.well-known/openid-configuration",
+      "redirectUri": "https://client.example.com/callback",
+      "resourceBaseUrl": "https://rs.example.com"
+    }
+  },
+  "id": "participant.ais-v401.accounts-surface",
+  "predefinedInputs": [],
+  "schemaVersion": "1.0",
+  "scheme": "open-banking-uk",
+  "securityProfile": "fapi1-advanced",
+  "selectedCapabilityIds": [
+    "ais.v401.capability.accounts"
+  ],
+  "specification": {
+    "id": "read-write-api",
+    "requirementsScope": "ais",
+    "version": "4.0.1"
+  },
+  "suiteReleaseId": "obl.open-banking-mvp.catalogue-release"
+}

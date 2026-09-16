@@ -12,6 +12,11 @@ from django.urls import reverse
 
 from conformance.api.run_store import run_store
 from conformance.configuration_contracts import PreparedExecutionManifest
+from conformance.context import RuntimeConfig
+from conformance.execution_schedule import build_execution_schedule
+from conformance.executor import _compiled_plan_to_manifest
+from conformance.manifest import ManifestStep
+from conformance.test_plan import TestPlan
 from tests.support.paths import REPO_ROOT
 from tests.support.run_execution import StubbedRunExecution
 
@@ -19,6 +24,9 @@ pytestmark = pytest.mark.component
 
 _SURFACE_PLAN_PATH = (
     REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "pis" / "v4_0_1" / "participant-plan.surface.json"
+)
+_AIS_ACCOUNTS_SURFACE_PLAN_PATH = (
+    REPO_ROOT / "tests" / "fixtures" / "configuration_contracts" / "ais" / "v4_0_1" / "participant-plan.surface.json"
 )
 
 
@@ -130,6 +138,82 @@ def test_rest_accepts_the_same_participant_plan(
     assert record.plan_snapshot["documentType"] == "participant-plan"
     launch = stubbed_run_execution.wait_for_launch()
     assert isinstance(launch.args[2], PreparedExecutionManifest)
+
+
+@pytest.mark.parametrize(
+    ("version", "id_version"),
+    [("3.1.11", "v311"), ("4.0.1", "v401")],
+)
+def test_rest_launches_ais_accounts_plan_with_executable_consent_delete(
+    stubbed_run_execution: StubbedRunExecution,
+    version: str,
+    id_version: str,
+) -> None:
+    client = Client()
+    raw_plan = json.loads(_AIS_ACCOUNTS_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["id"] = f"participant.ais-{id_version}.accounts-surface"
+    raw_plan["specification"]["version"] = version
+    raw_plan["selectedCapabilityIds"] = [f"ais.{id_version}.capability.accounts"]
+
+    response = client.post("/api/runs/", data=json.dumps(raw_plan), content_type="application/json")
+
+    assert response.status_code == 201
+    launch = stubbed_run_execution.wait_for_launch()
+    prepared = launch.args[2]
+    assert isinstance(prepared, PreparedExecutionManifest)
+    assert prepared.manifest is not None
+    assert prepared.result_traceability is not None
+    assert prepared.result_traceability.resolved_plan.selection_valid is True
+
+    delete_manifest_steps = {
+        str(step.id): str(step.test_definition_id)
+        for step in prepared.manifest.steps
+        if step.request.method.value == "DELETE"
+    }
+    assert delete_manifest_steps == {
+        f"ais.{id_version}.test.delete.account_access_consents.consentid.positive.instance.request": (
+            f"ais.{id_version}.test.delete.account_access_consents.consentid.positive"
+        ),
+        f"ais.{id_version}.test.delete.account_access_consents.consentid.unauthorized.instance.request": (
+            f"ais.{id_version}.test.delete.account_access_consents.consentid.unauthorized"
+        ),
+        f"ais.{id_version}.test.delete.account_access_consents.consentid.invalid-resource.instance.request": (
+            f"ais.{id_version}.test.delete.account_access_consents.consentid.invalid-resource"
+        ),
+    }
+    assert {
+        prepared.result_traceability.result_observation_id_by_manifest_step_id[step_id]
+        for step_id in delete_manifest_steps
+    } == {
+        "ais-at-consent-delete-204-request",
+        "ais-at-consent-delete-401-request",
+        "ais-at-consent-delete-invalid-400-403-request",
+    }
+
+    runtime_manifest = _compiled_plan_to_manifest(
+        prepared.compiled_plan,
+        runtime_inputs=prepared.runtime_inputs,
+        runtime_input_base_dir=prepared.runtime_input_base_dir,
+        runtime_config=RuntimeConfig(
+            discovery_url="https://as.example.com/.well-known/openid-configuration",
+        ),
+    )
+    schedule = build_execution_schedule(
+        runtime_manifest,
+        TestPlan.default_plan_from_manifest(runtime_manifest),
+    )
+    scheduled_steps = (
+        *schedule.setup_steps,
+        *(step for group in schedule.execution_groups for step in group.steps),
+    )
+    scheduled_delete_ids = {
+        step.id for step in scheduled_steps if isinstance(step, ManifestStep) and step.request.method == "DELETE"
+    }
+    assert scheduled_delete_ids == {
+        "ais-at-consent-delete-204-request",
+        "ais-at-consent-delete-401-request",
+        "ais-at-consent-delete-invalid-400-403-request",
+    }
 
 
 def test_browser_import_rejects_legacy_canonical_plan() -> None:
