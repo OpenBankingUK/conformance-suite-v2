@@ -102,6 +102,47 @@ class TestMaskJsonValue:
             "client_id": "client-123",
         }
 
+    def test_catalogue_owned_json_pointers_mask_business_values(self) -> None:
+        """Trusted input bindings mask domain values without changing the source."""
+        body: JsonObject = {
+            "Data": {
+                "Initiation": {
+                    "CreditorAccount": {
+                        "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "Identification": "70000170000002",
+                        "Name": "Merchant",
+                    }
+                }
+            }
+        }
+
+        masked = mask_json_value(
+            body,
+            sensitive_pointers=(
+                "/Data/Initiation/CreditorAccount/Identification",
+                "/Data/Initiation/CreditorAccount/Name",
+            ),
+        )
+
+        assert masked == {
+            "Data": {
+                "Initiation": {
+                    "CreditorAccount": {
+                        "SchemeName": "UK.OBIE.SortCodeAccountNumber",
+                        "Identification": MASKED_VALUE,
+                        "Name": MASKED_VALUE,
+                    }
+                }
+            }
+        }
+        data = body["Data"]
+        assert isinstance(data, dict)
+        initiation = data["Initiation"]
+        assert isinstance(initiation, dict)
+        creditor_account = initiation["CreditorAccount"]
+        assert isinstance(creditor_account, dict)
+        assert creditor_account["Identification"] == "70000170000002"
+
 
 class TestMaskHeaders:
     """Behaviour of :func:`mask_headers` for HTTP request/response headers."""

@@ -112,6 +112,18 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
     exported_plan = json.loads(exported.content)
     assert exported_plan["documentType"] == "participant-plan"
     assert exported_plan["selectedCapabilityIds"] == ["pis.v401.capability.domestic-standing-order"]
+    compatibility_inputs = exported_plan["executionConfiguration"]["compatibilityRuntimeInputs"]
+    assert set(compatibility_inputs) == {"discoveryUrl", "resourceBaseUrl"}
+    assert not any(key.startswith("pis") for key in compatibility_inputs)
+    assert {item["inputId"] for item in exported_plan["predefinedInputs"]} == {
+        "pis.v401.input.creditor-account-scheme-name",
+        "pis.v401.input.creditor-account-identification",
+        "pis.v401.input.creditor-account-name",
+        "pis.v401.input.instructed-amount",
+        "pis.v401.input.instructed-currency",
+        "pis.v401.input.first-payment-date-time",
+        "pis.v401.input.standing-order-frequency",
+    }
     assert "resourceGroups" not in exported_plan
     assert "endpoints" not in exported_plan
 
@@ -121,6 +133,7 @@ def test_browser_builds_reviews_exports_and_launches_participant_plan(
     prepared_manifest = launch.args[2]
     assert isinstance(prepared_manifest, PreparedExecutionManifest)
     assert prepared_manifest.manifest is not None
+    assert prepared_manifest.sensitive_json_pointers_by_observation_id
 
 
 def test_rest_accepts_the_same_participant_plan(
@@ -136,6 +149,7 @@ def test_rest_accepts_the_same_participant_plan(
     assert record is not None
     assert record.plan_snapshot is not None
     assert record.plan_snapshot["documentType"] == "participant-plan"
+    assert "08080021325698" not in json.dumps(record.plan_snapshot)
     launch = stubbed_run_execution.wait_for_launch()
     assert isinstance(launch.args[2], PreparedExecutionManifest)
 

@@ -78,6 +78,7 @@ def test_pis_catalogues_are_source_bound_and_referentially_complete(
     assert test_definitions.requirements_catalogue_id == requirements.id
     assert len(requirements.capabilities) == 5
     assert len(requirements.endpoints) == 21
+    assert len(requirements.predefined_inputs) == 12
     assert len(test_definitions.test_definitions) == expected_tests
     assert validate_catalogue_references(requirements, test_definitions) == ()
 
@@ -102,6 +103,19 @@ def test_pis_catalogues_are_source_bound_and_referentially_complete(
         for assertion in definition.assertions
     )
     assert any(definition.request.modifications for definition in test_definitions.test_definitions)
+    sensitive_ids = {str(item.id) for item in requirements.predefined_inputs if item.sensitivity == "sensitive"}
+    assert sensitive_ids == {
+        f"pis.{id_version}.input.creditor-account-identification",
+        f"pis.{id_version}.input.creditor-account-name",
+        f"pis.{id_version}.input.international-creditor-account-identification",
+        f"pis.{id_version}.input.international-creditor-account-name",
+    }
+    post_endpoint_ids = {endpoint.id for endpoint in requirements.endpoints if endpoint.method.value == "POST"}
+    assert all(
+        definition.request.input_bindings
+        for definition in test_definitions.test_definitions
+        if definition.request.endpoint_id in post_endpoint_ids
+    )
 
 
 @pytest.mark.parametrize(

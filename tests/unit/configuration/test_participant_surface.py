@@ -12,6 +12,8 @@ import pytest
 from conformance.configuration_contracts import (
     ConfigurationContractError,
     DiagnosticCode,
+    dump_execution_manifest,
+    dump_resolved_plan,
     generate_execution_manifest,
     parse_participant_plan,
     participant_plan_to_document,
@@ -95,6 +97,93 @@ def test_execution_values_do_not_change_resolved_scope_identity(tmp_path: Path) 
 
     assert first.resolved_plan.id == second.resolved_plan.id
     assert first.execution_manifest.id == second.execution_manifest.id
+
+
+def test_material_non_sensitive_input_changes_trace_identity(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    first = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+    changed = json.loads(json.dumps(raw_plan))
+    amount = next(item for item in changed["predefinedInputs"] if item["inputId"] == "pis.v401.input.instructed-amount")
+    amount["value"] = "11.00"
+
+    second = prepare_participant_plan_for_run(changed, base_dir=tmp_path)
+
+    assert first.resolved_plan.id != second.resolved_plan.id
+    assert first.execution_manifest.id != second.execution_manifest.id
+
+
+def test_sensitive_input_is_traceable_without_value_fingerprint(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    first = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+    changed = json.loads(json.dumps(raw_plan))
+    creditor_id = next(
+        item
+        for item in changed["predefinedInputs"]
+        if item["inputId"] == "pis.v401.input.creditor-account-identification"
+    )
+    creditor_id["value"] = "08080099999999"
+
+    second = prepare_participant_plan_for_run(changed, base_dir=tmp_path)
+
+    assert first.resolved_plan.id == second.resolved_plan.id
+    assert first.execution_manifest.id == second.execution_manifest.id
+    serialized_trace = dump_resolved_plan(first.resolved_plan) + dump_execution_manifest(first.execution_manifest)
+    assert "08080021325698" not in serialized_trace
+    resolved_input = next(
+        item for item in first.resolved_plan.predefined_inputs if item.id.endswith("creditor-account-identification")
+    )
+    assert resolved_input.redacted is True
+    assert resolved_input.value is None
+
+
+def test_pis_predefined_inputs_lower_only_inside_compatibility_adapter(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+
+    prepared = prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+
+    assert prepared.participant_plan.execution_configuration is not None
+    assert prepared.participant_plan.execution_configuration.compatibility_runtime_inputs == {}
+    assert prepared.runtime_inputs["pisCreditorAccountIdentification"] == "08080021325698"
+    assert prepared.runtime_inputs["pisInstructedAmountAmount"] == "10.00"
+    assert prepared.runtime_inputs["pisStandingOrderFrequencyType"] == "WEEK"
+    masked_pointers = {
+        pointer
+        for pointers in prepared.prepared_execution.sensitive_json_pointers_by_observation_id.values()
+        for pointer in pointers
+    }
+    assert masked_pointers == {
+        "/Data/Initiation/CreditorAccount/Identification",
+        "/Data/Initiation/CreditorAccount/Name",
+    }
+
+
+def test_public_surface_rejects_pis_business_compatibility_alias(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["executionConfiguration"]["compatibilityRuntimeInputs"] = {
+        "pisCreditorAccountIdentification": "08080021325698"
+    }
+
+    with pytest.raises(ParticipantSurfaceError, match="must use predefinedInputs"):
+        prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+
+
+def test_public_surface_rejects_unknown_pis_compatibility_input(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    raw_plan["executionConfiguration"]["compatibilityRuntimeInputs"] = {"arbitraryRequestOverride": "not allowed"}
+
+    with pytest.raises(ParticipantSurfaceError, match="only environment, credential"):
+        prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
+
+
+def test_public_surface_rejects_malformed_pis_date_time(tmp_path: Path) -> None:
+    raw_plan = json.loads(_SURFACE_PLAN_PATH.read_text(encoding="utf-8"))
+    first_payment = next(
+        item for item in raw_plan["predefinedInputs"] if item["inputId"] == "pis.v401.input.first-payment-date-time"
+    )
+    first_payment["value"] = "tomorrow"
+
+    with pytest.raises(ParticipantSurfaceError, match="input.invalid"):
+        prepare_participant_plan_for_run(raw_plan, base_dir=tmp_path)
 
 
 def test_safe_snapshot_and_export_redact_compatibility_values(tmp_path: Path) -> None:

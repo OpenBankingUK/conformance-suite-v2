@@ -108,6 +108,7 @@ class JsonBody:
     """
 
     value: JsonValue
+    sensitive_json_pointers: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)

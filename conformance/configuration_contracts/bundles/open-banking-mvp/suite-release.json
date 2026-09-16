@@ -41,7 +41,7 @@
       "uri": "conformance/configuration_contracts/schemas/v1/execution-manifest.schema.json"
     },
     {
-      "digest": "sha256:805fc0591caf46dd94899b15d5b692c7a7482fbb2495159328aaf0906d1c907c",
+      "digest": "sha256:3523dbd609fc3a17909f66f57c28ef196e47e21726d123413b6800f289a740b1",
       "id": "obl.pis-v311.requirements",
       "kind": "requirements-catalogue",
       "mediaType": "application/json",
@@ -49,7 +49,7 @@
       "uri": "conformance/configuration_contracts/catalogues/pis/v3_1_11/requirements.json"
     },
     {
-      "digest": "sha256:b1ef7e742b020489ddda0b6ac2774db2aa75c97f1b8515d59c60315ea973e777",
+      "digest": "sha256:3c8239ecb69bc825b94550dd1bc90fa5f1ae149514e740c20e991e9849d4a403",
       "id": "obl.pis-v311.tests",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",
@@ -65,7 +65,7 @@
       "uri": "conformance/standards/ob_read_write/v3_1_11/payment-initiation-openapi.json"
     },
     {
-      "digest": "sha256:c7a3ca168e5dbc6520d789d9daa4def2d1670101f7a836faad17d34696052cb0",
+      "digest": "sha256:cbd0eeec56a7f5c702ac9ecee1cc1cc3bee6646a29fd0f95ac25dc350aaff979",
       "id": "obl.pis-v401.requirements",
       "kind": "requirements-catalogue",
       "mediaType": "application/json",
@@ -73,7 +73,7 @@
       "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/requirements.json"
     },
     {
-      "digest": "sha256:882b19c85ce05cb415049159afec14501dd3288eb08b2a64a4d0b24f44519daa",
+      "digest": "sha256:685af885f0ea85a20171d015974fa440f4d60585ea9bcfce5bc62dacb556a7af",
       "id": "obl.pis-v401.tests",
       "kind": "test-definition-catalogue",
       "mediaType": "application/json",

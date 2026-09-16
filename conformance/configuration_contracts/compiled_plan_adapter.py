@@ -39,6 +39,7 @@ class PreparedExecutionManifest:
     compiled_plan: CompiledTestPlan
     runtime_inputs: Mapping[str, JsonValue]
     runtime_input_base_dir: Path
+    sensitive_json_pointers_by_observation_id: Mapping[str, tuple[str, ...]]
     result_traceability: ResultTraceabilitySource | None = None
 
 
@@ -61,6 +62,7 @@ def adapt_compiled_plan_to_execution_manifest(
         compiled_plan=compiled_plan,
         runtime_inputs=MappingProxyType(dict(runtime_inputs)),
         runtime_input_base_dir=runtime_input_base_dir,
+        sensitive_json_pointers_by_observation_id=MappingProxyType({}),
     )
 
 

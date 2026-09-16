@@ -172,6 +172,21 @@ participant-owned logical values; test definitions own their technical request
 bindings. `executionConfiguration` carries environment values needed to launch
 without changing the deterministic resolved-plan identity.
 
+`compatibilityRuntimeInputs` is limited to environment, credential references,
+captured protocol-session state, and runtime-generated values needed by the
+temporary executor bridge. It is not a business-data extension point. PIS
+creditor accounts, amounts, currencies, dates, and frequencies are
+catalogue-owned predefined inputs, and public surfaces reject their legacy
+runtime aliases. The bridge may lower resolved logical values to legacy names
+in memory, but those aliases never become participant-plan authority.
+
+Non-sensitive predefined values participate in content-addressed resolved-plan
+and execution-manifest identity. Sensitive values are represented only by their
+stable input ID, source, applicability, and redaction state; no unkeyed value
+hash is published. Sensitive request-evidence paths are derived from trusted
+test-definition bindings and remain masked even when developer-mode evidence
+would otherwise be unmasked.
+
 Browser safe exports omit sensitive predefined values and compatibility runtime
 values. The CLI accepts the document through `--test-plan`; REST accepts it
 directly or under `testPlan`.
@@ -223,7 +238,8 @@ The wizard follows the PRD order:
    page. AIS, PIS,
    CBPII, and VRP fields render only when selected endpoints need that domain.
    Known account, amount, date, and frequency shapes use friendly fields with
-   advanced JSON fallbacks.
+   advanced JSON fallbacks. PIS values collected here are serialized as
+   versioned catalogue predefined inputs, never compatibility runtime inputs.
 7. Enter generated runtime artifacts such as tokens, token file references,
    consent ids, payment ids, and idempotency keys at
    `/builder/<draft>/config/runtime/`. DCR skips this page because token and

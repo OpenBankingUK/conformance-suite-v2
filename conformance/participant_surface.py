@@ -94,6 +94,52 @@ _LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX = {
     "valid-from-date-time": "vrpValidFromDateTime",
     "valid-to-date-time": "vrpValidToDateTime",
 }
+_PIS_LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX = {
+    "creditor-account-scheme-name": "pisCreditorAccountSchemeName",
+    "creditor-account-identification": "pisCreditorAccountIdentification",
+    "creditor-account-name": "pisCreditorAccountName",
+    "international-creditor-account-scheme-name": "pisInternationalCreditorAccountSchemeName",
+    "international-creditor-account-identification": "pisInternationalCreditorAccountIdentification",
+    "international-creditor-account-name": "pisInternationalCreditorAccountName",
+    "instructed-amount": "pisInstructedAmountAmount",
+    "instructed-currency": "pisInstructedAmountCurrency",
+    "currency-of-transfer": "pisCurrencyOfTransfer",
+    "requested-execution-date-time": "pisRequestedExecutionDateTime",
+    "first-payment-date-time": "pisFirstPaymentDateTime",
+}
+_PIS_BUSINESS_RUNTIME_ALIASES = frozenset(
+    {
+        *_PIS_LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX.values(),
+        "pisStandingOrderFrequencyV31",
+        "pisStandingOrderFrequencyType",
+        "pisStandingOrderFrequencyCountPerPeriod",
+        "pisStandingOrderFrequencyPointInTime",
+    }
+)
+_PIS_ALLOWED_COMPATIBILITY_RUNTIME_INPUTS = frozenset(
+    {
+        "accessToken",
+        "accessTokenRef",
+        "discoveryUrl",
+        "domesticPaymentConsentId",
+        "domesticPaymentId",
+        "domesticScheduledPaymentConsentId",
+        "domesticScheduledPaymentId",
+        "domesticStandingOrderConsentId",
+        "domesticStandingOrderId",
+        "idempotencyKey",
+        "internationalPaymentConsentId",
+        "internationalPaymentId",
+        "internationalScheduledPaymentConsentId",
+        "internationalScheduledPaymentId",
+        "invalidAccessToken",
+        "resourceBaseUrl",
+        "xCustomerIpAddress",
+        "xCustomerUserAgent",
+        "xFapiFinancialId",
+        "xFapiInteractionId",
+    }
+)
 _DCR_OBSERVATION_ID_BY_TEST_DEFINITION_ID = {
     "dcr.v34.test.registration.positive": "DCR-002-C01-S02",
     "dcr.v34.test.registration.expired": "DCR-004-C01-S02",
@@ -191,6 +237,7 @@ def compile_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
     """Parse and resolve a participant-plan document for review or import."""
     try:
         participant_plan = parse_participant_plan(raw_plan)
+        _validate_pis_compatibility_inputs(participant_plan)
         catalogue = participant_catalogue_for_plan(participant_plan)
         resolved_plan = compile_participant_plan(
             catalogue.suite_release,
@@ -207,6 +254,7 @@ def resolve_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
     """Parse and resolve a plan while preserving non-runnable findings."""
     try:
         participant_plan = parse_participant_plan(raw_plan)
+        _validate_pis_compatibility_inputs(participant_plan)
         catalogue = participant_catalogue_for_plan(participant_plan)
         resolved_plan = resolve_participant_plan(
             catalogue.suite_release,
@@ -217,6 +265,27 @@ def resolve_participant_document(raw_plan: object) -> tuple[ParticipantPlan, Par
     except ConfigurationContractError as error:
         raise ParticipantSurfaceError(str(error)) from error
     return participant_plan, catalogue, resolved_plan
+
+
+def _validate_pis_compatibility_inputs(plan: ParticipantPlan) -> None:
+    """Restrict PIS compatibility inputs to technical runtime categories."""
+    configuration = plan.execution_configuration
+    if configuration is None or str(plan.specification.requirements_scope) != "pis":
+        return
+    forbidden = sorted(_PIS_BUSINESS_RUNTIME_ALIASES.intersection(configuration.compatibility_runtime_inputs))
+    if forbidden:
+        raise ParticipantSurfaceError(
+            "PIS participant business values must use predefinedInputs, not "
+            "executionConfiguration.compatibilityRuntimeInputs: " + ", ".join(forbidden)
+        )
+    unsupported = sorted(
+        set(configuration.compatibility_runtime_inputs).difference(_PIS_ALLOWED_COMPATIBILITY_RUNTIME_INPUTS)
+    )
+    if unsupported:
+        raise ParticipantSurfaceError(
+            "Unsupported PIS compatibility runtime inputs; only environment, "
+            "credential, protocol-session, and runtime-generated values are allowed: " + ", ".join(unsupported)
+        )
 
 
 def prepare_participant_plan_for_run(
@@ -287,6 +356,7 @@ def _prepare_execution_binding(
     runtime_input_base_dir: Path,
 ) -> PreparedExecutionManifest:
     observation_ids = _manifest_observation_ids(manifest, prepared_legacy.compiled_plan)
+    sensitive_json_pointers = _sensitive_json_pointers_by_observation_id(manifest, observation_ids)
     scope = str(participant_plan.specification.requirements_scope)
     prepared = PreparedExecutionManifest(
         manifest=manifest,
@@ -294,6 +364,7 @@ def _prepare_execution_binding(
         compiled_plan=prepared_legacy.compiled_plan,
         runtime_inputs=prepared_legacy.runtime_inputs,
         runtime_input_base_dir=runtime_input_base_dir,
+        sensitive_json_pointers_by_observation_id=sensitive_json_pointers,
         result_traceability=ResultTraceabilitySource(
             execution_manifest=manifest,
             resolved_plan=resolved_plan,
@@ -303,6 +374,28 @@ def _prepare_execution_binding(
     )
     validate_execution_manifest_compatibility(prepared)
     return prepared
+
+
+def _sensitive_json_pointers_by_observation_id(
+    manifest: ExecutionManifest,
+    observation_ids: Mapping[str, str],
+) -> Mapping[str, tuple[str, ...]]:
+    """Derive evidence-only masking locations from immutable manifest bindings."""
+    sensitive_input_ids = {item.id for item in manifest.inputs if item.redacted}
+    pointers_by_observation: dict[str, list[str]] = {}
+    for step in manifest.steps:
+        observation_id = observation_ids[str(step.id)]
+        pointers = pointers_by_observation.setdefault(observation_id, [])
+        for binding in step.request.input_bindings:
+            if binding.input_id in sensitive_input_ids and binding.type == "json-body":
+                pointers.append(binding.target)
+    return MappingProxyType(
+        {
+            observation_id: tuple(dict.fromkeys(pointers))
+            for observation_id, pointers in pointers_by_observation.items()
+            if pointers
+        }
+    )
 
 
 def _manifest_observation_ids(
@@ -565,6 +658,8 @@ def _legacy_predefined_inputs(plan: ParticipantPlan, *, scope: str) -> JsonObjec
             legacy_id = "cbpiiInstructedAmountAmount"
         elif scope == "vrp" and suffix == "instructed-amount":
             legacy_id = "vrpInstructedAmountAmount"
+        elif scope == "pis":
+            legacy_id = _PIS_LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX.get(suffix)
         else:
             legacy_id = _LEGACY_RUNTIME_INPUT_BY_PREDEFINED_SUFFIX.get(suffix)
         if legacy_id is None:

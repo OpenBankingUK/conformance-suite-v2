@@ -385,8 +385,225 @@
     }
   ],
   "findings": [],
-  "id": "resolved-plan:16e4f16c5f7cdc45eba31a193d1f90d73ee1ff0696b539d6a29520cc35504183",
+  "id": "resolved-plan:5e7c59d24725fc995a66cb0a958a5b2237b12139d55c9870275e0677c7590ea8",
   "predefinedInputs": [
+    {
+      "id": "pis.v401.input.creditor-account-scheme-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.creditor-account-scheme-name"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order"
+      ],
+      "source": "participant",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "id": "pis.v401.input.creditor-account-identification",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.creditor-account-identification"
+          ]
+        }
+      ],
+      "redacted": true,
+      "requirementIds": [
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order"
+      ],
+      "source": "participant",
+      "value": null
+    },
+    {
+      "id": "pis.v401.input.creditor-account-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.creditor-account-name"
+          ]
+        }
+      ],
+      "redacted": true,
+      "requirementIds": [
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order"
+      ],
+      "source": "participant",
+      "value": null
+    },
+    {
+      "id": "pis.v401.input.international-creditor-account-scheme-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.international-creditor-account-scheme-name"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": "UK.OBIE.SortCodeAccountNumber"
+    },
+    {
+      "id": "pis.v401.input.international-creditor-account-identification",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.international-creditor-account-identification"
+          ]
+        }
+      ],
+      "redacted": true,
+      "requirementIds": [
+        "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": null
+    },
+    {
+      "id": "pis.v401.input.international-creditor-account-name",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.international-creditor-account-name"
+          ]
+        }
+      ],
+      "redacted": true,
+      "requirementIds": [
+        "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": null
+    },
+    {
+      "id": "pis.v401.input.instructed-amount",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.instructed-amount"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.international-payment",
+        "pis.v401.requirement.input.instructed-amount.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": "1.00"
+    },
+    {
+      "id": "pis.v401.input.instructed-currency",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.instructed-currency"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.instructed-currency.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.international-payment",
+        "pis.v401.requirement.input.instructed-currency.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": "GBP"
+    },
+    {
+      "id": "pis.v401.input.currency-of-transfer",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.currency-of-transfer"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.currency-of-transfer.international-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": "USD"
+    },
+    {
+      "id": "pis.v401.input.requested-execution-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.requested-execution-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment"
+      ],
+      "source": "participant",
+      "value": "2026-12-01T00:00:00Z"
+    },
+    {
+      "id": "pis.v401.input.first-payment-date-time",
+      "reasons": [
+        {
+          "code": "plan.input.supplied",
+          "sourceIds": [
+            "pis-v401-golden-plan",
+            "pis.v401.input.first-payment-date-time"
+          ]
+        }
+      ],
+      "redacted": false,
+      "requirementIds": [
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
+      ],
+      "source": "participant",
+      "value": "2026-12-01T00:00:00Z"
+    },
     {
       "id": "pis.v401.input.standing-order-frequency",
       "reasons": [
@@ -412,7 +629,7 @@
   "provenance": {
     "artifacts": [
       {
-        "digest": "sha256:c7a3ca168e5dbc6520d789d9daa4def2d1670101f7a836faad17d34696052cb0",
+        "digest": "sha256:cbd0eeec56a7f5c702ac9ecee1cc1cc3bee6646a29fd0f95ac25dc350aaff979",
         "id": "obl.pis-v401.requirements",
         "kind": "requirements-catalogue",
         "mediaType": "application/json",
@@ -420,7 +637,7 @@
         "uri": "conformance/configuration_contracts/catalogues/pis/v4_0_1/requirements.json"
       },
       {
-        "digest": "sha256:882b19c85ce05cb415049159afec14501dd3288eb08b2a64a4d0b24f44519daa",
+        "digest": "sha256:685af885f0ea85a20171d015974fa440f4d60585ea9bcfce5bc62dacb556a7af",
         "id": "obl.pis-v401.tests",
         "kind": "test-definition-catalogue",
         "mediaType": "application/json",
@@ -859,6 +1076,576 @@
       ],
       "targetId": "pis.v401.input.standing-order-frequency",
       "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.input.instructed-amount.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-amount.domestic-payment",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-payment",
+      "id": "pis.v401.requirement.input.instructed-currency.domestic-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-currency.domestic-payment",
+            "pis.v401.capability.domestic-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-scheduled-payment",
+      "id": "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment",
+            "pis.v401.capability.domestic-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.requested-execution-date-time",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.domestic-standing-order",
+      "id": "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order",
+            "pis.v401.capability.domestic-standing-order"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.first-payment-date-time",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.instructed-amount.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-amount.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.instructed-currency.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-currency.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-payment",
+      "id": "pis.v401.requirement.input.currency-of-transfer.international-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.currency-of-transfer.international-payment",
+            "pis.v401.capability.international-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.currency-of-transfer",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-scheme-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-identification",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.international-creditor-account-name",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-amount",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.instructed-currency",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.currency-of-transfer",
+      "targetType": "predefined-input"
+    },
+    {
+      "capabilityId": "pis.v401.capability.international-scheduled-payment",
+      "id": "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment",
+      "normativeReferenceIds": [
+        "ob-rw-v401.pis-profile.payment-restrictions",
+        "ob-rw-v401.pis-openapi.operations"
+      ],
+      "reasons": [
+        {
+          "code": "requirements.rule.applied",
+          "sourceIds": [
+            "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment",
+            "pis.v401.capability.international-scheduled-payment"
+          ]
+        }
+      ],
+      "targetId": "pis.v401.input.requested-execution-date-time",
+      "targetType": "predefined-input"
     }
   ],
   "schemaVersion": "1.0",
@@ -873,7 +1660,12 @@
   "testInstances": [
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic_payment_consents.positive.instance",
@@ -944,7 +1736,12 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payments"
+        "pis.v401.requirement.domestic_payments",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencyIds": [
         "pis.v401.test.domestic_payment_consents.consentid.positive.instance"
@@ -990,7 +1787,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic_scheduled_payment_consents.positive.instance",
@@ -1040,7 +1843,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payments"
+        "pis.v401.requirement.domestic_scheduled_payments",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencyIds": [
         "pis.v401.test.domestic_scheduled_payment_consents.consentid.positive.instance"
@@ -1087,7 +1896,13 @@
     {
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_order_consents",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic_standing_order_consents.positive.instance",
@@ -1138,7 +1953,13 @@
     {
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_orders",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencyIds": [
         "pis.v401.test.domestic_standing_order_consents.consentid.positive.instance"
@@ -1184,7 +2005,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_payment_consents"
+        "pis.v401.requirement.international_payment_consents",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+        "pis.v401.requirement.input.instructed-amount.international-payment",
+        "pis.v401.requirement.input.instructed-currency.international-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.international_payment_consents.positive.instance",
@@ -1234,7 +2061,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_payments"
+        "pis.v401.requirement.international_payments",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-payment",
+        "pis.v401.requirement.input.instructed-amount.international-payment",
+        "pis.v401.requirement.input.instructed-currency.international-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-payment"
       ],
       "dependencyIds": [
         "pis.v401.test.international_payment_consents.consentid.positive.instance"
@@ -1280,7 +2113,14 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_scheduled_payment_consents"
+        "pis.v401.requirement.international_scheduled_payment_consents",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.international_scheduled_payment_consents.positive.instance",
@@ -1330,7 +2170,14 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.international_scheduled_payments"
+        "pis.v401.requirement.international_scheduled_payments",
+        "pis.v401.requirement.input.international-creditor-account-scheme-name.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-identification.international-scheduled-payment",
+        "pis.v401.requirement.input.international-creditor-account-name.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.international-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.international-scheduled-payment",
+        "pis.v401.requirement.input.currency-of-transfer.international-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.international-scheduled-payment"
       ],
       "dependencyIds": [
         "pis.v401.test.international_scheduled_payment_consents.consentid.positive.instance"
@@ -1376,7 +2223,12 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-payment-consent.missing-authorisation.instance",
@@ -1394,7 +2246,12 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-payment-consent.missing-jws-issuer.instance",
@@ -1412,7 +2269,12 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_payment_consents"
+        "pis.v401.requirement.domestic_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-payment-consent.invalid-jws-signature.instance",
@@ -1430,7 +2292,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-scheduled-payment-consent.offset-datetime.instance",
@@ -1448,7 +2316,13 @@
     },
     {
       "coveredRequirementIds": [
-        "pis.v401.requirement.domestic_scheduled_payment_consents"
+        "pis.v401.requirement.domestic_scheduled_payment_consents",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-scheduled-payment",
+        "pis.v401.requirement.input.creditor-account-name.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-amount.domestic-scheduled-payment",
+        "pis.v401.requirement.input.instructed-currency.domestic-scheduled-payment",
+        "pis.v401.requirement.input.requested-execution-date-time.domestic-scheduled-payment"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-scheduled-payment-consent.utc-datetime.instance",
@@ -1467,7 +2341,13 @@
     {
       "coveredRequirementIds": [
         "pis.v401.requirement.domestic_standing_order_consents",
-        "pis.v401.requirement.domestic-standing-order-frequency"
+        "pis.v401.requirement.domestic-standing-order-frequency",
+        "pis.v401.requirement.input.creditor-account-scheme-name.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-identification.domestic-standing-order",
+        "pis.v401.requirement.input.creditor-account-name.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-amount.domestic-standing-order",
+        "pis.v401.requirement.input.instructed-currency.domestic-standing-order",
+        "pis.v401.requirement.input.first-payment-date-time.domestic-standing-order"
       ],
       "dependencyIds": [],
       "id": "pis.v401.test.domestic-standing-order-consent.invalid-frequency.instance",

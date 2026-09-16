@@ -19,6 +19,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- PIS v3.1.11 and v4.0.1 participant business data is now compiled through
+  typed, catalogue-owned predefined inputs with reusable request bindings.
+  Legacy PIS business aliases are rejected in `compatibilityRuntimeInputs`;
+  the compatibility executor lowers them only in memory. Non-sensitive input
+  changes remain content-addressed, while creditor identifiers and names are
+  redacted before identity generation and masked in request evidence using
+  catalogue-derived JSON locations.
 - A single `participant-plan` 1.0 surface now drives browser construction and
   review, JSON import/export, CLI execution, and REST run creation. Browser
   scope choices come from the trusted suite-release requirements catalogues;

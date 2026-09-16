@@ -2487,6 +2487,11 @@ def participant_plan_from_draft(
         raise CatalogueError(f"Requirements scope {scope!r} is not available for this specification")
     config_object = _copy_json_mapping(config if config is not None else draft.config)
     runtime_values = _runtime_input_values_from_config(config_object)
+    if scope == "pis":
+        _promote_pis_business_inputs(
+            runtime_values,
+            specification_version=catalogue.requirements.specification.version,
+        )
     predefined_input_ids = {str(item.id) for item in catalogue.requirements.predefined_inputs}
     predefined_inputs: list[JsonValue] = []
     for predefined_input in catalogue.requirements.predefined_inputs:
@@ -4546,6 +4551,52 @@ def _merge_structured_config_runtime_values(values: JsonObject, config: Mapping[
         pis.get("requestedExecutionDateTime"),
     )
     _set_derived_runtime_value(values, "pisFirstPaymentDateTime", pis.get("firstPaymentDateTime"))
+
+
+def _promote_pis_business_inputs(
+    values: JsonObject,
+    *,
+    specification_version: str,
+) -> None:
+    """Move browser PIS form values onto versioned predefined-input IDs."""
+    version_id = {"3.1.11": "v311", "4.0.1": "v401"}.get(specification_version)
+    if version_id is None:
+        raise CatalogueError(f"Unsupported PIS specification version {specification_version!r}")
+    aliases = {
+        "pisCreditorAccountSchemeName": "creditor-account-scheme-name",
+        "pisCreditorAccountIdentification": "creditor-account-identification",
+        "pisCreditorAccountName": "creditor-account-name",
+        "pisInternationalCreditorAccountSchemeName": "international-creditor-account-scheme-name",
+        "pisInternationalCreditorAccountIdentification": "international-creditor-account-identification",
+        "pisInternationalCreditorAccountName": "international-creditor-account-name",
+        "pisInstructedAmountAmount": "instructed-amount",
+        "pisInstructedAmountCurrency": "instructed-currency",
+        "pisCurrencyOfTransfer": "currency-of-transfer",
+        "pisRequestedExecutionDateTime": "requested-execution-date-time",
+        "pisFirstPaymentDateTime": "first-payment-date-time",
+    }
+    for alias, slug in aliases.items():
+        value = values.pop(alias, None)
+        logical_id = f"pis.{version_id}.input.{slug}"
+        if value is not None and logical_id not in values:
+            values[logical_id] = value
+    if version_id == "v311":
+        legacy_frequency = values.pop("pisStandingOrderFrequencyV31", None)
+        logical_id = "pis.v311.input.standing-order-frequency"
+        if legacy_frequency is not None and logical_id not in values:
+            values[logical_id] = legacy_frequency
+    else:
+        frequency_type = values.pop("pisStandingOrderFrequencyType", None)
+        count_per_period = values.pop("pisStandingOrderFrequencyCountPerPeriod", None)
+        point_in_time = values.pop("pisStandingOrderFrequencyPointInTime", None)
+        logical_id = "pis.v401.input.standing-order-frequency"
+        if frequency_type is not None and logical_id not in values:
+            frequency_value: JsonObject = {"frequencyType": frequency_type}
+            if count_per_period is not None:
+                frequency_value["countPerPeriod"] = count_per_period
+            if point_in_time is not None:
+                frequency_value["pointInTime"] = point_in_time
+            values[logical_id] = frequency_value
 
 
 def _set_derived_runtime_value(values: JsonObject, input_id: str, value: JsonValue | None) -> None:
